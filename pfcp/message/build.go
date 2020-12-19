@@ -103,7 +103,11 @@ func farToCreateFAR(far *context.FAR) *pfcp.CreateFAR {
 	createFAR.FARID.FarIdValue = far.FARID
 
 	createFAR.ApplyAction = new(pfcpType.ApplyAction)
-	createFAR.ApplyAction.Forw = true
+	createFAR.ApplyAction.Dupl = far.ApplyAction.Dupl
+	createFAR.ApplyAction.Nocp = far.ApplyAction.Nocp
+	createFAR.ApplyAction.Buff = far.ApplyAction.Buff
+	createFAR.ApplyAction.Forw = far.ApplyAction.Forw
+	createFAR.ApplyAction.Drop = far.ApplyAction.Drop
 
 	if far.BAR != nil {
 		createFAR.BARID = new(pfcpType.BARID)
