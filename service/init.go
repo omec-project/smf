@@ -164,7 +164,7 @@ func (smf *SMF) Start() {
 		}
 		message.SendPfcpAssociationSetupRequest(upf.NodeID)
 	}
-	
+
 	time.Sleep(1000 * time.Millisecond)
 
 	HTTPAddr := fmt.Sprintf("%s:%d", context.SMF_Self().BindingIPv4, context.SMF_Self().SBIPort)
