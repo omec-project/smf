@@ -20,12 +20,17 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/smf/logger"
 	"github.com/free5gc/smf/producer"
+
+	smf_context "github.com/free5gc/smf/context"
+	stats "github.com/free5gc/smf/metrics"
+	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 )
 
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Create SM Context Request")
 	var request models.PostSmContextsRequest
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "In", "", "")
 
 	request.JsonData = new(models.SmContextCreateData)
 
@@ -45,17 +50,20 @@ func HTTPPostSmContexts(c *gin.Context) {
 			Status: http.StatusBadRequest,
 			Detail: problemDetail,
 		}
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(http.StatusBadRequest), "Malformed")
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
 
 	req := http_wrapper.NewRequest(c.Request, request)
-	HTTPResponse := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
-	// Http Response to AMF
+	HTTPResponse, errStr := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
+	//Http Response to AMF
+
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(HTTPResponse.Status), errStr)
 	switch HTTPResponse.Status {
 	case http.StatusCreated,
 		http.StatusBadRequest,

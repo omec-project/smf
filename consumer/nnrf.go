@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/antihax/optional"
+	"github.com/free5gc/smf/metrics"
+	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 	"github.com/mohae/deepcopy"
 
 	"github.com/free5gc/openapi"
@@ -45,8 +47,11 @@ func SendNFRegistration() error {
 			NFManagementClient.
 			NFInstanceIDDocumentApi.
 			RegisterNFInstance(context.TODO(), smf_context.SMF_Self().NfInstanceID, profile)
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "Out", "", "")
+
 		if err != nil || res == nil {
 			logger.ConsumerLog.Infof("SMF register to NRF Error[%s]", err.Error())
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", "Failure", err.Error())
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -55,6 +60,8 @@ func SendNFRegistration() error {
 				logger.ConsumerLog.Errorf("RegisterNFInstance response body cannot close: %+v", resCloseErr)
 			}
 		}()
+
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", http.StatusText(res.StatusCode), "")
 
 		status := res.StatusCode
 		if status == http.StatusOK {
@@ -96,8 +103,10 @@ func SendNFDeregistration() error {
 		NFManagementClient.
 		NFInstanceIDDocumentApi.
 		DeregisterNFInstance(context.TODO(), smf_context.SMF_Self().NfInstanceID)
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDeRegister, "Out", "", "")
 	if localErr != nil {
 		logger.ConsumerLog.Warnln(localErr)
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDeRegister, "In", "Failure", localErr.Error())
 		return localErr
 	}
 	defer func() {
@@ -106,6 +115,7 @@ func SendNFDeregistration() error {
 		}
 	}()
 	if res != nil {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", http.StatusText(res.StatusCode), "")
 		if status := res.StatusCode; status != http.StatusNoContent {
 			logger.ConsumerLog.Warnln("handler returned wrong status code ", status)
 			return openapi.ReportError("handler returned wrong status code %d", status)
@@ -122,8 +132,10 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
 		SearchNFInstances(context.TODO(), models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryUdm, "Out", "", "")
 
 	if localErr == nil {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryUdm, "In", http.StatusText(httpResp.StatusCode), "")
 		smf_context.SMF_Self().UDMProfile = result.NfInstances[0]
 
 		for _, service := range *smf_context.SMF_Self().UDMProfile.NfServices {
@@ -145,11 +157,14 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 		}()
 		logger.ConsumerLog.Warnln("handler returned wrong status code ", httpResp.Status)
 		if httpResp.Status != localErr.Error() {
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryUdm, "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
 			return nil, localErr
 		}
 		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryUdm, "In", http.StatusText(httpResp.StatusCode), localErr.Error())
 		return &problem, nil
 	} else {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryUdm, "In", "Failure", "NoResponse")
 		return nil, openapi.ReportError("server no response")
 	}
 	return nil, nil
@@ -167,9 +182,11 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
 		SearchNFInstances(context.TODO(), targetNfType, requesterNfType, &localVarOptionals)
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "Out", "", "")
 
 	if localErr == nil {
 		logger.ConsumerLog.Traceln(result.NfInstances)
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", http.StatusText(httpResp.StatusCode), "")
 	} else if httpResp != nil {
 		defer func() {
 			if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
@@ -179,11 +196,14 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 		logger.ConsumerLog.Warnln("handler returned wrong status code ", httpResp.Status)
 		if httpResp.Status != localErr.Error() {
 			err = localErr
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
 			return
 		}
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", http.StatusText(httpResp.StatusCode), localErr.Error())
 		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", "Failure", "NoResponse")
 		err = openapi.ReportError("server no response")
 	}
 
@@ -203,17 +223,21 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
 		SearchNFInstances(context.TODO(), targetNfType, requesterNfType, &localVarOptionals)
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "Out", "", "")
 
 	if localErr == nil {
 		if result.NfInstances == nil {
 			if status := httpResp.StatusCode; status != http.StatusOK {
 				logger.ConsumerLog.Warnln("handler returned wrong status code", status)
 			}
+
 			logger.ConsumerLog.Warnln("NfInstances is nil")
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), "NilInstance")
 			return nil, openapi.ReportError("NfInstances is nil")
 		}
 		logger.ConsumerLog.Info("SendNFDiscoveryServingAMF ok")
 		smContext.AMFProfile = deepcopy.Copy(result.NfInstances[0]).(models.NfProfile)
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), "")
 	} else if httpResp != nil {
 		defer func() {
 			if resCloseErr := httpResp; resCloseErr != nil {
@@ -221,11 +245,14 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 			}
 		}()
 		if httpResp.Status != localErr.Error() {
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
 			return nil, localErr
 		}
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), localErr.Error())
 		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		return &problem, nil
 	} else {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", "Failure", "NoResponse")
 		return nil, openapi.ReportError("server no response")
 	}
 
@@ -242,7 +269,9 @@ func SendDeregisterNFInstance() (*models.ProblemDetails, error) {
 		NFManagementClient.
 		NFInstanceIDDocumentApi.
 		DeregisterNFInstance(context.Background(), smfSelf.NfInstanceID)
+	metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, svcmsgtypes.NnrfNFInstanceDeRegister, "Out", "", "")
 	if err == nil {
+		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, svcmsgtypes.NnrfNFInstanceDeRegister, "In", http.StatusText(res.StatusCode), "")
 		return nil, err
 	} else if res != nil {
 		defer func() {
@@ -251,11 +280,14 @@ func SendDeregisterNFInstance() (*models.ProblemDetails, error) {
 			}
 		}()
 		if res.Status != err.Error() {
+			metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, svcmsgtypes.NnrfNFInstanceDeRegister, "In", http.StatusText(res.StatusCode), res.Status)
 			return nil, err
 		}
+		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, svcmsgtypes.NnrfNFInstanceDeRegister, "In", http.StatusText(res.StatusCode), err.Error())
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		return &problem, err
 	} else {
+		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, svcmsgtypes.NnrfNFInstanceDeRegister, "In", "Failure", "NoResponse")
 		return nil, openapi.ReportError("server no response")
 	}
 }

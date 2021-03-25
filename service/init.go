@@ -27,6 +27,7 @@ import (
 	"github.com/free5gc/smf/eventexposure"
 	"github.com/free5gc/smf/factory"
 	"github.com/free5gc/smf/logger"
+	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/oam"
 	"github.com/free5gc/smf/pdusession"
 	"github.com/free5gc/smf/pfcp"
@@ -227,6 +228,10 @@ func (smf *SMF) setLogLevel() {
 		}
 		pfcpLogger.SetReportCaller(factory.SmfConfig.Logger.PFCP.ReportCaller)
 	}
+
+	//Initialise Statistics
+	go metrics.InitMetrics()
+
 }
 
 func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
