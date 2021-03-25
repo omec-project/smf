@@ -11,7 +11,9 @@ import (
 	"free5gc/lib/openapi/Npcf_SMPolicyControl"
 	"free5gc/lib/openapi/models"
 	"free5gc/lib/pfcp/pfcpType"
+	"free5gc/lib/msgtypes"
 	"free5gc/src/smf/logger"
+	"free5gc/src/smf/metrics"
 	"net"
 	"net/http"
 	"sync"
@@ -25,6 +27,7 @@ var canonicalRef sync.Map
 var seidSMContextMap sync.Map
 
 var smContextCount uint64
+var smContextActive uint64
 
 type SMContextState int
 
@@ -38,6 +41,16 @@ const (
 )
 
 func init() {
+}
+
+func incSMContextActive() uint64 {
+	atomic.AddUint64(&smContextActive, 1)
+	return smContextActive
+}
+
+func decSMContextActive() uint64 {
+	atomic.AddUint64(&smContextActive, ^uint64(0))
+	return smContextActive
 }
 
 func GetSMContextCount() uint64 {
@@ -151,6 +164,10 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv6Request: false,
 	}
 
+	//Sess Stats
+	incSMContextActive()
+	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
+
 	return smContext
 }
 
@@ -175,6 +192,9 @@ func RemoveSMContext(ref string) {
 	}
 
 	smContextPool.Delete(ref)
+	//Sess Stats
+	decSMContextActive()
+	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 }
 
 func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
@@ -225,17 +245,20 @@ func (smContext *SMContext) PCFSelection() error {
 
 	// Send NFDiscovery for find PCF
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
+	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, msgtypes.NnrfNFDiscoveryPcf, "Out", "", "")
 
 	rep, res, err := SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
 		SearchNFInstances(context.TODO(), models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	if err != nil {
+		metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, msgtypes.NnrfNFDiscoveryPcf, "In", "Failure", err.Error())
 		return err
 	}
 
 	if res != nil {
 		if status := res.StatusCode; status != http.StatusOK {
+			metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, msgtypes.NnrfNFDiscoveryPcf, "In", "Failure", err.Error())
 			apiError := err.(openapi.GenericOpenAPIError)
 			problemDetails := apiError.Model().(models.ProblemDetails)
 
@@ -245,6 +268,7 @@ func (smContext *SMContext) PCFSelection() error {
 	}
 
 	// Select PCF from available PCF
+	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, msgtypes.NnrfNFDiscoveryPcf, "In", http.StatusText(res.StatusCode), "")
 
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 

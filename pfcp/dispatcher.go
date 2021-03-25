@@ -5,9 +5,13 @@ import (
 	"free5gc/lib/pfcp/pfcpUdp"
 	"free5gc/src/smf/logger"
 	"free5gc/src/smf/pfcp/handler"
+	"free5gc/src/smf/metrics"
+	smf_context "free5gc/src/smf/context"
 )
 
 func Dispatch(msg *pfcpUdp.Message) {
+
+	//TODO: Add return status to all handlers
 	switch msg.PfcpMessage.Header.MessageType {
 	case pfcp.PFCP_HEARTBEAT_REQUEST:
 		handler.HandlePfcpHeartbeatRequest(msg)
@@ -53,4 +57,8 @@ func Dispatch(msg *pfcpUdp.Message) {
 		logger.PfcpLog.Errorf("Unknown PFCP message type: %d", msg.PfcpMessage.Header.MessageType)
 		return
 	}
+
+	//stats
+	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcp.PfcpMsgTypeText(msg.PfcpMessage.Header.MessageType), "In", "", "")
+
 }

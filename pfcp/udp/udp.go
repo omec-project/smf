@@ -8,6 +8,8 @@ import (
 	"free5gc/lib/pfcp/pfcpUdp"
 	"free5gc/src/smf/context"
 	"free5gc/src/smf/logger"
+	"free5gc/src/smf/metrics"
+	smf_context "free5gc/src/smf/context"
 )
 
 const MaxPfcpUdpDataSize = 1024
@@ -54,6 +56,9 @@ func SendPfcp(msg pfcp.Message, addr *net.UDPAddr) {
 	err := Server.WriteTo(msg, addr)
 	if err != nil {
 		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcp.PfcpMsgTypeText(msg.Header.MessageType),"Out", "Failure", err.Error())
+		return
 	}
 
+	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcp.PfcpMsgTypeText(msg.Header.MessageType),"Out", "Success", "")
 }

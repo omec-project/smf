@@ -18,12 +18,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
+	smf_context "free5gc/src/smf/context"
+	stats "free5gc/src/smf/metrics"
+	"free5gc/lib/msgtypes"
 )
 
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Create SM Context Request")
 	var request models.PostSmContextsRequest
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NsmfPDUSessionCreateSmContext, "In", "", "")
 
 	request.JsonData = new(models.SmContextCreateData)
 
@@ -43,17 +47,19 @@ func HTTPPostSmContexts(c *gin.Context) {
 			Status: http.StatusBadRequest,
 			Detail: problemDetail,
 		}
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(http.StatusBadRequest), "Malformed")
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
 
 	req := http_wrapper.NewRequest(c.Request, request)
-	HTTPResponse := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
+	HTTPResponse, errStr := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
 	//Http Response to AMF
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(HTTPResponse.Status), errStr)
 	switch HTTPResponse.Status {
 	case http.StatusCreated,
 		http.StatusBadRequest,

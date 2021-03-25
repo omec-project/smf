@@ -28,6 +28,7 @@ import (
 	"free5gc/src/smf/pfcp/message"
 	"free5gc/src/smf/pfcp/udp"
 	"free5gc/src/smf/util"
+	"free5gc/src/smf/metrics"
 )
 
 type SMF struct{}
@@ -102,6 +103,9 @@ func (*SMF) Initialize(c *cli.Context) {
 		logger.SetLogLevel(logrus.InfoLevel)
 	}
 	logger.SetReportCaller(app.ContextSelf().Logger.SMF.ReportCaller)
+
+       //Initialise Statistics
+       go metrics.InitMetrics()
 }
 
 func (smf *SMF) FilterCli(c *cli.Context) (args []string) {

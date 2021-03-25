@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"free5gc/lib/http_wrapper"
 	"free5gc/lib/nas"
+	"free5gc/lib/msgtypes"
 	"free5gc/lib/nas/nasConvert"
 	"free5gc/lib/nas/nasMessage"
 	"free5gc/lib/openapi"
@@ -14,15 +15,15 @@ import (
 	"free5gc/lib/openapi/models"
 	"free5gc/lib/pfcp/pfcpType"
 	"free5gc/src/smf/consumer"
+	"free5gc/src/smf/metrics"
 	smf_context "free5gc/src/smf/context"
 	"free5gc/src/smf/logger"
 	pfcp_message "free5gc/src/smf/pfcp/message"
 	"net/http"
-
 	"github.com/antihax/optional"
 )
 
-func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http_wrapper.Response {
+func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*http_wrapper.Response, string) {
 	//GSM State
 	//PDU Session Establishment Accept/Reject
 	var response models.PostSmContextsResponse
@@ -43,7 +44,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 				},
 			},
 		}
-		return httpResponse
+		return httpResponse, "GsmMessageDecode"
 	}
 
 	createData := request.JsonData
@@ -72,14 +73,18 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 
 	SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
 
-	if sessSubData, _, err := SubscriberDataManagementClient.
+	metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NudmSmSubscriptionDataRetrieval, "Out", "","")
+	if sessSubData, rsp, err := SubscriberDataManagementClient.
 		SessionManagementSubscriptionDataRetrievalApi.
 		GetSmData(context.Background(), smContext.Supi, smDataParams); err != nil {
+		metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), err.Error())
 		logger.PduSessLog.Errorln("Get SessionManagementSubscriptionData error:", err)
 	} else {
 		if len(sessSubData) > 0 {
+			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "")
 			smContext.DnnConfiguration = sessSubData[0].DnnConfigurations[smContext.Dnn]
 		} else {
+			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, msgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			logger.PduSessLog.Errorln("SessionManagementSubscriptionData from UDM is nil")
 		}
 	}
@@ -190,8 +195,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 				},
 			}
 		}
-
-		return httpResponse
+		return httpResponse, "InsufficientResourceSliceDnn"
 
 	}
 
@@ -221,7 +225,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 		Body:   response,
 	}
 
-	return httpResponse
+	return httpResponse, ""
 	// TODO: UECM registration
 
 }
