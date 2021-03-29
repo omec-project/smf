@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"free5gc/lib/pfcp"
-	"free5gc/lib/pfcp/pfcpType"
-	"free5gc/lib/pfcp/pfcpUdp"
-	"free5gc/src/smf/context"
-	smf_pfcp "free5gc/src/smf/pfcp"
-	"free5gc/src/smf/pfcp/udp"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/free5gc/pfcp"
+	"github.com/free5gc/pfcp/pfcpType"
+	"github.com/free5gc/pfcp/pfcpUdp"
+	"github.com/free5gc/smf/context"
+	smf_pfcp "github.com/free5gc/smf/pfcp"
+	"github.com/free5gc/smf/pfcp/udp"
 )
 
 const testPfcpClientPort = 12345

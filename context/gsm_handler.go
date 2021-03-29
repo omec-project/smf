@@ -1,9 +1,9 @@
 package context
 
 import (
-	"free5gc/lib/nas/nasConvert"
-	"free5gc/lib/nas/nasMessage"
-	"free5gc/src/smf/logger"
+	"github.com/free5gc/nas/nasConvert"
+	"github.com/free5gc/nas/nasMessage"
+	"github.com/free5gc/smf/logger"
 )
 
 func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) {
@@ -17,16 +17,24 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 	// Handle PDUSessionType
 	if req.PDUSessionType != nil {
 		requestedPDUSessionType := req.PDUSessionType.GetPDUSessionTypeValue()
-		if smContext.isAllowedPDUSessionType(requestedPDUSessionType) {
-			smContext.SelectedPDUSessionType = requestedPDUSessionType
-		} else {
-			logger.CtxLog.Errorf("requested pdu session type [%s] is not in allowed type\n",
-				nasConvert.PDUSessionTypeToModels(requestedPDUSessionType))
+		if err := smContext.isAllowedPDUSessionType(requestedPDUSessionType); err != nil {
+			logger.CtxLog.Errorf("%s", err)
+			return
 		}
 	} else {
-		// Default to IPv4
-		// TODO: use Default PDU Session Type
-		smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
+		// Set to default supported PDU Session Type
+		switch SMF_Self().SupportedPDUSessionType {
+		case "IPv4":
+			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
+		case "IPv6":
+			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv6
+		case "IPv4v6":
+			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4IPv6
+		case "Ethernet":
+			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeEthernet
+		default:
+			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
+		}
 	}
 
 	if req.ExtendedProtocolConfigurationOptions != nil {
@@ -120,8 +128,6 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 			}
 		}
 	}
-
-	smContext.PDUAddress = AllocUEIP()
 }
 
 func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSessionReleaseRequest) {
@@ -129,4 +135,10 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()
+
+	if ip := smContext.PDUAddress; ip != nil {
+		logger.PduSessLog.Infof("UE[%s] PDUSessionID[%d] Release IP[%s]",
+			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
+		smContext.DNNInfo.UeIPAllocator.Release(ip)
+	}
 }

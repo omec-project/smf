@@ -21,7 +21,6 @@ func init() {
 	// 	IP:   net.ParseIP("127.0.0.2"),
 	// 	Port: pfcpUdp.PFCP_PORT,
 	// }
-
 }
 
 func TestReliablePFCPResponseDelivery(t *testing.T) {

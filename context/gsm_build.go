@@ -2,15 +2,12 @@ package context
 
 import (
 	"encoding/hex"
-	"free5gc/lib/nas"
-	"free5gc/lib/nas/nasConvert"
-	"free5gc/lib/nas/nasMessage"
-	"free5gc/lib/nas/nasType"
-	"free5gc/src/smf/logger"
-	"net"
 
-	// "free5gc/lib/nas/nasType"
-	"free5gc/lib/openapi/models"
+	"github.com/free5gc/nas"
+	"github.com/free5gc/nas/nasConvert"
+	"github.com/free5gc/nas/nasMessage"
+	"github.com/free5gc/nas/nasType"
+	"github.com/free5gc/smf/logger"
 )
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
@@ -29,23 +26,9 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
 	pDUSessionEstablishmentAccept.SetPTI(smContext.Pti)
 
-	selectedPDUSessionType := nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
-	if selectedPDUSessionType == models.PduSessionType_IPV4_V6 {
-
-		onlySupportIPv4 := SMF_Self().OnlySupportIPv4
-		onlySupportIPv6 := SMF_Self().OnlySupportIPv6
-
-		if onlySupportIPv4 {
-			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
-			pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(nasMessage.PDUSessionEstablishmentAcceptCause5GSMType)
-			pDUSessionEstablishmentAccept.SetCauseValue(nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed)
-		}
-		if onlySupportIPv6 {
-			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv6
-			pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(nasMessage.PDUSessionEstablishmentAcceptCause5GSMType)
-			pDUSessionEstablishmentAccept.SetCauseValue(nasMessage.Cause5GSMPDUSessionTypeIPv6OnlyAllowed)
-		}
-
+	if v := smContext.EstAcceptCause5gSMValue; v != 0 {
+		pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(nasMessage.PDUSessionEstablishmentAcceptCause5GSMType)
+		pDUSessionEstablishmentAccept.Cause5GSM.SetCauseValue(v)
 	}
 	pDUSessionEstablishmentAccept.SetPDUSessionType(smContext.SelectedPDUSessionType)
 
@@ -92,9 +75,6 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(6)
 	pDUSessionEstablishmentAccept.SetQoSFlowDescriptions([]uint8{uint8(authDefQos.Var5qi), 0x20, 0x41, 0x01, 0x01, 0x09})
 
-	pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(nasMessage.PDUSessionEstablishmentAcceptCause5GSMType)
-	pDUSessionEstablishmentAccept.Cause5GSM.SetCauseValue(nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed)
-
 	var sd [3]uint8
 
 	if byteArray, err := hex.DecodeString(smContext.Snssai.Sd); err != nil {
@@ -113,57 +93,45 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.DNN.SetLen(uint8(len(dnn)))
 	pDUSessionEstablishmentAccept.DNN.SetDNN(dnn)
 
-	if smContext.ProtocolConfigurationOptions.DNSIPv4Request || smContext.ProtocolConfigurationOptions.DNSIPv6Request {
-		dnnInfo, exist := SMF_Self().DNNInfo[smContext.Dnn]
-		if !exist {
-			logger.GsmLog.Warnf("No default DNS IP for DNN [%s]\n", smContext.Dnn)
+	if smContext.ProtocolConfigurationOptions.DNSIPv4Request || smContext.ProtocolConfigurationOptions.DNSIPv6Request || smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
+		pDUSessionEstablishmentAccept.ExtendedProtocolConfigurationOptions =
+			nasType.NewExtendedProtocolConfigurationOptions(
+				nasMessage.PDUSessionEstablishmentAcceptExtendedProtocolConfigurationOptionsType,
+			)
+		protocolConfigurationOptions := nasConvert.NewProtocolConfigurationOptions()
+
+		// IPv4 DNS
+		if smContext.ProtocolConfigurationOptions.DNSIPv4Request {
+			err := protocolConfigurationOptions.AddDNSServerIPv4Address(smContext.DNNInfo.DNS.IPv4Addr)
+			if err != nil {
+				logger.GsmLog.Warnln("Error while adding DNS IPv4 Addr: ", err)
+			}
 		}
 
-		if exist || smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
-			pDUSessionEstablishmentAccept.ExtendedProtocolConfigurationOptions =
-				nasType.NewExtendedProtocolConfigurationOptions(
-					nasMessage.PDUSessionEstablishmentAcceptExtendedProtocolConfigurationOptionsType,
-				)
-			protocolConfigurationOptions := nasConvert.NewProtocolConfigurationOptions()
-
-			// DNS IP
-			if exist {
-				if smContext.ProtocolConfigurationOptions.DNSIPv4Request {
-					DNSIPv4Addr := net.ParseIP(dnnInfo.DNS.IPv4Addr)
-					err := protocolConfigurationOptions.AddDNSServerIPv4Address(DNSIPv4Addr)
-					if err != nil {
-						logger.GsmLog.Warnln("Error while adding DNS IPv4 Addr: ", err)
-					}
-				}
-
-				if smContext.ProtocolConfigurationOptions.DNSIPv6Request {
-					DNSIPv6Addr := net.ParseIP(dnnInfo.DNS.IPv6Addr)
-					err := protocolConfigurationOptions.AddDNSServerIPv6Address(DNSIPv6Addr)
-					if err != nil {
-						logger.GsmLog.Warnln("Error while adding DNS IPv6 Addr: ", err)
-					}
-				}
+		// IPv6 DNS
+		if smContext.ProtocolConfigurationOptions.DNSIPv6Request {
+			err := protocolConfigurationOptions.AddDNSServerIPv6Address(smContext.DNNInfo.DNS.IPv6Addr)
+			if err != nil {
+				logger.GsmLog.Warnln("Error while adding DNS IPv6 Addr: ", err)
 			}
-
-			// MTU
-			if smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
-				err := protocolConfigurationOptions.AddIPv4LinkMTU(1400)
-				if err != nil {
-					logger.GsmLog.Warnln("Error while adding MTU: ", err)
-				}
-			}
-
-			pcoContents := protocolConfigurationOptions.Marshal()
-			pcoContentsLength := len(pcoContents)
-			pDUSessionEstablishmentAccept.
-				ExtendedProtocolConfigurationOptions.
-				SetLen(uint16(pcoContentsLength))
-			pDUSessionEstablishmentAccept.
-				ExtendedProtocolConfigurationOptions.
-				SetExtendedProtocolConfigurationOptionsContents(pcoContents)
-
 		}
 
+		// MTU
+		if smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
+			err := protocolConfigurationOptions.AddIPv4LinkMTU(1400)
+			if err != nil {
+				logger.GsmLog.Warnln("Error while adding MTU: ", err)
+			}
+		}
+
+		pcoContents := protocolConfigurationOptions.Marshal()
+		pcoContentsLength := len(pcoContents)
+		pDUSessionEstablishmentAccept.
+			ExtendedProtocolConfigurationOptions.
+			SetLen(uint16(pcoContentsLength))
+		pDUSessionEstablishmentAccept.
+			ExtendedProtocolConfigurationOptions.
+			SetExtendedProtocolConfigurationOptionsContents(pcoContents)
 	}
 	return m.PlainNasEncode()
 }
@@ -185,7 +153,6 @@ func BuildGSMPDUSessionEstablishmentReject(smContext *SMContext, cause uint8) ([
 }
 
 func BuildGSMPDUSessionReleaseCommand(smContext *SMContext) ([]byte, error) {
-
 	m := nas.NewMessage()
 	m.GsmMessage = nas.NewGsmMessage()
 	m.GsmHeader.SetMessageType(nas.MsgTypePDUSessionReleaseCommand)
@@ -226,7 +193,6 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 }
 
 func BuildGSMPDUSessionReleaseReject(smContext *SMContext) ([]byte, error) {
-
 	m := nas.NewMessage()
 	m.GsmMessage = nas.NewGsmMessage()
 	m.GsmHeader.SetMessageType(nas.MsgTypePDUSessionReleaseReject)

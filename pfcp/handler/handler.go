@@ -3,18 +3,20 @@ package handler
 import (
 	"context"
 	"fmt"
-	"free5gc/lib/openapi/models"
-	"free5gc/lib/pfcp"
-	"free5gc/lib/pfcp/pfcpType"
-	"free5gc/lib/pfcp/pfcpUdp"
-	smf_context "free5gc/src/smf/context"
-	"free5gc/src/smf/logger"
-	pfcp_message "free5gc/src/smf/pfcp/message"
-	"free5gc/src/smf/producer"
+
+	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/pfcp"
+	"github.com/free5gc/pfcp/pfcpType"
+	"github.com/free5gc/pfcp/pfcpUdp"
+	smf_context "github.com/free5gc/smf/context"
+	"github.com/free5gc/smf/logger"
+	pfcp_message "github.com/free5gc/smf/pfcp/message"
+	"github.com/free5gc/smf/producer"
 )
 
 func HandlePfcpHeartbeatRequest(msg *pfcpUdp.Message) {
-	logger.PfcpLog.Warnf("PFCP Heartbeat Request handling is not implemented")
+	h := msg.PfcpMessage.Header
+	pfcp_message.SendHeartbeatResponse(msg.RemoteAddr, h.SequenceNumber)
 }
 
 func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
@@ -64,8 +66,9 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			logger.PfcpLog.Errorln("pfcp association needs NodeID")
 			return
 		}
+		logger.PfcpLog.Infof("Handle PFCP Association Setup Response with NodeID[%s]", nodeID.ResolveNodeIdToIp().String())
 
-		upf := smf_context.RetrieveUPFNodeByNodeID(*req.NodeID)
+		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
@@ -74,7 +77,6 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 
 		if req.UserPlaneIPResourceInformation != nil {
-
 			upf.UPIPInfo = *req.UserPlaneIPResourceInformation
 
 			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
@@ -82,7 +84,6 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		} else {
 			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
 		}
-
 	}
 }
 
@@ -101,7 +102,7 @@ func HandlePfcpAssociationReleaseRequest(msg *pfcpUdp.Message) {
 	upf := smf_context.RetrieveUPFNodeByNodeID(*pfcpMsg.NodeID)
 
 	if upf != nil {
-		smf_context.RemoveUPFNodeByNodeId(*pfcpMsg.NodeID)
+		smf_context.RemoveUPFNodeByNodeID(*pfcpMsg.NodeID)
 		cause.CauseValue = pfcpType.CauseRequestAccepted
 	} else {
 		cause.CauseValue = pfcpType.CauseNoEstablishedPfcpAssociation
@@ -114,7 +115,7 @@ func HandlePfcpAssociationReleaseResponse(msg *pfcpUdp.Message) {
 	pfcpMsg := msg.PfcpMessage.Body.(pfcp.PFCPAssociationReleaseResponse)
 
 	if pfcpMsg.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-		smf_context.RemoveUPFNodeByNodeId(*pfcpMsg.NodeID)
+		smf_context.RemoveUPFNodeByNodeID(*pfcpMsg.NodeID)
 	}
 }
 
@@ -200,7 +201,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 			logger.PfcpLog.Warnf("%v", rspData.Cause)
 		}
-
 	}
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
@@ -232,7 +232,6 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 	if pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
 		logger.PduSessLog.Infoln("[SMF] PFCP Modification Resonse Accept")
 		if smContext.SMContextState == smf_context.PFCPModification {
-
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
@@ -262,10 +261,8 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 
 	logger.CtxLog.Traceln("PFCP Session Context")
 	for _, ctx := range smContext.PFCPContext {
-
-		logger.CtxLog.Traceln(ctx.ToString())
+		logger.CtxLog.Traceln(ctx.String())
 	}
-
 }
 
 func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
@@ -299,7 +296,6 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 		}
 		logger.PfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
 	}
-
 }
 
 func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
@@ -319,21 +315,16 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 		return
 	}
 
-	if req.ReportType.Dldr {
-		downlinkDataReport := req.DownlinkDataReport
-		pdrID := downlinkDataReport.PDRID.RuleId
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
 
-		if downlinkDataReport.DownlinkDataServiceInformation != nil {
-			logger.PfcpLog.Warnf("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
-		}
+	if smContext.UpCnxState == models.UpCnxState_DEACTIVATED {
+		if req.ReportType.Dldr {
+			downlinkDataReport := req.DownlinkDataReport
 
-		ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
-		DLPDR := ANUPF.DownLinkTunnel.PDR
-		if DLPDR.PDRID == pdrID {
-			// TS 23.502 4.2.3.3 2b. Send Data Notification Ack, SMF->UPF
-			cause.CauseValue = pfcpType.CauseRequestAccepted
-			// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
-			pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
+			if downlinkDataReport.DownlinkDataServiceInformation != nil {
+				logger.PfcpLog.Warnf("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
+			}
 
 			n1n2Request := models.N1N2MessageTransferRequest{}
 
@@ -369,7 +360,6 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 			rspData, _, err := smContext.CommunicationClient.
 				N1N2MessageCollectionDocumentApi.
 				N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
-
 			if err != nil {
 				logger.PfcpLog.Warnf("Send N1N2Transfer failed")
 			}
@@ -382,6 +372,11 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 			}
 		}
 	}
+
+	// TS 23.502 4.2.3.3 2b. Send Data Notification Ack, SMF->UPF
+	cause.CauseValue = pfcpType.CauseRequestAccepted
+	// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
+	pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
 }
 
 func HandlePfcpSessionReportResponse(msg *pfcpUdp.Message) {
