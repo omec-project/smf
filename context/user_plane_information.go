@@ -1,6 +1,7 @@
 package context
 
 import (
+	"fmt"
 	"free5gc/lib/pfcp/pfcpType"
 	"free5gc/src/smf/factory"
 	"free5gc/src/smf/logger"
@@ -93,6 +94,16 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 					NodeIdType:  pfcpType.NodeIdTypeFqdn,
 					NodeIdValue: []byte(node.NodeID),
 				}
+				upNode.NodeID.NodeIdType = pfcpType.NodeIdTypeIpv4Address
+				if ns, err := net.LookupHost(string(upNode.NodeID.NodeIdValue)); err != nil {
+					fmt.Println("Host lookup failed: %+v", err)
+					ip = net.IPv4zero
+				} else {
+					ip = net.ParseIP(ns[0]).To4()
+				}
+				upNode.NodeID.NodeIdValue = ip
+				fmt.Println("nodeidtype : ", upNode.NodeID.NodeIdType)
+				fmt.Println("nodeidvalue : ", upNode.NodeID.NodeIdValue)
 			}
 
 			upfPool[name] = upNode
