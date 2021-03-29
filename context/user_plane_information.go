@@ -1,6 +1,7 @@
 package context
 
 import (
+	"fmt"
 	"net"
 	"reflect"
 
@@ -94,6 +95,16 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 					NodeIdType:  pfcpType.NodeIdTypeFqdn,
 					NodeIdValue: []byte(node.NodeID),
 				}
+				upNode.NodeID.NodeIdType = pfcpType.NodeIdTypeIpv4Address
+				if ns, err := net.LookupHost(string(upNode.NodeID.NodeIdValue)); err != nil {
+					fmt.Println("Host lookup failed: %+v", err)
+					ip = net.IPv4zero
+				} else {
+					ip = net.ParseIP(ns[0]).To4()
+				}
+				upNode.NodeID.NodeIdValue = ip
+				fmt.Println("nodeidtype : ", upNode.NodeID.NodeIdType)
+				fmt.Println("nodeidvalue : ", upNode.NodeID.NodeIdValue)
 			}
 
 			upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
