@@ -33,6 +33,7 @@ import (
 	"github.com/free5gc/smf/pfcp"
 	"github.com/free5gc/smf/pfcp/message"
 	"github.com/free5gc/smf/pfcp/udp"
+	"github.com/free5gc/smf/pfcp/upf"
 	"github.com/free5gc/smf/util"
 )
 
@@ -294,6 +295,12 @@ func (smf *SMF) Start() {
 		}
 		message.SendPfcpAssociationSetupRequest(upf.NodeID)
 	}
+
+	//Trigger PFCP Heartbeat towards all connected UPFs
+	go upf.InitPfcpHeartbeatRequest(context.SMF_Self().UserPlaneInformation)
+
+	//Trigger PFCP association towards not associated UPFs
+	go upf.ProbeInactiveUpfs(context.SMF_Self().UserPlaneInformation)
 
 	time.Sleep(1000 * time.Millisecond)
 

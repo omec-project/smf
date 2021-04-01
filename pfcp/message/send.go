@@ -18,6 +18,38 @@ func getSeqNumber() uint32 {
 	return seq
 }
 
+var PfcpTxns map[uint32]*pfcpType.NodeID
+
+func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
+	pfcpMsg, err := BuildPfcpHeartbeatRequest()
+	if err != nil {
+		logger.PfcpLog.Errorf("Build PFCP Heartbeat Request failed: %v", err)
+		return err
+	}
+
+	message := pfcp.Message{
+		Header: pfcp.Header{
+			Version:        pfcp.PfcpVersion,
+			MP:             0,
+			S:              pfcp.SEID_NOT_PRESENT,
+			MessageType:    pfcp.PFCP_HEARTBEAT_REQUEST,
+			SequenceNumber: getSeqNumber(),
+		},
+		Body: pfcpMsg,
+	}
+
+	addr := &net.UDPAddr{
+		IP:   upNodeID.ResolveNodeIdToIp(),
+		Port: pfcpUdp.PFCP_PORT,
+	}
+
+	if err := udp.SendPfcp(message, addr); err != nil {
+		return err
+	}
+	PfcpTxns[message.Header.SequenceNumber] = &upNodeID
+	return nil
+}
+
 func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 	pfcpMsg, err := BuildPfcpAssociationSetupRequest()
 	if err != nil {

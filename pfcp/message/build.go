@@ -9,6 +9,17 @@ import (
 	"github.com/free5gc/smf/pfcp/udp"
 )
 
+//BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
+func BuildPfcpHeartbeatRequest() (pfcp.HeartbeatRequest, error) {
+	msg := pfcp.HeartbeatRequest{}
+
+	msg.RecoveryTimeStamp = &pfcpType.RecoveryTimeStamp{
+		RecoveryTimeStamp: udp.ServerStartTime,
+	}
+
+	return msg, nil
+}
+
 func BuildPfcpAssociationSetupRequest() (pfcp.PFCPAssociationSetupRequest, error) {
 	msg := pfcp.PFCPAssociationSetupRequest{}
 
