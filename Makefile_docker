@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2020-present Open Networking Foundation
 
-PROJECT_NAME             := free5GC
+PROJECT_NAME             := Onf5GC
 VERSION                  ?= $(shell cat ./VERSION)
 
 ## Docker related

@@ -3,6 +3,8 @@ package message
 import (
 	"net"
 
+	"sync/atomic"
+
 	"github.com/free5gc/pfcp"
 	"github.com/free5gc/pfcp/pfcpType"
 	"github.com/free5gc/pfcp/pfcpUdp"
@@ -14,8 +16,7 @@ import (
 var seq uint32
 
 func getSeqNumber() uint32 {
-	seq++
-	return seq
+	return atomic.AddUint32(&seq, 1)
 }
 
 var PfcpTxns map[uint32]*pfcpType.NodeID

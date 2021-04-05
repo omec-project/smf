@@ -45,6 +45,9 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		return
 	}
 
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
+
 	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
@@ -78,8 +81,11 @@ func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {
 		return
 	}
 
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
 	upf.UPIPInfo = *req.UserPlaneIPResourceInformation
 	upf.RecoveryTimeStamp = *req.RecoveryTimeStamp
+	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
 	// Response with PFCP Association Setup Response
 	cause := pfcpType.Cause{
@@ -106,8 +112,11 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			return
 		}
 
+		upf.UpfLock.Lock()
+		defer upf.UpfLock.Unlock()
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
+		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation

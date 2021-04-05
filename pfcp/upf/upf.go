@@ -11,23 +11,30 @@ import (
 	"github.com/free5gc/smf/pfcp/message"
 )
 
+const (
+	maxHeartbeatRetry    = 3
+	maxHeartbeatInterval = 2 //sec
+)
+
 func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 	//Iterate through all UPFs and send heartbeat to active UPFs
 	for {
 		for _, upf := range userplane.UPFs {
-			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < 2 {
+			upf.UPF.UpfLock.Lock()
+			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
 				err := message.SendHeartbeatRequest(upf.NodeID)
 				if err != nil {
 					logger.PfcpLog.Errorf("Send PFCP Heartbeat Request failed: %v for UPF: %v", err, upf.NodeID)
 				} else {
 					upf.UPF.NHeartBeat++
 				}
-			} else if upf.UPF.NHeartBeat == 2 {
+			} else if upf.UPF.NHeartBeat == maxHeartbeatRetry {
 				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(pfcp.PFCP_HEARTBEAT_REQUEST), "Out", "Failure", "Timeout")
 				upf.UPF.UPFStatus = context.NotAssociated
 			}
+			upf.UPF.UpfLock.Unlock()
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(maxHeartbeatInterval * time.Second)
 	}
 }
 

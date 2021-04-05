@@ -1,6 +1,6 @@
 FROM golang:1.14.4-stretch AS builder
 
-LABEL maintainer="ONF <support@free5gc.org>"
+LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
 #RUN apt remove cmdtest yarn
 RUN apt-get update
@@ -37,14 +37,5 @@ RUN mkdir -p smf/
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* ./smf
 WORKDIR /free5gc/smf
-# Exposed ports
-EXPOSE 29518
-#COPY --from=base_alpine /free5gc/config/* ./config/
-#COPY --from=base_alpine /free5gc/support/TLS/* ./support/TLS/
-#COPY --from=base_alpine /free5gc/support/TLS/* ./support/TLS/
 
-# Config files volume
-#VOLUME [ "/free5gc/config" ]
 
-# Certificates (if not using default) volume
-#VOLUME [ "/free5gc/support/TLS" ]

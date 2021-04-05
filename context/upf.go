@@ -61,6 +61,9 @@ type UPF struct {
 
 	NHeartBeat        uint8
 	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
+
+	// lock
+	UpfLock sync.Mutex
 }
 
 // UPFSelectionParams ... parameters for upf selection
