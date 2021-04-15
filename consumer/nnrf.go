@@ -33,8 +33,7 @@ func SendNFRegistration() error {
 		Ipv4Addresses: []string{smf_context.SMF_Self().RegisterIPv4},
 		NfServices:    smf_context.NFServices,
 		SmfInfo:       smf_context.SmfInfo,
-		//TODO: enable it in the future
-		//SNssais:       &sNssais,
+		SNssais:       &sNssais,
 	}
 	var rep models.NfProfile
 	var res *http.Response
