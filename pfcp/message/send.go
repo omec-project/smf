@@ -3,6 +3,8 @@ package message
 import (
 	"net"
 
+	"sync/atomic"
+
 	"github.com/free5gc/pfcp"
 	"github.com/free5gc/pfcp/pfcpType"
 	"github.com/free5gc/pfcp/pfcpUdp"
@@ -14,8 +16,44 @@ import (
 var seq uint32
 
 func getSeqNumber() uint32 {
-	seq++
-	return seq
+	return atomic.AddUint32(&seq, 1)
+}
+
+func init() {
+	PfcpTxns = make(map[uint32]*pfcpType.NodeID)
+}
+
+var PfcpTxns map[uint32]*pfcpType.NodeID
+
+func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
+	pfcpMsg, err := BuildPfcpHeartbeatRequest()
+	if err != nil {
+		logger.PfcpLog.Errorf("Build PFCP Heartbeat Request failed: %v", err)
+		return err
+	}
+
+	message := pfcp.Message{
+		Header: pfcp.Header{
+			Version:        pfcp.PfcpVersion,
+			MP:             0,
+			S:              pfcp.SEID_NOT_PRESENT,
+			MessageType:    pfcp.PFCP_HEARTBEAT_REQUEST,
+			SequenceNumber: getSeqNumber(),
+		},
+		Body: pfcpMsg,
+	}
+
+	addr := &net.UDPAddr{
+		IP:   upNodeID.ResolveNodeIdToIp(),
+		Port: pfcpUdp.PFCP_PORT,
+	}
+
+	if err := udp.SendPfcp(message, addr); err != nil {
+		return err
+	}
+	logger.PfcpLog.Infof("Sent PFCP Heartbeat Request Seq[%d] to NodeID[%s]", seq, upNodeID.ResolveNodeIdToIp().String())
+	PfcpTxns[message.Header.SequenceNumber] = &upNodeID
+	return nil
 }
 
 func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
@@ -42,6 +80,7 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause) {
@@ -68,6 +107,7 @@ func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.C
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID) {
@@ -94,6 +134,7 @@ func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID) {
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Association Release Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause) {
@@ -120,6 +161,7 @@ func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Association Release Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 func SendPfcpSessionEstablishmentRequest(
@@ -153,6 +195,7 @@ func SendPfcpSessionEstablishmentRequest(
 	logger.PduSessLog.Traceln("Send to addr ", upaddr.String())
 
 	udp.SendPfcp(message, upaddr)
+	logger.PfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 // Deprecated: PFCP Session Establishment Procedure should be initiated by the CP function
@@ -210,6 +253,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 	}
 
 	udp.SendPfcp(message, upaddr)
+	logger.PfcpLog.Infof("Sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
 }
 
@@ -266,6 +310,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *context.SMCon
 
 	udp.SendPfcp(message, upaddr)
 
+	logger.PfcpLog.Infof("Sent PFCP Session Delete Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
 }
 
@@ -313,6 +358,7 @@ func SendPfcpSessionReportResponse(addr *net.UDPAddr, cause pfcpType.Cause, seqF
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Session Report Response Seq[%d] to NodeID[%s]", seqFromUPF, addr.IP.String())
 }
 
 func SendHeartbeatResponse(addr *net.UDPAddr, seq uint32) {
@@ -334,4 +380,5 @@ func SendHeartbeatResponse(addr *net.UDPAddr, seq uint32) {
 	}
 
 	udp.SendPfcp(message, addr)
+	logger.PfcpLog.Infof("Sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", seq, addr.IP.String())
 }

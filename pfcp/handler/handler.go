@@ -10,6 +10,8 @@ import (
 	"github.com/free5gc/pfcp/pfcpUdp"
 	smf_context "github.com/free5gc/smf/context"
 	"github.com/free5gc/smf/logger"
+	"github.com/free5gc/smf/metrics"
+	"github.com/free5gc/smf/msgtypes/pfcpmsgtypes"
 	pfcp_message "github.com/free5gc/smf/pfcp/message"
 	"github.com/free5gc/smf/producer"
 )
@@ -20,7 +22,38 @@ func HandlePfcpHeartbeatRequest(msg *pfcpUdp.Message) {
 }
 
 func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
-	logger.PfcpLog.Warnf("PFCP Heartbeat Response handling is not implemented")
+	rsp := msg.PfcpMessage.Body.(pfcp.HeartbeatResponse)
+
+	//Get NodeId from Seq:NodeId Map
+	seq := msg.PfcpMessage.Header.SequenceNumber
+	nodeID := pfcp_message.PfcpTxns[seq]
+
+	if nodeID == nil {
+		logger.PfcpLog.Errorln("No pending pfcp heartbeat response for sequence no: %v", seq)
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
+		return
+	}
+	delete(pfcp_message.PfcpTxns, seq)
+
+	logger.PfcpLog.Infof("Handle PFCP Heartbeat Response Seq[%d] with NodeID[%s]", seq, nodeID.ResolveNodeIdToIp().String())
+
+	upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
+	if upf == nil {
+		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "unknown_upf")
+		return
+	}
+
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
+
+	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
+		//TODO: Session cleanup required and updated to AMF/PCF
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
+	}
+
+	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
+
 }
 
 func HandlePfcpPfdManagementRequest(msg *pfcpUdp.Message) {
@@ -47,7 +80,11 @@ func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {
 		return
 	}
 
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
 	upf.UPIPInfo = *req.UserPlaneIPResourceInformation
+	upf.RecoveryTimeStamp = *req.RecoveryTimeStamp
+	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
 	// Response with PFCP Association Setup Response
 	cause := pfcpType.Cause{
@@ -57,11 +94,11 @@ func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {
 }
 
 func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
-	req := msg.PfcpMessage.Body.(pfcp.PFCPAssociationSetupResponse)
+	rsp := msg.PfcpMessage.Body.(pfcp.PFCPAssociationSetupResponse)
 	logger.PfcpLog.Infoln("In HandlePfcpAssociationSetupResponse")
 
-	nodeID := req.NodeID
-	if req.Cause.CauseValue == pfcpType.CauseRequestAccepted {
+	nodeID := rsp.NodeID
+	if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
 		if nodeID == nil {
 			logger.PfcpLog.Errorln("pfcp association needs NodeID")
 			return
@@ -74,10 +111,14 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			return
 		}
 
+		upf.UpfLock.Lock()
+		defer upf.UpfLock.Unlock()
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
+		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
+		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
-		if req.UserPlaneIPResourceInformation != nil {
-			upf.UPIPInfo = *req.UserPlaneIPResourceInformation
+		if rsp.UserPlaneIPResourceInformation != nil {
+			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation
 
 			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
 				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)

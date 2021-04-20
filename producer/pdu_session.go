@@ -2,9 +2,12 @@ package producer
 
 import (
 	"context"
+
 	"net/http"
 
 	"github.com/antihax/optional"
+	"github.com/free5gc/smf/metrics"
+	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/nas"
@@ -21,9 +24,9 @@ import (
 	pfcp_message "github.com/free5gc/smf/pfcp/message"
 )
 
-func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http_wrapper.Response {
-	// GSM State
-	// PDU Session Establishment Accept/Reject
+func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*http_wrapper.Response, string) {
+	//GSM State
+	//PDU Session Establishment Accept/Reject
 	var response models.PostSmContextsResponse
 	response.JsonData = new(models.SmContextCreatedData)
 	logger.PduSessLog.Infoln("In HandlePDUSessionSMContextCreate")
@@ -42,7 +45,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 				},
 			},
 		}
-		return httpResponse
+		return httpResponse, "GsmMessageDecode"
 	}
 
 	createData := request.JsonData
@@ -90,9 +93,11 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 
 	SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
 
+	metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "Out", "", "")
 	if sessSubData, rsp, err := SubscriberDataManagementClient.
 		SessionManagementSubscriptionDataRetrievalApi.
 		GetSmData(context.Background(), smContext.Supi, smDataParams); err != nil {
+		metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), err.Error())
 		logger.PduSessLog.Errorln("Get SessionManagementSubscriptionData error:", err)
 	} else {
 		defer func() {
@@ -101,8 +106,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 			}
 		}()
 		if len(sessSubData) > 0 {
+			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "")
 			smContext.DnnConfiguration = sessSubData[0].DnnConfigurations[smContext.Dnn]
 		} else {
+			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			logger.PduSessLog.Errorln("SessionManagementSubscriptionData from UDM is nil")
 		}
 	}
@@ -193,7 +200,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 			}
 		}
 
-		return httpResponse
+		return httpResponse, "InsufficientResourceSliceDnn"
 	}
 
 	if problemDetails, err := consumer.SendNFDiscoveryServingAMF(smContext); err != nil {
@@ -222,7 +229,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) *http
 		Body:   response,
 	}
 
-	return httpResponse
+	return httpResponse, ""
 	// TODO: UECM registration
 }
 

@@ -58,6 +58,12 @@ type UPF struct {
 	urrIDGenerator *idgenerator.IDGenerator
 	qerIDGenerator *idgenerator.IDGenerator
 	teidGenerator  *idgenerator.IDGenerator
+
+	NHeartBeat        uint8
+	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
+
+	// lock
+	UpfLock sync.Mutex
 }
 
 // UPFSelectionParams ... parameters for upf selection
