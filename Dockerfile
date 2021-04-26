@@ -42,5 +42,3 @@ RUN mkdir -p smf/
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* ./smf
 WORKDIR /free5gc/smf
-# Exposed ports
-EXPOSE 29502
