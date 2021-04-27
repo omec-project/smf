@@ -1,1 +1,1 @@
-omecproject/smf
+smf
