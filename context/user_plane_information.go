@@ -97,7 +97,7 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 				}
 				upNode.NodeID.NodeIdType = pfcpType.NodeIdTypeIpv4Address
 				if ns, err := net.LookupHost(string(upNode.NodeID.NodeIdValue)); err != nil {
-					fmt.Println("Host lookup failed: ", err)
+					fmt.Printf("Host lookup failed for Node: %v with error %v ", upNode.NodeID, err)
 					ip = net.IPv4zero
 				} else {
 					ip = net.ParseIP(ns[0]).To4()
