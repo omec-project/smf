@@ -2,6 +2,7 @@ package message
 
 import (
 	"net"
+	"sync"
 
 	"sync/atomic"
 
@@ -23,7 +24,25 @@ func init() {
 	PfcpTxns = make(map[uint32]*pfcpType.NodeID)
 }
 
-var PfcpTxns map[uint32]*pfcpType.NodeID
+var (
+	PfcpTxns    map[uint32]*pfcpType.NodeID
+	PfcpTxnLock sync.Mutex
+)
+
+func FetchPfcpTxn(seqNo uint32) (upNodeID *pfcpType.NodeID) {
+	PfcpTxnLock.Lock()
+	defer PfcpTxnLock.Unlock()
+	if upNodeID = PfcpTxns[seqNo]; upNodeID != nil {
+		delete(PfcpTxns, seqNo)
+	}
+	return upNodeID
+}
+
+func InsertPfcpTxn(seqNo uint32, upNodeID *pfcpType.NodeID) {
+	PfcpTxnLock.Lock()
+	defer PfcpTxnLock.Unlock()
+	PfcpTxns[seqNo] = upNodeID
+}
 
 func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 	pfcpMsg, err := BuildPfcpHeartbeatRequest()
@@ -52,7 +71,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 		return err
 	}
 	logger.PfcpLog.Infof("Sent PFCP Heartbeat Request Seq[%d] to NodeID[%s]", seq, upNodeID.ResolveNodeIdToIp().String())
-	PfcpTxns[message.Header.SequenceNumber] = &upNodeID
+	InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 	return nil
 }
 

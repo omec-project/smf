@@ -401,6 +401,10 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 				DLPDR.FAR.ApplyAction.Forw = false
 				DLPDR.FAR.ApplyAction.Buff = true
 				DLPDR.FAR.ApplyAction.Nocp = true
+				//Set DL Tunnel info to nil
+				if DLPDR.FAR.ForwardingParameters != nil {
+					DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+				}
 				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 			}
 

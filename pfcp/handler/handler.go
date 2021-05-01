@@ -26,14 +26,13 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 
 	//Get NodeId from Seq:NodeId Map
 	seq := msg.PfcpMessage.Header.SequenceNumber
-	nodeID := pfcp_message.PfcpTxns[seq]
+	nodeID := pfcp_message.FetchPfcpTxn(seq)
 
 	if nodeID == nil {
 		logger.PfcpLog.Errorln("No pending pfcp heartbeat response for sequence no: %v", seq)
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
 		return
 	}
-	delete(pfcp_message.PfcpTxns, seq)
 
 	logger.PfcpLog.Infof("Handle PFCP Heartbeat Response Seq[%d] with NodeID[%s]", seq, nodeID.ResolveNodeIdToIp().String())
 
