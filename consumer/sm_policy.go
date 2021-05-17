@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/pkg/errors"
 
@@ -12,9 +13,9 @@ import (
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
-func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, error) {
+func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, int, error) {
 	if smContext.SMPolicyClient == nil {
-		return nil, errors.Errorf("smContext not selected PCF")
+		return nil, http.StatusInternalServerError, errors.Errorf("smContext not selected PCF")
 	}
 
 	smPolicyData := models.SmPolicyContextData{}
@@ -42,12 +43,20 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	smPolicyData.SuppFeat = "F"
 
 	var smPolicyDecision *models.SmPolicyDecision
-	if smPolicyDecisionFromPCF, _, err := smContext.SMPolicyClient.
+	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.
 		DefaultApi.SmPoliciesPost(context.Background(), smPolicyData); err != nil {
-		return nil, fmt.Errorf("setup sm policy association failed: %s", err)
+		return nil, httpRsp.StatusCode, fmt.Errorf("setup sm policy association failed: %s", err)
 	} else {
 		smPolicyDecision = &smPolicyDecisionFromPCF
 	}
 
-	return smPolicyDecision, nil
+	return smPolicyDecision, 0, nil
+}
+
+func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
+	//TODO
+}
+
+func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext) {
+	//TODO
 }

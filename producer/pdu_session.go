@@ -24,6 +24,30 @@ import (
 	pfcp_message "github.com/free5gc/smf/pfcp/message"
 )
 
+func formContextCreateErrRsp(httpStatus int, problemBody *models.ProblemDetails, n1SmMsg *models.RefToBinaryData) *http_wrapper.Response {
+	return &http_wrapper.Response{
+		Header: nil,
+		Status: httpStatus,
+		Body: models.PostSmContextsErrorResponse{
+			JsonData: &models.SmContextCreateError{
+				Error:   problemBody,
+				N1SmMsg: n1SmMsg,
+			},
+		},
+	}
+
+}
+
+func formProblemDetail(title, detail, cause string, status int) *models.ProblemDetails {
+	return &models.ProblemDetails{
+		Title:         title,
+		Status:        int32(status),
+		Detail:        detail,
+		Cause:         cause,
+		InvalidParams: nil,
+	}
+}
+
 func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*http_wrapper.Response, string) {
 	//GSM State
 	//PDU Session Establishment Accept/Reject
@@ -35,20 +59,30 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	m := nas.NewMessage()
 	if err := m.GsmMessageDecode(&request.BinaryDataN1SmMessage); err != nil ||
 		m.GsmHeader.GetMessageType() != nas.MsgTypePDUSessionEstablishmentRequest {
-		logger.PduSessLog.Warnln("GsmMessageDecode Error: ", err)
-		httpResponse := &http_wrapper.Response{
-			Header: nil,
-			Status: http.StatusForbidden,
-			Body: models.PostSmContextsErrorResponse{
-				JsonData: &models.SmContextCreateError{
-					Error: &Nsmf_PDUSession.N1SmError,
-				},
-			},
-		}
-		return httpResponse, "GsmMessageDecode"
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, GsmMessageDecode Error: ", err)
+		httpResponse := formContextCreateErrRsp(http.StatusForbidden, &Nsmf_PDUSession.N1SmError, nil)
+		return httpResponse, "GsmMsgDecodeError"
 	}
 
 	createData := request.JsonData
+
+	//Check for existing context with same key(SUPI + PDU-SessId)
+	if smCtxtRef, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId); err == nil {
+		smCtxt := smf_context.GetSMContext(smCtxtRef)
+
+		if smCtxt != nil {
+			smCtxt.SMLock.Lock()
+			defer smCtxt.SMLock.Unlock()
+
+			//check if PCF session set, send release(Npcf_SMPolicyControl_Delete)
+			//TODO: not done as part of ctxt release
+
+			//Check if UPF session set, send release
+			releaseTunnel(smCtxt)
+			smf_context.RemoveSMContext(smCtxt.Ref)
+		}
+	}
+
 	smContext := smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
 	smContext.SMContextState = smf_context.ActivePending
 	logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
@@ -61,25 +95,36 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	// DNN Information from config
 	smContext.DNNInfo = smf_context.RetrieveDnnInformation(*createData.SNssai, createData.Dnn)
 	if smContext.DNNInfo == nil {
-		logger.PduSessLog.Errorf("S-NSSAI[sst: %d, sd: %s] DNN[%s] not matched DNN Config",
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, S-NSSAI[sst: %d, sd: %s] DNN[%s] not matched DNN Config",
 			createData.SNssai.Sst, createData.SNssai.Sd, createData.Dnn)
+
+		httpResponse := formContextCreateErrRsp(http.StatusForbidden, &Nsmf_PDUSession.DnnNotSupported, nil)
+		return httpResponse, "SnssaiError"
 	}
 
 	// Query UDM
 	if problemDetails, err := consumer.SendNFDiscoveryUDM(); err != nil {
-		logger.PduSessLog.Warnf("Send NF Discovery Serving UDM Error[%v]", err)
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Error[%v]", err)
+		problemDetails := formProblemDetail("UDM error", err.Error(), "UDM error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "UdmError"
 	} else if problemDetails != nil {
-		logger.PduSessLog.Warnf("Send NF Discovery Serving UDM Problem[%+v]", problemDetails)
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Problem[%+v]", problemDetails)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "UdmError"
 	} else {
-		logger.PduSessLog.Infoln("Send NF Discovery Serving UDM Successfully")
+		logger.PduSessLog.Infoln("PDUSessionSMContextCreate, send NF Discovery Serving UDM Successfully")
 	}
 
 	// IP Allocation
 	if ip, err := smContext.DNNInfo.UeIPAllocator.Allocate(); err != nil {
-		logger.PduSessLog.Errorln("failed allocate IP address for this SM:", err)
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, failed allocate IP address: ", err)
+		problemDetails := formProblemDetail("IP Alloc error", err.Error(), "IP Alloc error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "IpAllocError"
 	} else {
 		smContext.PDUAddress = ip
-		logger.PduSessLog.Infof("UE[%s] PDUSessionID[%d] IP[%s]",
+		logger.PduSessLog.Infof("PDUSessionSMContextCreate, UE[%s] PDUSessionID[%d] IP[%s]",
 			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
 	}
 
@@ -98,7 +143,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		SessionManagementSubscriptionDataRetrievalApi.
 		GetSmData(context.Background(), smContext.Supi, smDataParams); err != nil {
 		metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), err.Error())
-		logger.PduSessLog.Errorln("Get SessionManagementSubscriptionData error:", err)
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, get SessionManagementSubscriptionData error: ", err)
+		problemDetails := formProblemDetail("Subscription error", err.Error(), "Subscription error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "SubscriptionError"
 	} else {
 		defer func() {
 			if rspCloseErr := rsp.Body.Close(); rspCloseErr != nil {
@@ -124,8 +172,13 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	}
 
 	var smPolicyDecision *models.SmPolicyDecision
-	if smPolicyDecisionRsp, err := consumer.SendSMPolicyAssociationCreate(smContext); err != nil {
-		logger.PduSessLog.Errorf("")
+	metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NpcfSmPolicyAssociationCreate, "Out", "", "")
+	if smPolicyDecisionRsp, httpStatus, err := consumer.SendSMPolicyAssociationCreate(smContext); err != nil {
+		metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NpcfSmPolicyAssociationCreate, "In", http.StatusText(httpStatus), err.Error())
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate error: ", err)
+		problemDetails := formProblemDetail("PcfAssociation error", err.Error(), "PcfAssociation error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "PcfAssoError"
 	} else {
 		smPolicyDecision = smPolicyDecisionRsp
 	}
@@ -133,7 +186,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	// dataPath selection
 	smContext.Tunnel = smf_context.NewUPTunnel()
 	if err := ApplySmPolicyFromDecision(smContext, smPolicyDecision); err != nil {
-		logger.PduSessLog.Errorf("apply sm policy decision error: %+v", err)
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, apply sm policy decision error: %+v", err)
+		problemDetails := formProblemDetail("ApplySmPolicy error", err.Error(), "ApplySmPolicy error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "ApplySmPolicyError"
 	}
 	var defaultPath *smf_context.DataPath
 	upfSelectionParams := &smf_context.UPFSelectionParams{
@@ -168,8 +224,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	if defaultPath == nil {
 		smContext.SMContextState = smf_context.InActive
 		logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
-		logger.PduSessLog.Warnf("Data Path not found\n")
-		logger.PduSessLog.Warnln("Selection Parameter: ", upfSelectionParams.String())
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, data path not found for selection param %v", upfSelectionParams.String())
 
 		var httpResponse *http_wrapper.Response
 		if buf, err := smf_context.
@@ -204,9 +259,14 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	}
 
 	if problemDetails, err := consumer.SendNFDiscoveryServingAMF(smContext); err != nil {
-		logger.PduSessLog.Warnf("Send NF Discovery Serving AMF Error[%v]", err)
+		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving AMF Error[%v]", err)
+		problemDetails := formProblemDetail("AMF error", err.Error(), "AMF error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "AmfError"
 	} else if problemDetails != nil {
-		logger.PduSessLog.Warnf("Send NF Discovery Serving AMF Problem[%+v]", problemDetails)
+		logger.PduSessLog.Warnf("PDUSessionSMContextCreate, send NF Discovery Serving AMF Problem[%+v]", problemDetails)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "AmfError"
 	} else {
 		logger.PduSessLog.Traceln("Send NF Discovery Serving AMF successfully")
 	}

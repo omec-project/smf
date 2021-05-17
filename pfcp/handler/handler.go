@@ -29,7 +29,7 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	nodeID := pfcp_message.FetchPfcpTxn(seq)
 
 	if nodeID == nil {
-		logger.PfcpLog.Errorln("No pending pfcp heartbeat response for sequence no: %v", seq)
+		logger.PfcpLog.Errorf("No pending pfcp heartbeat response for sequence no: %v", seq)
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
 		return
 	}
