@@ -67,11 +67,13 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 		Port: pfcpUdp.PFCP_PORT,
 	}
 
+	InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 	if err := udp.SendPfcp(message, addr); err != nil {
+		FetchPfcpTxn(message.Header.SequenceNumber)
 		return err
 	}
-	logger.PfcpLog.Infof("Sent PFCP Heartbeat Request Seq[%d] to NodeID[%s]", seq, upNodeID.ResolveNodeIdToIp().String())
-	InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
+	logger.PfcpLog.Infof("Sent PFCP Heartbeat Request Seq[%d] to NodeID[%s]", message.Header.SequenceNumber,
+		upNodeID.ResolveNodeIdToIp().String())
 	return nil
 }
 
