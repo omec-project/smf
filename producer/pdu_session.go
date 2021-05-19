@@ -72,14 +72,19 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 
 		if smCtxt != nil {
 			smCtxt.SMLock.Lock()
-			defer smCtxt.SMLock.Unlock()
+
+			smCtxt.LocalPurged = true
+
+			//Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
+			smf_context.RemoveSMContext(smCtxt.Ref)
 
 			//check if PCF session set, send release(Npcf_SMPolicyControl_Delete)
 			//TODO: not done as part of ctxt release
 
 			//Check if UPF session set, send release
 			releaseTunnel(smCtxt)
-			smf_context.RemoveSMContext(smCtxt.Ref)
+
+			smCtxt.SMLock.Unlock()
 		}
 	}
 
