@@ -47,6 +47,11 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	defer upf.UpfLock.Unlock()
 
 	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
+		//change UPF state to not associated so that
+		//PFCP Association can be initiated again
+		upf.UPFStatus = smf_context.NotAssociated
+		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed", upf.NodeID)
+
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}

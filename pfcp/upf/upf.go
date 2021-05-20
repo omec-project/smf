@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	maxHeartbeatRetry    = 3
-	maxHeartbeatInterval = 5 //sec
+	maxHeartbeatRetry        = 3 //sec
+	maxHeartbeatInterval     = 5 //sec
+	maxUpfProbeRetryInterval = 5 //sec
 )
 
 func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
@@ -46,6 +47,6 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 				message.SendPfcpAssociationSetupRequest(upf.NodeID)
 			}
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(maxUpfProbeRetryInterval * time.Second)
 	}
 }
