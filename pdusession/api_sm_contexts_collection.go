@@ -57,7 +57,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	req := http_wrapper.NewRequest(c.Request, request)
-	HTTPResponse, errStr := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
+	HTTPResponse, errStr, smContext := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
 	//Http Response to AMF
 
 	for key, val := range HTTPResponse.Header {
@@ -75,5 +75,15 @@ func HTTPPostSmContexts(c *gin.Context) {
 		c.Render(HTTPResponse.Status, openapi.MultipartRelatedRender{Data: HTTPResponse.Body})
 	default:
 		c.JSON(HTTPResponse.Status, HTTPResponse.Body)
+	}
+
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	//Send delayed PFCP Sess Establish if ctxt created
+	if HTTPResponse.Status == http.StatusCreated {
+		producer.SendPFCPRules(smContext)
+	} else if smContext != nil {
+		//release ctxt incase of failure
+		smf_context.RemoveSMContext(smContext.Ref)
 	}
 }

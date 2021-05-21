@@ -29,7 +29,7 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	nodeID := pfcp_message.FetchPfcpTxn(seq)
 
 	if nodeID == nil {
-		logger.PfcpLog.Errorln("No pending pfcp heartbeat response for sequence no: %v", seq)
+		logger.PfcpLog.Errorf("No pending pfcp heartbeat response for sequence no: %v", seq)
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
 		return
 	}
@@ -47,6 +47,11 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	defer upf.UpfLock.Unlock()
 
 	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
+		//change UPF state to not associated so that
+		//PFCP Association can be initiated again
+		upf.UPFStatus = smf_context.NotAssociated
+		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed", upf.NodeID)
+
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
@@ -325,13 +330,13 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 			delete(smContext.PendingUPF, upfIP)
 			logger.PduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() {
+			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 			}
 		}
 		logger.PfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
 	} else {
-		if smContext.SMContextState == smf_context.PFCPModification {
+		if smContext.SMContextState == smf_context.PFCPModification && !smContext.LocalPurged {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseFailed
 		}
 		logger.PfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)

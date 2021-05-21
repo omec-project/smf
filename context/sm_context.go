@@ -115,6 +115,7 @@ type SMContext struct {
 	SBIPFCPCommunicationChan            chan PFCPSessionResponseStatus
 	PendingUPF                          PendingUPF
 	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool
+	LocalPurged                         bool
 
 	DNNInfo *SnssaiSmfDnnInfo
 
