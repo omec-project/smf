@@ -65,7 +65,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 
 	createData := request.JsonData
 
-	//Check for existing context with same key(SUPI + PDU-SessId)
+	//Context-Replacement: Check for existing context with same key(SUPI + PDU-SessId)
 	if smCtxtRef, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId); err == nil {
 		smCtxt := smf_context.GetSMContext(smCtxtRef)
 
@@ -90,7 +90,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		}
 	}
 
+	//Create SM context
 	smContext := smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
+	logger.PduSessLog.Infof("PDUSessionSMContextCreate, SM context created with uuid [%v], Supi [%v], PduId [%v]",
+		smContext.Ref, createData.Supi, createData.PduSessionId)
 	smContext.SMContextState = smf_context.ActivePending
 	logger.CtxLog.Traceln("PDUSessionSMContextCreate, SMContextState Change State: ", smContext.SMContextState.String())
 	smContext.SetCreateData(createData)
@@ -135,8 +138,8 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
 	}
 
+	//UDM-Fetch Subscription Data
 	smPlmnID := createData.Guami.PlmnId
-
 	smDataParams := &Nudm_SubscriberDataManagement.GetSmDataParamOpts{
 		Dnn:         optional.NewString(createData.Dnn),
 		PlmnId:      optional.NewInterface(smPlmnID.Mcc + smPlmnID.Mnc),
@@ -144,8 +147,8 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	}
 
 	SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
-
 	metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "Out", "", "")
+
 	if sessSubData, rsp, err := SubscriberDataManagementClient.
 		SessionManagementSubscriptionDataRetrievalApi.
 		GetSmData(context.Background(), smContext.Supi, smDataParams); err != nil {
@@ -172,21 +175,32 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		}
 	}
 
+	//Decode UE content(PCO)
 	establishmentRequest := m.PDUSessionEstablishmentRequest
 	smContext.HandlePDUSessionEstablishmentRequest(establishmentRequest)
 
 	logger.PduSessLog.Infof("PDUSessionSMContextCreate, PCF Selection for SMContext SUPI[%s] PDUSessionID[%d]\n",
 		smContext.Supi, smContext.PDUSessionID)
 	if err := smContext.PCFSelection(); err != nil {
-		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, pcf selection error:", err)
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, send NF Discovery Serving PCF Error[%v]", err)
+		problemDetails := formProblemDetail("PCF error", err.Error(), "PCF error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "PcfError", smContext
 	}
 
+	//PCF Policy Association
 	var smPolicyDecision *models.SmPolicyDecision
 	metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NpcfSmPolicyAssociationCreate, "Out", "", "")
 	if smPolicyDecisionRsp, httpStatus, err := consumer.SendSMPolicyAssociationCreate(smContext); err != nil {
 		metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NpcfSmPolicyAssociationCreate, "In", http.StatusText(httpStatus), err.Error())
 		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate error: ", err)
 		problemDetails := formProblemDetail("PcfAssociation error", err.Error(), "PcfAssociation error", http.StatusInternalServerError)
+		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+		return httpResponse, "PcfAssoError", smContext
+	} else if httpStatus != http.StatusCreated {
+		metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NpcfSmPolicyAssociationCreate, "In", http.StatusText(httpStatus), "error")
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate http status: ", http.StatusText(httpStatus))
+		problemDetails := formProblemDetail("PcfAssociation error", http.StatusText(httpStatus), "PcfAssociation error", http.StatusInternalServerError)
 		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
 		return httpResponse, "PcfAssoError", smContext
 	} else {
@@ -268,6 +282,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		return httpResponse, "InsufficientResourceSliceDnn", smContext
 	}
 
+	//AMF Selection for SMF -> AMF communication
 	if problemDetails, err := consumer.SendNFDiscoveryServingAMF(smContext); err != nil {
 		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving AMF Error[%v]", err)
 		problemDetails := formProblemDetail("AMF error", err.Error(), "AMF error", http.StatusInternalServerError)
