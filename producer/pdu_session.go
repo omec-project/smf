@@ -241,7 +241,12 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		if defaultPath != nil {
 			defaultPath.IsDefaultPath = true
 			smContext.Tunnel.AddDataPath(defaultPath)
-			defaultPath.ActivateTunnelAndPDR(smContext, 255)
+			if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
+				logger.PduSessLog.Errorf("PDUSessionSMContextCreate, data path error: %v", err.Error())
+				problemDetails := formProblemDetail("DataPath error", err.Error(), "DataPath error", http.StatusInternalServerError)
+				httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
+				return httpResponse, "DataPathError", smContext
+			}
 		}
 	}
 

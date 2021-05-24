@@ -1,6 +1,7 @@
 package context
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -323,7 +324,26 @@ func (dataPath *DataPath) String() string {
 	return str
 }
 
-func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) {
+func (dataPath *DataPath) validateDataPathUpfStatus() error {
+	firstDPNode := dataPath.FirstDPNode
+	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		logger.PduSessLog.Infof("Nodes in Data Path [%v] and status [%v]",
+			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus)
+		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
+			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
+				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
+			return errors.New("UPF not associated in DataPath")
+		}
+	}
+	return nil
+}
+
+func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) error {
+
+	if err := dataPath.validateDataPathUpfStatus(); err != nil {
+		logger.PduSessLog.Error("One or more UPF in DataPath not associated")
+		return err
+	}
 	smContext.AllocateLocalSEIDForDataPath(dataPath)
 
 	firstDPNode := dataPath.FirstDPNode
@@ -334,11 +354,11 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		logger.PduSessLog.Traceln("Current DP Node IP: ", curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
 		if err := curDataPathNode.ActivateUpLinkTunnel(smContext); err != nil {
 			logger.CtxLog.Warnln(err)
-			return
+			return err
 		}
 		if err := curDataPathNode.ActivateDownLinkTunnel(smContext); err != nil {
 			logger.CtxLog.Warnln(err)
-			return
+			return err
 		}
 	}
 
@@ -355,7 +375,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		} else {
 			if newQER, err := curDataPathNode.UPF.AddQER(); err != nil {
 				logger.PduSessLog.Errorln("new QER failed")
-				return
+				return err
 			} else {
 				newQER.QFI.QFI = uint8(AuthDefQos.Var5qi)
 				newQER.GateStatus = &pfcpType.GateStatus{
@@ -392,7 +412,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 				logger.CtxLog.Errorln("ActivateTunnelAndPDR failed", err)
-				return
+				return err
 			} else {
 				ULPDR.PDI = PDI{
 					SourceInterface: pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceAccess},
@@ -438,7 +458,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 
 				if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 					logger.CtxLog.Errorln("ActivateTunnelAndPDR failed", err)
-					return
+					return err
 				} else {
 					ULFAR.ForwardingParameters.OuterHeaderCreation = &pfcpType.OuterHeaderCreation{
 						OuterHeaderCreationDescription: pfcpType.OuterHeaderCreationGtpUUdpIpv4,
@@ -472,7 +492,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 				iface = DLDestUPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 				if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 					logger.CtxLog.Errorln("ActivateTunnelAndPDR failed", err)
-					return
+					return err
 				} else {
 					DLPDR.PDI = PDI{
 						SourceInterface: pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceCore},
@@ -511,7 +531,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 
 				if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 					logger.CtxLog.Errorln("ActivateTunnelAndPDR failed", err)
-					return
+					return err
 				} else {
 					DLFAR.ForwardingParameters = &ForwardingParameters{
 						DestinationInterface: pfcpType.DestinationInterface{InterfaceValue: pfcpType.DestinationInterfaceAccess},
@@ -555,6 +575,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	}
 
 	dataPath.Activated = true
+	return nil
 }
 
 func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
