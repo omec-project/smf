@@ -328,7 +328,7 @@ func (dataPath *DataPath) validateDataPathUpfStatus() error {
 	firstDPNode := dataPath.FirstDPNode
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		logger.PduSessLog.Infof("Nodes in Data Path [%v] and status [%v]",
-			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus)
+			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus.String())
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
 			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
 				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())

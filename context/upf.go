@@ -38,6 +38,19 @@ const (
 	AssociatedSetUpSuccess UPFStatus = 2
 )
 
+func (s UPFStatus) String() string {
+	switch s {
+	case NotAssociated:
+		return "NotAssociated"
+	case AssociatedSettingUp:
+		return "AssociatedSettingUp"
+	case AssociatedSetUpSuccess:
+		return "AssociatedSetUpSuccess"
+	default:
+		return "invalid"
+	}
+}
+
 type UPF struct {
 	uuid         uuid.UUID
 	NodeID       pfcpType.NodeID
