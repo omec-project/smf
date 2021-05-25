@@ -9,7 +9,6 @@ import (
 func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) {
 	// Retrieve PDUSessionID
 	smContext.PDUSessionID = int32(req.PDUSessionID.GetPDUSessionID())
-	logger.GsmLog.Infoln("In HandlePDUSessionEstablishmentRequest")
 
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()

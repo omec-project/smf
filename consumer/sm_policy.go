@@ -50,7 +50,7 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 		smPolicyDecision = &smPolicyDecisionFromPCF
 	}
 
-	return smPolicyDecision, 0, nil
+	return smPolicyDecision, http.StatusCreated, nil
 }
 
 func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
