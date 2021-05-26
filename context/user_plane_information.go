@@ -1,7 +1,6 @@
 package context
 
 import (
-	"fmt"
 	"net"
 	"reflect"
 
@@ -72,39 +71,47 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 			// ParseIp() always return 16 bytes
 			// so we can't use the length of return ip to separate IPv4 and IPv6
 			// This is just a work around
-			var ip net.IP
-			if net.ParseIP(node.NodeID).To4() == nil {
-				ip = net.ParseIP(node.NodeID)
-			} else {
-				ip = net.ParseIP(node.NodeID).To4()
-			}
+			var (
+				nodeIdType uint8
+				ip         net.IP
+			)
 
-			switch len(ip) {
-			case net.IPv4len:
-				upNode.NodeID = pfcpType.NodeID{
-					NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
-					NodeIdValue: ip,
-				}
-			case net.IPv6len:
-				upNode.NodeID = pfcpType.NodeID{
-					NodeIdType:  pfcpType.NodeIdTypeIpv6Address,
-					NodeIdValue: ip,
-				}
-			default:
-				upNode.NodeID = pfcpType.NodeID{
-					NodeIdType:  pfcpType.NodeIdTypeFqdn,
-					NodeIdValue: []byte(node.NodeID),
-				}
-				upNode.NodeID.NodeIdType = pfcpType.NodeIdTypeIpv4Address
-				if ns, err := net.LookupHost(string(upNode.NodeID.NodeIdValue)); err != nil {
-					fmt.Printf("Host lookup failed for Node: %v with error %v ", upNode.NodeID, err)
-					ip = net.IPv4zero
+			if ip = net.ParseIP(node.NodeID); ip != nil {
+				//v4 or v6
+				if ip.To4() != nil {
+					//IPv4
+					nodeIdType = pfcpType.NodeIdTypeIpv4Address
 				} else {
-					ip = net.ParseIP(ns[0]).To4()
+					//IPv6
+					nodeIdType = pfcpType.NodeIdTypeIpv6Address
 				}
-				upNode.NodeID.NodeIdValue = ip
-				fmt.Println("nodeidtype : ", upNode.NodeID.NodeIdType)
-				fmt.Println("nodeidvalue : ", upNode.NodeID.NodeIdValue)
+			} else {
+				//FQDN
+				nodeIdType = pfcpType.NodeIdTypeFqdn
+				ip = []byte(node.NodeID)
+				/*
+					if ns, err := net.LookupHost(node.NodeID); err != nil {
+						//Error, keep fqdn info intact for future resolution
+						logger.InitLog.Warnf("Node [%v] not resolved to any IP", node.NodeID)
+						nodeIdType = pfcpType.NodeIdTypeFqdn
+						ip = []byte(node.NodeID)
+					} else {
+						ip = net.ParseIP(ns[0])
+						logger.InitLog.Infof("Node [%v] resolved to IP [%v]", node.NodeID, ip)
+						if ip.To4() != nil {
+							//IPv4
+							nodeIdType = pfcpType.NodeIdTypeIpv4Address
+						} else {
+							//IPv6
+							nodeIdType = pfcpType.NodeIdTypeIpv6Address
+						}
+					}
+				*/
+			}
+			//Populate outcome
+			upNode.NodeID = pfcpType.NodeID{
+				NodeIdType:  nodeIdType,
+				NodeIdValue: []byte(ip),
 			}
 
 			upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
