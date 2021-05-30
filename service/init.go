@@ -9,6 +9,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"github.com/spf13/viper"
+	"github.com/fsnotify/fsnotify"
 
 	aperLogger "github.com/free5gc/aper/logger"
 	"github.com/free5gc/http2_util"
@@ -107,8 +109,28 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
-
+	viper.SetConfigName("smfcfg.conf") 
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("/free5gc/config")
+	err := viper.ReadInConfig() // Find and read the config file
+	if err != nil { // Handle errors reading the config file
+		return err
+	}
 	return nil
+}
+
+func (smf *SMF) WatchConfig() {
+	viper.WatchConfig()
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Println("Config file changed:", e.Name)
+		if err := factory.UpdateSmfConfig("/free5gc/config/smfcfg.conf"); err != nil {
+			fmt.Println("error in loading updated configuration")
+		} else {
+			//self := context.SMF_Self()
+			context.InitSmfContext(&factory.SmfConfig)
+			fmt.Println("successfully updated configuration")
+		}
+	})
 }
 
 func (smf *SMF) setLogLevel() {

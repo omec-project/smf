@@ -6,6 +6,7 @@ package factory
 
 import (
 	"fmt"
+	"reflect"
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
@@ -44,6 +45,45 @@ func InitRoutingConfigFactory(f string) error {
 		}
 	}
 
+	return nil
+}
+
+func UpdateSmfConfig(f string) error {
+	if content, err := ioutil.ReadFile(f); err != nil {
+		return err
+	} else {
+		var smfConfig Config
+
+		if yamlErr := yaml.Unmarshal(content, &smfConfig); yamlErr != nil {
+			return yamlErr
+		}
+		//Checking which config has been changed
+		if reflect.DeepEqual(SmfConfig.Configuration.SmfName, smfConfig.Configuration.SmfName) == false {
+			logger.CfgLog.Infoln("updated SMF Name ", smfConfig.Configuration.SmfName)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.Sbi, smfConfig.Configuration.Sbi) == false {
+			logger.CfgLog.Infoln("updated SMF Name ", smfConfig.Configuration.Sbi)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.PFCP, smfConfig.Configuration.PFCP) == false {
+			logger.CfgLog.Infoln("updated PFCP ", smfConfig.Configuration.PFCP)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.SmfName, smfConfig.Configuration.NrfUri) == false {
+			logger.CfgLog.Infoln("updated NrfUri ", smfConfig.Configuration.NrfUri)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.UserPlaneInformation, smfConfig.Configuration.UserPlaneInformation) == false {
+			logger.CfgLog.Infoln("updated UserPlaneInformation ", smfConfig.Configuration.UserPlaneInformation)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.ServiceNameList, smfConfig.Configuration.ServiceNameList) == false {
+			logger.CfgLog.Infoln("updated ServiceNameList ", smfConfig.Configuration.ServiceNameList)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.SNssaiInfo, smfConfig.Configuration.SNssaiInfo) == false {
+			logger.CfgLog.Infoln("updated SNssaiInfo ", smfConfig.Configuration.SNssaiInfo)
+		} 
+		if reflect.DeepEqual(SmfConfig.Configuration.ULCL, smfConfig.Configuration.ULCL) == false {
+			logger.CfgLog.Infoln("updated ULCL ", smfConfig.Configuration.ULCL)
+		} 
+		SmfConfig = smfConfig
+	}
 	return nil
 }
 
