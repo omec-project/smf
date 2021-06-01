@@ -80,9 +80,11 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 				//v4 or v6
 				if ip.To4() != nil {
 					//IPv4
+					ip = ip.To4()
 					nodeIdType = pfcpType.NodeIdTypeIpv4Address
 				} else {
 					//IPv6
+					ip = ip.To16()
 					nodeIdType = pfcpType.NodeIdTypeIpv6Address
 				}
 			} else {
