@@ -114,6 +114,7 @@ func HandlePathSwitchRequestTransfer(b []byte, ctx *SMContext) error {
 			dlOuterHeaderCreation.Teid = uint32(teid)
 			dlOuterHeaderCreation.Ipv4Address = gtpTunnel.TransportLayerAddress.Value.Bytes
 			DLPDR.FAR.State = RULE_UPDATE
+			DLPDR.FAR.ForwardingParameters.PFCPSMReqFlags.Sndem = true
 		}
 	}
 
