@@ -123,7 +123,7 @@ func (smf *SMF) WatchConfig() {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		fmt.Println("Config file changed:", e.Name)
-		if err := factory.UpdateSmfConfig("/free5gc/config/smfcfg.conf"); err != nil {
+		if err := factory.UpdateSmfConfig(e.Name + "/smfcfg.conf"); err != nil {
 			fmt.Println("error in loading updated configuration")
 		} else {
 			//self := context.SMF_Self()
