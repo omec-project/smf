@@ -239,6 +239,13 @@ func farToUpdateFAR(far *context.FAR) *pfcp.UpdateFAR {
 		updateFAR.UpdateForwardingParameters.DestinationInterface = &far.ForwardingParameters.DestinationInterface
 		updateFAR.UpdateForwardingParameters.NetworkInstance = &far.ForwardingParameters.NetworkInstance
 		updateFAR.UpdateForwardingParameters.OuterHeaderCreation = far.ForwardingParameters.OuterHeaderCreation
+		if far.ForwardingParameters.PFCPSMReqFlags != nil {
+		        updateFAR.UpdateForwardingParameters.PFCPSMReqFlags = far.ForwardingParameters.PFCPSMReqFlags
+			//reset original far sndem flag
+			far.ForwardingParameters.PFCPSMReqFlags = nil
+		}
+
+
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			updateFAR.UpdateForwardingParameters.ForwardingPolicy = new(pfcpType.ForwardingPolicy)
 			updateFAR.UpdateForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifierLength =

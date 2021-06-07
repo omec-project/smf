@@ -55,6 +55,7 @@ type ForwardingParameters struct {
 	DestinationInterface pfcpType.DestinationInterface
 	NetworkInstance      util_3gpp.Dnn
 	OuterHeaderCreation  *pfcpType.OuterHeaderCreation
+	PFCPSMReqFlags       *pfcpType.PFCPSMReqFlags
 	ForwardingPolicyID   string
 }
 

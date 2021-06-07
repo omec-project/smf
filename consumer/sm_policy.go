@@ -14,8 +14,9 @@ import (
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
 func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, int, error) {
+	httpRspStatusCode := http.StatusInternalServerError
 	if smContext.SMPolicyClient == nil {
-		return nil, http.StatusInternalServerError, errors.Errorf("smContext not selected PCF")
+		return nil, httpRspStatusCode, errors.Errorf("smContext not selected PCF")
 	}
 
 	smPolicyData := models.SmPolicyContextData{}
@@ -45,12 +46,16 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	var smPolicyDecision *models.SmPolicyDecision
 	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.
 		DefaultApi.SmPoliciesPost(context.Background(), smPolicyData); err != nil {
-		return nil, httpRsp.StatusCode, fmt.Errorf("setup sm policy association failed: %s", err)
+		if httpRsp != nil {
+			httpRspStatusCode = httpRsp.StatusCode
+		}
+		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
 	} else {
+		httpRspStatusCode = http.StatusCreated
 		smPolicyDecision = &smPolicyDecisionFromPCF
 	}
 
-	return smPolicyDecision, http.StatusCreated, nil
+	return smPolicyDecision, httpRspStatusCode, nil
 }
 
 func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {

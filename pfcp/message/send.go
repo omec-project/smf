@@ -79,7 +79,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 
 func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 	if net.IP.Equal(upNodeID.ResolveNodeIdToIp(), net.IPv4zero) {
-		logger.PfcpLog.Errorf("PFCP Association Setup Request failed, invalid NodeId: %v", upNodeID)
+		logger.PfcpLog.Errorf("PFCP Association Setup Request failed, invalid NodeId: %v", string(upNodeID.NodeIdValue))
 		return
 	}
 
