@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/pfcp"
 	"github.com/free5gc/pfcp/pfcpType"
@@ -197,41 +198,64 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		pfcpSessionCtx.RemoteSEID = rsp.UPFSEID.Seid
 	}
 
+	//Get N3 interface UPF
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
-	if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted &&
-		ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(rsp.NodeID.ResolveNodeIdToIp()) {
+
+	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(rsp.NodeID.ResolveNodeIdToIp()) {
+
+		//N1N2 Request towards AMF
 		n1n2Request := models.N1N2MessageTransferRequest{}
 
-		if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
-			logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentAccept failed: %s", err)
-		} else {
-			n1n2Request.BinaryDataN1Message = smNasBuf
-		}
-		if n2Pdu, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
-			logger.PduSessLog.Errorf("Build PDUSessionResourceSetupRequestTransfer failed: %s", err)
-		} else {
-			n1n2Request.BinaryDataN2Information = n2Pdu
+		//N2 Container Info
+		n2InfoContainer := models.N2InfoContainer{
+			N2InformationClass: models.N2InformationClass_SM,
+			SmInfo: &models.N2SmInformation{
+				PduSessionId: smContext.PDUSessionID,
+				N2InfoContent: &models.N2InfoContent{
+					NgapIeType: models.NgapIeType_PDU_RES_SETUP_REQ,
+					NgapData: &models.RefToBinaryData{
+						ContentId: "N2SmInformation",
+					},
+				},
+				SNssai: smContext.Snssai,
+			},
 		}
 
-		n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
-			PduSessionId: smContext.PDUSessionID,
-			N1MessageContainer: &models.N1MessageContainer{
-				N1MessageClass:   "SM",
-				N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
-			},
-			N2InfoContainer: &models.N2InfoContainer{
-				N2InformationClass: models.N2InformationClass_SM,
-				SmInfo: &models.N2SmInformation{
-					PduSessionId: smContext.PDUSessionID,
-					N2InfoContent: &models.N2InfoContent{
-						NgapIeType: models.NgapIeType_PDU_RES_SETUP_REQ,
-						NgapData: &models.RefToBinaryData{
-							ContentId: "N2SmInformation",
-						},
-					},
-					SNssai: smContext.Snssai,
-				},
-			},
+		//N1 Container Info
+		n1MsgContainer := models.N1MessageContainer{
+			N1MessageClass:   "SM",
+			N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
+		}
+
+		//N1N2 Json Data
+		n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
+
+		// UPF Accept
+		if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
+
+			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
+				logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentAccept failed: %s", err)
+			} else {
+				n1n2Request.BinaryDataN1Message = smNasBuf
+				n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+			}
+
+			if n2Pdu, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
+				logger.PduSessLog.Errorf("Build PDUSessionResourceSetupRequestTransfer failed: %s", err)
+			} else {
+				n1n2Request.BinaryDataN2Information = n2Pdu
+				n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
+			}
+		} else {
+			logger.PfcpLog.Warnf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
+			//UPF Reject
+			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
+				nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
+				logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
+			} else {
+				n1n2Request.BinaryDataN1Message = smNasBuf
+				n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+			}
 		}
 
 		rspData, _, err := smContext.
@@ -246,6 +270,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 			logger.PfcpLog.Warnf("%v", rspData.Cause)
 		}
+		logger.PfcpLog.Warnf("PFCP Session Establishment Reject initiated with N1N2 Transfer")
 	}
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
@@ -254,6 +279,43 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			producer.AddPDUSessionAnchorAndULCL(smContext, *rsp.NodeID)
 			smContext.BPManager.BPStatus = smf_context.AddingPSA
 		}
+	}
+}
+
+func HandlePfcpSessionEstablishmentError(smContext *smf_context.SMContext) {
+	//N1N2 Request towards AMF
+	n1n2Request := models.N1N2MessageTransferRequest{}
+
+	//N1 Container Info
+	n1MsgContainer := models.N1MessageContainer{
+		N1MessageClass:   "SM",
+		N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
+	}
+
+	//N1N2 Json Data
+	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
+
+	logger.PfcpLog.Warnf("PFCP Session Establishment send failure")
+	//UPF Reject
+	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
+		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
+		logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
+	} else {
+		n1n2Request.BinaryDataN1Message = smNasBuf
+		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+	}
+
+	rspData, _, err := smContext.
+		CommunicationClient.
+		N1N2MessageCollectionDocumentApi.
+		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
+	smContext.SMContextState = smf_context.Active
+	logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+	if err != nil {
+		logger.PfcpLog.Warnf("Send N1N2Transfer failed")
+	}
+	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
+		logger.PfcpLog.Warnf("%v", rspData.Cause)
 	}
 }
 
