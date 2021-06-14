@@ -103,14 +103,14 @@ func (pfcpServer *PfcpServer) ReadFrom(msg *pfcp.Message) (*net.UDPAddr, error) 
 	return addr, nil
 }
 
-func (pfcpServer *PfcpServer) WriteTo(msg pfcp.Message, addr *net.UDPAddr) error {
+func (pfcpServer *PfcpServer) WriteTo(msg pfcp.Message, addr *net.UDPAddr, errHandler func(*pfcp.Message, error)) error {
 	buf, err := msg.Marshal()
 	if err != nil {
 		return err
 	}
 
 	/*TODO: check if all bytes of buf are sent*/
-	tx := pfcp.NewTransaction(msg, buf, pfcpServer.Conn, addr)
+	tx := pfcp.NewTransaction(msg, buf, pfcpServer.Conn, addr, errHandler)
 
 	err = pfcpServer.PutTransaction(tx)
 	if err != nil {
@@ -159,7 +159,7 @@ func (pfcpServer *PfcpServer) RemoveTransaction(tx *pfcp.Transaction) (err error
 		if tx.TxType == pfcp.SendingRequest {
 			logger.PFCPLog.Infof("Remove Request Transaction [%d]\n", tx.SequenceNumber)
 		} else if tx.TxType == pfcp.SendingResponse {
-			logger.PFCPLog.Infof("Remove Request Transaction [%d]\n", tx.SequenceNumber)
+			logger.PFCPLog.Infof("Remove Response Transaction [%d]\n", tx.SequenceNumber)
 		}
 
 		txTable.Delete(tx.SequenceNumber)
@@ -176,12 +176,18 @@ func (pfcpServer *PfcpServer) RemoveTransaction(tx *pfcp.Transaction) (err error
 
 func (pfcpServer *PfcpServer) StartTxLifeCycle(tx *pfcp.Transaction) {
 	//Start Transaction
-	tx.Start()
+	sendErr := tx.Start()
 
 	//End Transaction
 	err := pfcpServer.RemoveTransaction(tx)
 	if err != nil {
 		logger.PFCPLog.Warnln(err)
+	}
+
+	if sendErr != nil && tx.ErrHandler != nil {
+		var msg pfcp.Message
+		msg.Unmarshal(tx.SendMsg)
+		tx.ErrHandler(&msg, sendErr)
 	}
 }
 

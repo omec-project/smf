@@ -39,6 +39,10 @@ RUN apk add -U vim strace net-tools curl netcat-openbsd bind-tools
 WORKDIR /free5gc
 RUN mkdir -p smf/
 
+#For Testpod
+RUN mkdir -p smf/testconfig/
+COPY --from=builder /go/src/smf/sample/* ./smf/testconfig
+
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* ./smf
 WORKDIR /free5gc/smf

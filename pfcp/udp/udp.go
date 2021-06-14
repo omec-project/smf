@@ -50,8 +50,8 @@ func Run(Dispatch func(*pfcpUdp.Message)) {
 	ServerStartTime = time.Now()
 }
 
-func SendPfcp(msg pfcp.Message, addr *net.UDPAddr) error {
-	err := Server.WriteTo(msg, addr)
+func SendPfcp(msg pfcp.Message, addr *net.UDPAddr, errHandler func(*pfcp.Message, error)) error {
+	err := Server.WriteTo(msg, addr, errHandler)
 	if err != nil {
 		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
 		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Failure", err.Error())
