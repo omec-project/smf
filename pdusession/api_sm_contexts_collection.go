@@ -77,13 +77,15 @@ func HTTPPostSmContexts(c *gin.Context) {
 		c.JSON(HTTPResponse.Status, HTTPResponse.Body)
 	}
 
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
-	//Send delayed PFCP Sess Establish if ctxt created
-	if HTTPResponse.Status == http.StatusCreated {
-		producer.SendPFCPRules(smContext)
-	} else if smContext != nil {
-		//release ctxt incase of failure
-		smf_context.RemoveSMContext(smContext.Ref)
-	}
+	go func(smContext *smf_context.SMContext) {
+		smContext.SMLock.Lock()
+		defer smContext.SMLock.Unlock()
+		//Send delayed PFCP Sess Establish if ctxt created
+		if HTTPResponse.Status == http.StatusCreated {
+			producer.SendPFCPRules(smContext)
+		} else if smContext != nil {
+			//release ctxt incase of failure
+			smf_context.RemoveSMContext(smContext.Ref)
+		}
+	}(smContext)
 }
