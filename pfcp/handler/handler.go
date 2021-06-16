@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/openapi/models"
@@ -100,7 +101,6 @@ func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {
 
 func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 	rsp := msg.PfcpMessage.Body.(pfcp.PFCPAssociationSetupResponse)
-	logger.PfcpLog.Infoln("In HandlePfcpAssociationSetupResponse")
 
 	nodeID := rsp.NodeID
 	if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
@@ -124,6 +124,22 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation
+
+			if upf.UPIPInfo.Assosi && upf.UPIPInfo.Assoni && upf.UPIPInfo.SourceInterface == pfcpType.SourceInterfaceAccess &&
+				upf.UPIPInfo.V4 && !upf.UPIPInfo.Ipv4Address.Equal(net.IPv4zero) {
+				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]",
+					upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.Ipv4Address,
+					string(upf.UPIPInfo.NetworkInstance), upf.UPIPInfo.TeidRange)
+
+				//reset the N3 interface of UPF
+				upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
+
+				//Insert N3 interface info from UPF
+				n3Interface := smf_context.UPFInterfaceInfo{}
+				n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
+				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
+				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
+			}
 
 			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
 				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)
@@ -232,7 +248,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 
 		// UPF Accept
 		if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-
+			logger.PfcpLog.Infof("PFCP Session Establishment accepted for id[%v] and pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
 				logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentAccept failed: %s", err)
 			} else {
@@ -247,7 +263,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 				n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 			}
 		} else {
-			logger.PfcpLog.Warnf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
+			logger.PfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
 			//UPF Reject
 			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 				nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
@@ -268,9 +284,9 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			logger.PfcpLog.Warnf("Send N1N2Transfer failed")
 		}
 		if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
-			logger.PfcpLog.Warnf("%v", rspData.Cause)
+			logger.PfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 		}
-		logger.PfcpLog.Warnf("PFCP Session Establishment Reject initiated with N1N2 Transfer")
+		logger.PfcpLog.Infof("N1N2 Transfer initiated for id[%v] and pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 	}
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
@@ -279,43 +295,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			producer.AddPDUSessionAnchorAndULCL(smContext, *rsp.NodeID)
 			smContext.BPManager.BPStatus = smf_context.AddingPSA
 		}
-	}
-}
-
-func HandlePfcpSessionEstablishmentError(smContext *smf_context.SMContext) {
-	//N1N2 Request towards AMF
-	n1n2Request := models.N1N2MessageTransferRequest{}
-
-	//N1 Container Info
-	n1MsgContainer := models.N1MessageContainer{
-		N1MessageClass:   "SM",
-		N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
-	}
-
-	//N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
-
-	logger.PfcpLog.Warnf("PFCP Session Establishment send failure")
-	//UPF Reject
-	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
-		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
-		logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
-	} else {
-		n1n2Request.BinaryDataN1Message = smNasBuf
-		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
-	}
-
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionDocumentApi.
-		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
-	smContext.SMContextState = smf_context.Active
-	logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
-	if err != nil {
-		logger.PfcpLog.Warnf("Send N1N2Transfer failed")
-	}
-	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
-		logger.PfcpLog.Warnf("%v", rspData.Cause)
 	}
 }
 
