@@ -63,7 +63,7 @@ github.com/free5gc/openapi/models
 ## explicit
 github.com/free5gc/path_util
 github.com/free5gc/path_util/logger
-# github.com/free5gc/pfcp v1.0.1
+# github.com/free5gc/pfcp v1.0.1 => ./lib/pfcp
 ## explicit
 github.com/free5gc/pfcp
 github.com/free5gc/pfcp/logger
@@ -225,3 +225,4 @@ gopkg.in/h2non/gock.v1
 gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 gopkg.in/yaml.v3
+# github.com/free5gc/pfcp => ./lib/pfcp
