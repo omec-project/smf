@@ -1,0 +1,3 @@
+[submodule "lib/pfcp"]
+	path = lib/pfcp
+	url = https://github.com/omec-project/pfcp.git

@@ -2,6 +2,8 @@ module github.com/free5gc/smf
 
 go 1.14
 
+replace github.com/free5gc/pfcp => ./lib/pfcp
+
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.0

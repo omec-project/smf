@@ -92,10 +92,10 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 
 	//Create SM context
 	smContext := smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
-	logger.PduSessLog.Infof("PDUSessionSMContextCreate, SM context created with uuid [%v], Supi [%v], PduId [%v]",
+	logger.PduSessLog.Infof("PDUSessionSMContextCreate, SM context created with uuid [%v], SUPI [%v], PduSessionID [%v]",
 		smContext.Ref, createData.Supi, createData.PduSessionId)
 	smContext.SMContextState = smf_context.ActivePending
-	logger.CtxLog.Traceln("PDUSessionSMContextCreate, SMContextState Change State: ", smContext.SMContextState.String())
+	logger.CtxLog.Traceln("PDUSessionSMContextCreate, SMContextState change state: ", smContext.SMContextState.String())
 	smContext.SetCreateData(createData)
 	smContext.SmStatusNotifyUri = createData.SmContextStatusUri
 
@@ -134,7 +134,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		return httpResponse, "IpAllocError", smContext
 	} else {
 		smContext.PDUAddress = ip
-		logger.PduSessLog.Infof("PDUSessionSMContextCreate, UE[%s] PDUSessionID[%d] IP[%s]",
+		logger.PduSessLog.Infof("PDUSessionSMContextCreate, IP alloc succes for SUPI[%s] PDUSessionID[%d] IP[%s]",
 			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
 	}
 
@@ -166,6 +166,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		if len(sessSubData) > 0 {
 			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "")
 			smContext.DnnConfiguration = sessSubData[0].DnnConfigurations[smContext.Dnn]
+			logger.PduSessLog.Infoln("PDUSessionSMContextCreate, subscription data retrieved from UDM")
 		} else {
 			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NudmSmSubscriptionDataRetrieval, "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			logger.PduSessLog.Errorln("PDUSessionSMContextCreate, SessionManagementSubscriptionData from UDM is nil")
@@ -179,14 +180,14 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 	establishmentRequest := m.PDUSessionEstablishmentRequest
 	smContext.HandlePDUSessionEstablishmentRequest(establishmentRequest)
 
-	logger.PduSessLog.Infof("PDUSessionSMContextCreate, PCF Selection for SMContext SUPI[%s] PDUSessionID[%d]\n",
-		smContext.Supi, smContext.PDUSessionID)
 	if err := smContext.PCFSelection(); err != nil {
 		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, send NF Discovery Serving PCF Error[%v]", err)
 		problemDetails := formProblemDetail("PCF error", err.Error(), "PCF error", http.StatusInternalServerError)
 		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
 		return httpResponse, "PcfError", smContext
 	}
+	logger.PduSessLog.Infof("PDUSessionSMContextCreate, send NF Discovery Serving PCF success for SMContext SUPI[%s] PDUSessionID[%d]\n",
+		smContext.Supi, smContext.PDUSessionID)
 
 	//PCF Policy Association
 	var smPolicyDecision *models.SmPolicyDecision
@@ -204,6 +205,8 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
 		return httpResponse, "PcfAssoError", smContext
 	} else {
+		logger.PduSessLog.Infof("PDUSessionSMContextCreate, Policy association create success for SMContext SUPI[%s] PDUSessionID[%d]\n",
+			smContext.Supi, smContext.PDUSessionID)
 		smPolicyDecision = smPolicyDecisionRsp
 	}
 
@@ -298,7 +301,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		httpResponse := formContextCreateErrRsp(http.StatusInternalServerError, problemDetails, nil)
 		return httpResponse, "AmfError", smContext
 	} else {
-		logger.PduSessLog.Traceln("PDUSessionSMContextCreate, Send NF Discovery Serving AMF successfully")
+		logger.PduSessLog.Traceln("PDUSessionSMContextCreate, Send NF Discovery Serving AMF success")
 	}
 
 	for _, service := range *smContext.AMFProfile.NfServices {
@@ -317,6 +320,9 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 		Status: http.StatusCreated,
 		Body:   response,
 	}
+
+	logger.PduSessLog.Infof("PDUSessionSMContextCreate, PDU session context create success uuid[%v] SUPI[%s] PDUSessionID[%d] ",
+		smContext.Ref, smContext.Supi, smContext.PDUSessionID)
 
 	return httpResponse, "", smContext
 	// TODO: UECM registration

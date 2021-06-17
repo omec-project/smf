@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/free5gc/pfcp/logger"
+	"github.com/pkg/errors"
 )
 
 type TransactionType uint8
@@ -51,10 +52,11 @@ type Transaction struct {
 	Conn           *net.UDPConn
 	DestAddr       *net.UDPAddr
 	ConsumerAddr   string
+	ErrHandler     func(*Message, error)
 }
 
 // NewTransaction - create pfcp transaction object
-func NewTransaction(pfcpMSG Message, binaryMSG []byte, Conn *net.UDPConn, DestAddr *net.UDPAddr) (tx *Transaction) {
+func NewTransaction(pfcpMSG Message, binaryMSG []byte, Conn *net.UDPConn, DestAddr *net.UDPAddr, errHandler func(*Message, error)) (tx *Transaction) {
 	tx = &Transaction{
 		SendMsg:        binaryMSG,
 		SequenceNumber: pfcpMSG.Header.SequenceNumber,
@@ -62,6 +64,7 @@ func NewTransaction(pfcpMSG Message, binaryMSG []byte, Conn *net.UDPConn, DestAd
 		EventChannel:   make(chan EventType),
 		Conn:           Conn,
 		DestAddr:       DestAddr,
+		ErrHandler:     errHandler,
 	}
 
 	if pfcpMSG.IsRequest() {
@@ -76,8 +79,7 @@ func NewTransaction(pfcpMSG Message, binaryMSG []byte, Conn *net.UDPConn, DestAd
 	return
 }
 
-func (transaction *Transaction) Start() {
-
+func (transaction *Transaction) Start() error {
 	logger.PFCPLog.Tracef("Start Transaction [%d]\n", transaction.SequenceNumber)
 
 	if transaction.TxType == SendingRequest {
@@ -88,7 +90,7 @@ func (transaction *Transaction) Start() {
 
 			if err != nil {
 				logger.PFCPLog.Warnf("Request Transaction [%d]: %s\n", transaction.SequenceNumber, err)
-				return
+				return err
 			}
 
 			select {
@@ -96,7 +98,7 @@ func (transaction *Transaction) Start() {
 
 				if event == ReceiveValidResponse {
 					logger.PFCPLog.Tracef("Request Transaction [%d]: receive valid response\n", transaction.SequenceNumber)
-					return
+					return nil
 				}
 			case <-timer.C:
 				logger.PFCPLog.Tracef("Request Transaction [%d]: timeout expire\n", transaction.SequenceNumber)
@@ -104,6 +106,9 @@ func (transaction *Transaction) Start() {
 				continue
 			}
 		}
+		//Num of retries exhausted, send failure back to app
+		return errors.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
+
 	} else if transaction.TxType == SendingResponse {
 		//Todo :Implement SendingResponse type of reliable delivery
 		timer := time.NewTimer(ResendResponseTimeOutPeriod * time.Second)
@@ -113,7 +118,7 @@ func (transaction *Transaction) Start() {
 
 			if err != nil {
 				logger.PFCPLog.Warnf("Response Transaction [%d]: sending error\n", transaction.SequenceNumber)
-				return
+				return err
 			}
 
 			select {
@@ -126,10 +131,10 @@ func (transaction *Transaction) Start() {
 				}
 			case <-timer.C:
 				logger.PFCPLog.Tracef("Response Transaction [%d]: timeout expire\n", transaction.SequenceNumber)
-				return
+				return errors.Errorf("response timeout, seq [%d]", transaction.SequenceNumber)
 			}
 		}
 
 	}
-
+	return nil
 }
