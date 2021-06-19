@@ -7,7 +7,7 @@ FROM golang:1.14.4-stretch AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
-#RUN apt remove cmdtest yarn
+# RUN apt remove cmdtest yarn
 RUN apt-get update
 RUN apt-get -y install apt-transport-https ca-certificates
 RUN curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg > pubkey.gpg
