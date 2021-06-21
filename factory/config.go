@@ -150,10 +150,10 @@ type PfdDataForApp struct {
 }
 
 type RoutingConfig struct {
-	Info          *Info                        `yaml:"info"`
-	UERoutingInfo []*UERoutingInfo             `yaml:"ueRoutingInfo"`
-	RouteProf     map[RouteProfID]RouteProfile `yaml:"routeProfile,omitempty"`
-	PfdDatas      []*PfdDataForApp             `yaml:"pfdDataForApp,omitempty"`
+	Info          *Info                   `yaml:"info"`
+	UERoutingInfo []*UERoutingInfo        `yaml:"ueRoutingInfo"`
+	RouteProf     map[string]RouteProfile `yaml:"routeProfile,omitempty"`
+	PfdDatas      []*PfdDataForApp        `yaml:"pfdDataForApp,omitempty"`
 }
 
 // UserPlaneInformation describe core network userplane information

@@ -63,6 +63,7 @@ type SMFContext struct {
 	ULCLSupport         bool
 	UEPreConfigPathPool map[string]*UEPreConfigPaths
 	LocalSEIDCount      uint64
+	UERoutingConfig     *factory.RoutingConfig
 
 	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
 }
@@ -193,6 +194,7 @@ func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 
 	UERoutingInfo := routingConfig.UERoutingInfo
 	smfContext.UEPreConfigPathPool = make(map[string]*UEPreConfigPaths)
+	smfContext.UERoutingConfig = routingConfig
 
 	for _, routingInfo := range UERoutingInfo {
 		supi := routingInfo.SUPI
