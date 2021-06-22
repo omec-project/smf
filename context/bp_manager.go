@@ -6,6 +6,8 @@
 package context
 
 import (
+	"github.com/free5gc/flowdesc"
+	"github.com/free5gc/smf/logger"
 	"reflect"
 )
 
@@ -54,6 +56,44 @@ func NewBPManager(supi string) (bpManager *BPManager) {
 	}
 
 	return
+}
+
+func (bpMGR *BPManager) SelectPSA2DataPath(flowDesc string, smContext *SMContext) {
+	flow_Desc := flowdesc.NewIPFilterRule()
+	err := flowdesc.Decode(flowDesc, flow_Desc)
+	if err != nil {
+		logger.PduSessLog.Errorf("Invalid flow Description: %s\n", err)
+	}
+
+	hasSelectPSA2 := false
+	bpMGR.ActivatedPaths = []*DataPath{}
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+
+		if dataPath.Activated {
+			bpMGR.ActivatedPaths = append(bpMGR.ActivatedPaths, dataPath)
+		}
+		if !hasSelectPSA2 {
+			if dataPath.Destination.DestinationIP == flow_Desc.GetDestinationIP() && dataPath.Destination.DestinationPort == flow_Desc.GetDestinationPorts() {
+				// changing the datapath acitvated to false. To override the pre-configured path to AF requested path
+				dataPath.Activated = false
+				bpMGR.ActivatingPath = dataPath
+				hasSelectPSA2 = true
+			}
+		}
+	}
+
+	// if no path is matched, add the new path for requested flow.
+	if !hasSelectPSA2 {
+		logger.PduSessLog.Traceln("create new data path")
+		// Create DataPath for the input flow discription.
+		dataPath := GenerateDataPathForIUPF(bpMGR.ULCL, smContext)
+		dataPath.Destination.DestinationIP = flow_Desc.GetDestinationIP()
+		dataPath.Destination.DestinationPort = flow_Desc.GetDestinationPorts()
+		dataPath.IsDefaultPath = false
+		smContext.Tunnel.AddDataPath(dataPath)
+		bpMGR.ActivatingPath = dataPath
+		hasSelectPSA2 = true
+	}
 }
 
 func (bpMGR *BPManager) SelectPSA2(smContext *SMContext) {

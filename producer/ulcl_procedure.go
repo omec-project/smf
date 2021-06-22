@@ -157,6 +157,61 @@ func EstablishPSA2(smContext *context.SMContext) {
 	logger.PduSessLog.Traceln("End of EstablishPSA2")
 }
 
+func ULCLModificationRequest(smContext *context.SMContext, appFlow string, precedence uint32) {
+
+	logger.PduSessLog.Infoln("In ULCLModificationRequest")
+
+	bpMGR := smContext.BPManager
+	bpMGR.PendingUPF = make(context.PendingUPF)
+	activatingPath := bpMGR.ActivatingPath
+	ulcl := bpMGR.ULCL
+
+	//find updatedUPF in activatingPath
+	for curDPNode := activatingPath.FirstDPNode; curDPNode != nil; curDPNode = curDPNode.Next() {
+		if reflect.DeepEqual(ulcl.NodeID, curDPNode.UPF.NodeID) {
+			UPLinkPDR := curDPNode.UpLinkTunnel.PDR
+			DownLinkPDR := curDPNode.DownLinkTunnel.PDR
+			UPLinkPDR.State = context.RULE_INITIAL
+
+			FlowDespcription := flowdesc.NewIPFilterRule()
+			err := flowdesc.Decode(appFlow, FlowDespcription)
+			if err != nil {
+				logger.PduSessLog.Errorf("Invalid flow Description: %s\n", err)
+			}
+
+			FlowDespcriptionStr, err := flowdesc.Encode(FlowDespcription)
+			if err != nil {
+				logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
+			}
+
+			UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+				Bid:                     false,
+				Fl:                      false,
+				Spi:                     false,
+				Ttc:                     false,
+				Fd:                      true,
+				LengthOfFlowDescription: uint16(len(FlowDespcriptionStr)),
+				FlowDescription:         []byte(FlowDespcriptionStr),
+			}
+
+			UPLinkPDR.Precedence = uint32(precedence)
+			pdrList := []*context.PDR{UPLinkPDR, DownLinkPDR}
+			farList := []*context.FAR{UPLinkPDR.FAR, DownLinkPDR.FAR}
+			barList := []*context.BAR{}
+			qerList := DownLinkPDR.QER
+
+			curDPNodeIP := ulcl.NodeID.ResolveNodeIdToIp().String()
+			bpMGR.PendingUPF[curDPNodeIP] = true
+			message.SendPfcpSessionModificationRequest(ulcl.NodeID, smContext, pdrList, farList, barList, qerList)
+			break
+		}
+	}
+
+	bpMGR.AddingPSAState = context.EstablishingULCL
+	logger.PfcpLog.Info("[SMF] ULCLModificationRequest msg has been send")
+
+}
+
 func EstablishULCL(smContext *context.SMContext) {
 	logger.PduSessLog.Infoln("In EstablishULCL")
 
