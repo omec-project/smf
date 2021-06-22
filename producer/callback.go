@@ -49,6 +49,59 @@ func HandleSMPolicyUpdateNotify(smContextRef string, request models.SmPolicyNoti
 	return httpResponse
 }
 
+func handlePccRuleDelete(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) {
+	for id, pccRule := range smContext.PCCRules {
+		// if rule does not exists in the pccrule list from PCF. Delete it
+		if _, exist := decision.PccRules[id]; !exist {
+			logger.PduSessLog.Debugf("Remove PccRule-id[%s].. PccRules[%s]", id, pccRule)
+			delete(smContext.PCCRules, id)
+		}
+	}
+}
+
+func handlePccRule(smContext *smf_context.SMContext, id string, PccRuleModel *models.PccRule, decision *models.SmPolicyDecision) {
+
+	logger.PduSessLog.Infoln("in handlePccRule id:", id)
+	if PccRuleModel == nil {
+		logger.PduSessLog.Debugf("Delete PccRule[%s]", id)
+		delete(smContext.PCCRules, id)
+	} else {
+		pccRule := smf_context.NewPCCRuleFromModel(PccRuleModel)
+		// PCC rule installation
+		if oldPccRule, exist := smContext.PCCRules[id]; !exist {
+			logger.PduSessLog.Debugf("Install PccRule[%s]", id)
+			smContext.PCCRules[id] = pccRule
+			for _, idx := range PccRuleModel.RefTcData {
+				tcdata := decision.TraffContDecs[idx]
+				data := smf_context.NewTrafficControlDataFromModel(tcdata)
+				smContext.PCCRules[id].SetRefTrafficControlData(data)
+			}
+		} else { // PCC rule modification
+			logger.PduSessLog.Debugf("Modify PccRule[%s]... new ID[%s]", oldPccRule.PCCRuleID, id)
+			smContext.PCCRules[id] = pccRule
+			for _, idx := range PccRuleModel.RefTcData {
+				tcdata := decision.TraffContDecs[idx]
+				data := smf_context.NewTrafficControlDataFromModel(tcdata)
+				smContext.PCCRules[id].SetRefTrafficControlData(data)
+			}
+			tcdata := smContext.PCCRules[id].RefTrafficControlData()
+			oldtcdata := oldPccRule.RefTrafficControlData()
+			if oldPccRule.AppID != PccRuleModel.AppId || oldPccRule.Precedence != PccRuleModel.Precedence || tcdata.RouteToLocs[0].Dnai != oldtcdata.RouteToLocs[0].Dnai {
+				logger.PduSessLog.Debugf("Got modify request. Updated values...")
+			}
+		}
+	}
+
+}
+
+func UpdatePCCRulesSMContext(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) {
+	// update PCC rules
+	handlePccRuleDelete(smContext, decision)
+	for id, pccRuleModel := range decision.PccRules {
+		handlePccRule(smContext, id, pccRuleModel, decision)
+	}
+}
+
 func handleSessionRule(smContext *smf_context.SMContext, id string, sessionRuleModel *models.SessionRule) {
 	if sessionRuleModel == nil {
 		logger.PduSessLog.Debugf("Delete SessionRule[%s]", id)
@@ -86,6 +139,7 @@ func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *model
 		// Update session rules from decision
 		for id, sessRuleModel := range decision.SessRules {
 			handleSessionRule(smContext, id, sessRuleModel)
+			UpdatePCCRulesSMContext(smContext, decision)
 		}
 		if _, exist := smContext.SessionRules[selectedSessionRuleID]; !exist {
 			// Original active session rule is deleted; choose again

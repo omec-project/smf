@@ -20,7 +20,7 @@ type PCCRule struct {
 	FlowInfos []models.FlowInformation
 
 	// Reference Data
-	refTrafficControlData string
+	refTrafficControlData *TrafficControlData
 
 	// related Data
 	Datapath *DataPath
@@ -37,20 +37,26 @@ func NewPCCRuleFromModel(pccModel *models.PccRule) *PCCRule {
 	pccRule.Precedence = pccModel.Precedence
 	pccRule.AppID = pccModel.AppId
 	pccRule.FlowInfos = pccModel.FlowInfos
-	if pccModel.RefTcData != nil {
-		// TODO: now 1 pcc rule only maps to 1 TC data
-		pccRule.refTrafficControlData = pccModel.RefTcData[0]
-	}
 
 	return pccRule
 }
 
 // SetRefTrafficControlData - setting reference traffic control data
-func (r *PCCRule) SetRefTrafficControlData(tcID string) {
-	r.refTrafficControlData = tcID
+func (r *PCCRule) SetRefTrafficControlData(tcData *TrafficControlData) {
+	r.refTrafficControlData = tcData
+
+	tcData.refedPCCRule[r.PCCRuleID] = r
 }
 
-// RefTrafficControlData - returns reference traffic control data ID
-func (r *PCCRule) RefTrafficControlData() string {
+// GetRefTrafficControlData - returns refernece traffic control data
+func (r *PCCRule) RefTrafficControlData() *TrafficControlData {
 	return r.refTrafficControlData
+}
+
+func (r *PCCRule) ResetRefTrafficControlData() {
+	if refTcData := r.refTrafficControlData; refTcData != nil {
+		delete(refTcData.refedPCCRule, r.PCCRuleID)
+	}
+
+	r.refTrafficControlData = nil
 }
