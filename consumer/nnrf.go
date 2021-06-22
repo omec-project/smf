@@ -235,7 +235,7 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), "NilInstance")
 			return nil, openapi.ReportError("NfInstances is nil")
 		}
-		logger.ConsumerLog.Info("SendNFDiscoveryServingAMF ok")
+		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
 		smContext.AMFProfile = deepcopy.Copy(result.NfInstances[0]).(models.NfProfile)
 		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryAmf, "In", http.StatusText(httpResp.StatusCode), "")
 	} else if httpResp != nil {

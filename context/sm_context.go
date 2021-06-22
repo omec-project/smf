@@ -6,6 +6,7 @@ import (
 
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/sirupsen/logrus"
 
 	"net"
 	"net/http"
@@ -133,6 +134,12 @@ type SMContext struct {
 
 	// lock
 	SMLock sync.Mutex
+
+	SubGsmLog      *logrus.Entry
+	SubPfcpLog     *logrus.Entry
+	SubPduSessLog  *logrus.Entry
+	SubCtxLog      *logrus.Entry
+	SubConsumerLog *logrus.Entry
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -179,7 +186,21 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 
+	//initialise log tags
+	smContext.initLogTags()
+
 	return smContext
+}
+
+func (smContext *SMContext) initLogTags() {
+	subField := logrus.Fields{"uuid": smContext.Ref,
+		"id": smContext.Identifier, "pduid": smContext.PDUSessionID}
+
+	smContext.SubPfcpLog = logger.PfcpLog.WithFields(subField)
+	smContext.SubCtxLog = logger.CtxLog.WithFields(subField)
+	smContext.SubPduSessLog = logger.PduSessLog.WithFields(subField)
+	smContext.SubGsmLog = logger.GsmLog.WithFields(subField)
+	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
 }
 
 //*** add unit test ***//

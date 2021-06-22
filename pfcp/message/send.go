@@ -204,7 +204,7 @@ func SendPfcpSessionEstablishmentRequest(
 	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER) {
 	pfcpMsg, err := BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
-		logger.PfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
+		ctx.SubPfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
 		return
 	}
 
@@ -225,12 +225,12 @@ func SendPfcpSessionEstablishmentRequest(
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: pfcpUdp.PFCP_PORT,
 	}
-	logger.PduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
-	logger.PduSessLog.Traceln("Send to addr ", upaddr.String())
+	ctx.SubPduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
+	ctx.SubPduSessLog.Traceln("Send to addr ", upaddr.String())
 
 	errHandler := HandlePfcpSendError
 	udp.SendPfcp(message, upaddr, errHandler)
-	logger.PfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	ctx.SubPfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
 // Deprecated: PFCP Session Establishment Procedure should be initiated by the CP function
@@ -262,7 +262,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER) (seqNum uint32) {
 	pfcpMsg, err := BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
-		logger.PfcpLog.Errorf("Build PFCP Session Modification Request failed: %v", err)
+		ctx.SubPfcpLog.Errorf("Build PFCP Session Modification Request failed: %v", err)
 		return
 	}
 
@@ -288,7 +288,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 	}
 
 	udp.SendPfcp(message, upaddr, errHandler)
-	logger.PfcpLog.Infof("Sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	ctx.SubPfcpLog.Infof("Sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
 }
 
@@ -319,7 +319,7 @@ func SendPfcpSessionModificationResponse(addr *net.UDPAddr) {
 func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.SMContext) (seqNum uint32) {
 	pfcpMsg, err := BuildPfcpSessionDeletionRequest()
 	if err != nil {
-		logger.PfcpLog.Errorf("Build PFCP Session Deletion Request failed: %v", err)
+		ctx.SubPfcpLog.Errorf("Build PFCP Session Deletion Request failed: %v", err)
 		return
 	}
 	seqNum = getSeqNumber()
@@ -345,7 +345,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 
 	udp.SendPfcp(message, upaddr, errHandler)
 
-	logger.PfcpLog.Infof("Sent PFCP Session Delete Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	ctx.SubPfcpLog.Infof("Sent PFCP Session Delete Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
 }
 
@@ -437,14 +437,12 @@ func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
 }
 
 func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
-	logger.PfcpLog.Errorf("PFCP Session Establishment send failure, %v", pfcpErr.Error())
-
 	//Lets decode the PDU request
 	pfcpEstReq, _ := msg.Body.(pfcp.PFCPSessionEstablishmentRequest)
 
 	SEID := pfcpEstReq.CPFSEID.Seid
 	smContext := smf_context.GetSMContextBySEID(SEID)
-
+	smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", pfcpErr.Error())
 	//N1N2 Request towards AMF
 	n1n2Request := models.N1N2MessageTransferRequest{}
 
@@ -459,7 +457,7 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
-		logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
+		smContext.SubPduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
 	} else {
 		n1n2Request.BinaryDataN1Message = smNasBuf
 		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
@@ -471,14 +469,14 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 		N1N2MessageCollectionDocumentApi.
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	smContext.SMContextState = smf_context.InActive
-	logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+	smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
 	if err != nil {
-		logger.PfcpLog.Warnf("Send N1N2Transfer failed")
+		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
-		logger.PfcpLog.Warnf("%v", rspData.Cause)
+		smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
 	}
-	logger.PfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
+	smContext.SubPfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 
 	//clear subscriber
 	smf_context.RemoveSMContext(smContext.Ref)

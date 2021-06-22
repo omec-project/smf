@@ -248,7 +248,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 
 		// UPF Accept
 		if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-			logger.PfcpLog.Infof("PFCP Session Establishment accepted for id[%v] and pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
+			smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
 				logger.PduSessLog.Errorf("Build GSM PDUSessionEstablishmentAccept failed: %s", err)
 			} else {
@@ -263,7 +263,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 				n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 			}
 		} else {
-			logger.PfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
+			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
 			//UPF Reject
 			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 				nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
@@ -279,19 +279,20 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			N1N2MessageCollectionDocumentApi.
 			N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 		smContext.SMContextState = smf_context.Active
-		logger.CtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+		smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
 		if err != nil {
-			logger.PfcpLog.Warnf("Send N1N2Transfer failed")
+			smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
 		}
 		if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
-			logger.PfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
+			smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 		}
-		logger.PfcpLog.Infof("N1N2 Transfer initiated for id[%v] and pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
+
+		smContext.SubPfcpLog.Infof("N1N2 Transfer initiated")
 	}
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
-			logger.PfcpLog.Infoln("Keep Adding PSAndULCL")
+			smContext.SubPfcpLog.Infoln("Keep Adding PSAndULCL")
 			producer.AddPDUSessionAnchorAndULCL(smContext, *rsp.NodeID)
 			smContext.BPManager.BPStatus = smf_context.AddingPSA
 		}
@@ -308,7 +309,7 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
-			logger.PfcpLog.Infoln("Keep Adding PSAAndULCL")
+			smContext.SubPfcpLog.Infoln("Keep Adding PSAAndULCL")
 
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			producer.AddPDUSessionAnchorAndULCL(smContext, upfNodeID)
@@ -316,12 +317,12 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 	}
 
 	if pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-		logger.PduSessLog.Infoln("[SMF] PFCP Modification Resonse Accept")
+		smContext.SubPduSessLog.Infoln("PFCP Modification Response Accept")
 		if smContext.SMContextState == smf_context.PFCPModification {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
-			logger.PduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
+			smContext.SubPduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
 
 			if smContext.PendingUPF.IsEmpty() {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateSuccess
@@ -329,7 +330,7 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 
 			if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 				if smContext.BPManager.BPStatus == smf_context.UnInitialized {
-					logger.PfcpLog.Infoln("Add PSAAndULCL")
+					smContext.SubPfcpLog.Infoln("Add PSAAndULCL")
 					upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 					producer.AddPDUSessionAnchorAndULCL(smContext, upfNodeID)
 					smContext.BPManager.BPStatus = smf_context.AddingPSA
@@ -337,17 +338,17 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 			}
 		}
 
-		logger.PfcpLog.Infof("PFCP Session Modification Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]\n", SEID)
 	} else {
-		logger.PfcpLog.Infof("PFCP Session Modification Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]\n", SEID)
 		if smContext.SMContextState == smf_context.PFCPModification {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateFailed
 		}
 	}
 
-	logger.CtxLog.Traceln("PFCP Session Context")
+	smContext.SubCtxLog.Traceln("PFCP Session Context")
 	for _, ctx := range smContext.PFCPContext {
-		logger.CtxLog.Traceln(ctx.String())
+		smContext.SubCtxLog.Traceln(ctx.String())
 	}
 }
 
@@ -369,18 +370,18 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
-			logger.PduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
+			smContext.SubPduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
 
 			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 			}
 		}
-		logger.PfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
 	} else {
 		if smContext.SMContextState == smf_context.PFCPModification && !smContext.LocalPurged {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseFailed
 		}
-		logger.PfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
 	}
 }
 
@@ -409,14 +410,14 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 			downlinkDataReport := req.DownlinkDataReport
 
 			if downlinkDataReport.DownlinkDataServiceInformation != nil {
-				logger.PfcpLog.Warnf("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
+				smContext.SubPfcpLog.Warnf("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
 			}
 
 			n1n2Request := models.N1N2MessageTransferRequest{}
 
 			// TS 23.502 4.2.3.3 3a. Send Namf_Communication_N1N2MessageTransfer Request, SMF->AMF
 			if n2SmBuf, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
-				logger.PduSessLog.Errorln("Build PDUSessionResourceSetupRequestTransfer failed:", err)
+				smContext.SubPduSessLog.Errorln("Build PDUSessionResourceSetupRequestTransfer failed:", err)
 			} else {
 				n1n2Request.BinaryDataN2Information = n2SmBuf
 			}
@@ -447,13 +448,13 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 				N1N2MessageCollectionDocumentApi.
 				N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 			if err != nil {
-				logger.PfcpLog.Warnf("Send N1N2Transfer failed")
+				smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
 			}
 			if rspData.Cause == models.N1N2MessageTransferCause_ATTEMPTING_TO_REACH_UE {
-				logger.PfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
+				smContext.SubPfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
 			}
 			if rspData.Cause == models.N1N2MessageTransferCause_UE_NOT_RESPONDING {
-				logger.PfcpLog.Warnf("%v", rspData.Cause)
+				smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
 				// TODO: TS 23.502 4.2.3.3 3c. Failure indication
 			}
 		}
