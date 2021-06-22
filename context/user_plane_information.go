@@ -126,6 +126,41 @@ func (upi *UserPlaneInformation) ExistDefaultPath(dnn string) bool {
 	return exist
 }
 
+func GenerateDataPathForIUPF(UPF *UPF, smContext *SMContext) *DataPath {
+	var lowerBound = 0
+	var idx = 0
+	var upperBound = 0
+	var root *DataPathNode
+	var curDataPathNode *DataPathNode
+	var prevDataPathNode *DataPathNode
+
+	curDataPathNode = NewDataPathNode()
+	curDataPathNode.UPF = UPF
+
+	if idx == lowerBound {
+		root = curDataPathNode
+		root.AddPrev(nil)
+	}
+	if idx == upperBound {
+		curDataPathNode.AddNext(nil)
+	}
+	if prevDataPathNode != nil {
+		prevDataPathNode.AddNext(curDataPathNode)
+		curDataPathNode.AddPrev(prevDataPathNode)
+	}
+	prevDataPathNode = curDataPathNode
+
+	dataPath := &DataPath{
+		Destination: Destination{
+			DestinationIP:   "",
+			DestinationPort: "",
+			Url:             "",
+		},
+		FirstDPNode: root,
+	}
+	return dataPath
+}
+
 func GenerateDataPath(upPath UPPath, smContext *SMContext) *DataPath {
 	if len(upPath) < 1 {
 		logger.CtxLog.Errorf("Invalid data path")

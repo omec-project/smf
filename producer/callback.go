@@ -8,10 +8,12 @@ package producer
 import (
 	"net/http"
 
+	"github.com/free5gc/flowdesc"
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/openapi/models"
 	smf_context "github.com/free5gc/smf/context"
 	"github.com/free5gc/smf/logger"
+	pfcp_message "github.com/free5gc/smf/pfcp/message"
 )
 
 func HandleSMPolicyUpdateNotify(smContextRef string, request models.SmPolicyNotification) *http_wrapper.Response {
@@ -49,12 +51,143 @@ func HandleSMPolicyUpdateNotify(smContextRef string, request models.SmPolicyNoti
 	return httpResponse
 }
 
+func SelectPSA2DataPathForDelete(flowDesc string, smContext *smf_context.SMContext) *smf_context.DataPath {
+	flow_Desc := flowdesc.NewIPFilterRule()
+	err := flowdesc.Decode(flowDesc, flow_Desc)
+	if err != nil {
+		logger.PduSessLog.Errorf("Invalid flow Description: %s\n", err)
+	}
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+		if dataPath.Destination.DestinationIP == flow_Desc.GetDestinationIP() && dataPath.Destination.DestinationPort == flow_Desc.GetDestinationPorts() {
+			return dataPath
+		}
+	}
+	return nil
+}
+
+func SendSmPolicyDeleteToUPF(smContext *smf_context.SMContext, PccRule *smf_context.PCCRule) {
+	logger.PduSessLog.Infoln("Delete AppSection within the PDU Session...")
+	AppID := PccRule.AppID
+
+	// Retrive the policy and flow desc from PFDs in the yaml
+	UERoutingConfig := smf_context.SMF_Self().UERoutingConfig
+
+	for _, pfds := range UERoutingConfig.PfdDatas {
+		if AppID == pfds.AppID {
+			for _, pfd := range pfds.Pfds {
+				UPLinkPDR := new(smf_context.PDR)
+				DownLinkPDR := new(smf_context.PDR)
+				upfNode := new(smf_context.DataPathNode)
+
+				flowDesc := pfd.FlowDescriptions[0]
+				// Send Modfication request to the UPF
+				if smf_context.SMF_Self().ULCLSupport {
+					bpMGR := smContext.BPManager
+					//bpMGR.SelectPSA2DataPath(flowDesc, smContext)
+					bpMGR.ActivatingPath = SelectPSA2DataPathForDelete(flowDesc, smContext)
+
+					if bpMGR.ActivatingPath == nil {
+						logger.PduSessLog.Traceln("Error while getting the datapath")
+						return
+					}
+
+					smContext.AllocateLocalSEIDForDataPath(bpMGR.ActivatingPath)
+					upfNode = bpMGR.ActivatingPath.FirstDPNode
+
+				} else {
+					// for Non-ULCL, delete msg to UPF
+					dataPath := SelectPSA2DataPathForDelete(flowDesc, smContext)
+
+					if dataPath == nil {
+						logger.PduSessLog.Traceln("Error while getting the datapath")
+						return
+					}
+					upfNode = dataPath.FirstDPNode
+				}
+
+				/* Get the DownLink and UpLink PDR for delete*/
+				UPLinkPDR = upfNode.UpLinkTunnel.PDR
+				DownLinkPDR = upfNode.DownLinkTunnel.PDR
+				UPLinkPDR.State = smf_context.RULE_REMOVE
+				DownLinkPDR.State = smf_context.RULE_REMOVE
+				UPLinkPDR.FAR.State = smf_context.RULE_REMOVE
+				DownLinkPDR.FAR.State = smf_context.RULE_REMOVE
+
+				pdrList := []*smf_context.PDR{UPLinkPDR, DownLinkPDR}
+				farList := []*smf_context.FAR{UPLinkPDR.FAR, DownLinkPDR.FAR}
+				barList := []*smf_context.BAR{}
+				qerList := UPLinkPDR.QER
+				pfcp_message.SendPfcpSessionModificationRequest(upfNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
+			}
+		}
+	}
+}
+
+func ApplySmPolicyToUPF(smContext *smf_context.SMContext, PccRule *smf_context.PCCRule) {
+	logger.PduSessLog.Infoln("In ApplySmPolicyToUPF")
+	AppID := PccRule.AppID
+	precedence := PccRule.Precedence
+	tcData := PccRule.RefTrafficControlData()
+
+	// Retrive tcData
+	//	   flowstatus := tcData.FlowStatus
+	//	   Dnai := tcData.RouteToLocs[0].Dnai
+	RouteId := tcData.RouteToLocs[0].RouteProfId
+
+	// Retrive the policy and flow desc from PFDs in the yaml
+	UERoutingConfig := smf_context.SMF_Self().UERoutingConfig
+	forwardingPolicyID := UERoutingConfig.RouteProf[RouteId].ForwardingPolicyID
+
+	for _, pfds := range UERoutingConfig.PfdDatas {
+		if AppID == pfds.AppID {
+			for _, pfd := range pfds.Pfds {
+				flowDesc := pfd.FlowDescriptions[0]
+				// Send Modfication request to the UPF
+				if smf_context.SMF_Self().ULCLSupport {
+					bpMGR := smContext.BPManager
+					bpMGR.SelectPSA2DataPath(flowDesc, smContext)
+					smContext.AllocateLocalSEIDForDataPath(bpMGR.ActivatingPath)
+					bpMGR.ActivatingPath.ActivateTunnelAndPDRForIUPF(smContext, forwardingPolicyID)
+					EstablishRANTunnelInfo(smContext)
+					ULCLModificationRequest(smContext, flowDesc, uint32(precedence))
+				} else {
+					// for Non-ULCL
+
+					defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+					ANUPF := defaultPath.FirstDPNode
+
+					flow_Desc := flowdesc.NewIPFilterRule()
+					err := flowdesc.Decode(flowDesc, flow_Desc)
+					if err != nil {
+						logger.PduSessLog.Errorf("Invalid flow Description: %s\n", err)
+					}
+
+					dataPath := smf_context.GenerateDataPathForIUPF(ANUPF.UPF, smContext)
+					dataPath.Destination.DestinationIP = flow_Desc.GetDestinationIP()
+					dataPath.Destination.DestinationPort = flow_Desc.GetDestinationPorts()
+					dataPath.IsDefaultPath = false
+					smContext.Tunnel.AddDataPath(dataPath)
+					if defaultPath != nil {
+						smContext.Tunnel.AddDataPath(dataPath)
+						dataPath.ActivateTunnelAndPDR(smContext, 255)
+						SendPFCPRule(smContext, dataPath)
+					}
+				}
+			}
+		}
+	}
+	logger.PduSessLog.Infoln("Exit ApplySmPolicyToUPF")
+}
+
 func handlePccRuleDelete(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) {
 	for id, pccRule := range smContext.PCCRules {
 		// if rule does not exists in the pccrule list from PCF. Delete it
-		if _, exist := decision.PccRules[id]; !exist {
-			logger.PduSessLog.Debugf("Remove PccRule-id[%s].. PccRules[%s]", id, pccRule)
-			delete(smContext.PCCRules, id)
+		if _, exist := decision.PccRules[id]; exist {
+			if len(decision.SessRules) == 0 {
+			  logger.PduSessLog.Debugf("Remove PccRule[%s]", id)
+			  SendSmPolicyDeleteToUPF(smContext, pccRule)
+			  delete(smContext.PCCRules, id)
+		        }
 		}
 	}
 }
@@ -76,6 +209,7 @@ func handlePccRule(smContext *smf_context.SMContext, id string, PccRuleModel *mo
 				data := smf_context.NewTrafficControlDataFromModel(tcdata)
 				smContext.PCCRules[id].SetRefTrafficControlData(data)
 			}
+			ApplySmPolicyToUPF(smContext, pccRule)
 		} else { // PCC rule modification
 			logger.PduSessLog.Debugf("Modify PccRule[%s]... new ID[%s]", oldPccRule.PCCRuleID, id)
 			smContext.PCCRules[id] = pccRule
@@ -87,7 +221,8 @@ func handlePccRule(smContext *smf_context.SMContext, id string, PccRuleModel *mo
 			tcdata := smContext.PCCRules[id].RefTrafficControlData()
 			oldtcdata := oldPccRule.RefTrafficControlData()
 			if oldPccRule.AppID != PccRuleModel.AppId || oldPccRule.Precedence != PccRuleModel.Precedence || tcdata.RouteToLocs[0].Dnai != oldtcdata.RouteToLocs[0].Dnai {
-				logger.PduSessLog.Debugf("Got modify request. Updated values...")
+				logger.PduSessLog.Debugf("Got modify request with updated values")
+				ApplySmPolicyToUPF(smContext, pccRule)
 			}
 		}
 	}
@@ -128,6 +263,7 @@ func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *model
 		// Update session rules from decision
 		for id, sessRuleModel := range decision.SessRules {
 			handleSessionRule(smContext, id, sessRuleModel)
+			UpdatePCCRulesSMContext(smContext, decision)
 		}
 		for id := range smContext.SessionRules {
 			// Randomly choose a session rule to activate
@@ -136,10 +272,16 @@ func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *model
 		}
 	} else {
 		selectedSessionRuleID := selectedSessionRule.SessionRuleID
-		// Update session rules from decision
-		for id, sessRuleModel := range decision.SessRules {
+
+		if len(decision.SessRules) == 0 {
+		  handleSessionRule(smContext, selectedSessionRuleID, nil)
+		  UpdatePCCRulesSMContext(smContext, decision)
+	        } else {
+		  // Update session rules from decision
+		  for id, sessRuleModel := range decision.SessRules {
 			handleSessionRule(smContext, id, sessRuleModel)
 			UpdatePCCRulesSMContext(smContext, decision)
+		  }
 		}
 		if _, exist := smContext.SessionRules[selectedSessionRuleID]; !exist {
 			// Original active session rule is deleted; choose again
@@ -154,6 +296,7 @@ func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *model
 		}
 	}
 
+	smContext.SMContextState = smf_context.Active
 	logger.PduSessLog.Traceln("End of ApplySmPolicyFromDecision")
 	return err
 }
