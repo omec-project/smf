@@ -209,8 +209,12 @@ func pdrToUpdatePDR(pdr *context.PDR) *pfcp.UpdatePDR {
 		FarIdValue: pdr.FAR.FARID,
 	}
 
-	updatePDR.FARID = &pfcpType.FARID{
-		FarIdValue: pdr.FAR.FARID,
+	for _, qer := range pdr.QER {
+		if qer != nil {
+			updatePDR.QERID = append(updatePDR.QERID, &pfcpType.QERID{
+				QERID: qer.QERID,
+			})
+		}
 	}
 
 	return updatePDR
@@ -240,11 +244,10 @@ func farToUpdateFAR(far *context.FAR) *pfcp.UpdateFAR {
 		updateFAR.UpdateForwardingParameters.NetworkInstance = &far.ForwardingParameters.NetworkInstance
 		updateFAR.UpdateForwardingParameters.OuterHeaderCreation = far.ForwardingParameters.OuterHeaderCreation
 		if far.ForwardingParameters.PFCPSMReqFlags != nil {
-		        updateFAR.UpdateForwardingParameters.PFCPSMReqFlags = far.ForwardingParameters.PFCPSMReqFlags
+			updateFAR.UpdateForwardingParameters.PFCPSMReqFlags = far.ForwardingParameters.PFCPSMReqFlags
 			//reset original far sndem flag
 			far.ForwardingParameters.PFCPSMReqFlags = nil
 		}
-
 
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			updateFAR.UpdateForwardingParameters.ForwardingPolicy = new(pfcpType.ForwardingPolicy)

@@ -125,5 +125,3 @@ func IncrementSvcUdmMsgStats(smfID, msgType, direction, result, reason string) {
 func SetSessStats(nodeId string, count uint64) {
 	smfStats.sessions.WithLabelValues(nodeId).Set(float64(count))
 }
-
-
