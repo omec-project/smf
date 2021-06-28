@@ -283,7 +283,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			CommunicationClient.
 			N1N2MessageCollectionDocumentApi.
 			N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
-		smContext.SMContextState = smf_context.Active
+		smContext.ChangeState(smf_context.Active)
 		smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
 		if err != nil {
 			smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")

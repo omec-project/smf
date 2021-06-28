@@ -69,7 +69,7 @@ func handleSessionRule(smContext *smf_context.SMContext, id string, sessionRuleM
 func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) error {
 	logger.PduSessLog.Traceln("In ApplySmPolicyFromDecision")
 	var err error
-	smContext.SMContextState = smf_context.ModificationPending
+	smContext.ChangeState(smf_context.ModificationPending)
 	selectedSessionRule := smContext.SelectedSessionRule()
 	if selectedSessionRule == nil { // No active session rule
 		// Update session rules from decision
