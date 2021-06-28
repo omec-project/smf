@@ -343,6 +343,17 @@ func (smf *SMF) Start() {
 
 	time.Sleep(1000 * time.Millisecond)
 
+	logger.AppLog.Infof("Context SMF ULCL support[%s]\n", context.SMF_Self().ULCLSupport)
+	if context.SMF_Self().ULCLSupport {
+		for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
+			// Currently assuming the fist node is branching node.
+			logger.AppLog.Infof("Send PFCP PFD Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
+			message.SendPfcpPFDsSetupRequest(upf.NodeID)
+		}
+	}
+
+	time.Sleep(1000 * time.Millisecond)
+
 	HTTPAddr := fmt.Sprintf("%s:%d", context.SMF_Self().BindingIPv4, context.SMF_Self().SBIPort)
 	server, err := http2_util.NewServer(HTTPAddr, util.SmfLogPath, router)
 

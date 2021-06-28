@@ -149,7 +149,7 @@ func ApplySmPolicyToUPF(smContext *smf_context.SMContext, PccRule *smf_context.P
 					smContext.AllocateLocalSEIDForDataPath(bpMGR.ActivatingPath)
 					bpMGR.ActivatingPath.ActivateTunnelAndPDRForIUPF(smContext, forwardingPolicyID)
 					EstablishRANTunnelInfo(smContext)
-					ULCLModificationRequest(smContext, flowDesc, uint32(precedence))
+					ULCLModificationRequest(smContext, flowDesc, uint32(precedence), AppID, "pdf")
 				} else {
 					// for Non-ULCL
 

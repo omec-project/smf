@@ -146,6 +146,33 @@ func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.C
 	logger.PfcpLog.Infof("Sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
+func SendPfcpPFDsSetupRequest(upNodeID pfcpType.NodeID) {
+	pfcpMsg, err := BuildPfcpPFDsSetupRequest()
+	if err != nil {
+		logger.PfcpLog.Errorf("Build PFCP PFD Setup Request failed: %v", err)
+		return
+	}
+
+	message := pfcp.Message{
+		Header: pfcp.Header{
+			Version:        pfcp.PfcpVersion,
+			MP:             0,
+			S:              pfcp.SEID_NOT_PRESENT,
+			MessageType:    pfcp.PFCP_PFD_MANAGEMENT_REQUEST,
+			SequenceNumber: getSeqNumber(),
+		},
+		Body: pfcpMsg,
+	}
+
+	addr := &net.UDPAddr{
+		IP:   upNodeID.ResolveNodeIdToIp(),
+		Port: pfcpUdp.PFCP_PORT,
+	}
+
+	udp.SendPfcp(message, addr, nil)
+	logger.PfcpLog.Infof("Sent PFCP PFD Setup Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+}
+
 func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID) {
 	pfcpMsg, err := BuildPfcpAssociationReleaseRequest()
 	if err != nil {

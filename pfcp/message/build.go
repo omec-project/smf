@@ -25,6 +25,51 @@ func BuildPfcpHeartbeatRequest() (pfcp.HeartbeatRequest, error) {
 	return msg, nil
 }
 
+func appidToCreateAPPID(appID string, pfdflowDesc []string) *pfcp.ApplicationIDsPFDs {
+	createAPPID := new(pfcp.ApplicationIDsPFDs)
+	createAPPID.PFD = new(pfcp.PFD)
+
+	createAPPID.ApplicationID = &pfcpType.ApplicationID{
+		ApplicationIdentifier: []byte(appID),
+	}
+
+	for _, flowDesc := range pfdflowDesc {
+		var PFDContents pfcpType.PFDContents
+		PFDContents.FlowDescription = flowDesc
+		createAPPID.PFD.PFDContents = append(createAPPID.PFD.PFDContents, PFDContents)
+	}
+
+	return createAPPID
+}
+
+func BuildPfcpPFDsSetupRequest() (pfcp.PFCPPFDManagementRequest, error) {
+
+	msg := pfcp.PFCPPFDManagementRequest{}
+	UERoutingConfig := context.SMF_Self().UERoutingConfig
+	msg.ApplicationIDsPFDs = make([]*pfcp.ApplicationIDsPFDs, 0)
+
+	for _, pfds := range UERoutingConfig.PfdDatas {
+		for _, pfd := range pfds.Pfds {
+			msg.ApplicationIDsPFDs = append(msg.ApplicationIDsPFDs, appidToCreateAPPID(pfds.AppID, pfd.FlowDescriptions))
+		}
+	}
+	return msg, nil
+}
+
+func BuildPfcpPFDsSetupResponse() (pfcp.PFCPPFDManagementResponse, error) {
+	msg := pfcp.PFCPPFDManagementResponse{}
+
+	msg.Cause = &pfcpType.Cause{
+		CauseValue: pfcpType.CauseRequestAccepted,
+	}
+
+	msg.OffendingIE = &pfcpType.OffendingIE{
+		TypeOfOffendingIe: 12345,
+	}
+
+	return msg, nil
+}
+
 func BuildPfcpAssociationSetupRequest() (pfcp.PFCPAssociationSetupRequest, error) {
 	msg := pfcp.PFCPAssociationSetupRequest{}
 
