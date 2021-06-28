@@ -64,6 +64,7 @@ type UPF struct {
 	SNssaiInfos  []SnssaiUPFInfo
 	N3Interfaces []UPFInterfaceInfo
 	N9Interfaces []UPFInterfaceInfo
+	N6Interfaces []UPFInterfaceInfo
 
 	pdrPool sync.Map
 	farPool sync.Map
@@ -224,6 +225,7 @@ func NewUPF(nodeID *pfcpType.NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf
 
 	upf.N3Interfaces = make([]UPFInterfaceInfo, 0)
 	upf.N9Interfaces = make([]UPFInterfaceInfo, 0)
+	upf.N6Interfaces = make([]UPFInterfaceInfo, 0)
 
 	for _, iface := range ifaces {
 		upIface := NewUPFInterfaceInfo(&iface)
@@ -233,6 +235,8 @@ func NewUPF(nodeID *pfcpType.NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf
 			upf.N3Interfaces = append(upf.N3Interfaces, *upIface)
 		case models.UpInterfaceType_N9:
 			upf.N9Interfaces = append(upf.N9Interfaces, *upIface)
+		case models.UpInterfaceType_N6:
+			upf.N6Interfaces = append(upf.N6Interfaces, *upIface)
 		}
 	}
 
@@ -253,6 +257,12 @@ func (upf *UPF) GetInterface(interfaceType models.UpInterfaceType, dnn string) *
 		for i, iface := range upf.N9Interfaces {
 			if iface.NetworkInstance == dnn {
 				return &upf.N9Interfaces[i]
+			}
+		}
+	case models.UpInterfaceType_N6:
+		for i, iface := range upf.N6Interfaces {
+			if iface.NetworkInstance == dnn {
+				return &upf.N6Interfaces[i]
 			}
 		}
 	}
