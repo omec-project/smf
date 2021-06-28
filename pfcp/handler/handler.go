@@ -88,7 +88,12 @@ func HandlePfcpPfdManagementRequest(msg *pfcpUdp.Message) {
 }
 
 func HandlePfcpPfdManagementResponse(msg *pfcpUdp.Message) {
-	logger.PfcpLog.Warnf("PFCP PFD Management Response handling is not implemented")
+	req := msg.PfcpMessage.Body.(pfcp.PFCPPFDManagementResponse)
+	logger.PfcpLog.Infoln("In HandlePfcpPfdManagementResponse")
+
+	if req.Cause.CauseValue == pfcpType.CauseRequestAccepted {
+		logger.PfcpLog.Infoln("pfcp pfd Requested Accepted")
+	}
 }
 
 func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {

@@ -157,7 +157,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 	logger.PduSessLog.Traceln("End of EstablishPSA2")
 }
 
-func ULCLModificationRequest(smContext *context.SMContext, appFlow string, precedence uint32) {
+func ULCLModificationRequest(smContext *context.SMContext, appFlow string, precedence uint32, appID string, sdfFilter string) {
 
 	logger.PduSessLog.Infoln("In ULCLModificationRequest")
 
@@ -184,7 +184,8 @@ func ULCLModificationRequest(smContext *context.SMContext, appFlow string, prece
 				logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
 			}
 
-			UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+			if sdfFilter == "sdfFilter" {
+			  UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
 				Bid:                     false,
 				Fl:                      false,
 				Spi:                     false,
@@ -192,6 +193,9 @@ func ULCLModificationRequest(smContext *context.SMContext, appFlow string, prece
 				Fd:                      true,
 				LengthOfFlowDescription: uint16(len(FlowDespcriptionStr)),
 				FlowDescription:         []byte(FlowDespcriptionStr),
+			  }
+		        } else {
+				UPLinkPDR.PDI.ApplicationID = appID
 			}
 
 			UPLinkPDR.Precedence = uint32(precedence)
@@ -386,7 +390,7 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
-				err = FlowDespcription.SetDirection(flowdesc.Out) // uplink
+			        err = FlowDespcription.SetDirection(flowdesc.Out) // uplink
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
