@@ -8,6 +8,7 @@ package context
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
@@ -37,8 +38,10 @@ var (
 	seidSMContextMap sync.Map
 )
 
-var smContextCount uint64
-var smContextActive uint64
+var (
+	smContextCount  uint64
+	smContextActive uint64
+)
 
 type SMContextState int
 
@@ -188,7 +191,7 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	}
 
 	//Sess Stats
-	incSMContextActive()
+	smContextActive := incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 
 	//initialise log tags
@@ -208,6 +211,29 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
 }
 
+func (smContext *SMContext) ChangeState(nextState SMContextState) {
+
+	//Update Subscriber profile Metrics
+	if nextState == Active || smContext.SMContextState == Active {
+		var upf string
+		if smContext.Tunnel != nil {
+			upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
+			upf = strings.Split(upf, ".")[0]
+		}
+		if nextState == Active {
+			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), nextState.String(),
+				upf, 1)
+		} else {
+			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), smContext.SMContextState.String(),
+				upf, 0)
+		}
+	}
+
+	smContext.SubCtxLog.Infof("context state change, current state[%v] next state[%v]",
+		smContext.SMContextState.String(), nextState.String())
+	smContext.SMContextState = nextState
+}
+
 //*** add unit test ***//
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
@@ -224,13 +250,15 @@ func RemoveSMContext(ref string) {
 		smContext = value.(*SMContext)
 	}
 
+	smContext.ChangeState(InActive)
+
 	for _, pfcpSessionContext := range smContext.PFCPContext {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
 	}
 
 	smContextPool.Delete(ref)
 	//Sess Stats
-	decSMContextActive()
+	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 }
 

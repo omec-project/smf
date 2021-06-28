@@ -20,12 +20,13 @@ import (
 
 //SmfStats captures SMF level stats
 type SmfStats struct {
-	n11Msg    *prometheus.CounterVec
-	n4Msg     *prometheus.CounterVec
-	svcNrfMsg *prometheus.CounterVec
-	svcPcfMsg *prometheus.CounterVec
-	svcUdmMsg *prometheus.CounterVec
-	sessions  *prometheus.GaugeVec
+	n11Msg      *prometheus.CounterVec
+	n4Msg       *prometheus.CounterVec
+	svcNrfMsg   *prometheus.CounterVec
+	svcPcfMsg   *prometheus.CounterVec
+	svcUdmMsg   *prometheus.CounterVec
+	sessions    *prometheus.GaugeVec
+	sessProfile *prometheus.GaugeVec
 }
 
 var smfStats *SmfStats
@@ -61,6 +62,11 @@ func initSmfStats() *SmfStats {
 			Name: "smf_pdu_sessions",
 			Help: "Number of SMF PDU sessions currently in the SMF",
 		}, []string{"node_id"}),
+
+		sessProfile: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "smf_pdu_session_profile",
+			Help: "SMF PDU session Profile",
+		}, []string{"id", "ip", "state", "upf"}),
 	}
 }
 
@@ -83,7 +89,9 @@ func (ps *SmfStats) register() error {
 	if err := prometheus.Register(ps.sessions); err != nil {
 		return err
 	}
-
+	if err := prometheus.Register(ps.sessProfile); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -131,4 +139,8 @@ func SetSessStats(nodeId string, count uint64) {
 	smfStats.sessions.WithLabelValues(nodeId).Set(float64(count))
 }
 
+//SetSessProfileStats maintains Session profile info
+func SetSessProfileStats(id, ip, state, upf string, count uint64) {
+	smfStats.sessProfile.WithLabelValues(id, ip, state, upf).Set(float64(count))
+}
 
