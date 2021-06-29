@@ -241,15 +241,21 @@ func EstablishULCL(smContext *context.SMContext) {
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
-			err = FlowDespcription.SetDestinationIP(dest.DestinationIP)
+			// based on the 3gpp TS 129 244 - V16.5.0, section 5.2.1A.2A Provisioning of SDF filters
+			//Source Interface is CORE, this indicates that the filter is for downlink data flow, so the UP function
+			// shall apply the Flow Description as is
+			// Source Interface is ACCESS, this indicates that the filter is for uplink data flow, so the UP function
+			// So, swapping the dest & src in uplink to match the spec
+			// shall swap the source and destination address/port in the Flow Description
+			err = FlowDespcription.SetSourceIP(dest.DestinationIP)
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
-			err = FlowDespcription.SetDestinationPorts(dest.DestinationPort)
+			err = FlowDespcription.SetSourcePorts(dest.DestinationPort)
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
-			err = FlowDespcription.SetSourceIP(smContext.PDUAddress.To4().String())
+			err = FlowDespcription.SetDestinationIP(smContext.PDUAddress.To4().String())
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
@@ -394,15 +400,20 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
-				err = FlowDespcription.SetDestinationIP(dest.DestinationIP)
+			        // based on the 3gpp TS 129 244 - V16.5.0, section 5.2.1A.2A Provisioning of SDF filters
+				//Source Interface is CORE, this indicates that the filter is for downlink data flow, so the UP function
+				// shall apply the Flow Description as is
+				// Source Interface is ACCESS, this indicates that the filter is for uplink data flow, so the UP function
+				// So, swapping the dest & src in uplink to match the spec
+				err = FlowDespcription.SetSourceIP(dest.DestinationIP)
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
-				err = FlowDespcription.SetDestinationPorts(dest.DestinationPort)
+			        err = FlowDespcription.SetSourcePorts(dest.DestinationPort)
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
-				err = FlowDespcription.SetSourceIP(smContext.PDUAddress.To4().String())
+				err = FlowDespcription.SetDestinationIP(smContext.PDUAddress.To4().String())
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
