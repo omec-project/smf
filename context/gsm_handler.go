@@ -3,7 +3,6 @@ package context
 import (
 	"github.com/free5gc/nas/nasConvert"
 	"github.com/free5gc/nas/nasMessage"
-	"github.com/free5gc/smf/logger"
 )
 
 func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) {
@@ -136,8 +135,7 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 	smContext.Pti = req.GetPTI()
 
 	if ip := smContext.PDUAddress; ip != nil {
-		logger.PduSessLog.Infof("UE[%s] PDUSessionID[%d] Release IP[%s]",
-			smContext.Supi, smContext.PDUSessionID, smContext.PDUAddress.String())
+		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
 		smContext.DNNInfo.UeIPAllocator.Release(ip)
 	}
 }
