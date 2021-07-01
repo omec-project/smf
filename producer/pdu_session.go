@@ -919,6 +919,13 @@ func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSm
 	smContext.ChangeState(smf_context.PFCPModification)
 	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
+	//Release UE IP-Address
+	if ip := smContext.PDUAddress; ip != nil {
+		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
+		smContext.DNNInfo.UeIPAllocator.Release(ip)
+	}
+
+	//Release User-plane
 	releaseTunnel(smContext)
 
 	var httpResponse *http_wrapper.Response
