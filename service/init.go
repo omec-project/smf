@@ -273,24 +273,33 @@ func (smf *SMF) Start() {
 		if <-factory.ConfigPodTrigger {
 			initLog.Infof("minimum configuration from config pod available")
 		}
+
+		//Trigger background goroutine to handle further config updates
+		go func() {
+			initLog.Infof("Dynamic config update task initialised")
+			for {
+				if <-factory.ConfigPodTrigger {
+					if context.ProcessConfigUpdate() {
+						smf.SendNrfRegistration()
+					}
+				}
+			}
+		}()
 	} else {
 		initLog.Infof("Configuration is managed by Helm")
 	}
 
 	//Init SMF Service
 	context.InitSmfContext(&factory.SmfConfig)
+
 	// allocate id for each upf
 	context.AllocateUPFID()
+
+	//Init UE Specific Config
 	context.InitSMFUERouting(&factory.UERoutingConfig)
 
-	err := consumer.SendNFRegistration()
-	if err != nil {
-		retry_err := consumer.RetrySendNFRegistration(10)
-		if retry_err != nil {
-			logger.InitLog.Errorln(retry_err)
-			return
-		}
-	}
+	//Send NRF Registration
+	smf.SendNrfRegistration()
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
 	oam.AddService(router)
@@ -362,4 +371,16 @@ func (smf *SMF) Terminate() {
 
 func (smf *SMF) Exec(c *cli.Context) error {
 	return nil
+}
+
+func (smf *SMF) SendNrfRegistration() {
+	err := consumer.SendNFRegistration()
+	if err != nil {
+		retry_err := consumer.RetrySendNFRegistration(10)
+		if retry_err != nil {
+			logger.InitLog.Errorln(retry_err)
+			return
+		}
+	}
+
 }

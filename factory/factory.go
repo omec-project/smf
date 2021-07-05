@@ -21,8 +21,9 @@ import (
 )
 
 var (
-	SmfConfig       Config
-	UERoutingConfig RoutingConfig
+	SmfConfig        Config
+	UERoutingConfig  RoutingConfig
+	UpdatedSmfConfig UpdateSmfConfig
 )
 
 // TODO: Support configuration update from REST api

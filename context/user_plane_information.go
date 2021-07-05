@@ -6,6 +6,8 @@
 package context
 
 import (
+	"bytes"
+	"fmt"
 	"net"
 	"reflect"
 
@@ -60,120 +62,26 @@ func AllocateUPFID() {
 
 // NewUserPlaneInformation process the configuration then returns a new instance of UserPlaneInformation
 func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlaneInformation {
-	nodePool := make(map[string]*UPNode)
-	upfPool := make(map[string]*UPNode)
-	anPool := make(map[string]*UPNode)
-	upfIPMap := make(map[string]string)
-
-	for name, node := range upTopology.UPNodes {
-		upNode := new(UPNode)
-		upNode.Type = UPNodeType(node.Type)
-		switch upNode.Type {
-		case UPNODE_AN:
-			upNode.ANIP = net.ParseIP(node.ANIP)
-			anPool[name] = upNode
-		case UPNODE_UPF:
-			// ParseIp() always return 16 bytes
-			// so we can't use the length of return ip to separate IPv4 and IPv6
-			// This is just a work around
-			var (
-				nodeIdType uint8
-				ip         net.IP
-			)
-
-			if ip = net.ParseIP(node.NodeID); ip != nil {
-				//v4 or v6
-				if ip.To4() != nil {
-					//IPv4
-					ip = ip.To4()
-					nodeIdType = pfcpType.NodeIdTypeIpv4Address
-				} else {
-					//IPv6
-					ip = ip.To16()
-					nodeIdType = pfcpType.NodeIdTypeIpv6Address
-				}
-			} else {
-				//FQDN
-				nodeIdType = pfcpType.NodeIdTypeFqdn
-				ip = []byte(node.NodeID)
-				/*
-					if ns, err := net.LookupHost(node.NodeID); err != nil {
-						//Error, keep fqdn info intact for future resolution
-						logger.InitLog.Warnf("Node [%v] not resolved to any IP", node.NodeID)
-						nodeIdType = pfcpType.NodeIdTypeFqdn
-						ip = []byte(node.NodeID)
-					} else {
-						ip = net.ParseIP(ns[0])
-						logger.InitLog.Infof("Node [%v] resolved to IP [%v]", node.NodeID, ip)
-						if ip.To4() != nil {
-							//IPv4
-							nodeIdType = pfcpType.NodeIdTypeIpv4Address
-						} else {
-							//IPv6
-							nodeIdType = pfcpType.NodeIdTypeIpv6Address
-						}
-					}
-				*/
-			}
-			//Populate outcome
-			upNode.NodeID = pfcpType.NodeID{
-				NodeIdType:  nodeIdType,
-				NodeIdValue: []byte(ip),
-			}
-
-			upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
-			snssaiInfos := make([]SnssaiUPFInfo, 0)
-			for _, snssaiInfoConfig := range node.SNssaiInfos {
-				snssaiInfo := SnssaiUPFInfo{
-					SNssai: SNssai{
-						Sst: snssaiInfoConfig.SNssai.Sst,
-						Sd:  snssaiInfoConfig.SNssai.Sd,
-					},
-					DnnList: make([]DnnUPFInfoItem, 0),
-				}
-
-				for _, dnnInfoConfig := range snssaiInfoConfig.DnnUpfInfoList {
-					snssaiInfo.DnnList = append(snssaiInfo.DnnList, DnnUPFInfoItem{
-						Dnn:             dnnInfoConfig.Dnn,
-						DnaiList:        dnnInfoConfig.DnaiList,
-						PduSessionTypes: dnnInfoConfig.PduSessionTypes,
-					})
-				}
-				snssaiInfos = append(snssaiInfos, snssaiInfo)
-			}
-			upNode.UPF.SNssaiInfos = snssaiInfos
-			upfPool[name] = upNode
-		default:
-			logger.InitLog.Warningf("invalid UPNodeType: %s\n", upNode.Type)
-		}
-
-		nodePool[name] = upNode
-
-		ipStr := upNode.NodeID.ResolveNodeIdToIp().String()
-		upfIPMap[ipStr] = name
-	}
-
-	for _, link := range upTopology.Links {
-		nodeA := nodePool[link.A]
-		nodeB := nodePool[link.B]
-		if nodeA == nil || nodeB == nil {
-			logger.InitLog.Warningf("UPLink [%s] <=> [%s] not establish\n", link.A, link.B)
-			continue
-		}
-		nodeA.Links = append(nodeA.Links, nodeB)
-		nodeB.Links = append(nodeB.Links, nodeA)
-	}
 
 	userplaneInformation := &UserPlaneInformation{
-		UPNodes:              nodePool,
-		UPFs:                 upfPool,
-		AccessNetwork:        anPool,
-		UPFIPToName:          upfIPMap,
+		UPNodes:              make(map[string]*UPNode),
+		UPFs:                 make(map[string]*UPNode),
+		AccessNetwork:        make(map[string]*UPNode),
+		UPFIPToName:          make(map[string]string),
 		UPFsID:               make(map[string]string),
 		UPFsIPtoID:           make(map[string]string),
 		DefaultUserPlanePath: make(map[string][]*UPNode),
 	}
 
+	//Load UP Nodes to SMF
+	for _, node := range upTopology.UPNodes {
+		userplaneInformation.InsertSmfUserPlaneNode(&node)
+	}
+
+	//Load UP Node Link config to SMF
+	for _, link := range upTopology.Links {
+		userplaneInformation.InsertUPNodeLinks(&link)
+	}
 	return userplaneInformation
 }
 
@@ -356,4 +264,149 @@ func getPathBetween(cur *UPNode, dest *UPNode, visited map[*UPNode]bool,
 	}
 
 	return nil, false
+}
+
+//insert new UPF (only N3)
+func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(node *factory.UPNode) error {
+	fmt.Printf("UP NODE BEING INSERTED : %v \n", node)
+	name := node.NodeID
+	upNode := new(UPNode)
+	upNode.Type = UPNodeType(node.Type)
+	switch upNode.Type {
+	case UPNODE_AN:
+		upNode.ANIP = net.ParseIP(node.ANIP)
+		upi.AccessNetwork[name] = upNode
+	case UPNODE_UPF:
+		// ParseIp() always return 16 bytes
+		// so we can't use the length of return ip to separate IPv4 and IPv6
+		var (
+			nodeIdType uint8
+			ip         net.IP
+		)
+
+		//Find IP
+		if ip = net.ParseIP(node.NodeID); ip != nil {
+			//v4 or v6
+			if ip.To4() != nil {
+				//IPv4
+				ip = ip.To4()
+				nodeIdType = pfcpType.NodeIdTypeIpv4Address
+			} else {
+				//IPv6
+				ip = ip.To16()
+				nodeIdType = pfcpType.NodeIdTypeIpv6Address
+			}
+		} else {
+			//FQDN
+			nodeIdType = pfcpType.NodeIdTypeFqdn
+			ip = []byte(node.NodeID)
+		}
+		//Populate outcome
+		upNode.NodeID = pfcpType.NodeID{
+			NodeIdType:  nodeIdType,
+			NodeIdValue: []byte(ip),
+		}
+
+		upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
+
+		snssaiInfos := make([]SnssaiUPFInfo, 0)
+		for _, snssaiInfoConfig := range node.SNssaiInfos {
+			snssaiInfo := SnssaiUPFInfo{
+				SNssai: SNssai{
+					Sst: snssaiInfoConfig.SNssai.Sst,
+					Sd:  snssaiInfoConfig.SNssai.Sd,
+				},
+				DnnList: make([]DnnUPFInfoItem, 0),
+			}
+
+			for _, dnnInfoConfig := range snssaiInfoConfig.DnnUpfInfoList {
+				snssaiInfo.DnnList = append(snssaiInfo.DnnList, DnnUPFInfoItem{
+					Dnn:             dnnInfoConfig.Dnn,
+					DnaiList:        dnnInfoConfig.DnaiList,
+					PduSessionTypes: dnnInfoConfig.PduSessionTypes,
+				})
+			}
+			snssaiInfos = append(snssaiInfos, snssaiInfo)
+		}
+		upNode.UPF.SNssaiInfos = snssaiInfos
+		upi.UPFs[name] = upNode
+	default:
+		logger.InitLog.Warningf("invalid UPNodeType: %s\n", upNode.Type)
+	}
+
+	upi.UPNodes[name] = upNode
+
+	ipStr := upNode.NodeID.ResolveNodeIdToIp().String()
+	upi.UPFIPToName[ipStr] = name
+
+	return nil
+}
+
+//update UPF info
+func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(UPNode *factory.UPNode) error {
+	//What all to update- nssai/dnn info
+
+	return nil
+}
+
+//delete UPF
+func (upi *UserPlaneInformation) DeleteSmfUserPlaneNode(UPNode *factory.UPNode) error {
+	//Delete UPF from following Maps
+	/*
+		    nodePool := upi.UPNodes
+			upfPool := upi.UPFs
+			anPool := upi.AccessNetwork
+			upfIPMap := upi.UPFIPToName
+			UPFsID:
+		    UPFsIPtoID:
+
+			//also clean up default paths to UPFs
+	*/
+	return nil
+}
+
+func (upi *UserPlaneInformation) InsertUPNodeLinks(link *factory.UPLink) error {
+	//Update Links
+	fmt.Printf("CURRENT UP Nodes: %v \n", upi.UPNodes)
+	nodeA := upi.UPNodes[link.A]
+	nodeB := upi.UPNodes[link.B]
+	if nodeA == nil || nodeB == nil {
+		logger.InitLog.Warningf("UPLink [%s] <=> [%s] not establish\n", link.A, link.B)
+		panic("Invalid UPF Links")
+	}
+	nodeA.Links = append(nodeA.Links, nodeB)
+	nodeB.Links = append(nodeB.Links, nodeA)
+
+	return nil
+}
+
+func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
+
+	nodeA := upi.UPNodes[link.A]
+	nodeB := upi.UPNodes[link.B]
+
+	//Iterate through node-A links and remove Node-B
+	if nodeA != nil {
+		for index, upNode := range nodeA.Links {
+
+			if bytes.Equal(upNode.NodeID.NodeIdValue, nodeB.NodeID.NodeIdValue) {
+				//skip nodeB from Links
+				nodeA.Links = append(nodeA.Links[:index], nodeA.Links[index+1:]...)
+				break
+			}
+		}
+	}
+
+	//Iterate through node-B links and remove Node-A
+	if nodeB != nil {
+		for index, upNode := range nodeB.Links {
+
+			if bytes.Equal(upNode.NodeID.NodeIdValue, nodeA.NodeID.NodeIdValue) {
+				//skip nodeA from Links
+				nodeB.Links = append(nodeB.Links[:index], nodeB.Links[index+1:]...)
+				break
+			}
+		}
+	}
+	return nil
 }
