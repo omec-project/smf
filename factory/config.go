@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+//
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
+
 /*
  * AMF Configuration Factory
  */
@@ -5,6 +10,7 @@
 package factory
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/free5gc/logger_util"
@@ -222,8 +228,9 @@ func (c *Config) updateSmfConfig(rsp *protos.NetworkSliceResponse) error {
 
 		//make SNSSAI
 		var sNssai models.Snssai
-		sNssai.Sd = string(ns.Nssai.Sd)
-		sNssai.Sst = ns.Nssai.Sst
+		sNssai.Sd = ns.Nssai.Sd
+		numSst, _ := strconv.Atoi(ns.Nssai.Sst)
+		sNssai.Sst = int32(numSst)
 		sNssaiInfoItem.SNssai = &sNssai
 
 		//make DNN Info structure
