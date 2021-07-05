@@ -22,6 +22,7 @@ var (
 	CtxLog      *logrus.Entry
 	ConsumerLog *logrus.Entry
 	GinLog      *logrus.Entry
+	GrpcLog     *logrus.Entry
 )
 
 func init() {
@@ -55,6 +56,7 @@ func init() {
 	CtxLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "CTX"})
 	ConsumerLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "Consumer"})
 	GinLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "GIN"})
+	GrpcLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "GRPC"})
 }
 
 func SetLogLevel(level logrus.Level) {

@@ -9,6 +9,8 @@ import (
 
 	"github.com/free5gc/logger_util"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/smf/logger"
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 )
 
 const (
@@ -159,6 +161,12 @@ type UPLink struct {
 	B string `yaml:"B"`
 }
 
+var ConfigPodTrigger chan bool
+
+func init() {
+	ConfigPodTrigger = make(chan bool, 1)
+}
+
 func (c *Config) GetVersion() string {
 	if c.Info != nil && c.Info.Version != "" {
 		return c.Info.Version
@@ -171,4 +179,107 @@ func (r *RoutingConfig) GetVersion() string {
 		return r.Info.Version
 	}
 	return ""
+}
+
+func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
+	for {
+		rsp := <-commChannel
+		logger.GrpcLog.Infof("received updateConfig in the smf app: %+v \n", rsp)
+
+		//update slice info
+		if err := c.updateSmfConfig(rsp); err != nil {
+			logger.GrpcLog.Errorf("config update error: %v \n", err.Error())
+			continue
+		}
+		ConfigPodTrigger <- true
+	}
+}
+
+//Update level-1 Configuration(Not actual SMF config structure used by SMF)
+func (c *Config) updateSmfConfig(rsp *protos.NetworkSliceResponse) error {
+
+	//Reset previous SNSSAI structure
+	if c.Configuration.SNssaiInfo != nil {
+		c.Configuration.SNssaiInfo = nil
+	}
+	c.Configuration.SNssaiInfo = make([]SnssaiInfoItem, 0)
+
+	//Reset existing UP nodes and Links
+	if c.Configuration.UserPlaneInformation.UPNodes != nil {
+		c.Configuration.UserPlaneInformation.UPNodes = nil
+	}
+	c.Configuration.UserPlaneInformation.UPNodes = make(map[string]UPNode)
+
+	if c.Configuration.UserPlaneInformation.Links != nil {
+		c.Configuration.UserPlaneInformation.Links = nil
+	}
+	c.Configuration.UserPlaneInformation.Links = make([]UPLink, 0)
+
+	//Iterate through all NS received
+	for _, ns := range rsp.NetworkSlice {
+		//make new SNSSAI Info structure
+		var sNssaiInfoItem SnssaiInfoItem
+
+		//make SNSSAI
+		var sNssai models.Snssai
+		sNssai.Sd = string(ns.Nssai.Sd)
+		sNssai.Sst = ns.Nssai.Sst
+		sNssaiInfoItem.SNssai = &sNssai
+
+		//make DNN Info structure
+		sNssaiInfoItem.DnnInfos = make([]SnssaiDnnInfoItem, 0)
+		for _, devGrp := range ns.DeviceGroup {
+			var dnnInfo SnssaiDnnInfoItem
+			dnnInfo.Dnn = devGrp.IpDomainDetails.DnnName
+			dnnInfo.DNS.IPv4Addr = devGrp.IpDomainDetails.DnsPrimary
+			dnnInfo.UESubnet = devGrp.IpDomainDetails.UePool
+
+			//update to Slice structure
+			sNssaiInfoItem.DnnInfos = append(sNssaiInfoItem.DnnInfos, dnnInfo)
+		}
+
+		//Update to SMF config structure
+		c.Configuration.SNssaiInfo = append(c.Configuration.SNssaiInfo, sNssaiInfoItem)
+
+		//iterate through UPFs config received
+		upf := UPNode{Type: "UPF",
+			NodeID:               ns.Site.Upf.UpfName,
+			SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+			InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0)}
+
+		snsUpfInfoItem := models.SnssaiUpfInfoItem{SNssai: &sNssai,
+			DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
+
+		//Popoulate DNN names per UPF slice Info
+		for _, devGrp := range ns.DeviceGroup {
+
+			//DNN Info in UPF per Slice
+			var dnnUpfInfo models.DnnUpfInfoItem
+			dnnUpfInfo.Dnn = devGrp.IpDomainDetails.DnnName
+			snsUpfInfoItem.DnnUpfInfoList = append(snsUpfInfoItem.DnnUpfInfoList, dnnUpfInfo)
+
+			//Populate UPF Interface Info and DNN info in UPF per Interface
+			intfUpfInfoItem := InterfaceUpfInfoItem{InterfaceType: models.UpInterfaceType_N3,
+				Endpoints: make([]string, 0), NetworkInstance: devGrp.IpDomainDetails.DnnName}
+			intfUpfInfoItem.Endpoints = append(intfUpfInfoItem.Endpoints, ns.Site.Upf.UpfName)
+			upf.InterfaceUpfInfoList = append(upf.InterfaceUpfInfoList, intfUpfInfoItem)
+		}
+		upf.SNssaiInfos = append(upf.SNssaiInfos, snsUpfInfoItem)
+
+		//Update UPF to SMF Config Structure
+		c.Configuration.UserPlaneInformation.UPNodes[ns.Site.Upf.UpfName] = upf
+
+		//Update gNB links to UPF(gNB <-> N3_UPF)
+		for _, gNb := range ns.Site.Gnb {
+			upLink := UPLink{A: gNb.Name, B: ns.Site.Upf.UpfName}
+			c.Configuration.UserPlaneInformation.Links = append(c.Configuration.UserPlaneInformation.Links, upLink)
+
+			//insert gNb to SMF Config Structure
+			gNbNode := UPNode{Type: "AN"}
+			c.Configuration.UserPlaneInformation.UPNodes[gNb.Name] = gNbNode
+		}
+
+		logger.CfgLog.Infof("updated SMF config : %+v \n", c.Configuration)
+	}
+	return nil
 }

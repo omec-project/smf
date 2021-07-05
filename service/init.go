@@ -249,13 +249,34 @@ func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (smf *SMF) Start() {
+	initLog.Infoln("SMF app initialising...")
+
+	//Initialise channel to stop SMF
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalChannel
+		smf.Terminate()
+		os.Exit(0)
+	}()
+
+	//Wait for additional/updated config from config pod
+	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
+	if roc == "true" {
+		initLog.Infof("Configuration is managed by Config Pod")
+		initLog.Infof("waiting for initial configuration from config pod")
+		if <-factory.ConfigPodTrigger {
+			initLog.Infof("minimum configuration from config pod available")
+		}
+	} else {
+		initLog.Infof("Configuration is managed by Helm")
+	}
+
+	//Init SMF Service
 	context.InitSmfContext(&factory.SmfConfig)
 	// allocate id for each upf
 	context.AllocateUPFID()
 	context.InitSMFUERouting(&factory.UERoutingConfig)
-
-	initLog.Infoln("Server started")
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
 
 	err := consumer.SendNFRegistration()
 	if err != nil {
@@ -266,14 +287,7 @@ func (smf *SMF) Start() {
 		}
 	}
 
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-signalChannel
-		smf.Terminate()
-		os.Exit(0)
-	}()
-
+	router := logger_util.NewGinWithLogrus(logger.GinLog)
 	oam.AddService(router)
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {

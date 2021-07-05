@@ -16,4 +16,7 @@ cscope.*
 # debug
 *.log
 *.pcap
+vendor*
+smf
+*.patch
 
