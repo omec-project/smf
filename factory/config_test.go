@@ -24,7 +24,7 @@ func makeDummyConfig() *protos.NetworkSliceResponse {
 	rsp.NetworkSlice = make([]*protos.NetworkSlice, 0)
 
 	ns := protos.NetworkSlice{}
-	slice := protos.NSSAI{Sst: 1, Sd: 010203}
+	slice := protos.NSSAI{Sst: "1", Sd: "010203"}
 	ns.Nssai = &slice
 
 	upf := protos.UpfInfo{UpfName: "upf", UpfPort: 8805}
