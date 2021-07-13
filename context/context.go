@@ -153,30 +153,9 @@ func InitSmfContext(config *factory.Config) {
 		smfContext.CPNodeID.NodeIdValue = addr.IP.To4()
 	}
 
-	smfContext.SnssaiInfos = make([]SnssaiSmfInfo, 0, len(configuration.SNssaiInfo))
-
+	//Static config
 	for _, snssaiInfoConfig := range configuration.SNssaiInfo {
-		snssaiInfo := SnssaiSmfInfo{}
-		snssaiInfo.Snssai = SNssai{
-			Sst: snssaiInfoConfig.SNssai.Sst,
-			Sd:  snssaiInfoConfig.SNssai.Sd,
-		}
-
-		snssaiInfo.DnnInfos = make(map[string]*SnssaiSmfDnnInfo)
-
-		for _, dnnInfoConfig := range snssaiInfoConfig.DnnInfos {
-			dnnInfo := SnssaiSmfDnnInfo{}
-			dnnInfo.DNS.IPv4Addr = net.ParseIP(dnnInfoConfig.DNS.IPv4Addr).To4()
-			dnnInfo.DNS.IPv6Addr = net.ParseIP(dnnInfoConfig.DNS.IPv6Addr).To4()
-			if allocator, err := NewIPAllocator(dnnInfoConfig.UESubnet); err != nil {
-				logger.InitLog.Errorf("create ip allocator[%s] failed: %s", dnnInfoConfig.UESubnet, err)
-				continue
-			} else {
-				dnnInfo.UeIPAllocator = allocator
-			}
-			snssaiInfo.DnnInfos[dnnInfoConfig.Dnn] = &dnnInfo
-		}
-		smfContext.SnssaiInfos = append(smfContext.SnssaiInfos, snssaiInfo)
+		smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
 	}
 
 	// Set client and set url
@@ -193,6 +172,9 @@ func InitSmfContext(config *factory.Config) {
 	smfContext.SupportedPDUSessionType = "IPv4"
 
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
+
+	//Via dynamic config
+	//ProcessConfigUpdate()
 
 	SetupNFProfile(config)
 }
@@ -231,4 +213,85 @@ func SMF_Self() *SMFContext {
 
 func GetUserPlaneInformation() *UserPlaneInformation {
 	return smfContext.UserPlaneInformation
+}
+
+func ProcessConfigUpdate() bool {
+
+	logger.CtxLog.Infof("Dynamic config update received")
+	sendNrfRegistration := false
+	//Lets check updated config
+	updatedCfg := factory.UpdatedSmfConfig
+
+	//Lets parse through network slice configs first
+	if updatedCfg.DelSNssaiInfo != nil {
+		for _, slice := range *updatedCfg.DelSNssaiInfo {
+			SMF_Self().deleteSmfNssaiInfo(&slice)
+		}
+		factory.UpdatedSmfConfig.DelSNssaiInfo = nil
+		sendNrfRegistration = true
+	}
+
+	if updatedCfg.AddSNssaiInfo != nil {
+		for _, slice := range *updatedCfg.AddSNssaiInfo {
+			SMF_Self().insertSmfNssaiInfo(&slice)
+		}
+		factory.UpdatedSmfConfig.AddSNssaiInfo = nil
+		sendNrfRegistration = true
+	}
+
+	if updatedCfg.ModSNssaiInfo != nil {
+		for _, slice := range *updatedCfg.ModSNssaiInfo {
+			SMF_Self().updateSmfNssaiInfo(&slice)
+		}
+		factory.UpdatedSmfConfig.ModSNssaiInfo = nil
+		sendNrfRegistration = true
+	}
+
+	//Iterate through UserPlane Info
+	if updatedCfg.DelUPNodes != nil {
+		for _, upf := range *updatedCfg.DelUPNodes {
+			GetUserPlaneInformation().DeleteSmfUserPlaneNode(&upf)
+		}
+		factory.UpdatedSmfConfig.DelUPNodes = nil
+
+		//TODO: Deallocate UPF ID
+	}
+
+	if updatedCfg.AddUPNodes != nil {
+		for name, upf := range *updatedCfg.AddUPNodes {
+			GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
+		}
+		factory.UpdatedSmfConfig.AddUPNodes = nil
+		AllocateUPFID()
+		//TODO: allocate UPF ID
+	}
+
+	if updatedCfg.ModUPNodes != nil {
+		for _, upf := range *updatedCfg.ModUPNodes {
+			GetUserPlaneInformation().UpdateSmfUserPlaneNode(&upf)
+		}
+		factory.UpdatedSmfConfig.ModUPNodes = nil
+	}
+
+	//Iterate through UP Node Links info
+	if updatedCfg.AddLinks != nil {
+		for _, link := range *updatedCfg.AddLinks {
+			GetUserPlaneInformation().InsertUPNodeLinks(&link)
+		}
+		factory.UpdatedSmfConfig.AddLinks = nil
+	}
+
+	if updatedCfg.DelLinks != nil {
+		for _, link := range *updatedCfg.DelLinks {
+			GetUserPlaneInformation().DeleteUPNodeLinks(&link)
+		}
+		factory.UpdatedSmfConfig.DelLinks = nil
+	}
+
+	//Send NRF Re-register if Slice info got updated
+	if sendNrfRegistration {
+		SetupNFProfile(&factory.SmfConfig)
+	}
+
+	return sendNrfRegistration
 }

@@ -12,15 +12,18 @@ package factory
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 
 	"gopkg.in/yaml.v2"
 
 	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/config5g/proto/client"
 )
 
 var (
-	SmfConfig       Config
-	UERoutingConfig RoutingConfig
+	SmfConfig        Config
+	UERoutingConfig  RoutingConfig
+	UpdatedSmfConfig UpdateSmfConfig
 )
 
 // TODO: Support configuration update from REST api
@@ -32,6 +35,12 @@ func InitConfigFactory(f string) error {
 
 		if yamlErr := yaml.Unmarshal(content, &SmfConfig); yamlErr != nil {
 			return yamlErr
+		}
+
+		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
+		if roc == "true" {
+			commChannel := client.ConfigWatcher()
+			go SmfConfig.updateConfig(commChannel)
 		}
 	}
 
@@ -56,7 +65,7 @@ func CheckConfigVersion() error {
 	currentVersion := SmfConfig.GetVersion()
 
 	if currentVersion != SMF_EXPECTED_CONFIG_VERSION {
-		return fmt.Errorf("SMF config version is [%s], but expected is [%s].",
+		return fmt.Errorf("SMF config version is [%s], but expected is [%s]",
 			currentVersion, SMF_EXPECTED_CONFIG_VERSION)
 	}
 
@@ -65,7 +74,7 @@ func CheckConfigVersion() error {
 	currentVersion = UERoutingConfig.GetVersion()
 
 	if currentVersion != UE_ROUTING_EXPECTED_CONFIG_VERSION {
-		return fmt.Errorf("UE-Routing config version is [%s], but expected is [%s].",
+		return fmt.Errorf("UE-Routing config version is [%s], but expected is [%s]",
 			currentVersion, UE_ROUTING_EXPECTED_CONFIG_VERSION)
 	}
 
