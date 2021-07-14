@@ -19,6 +19,7 @@ func SetupSMFContext(config *factory.Config) error {
 func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem) error {
 
 	logger.InitLog.Infof("Network Slices to be inserted [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*snssaiInfoConfig}))
+
 	if smfContext.SnssaiInfos == nil {
 		c.SnssaiInfos = make([]SnssaiSmfInfo, 0)
 	}
@@ -60,7 +61,9 @@ func (c *SMFContext) updateSmfNssaiInfo(modSliceInfo *factory.SnssaiInfoItem) er
 }
 
 func (c *SMFContext) deleteSmfNssaiInfo(delSliceInfo *factory.SnssaiInfoItem) error {
+
 	logger.InitLog.Infof("Network Slices to be deleted [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*delSliceInfo}))
+
 	for index, slice := range c.SnssaiInfos {
 		if slice.Snssai.Sd == delSliceInfo.SNssai.Sd && slice.Snssai.Sst == delSliceInfo.SNssai.Sst {
 			//Remove the desired slice

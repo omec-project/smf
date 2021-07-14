@@ -218,6 +218,7 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 func ProcessConfigUpdate() bool {
 
 	logger.CtxLog.Infof("Dynamic config update received [%+v]", factory.UpdatedSmfConfig)
+
 	sendNrfRegistration := false
 	//Lets check updated config
 	updatedCfg := factory.UpdatedSmfConfig
@@ -267,6 +268,7 @@ func ProcessConfigUpdate() bool {
 	if updatedCfg.ModUPNodes != nil {
 		for name, upf := range *updatedCfg.ModUPNodes {
 			GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
+
 		}
 		factory.UpdatedSmfConfig.ModUPNodes = nil
 	}
