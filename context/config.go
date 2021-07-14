@@ -56,7 +56,6 @@ func (c *SMFContext) updateSmfNssaiInfo(modSliceInfo *factory.SnssaiInfoItem) er
 	logger.InitLog.Infof("Network Slices to be modified [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*modSliceInfo}))
 	c.deleteSmfNssaiInfo(modSliceInfo)
 	c.insertSmfNssaiInfo(modSliceInfo)
-
 	return nil
 }
 
