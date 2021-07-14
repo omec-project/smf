@@ -221,3 +221,15 @@ func TestGenerateDefaultPath(t *testing.T) {
 
 func TestGetDefaultUPFTopoByDNN(t *testing.T) {
 }
+
+func TestInsertSmfUserPlaneNode(t *testing.T) {
+
+}
+
+func TestUpdateSmfUserPlaneNode(t *testing.T) {
+
+}
+
+func TestDeleteSmfUserPlaneNode(t *testing.T) {
+
+}

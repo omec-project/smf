@@ -254,23 +254,9 @@ func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (smf *SMF) Start() {
-	context.InitSmfContext(&factory.SmfConfig)
-	// allocate id for each upf
-	context.AllocateUPFID()
-	context.InitSMFUERouting(&factory.UERoutingConfig)
+	initLog.Infoln("SMF app initialising...")
 
-	initLog.Infoln("Server started")
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
-
-	err := consumer.SendNFRegistration()
-	if err != nil {
-		retry_err := consumer.RetrySendNFRegistration(10)
-		if retry_err != nil {
-			logger.InitLog.Errorln(retry_err)
-			return
-		}
-	}
-
+	//Initialise channel to stop SMF
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -279,6 +265,43 @@ func (smf *SMF) Start() {
 		os.Exit(0)
 	}()
 
+	//Wait for additional/updated config from config pod
+	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
+	if roc == "true" {
+		initLog.Infof("Configuration is managed by Config Pod")
+		initLog.Infof("waiting for initial configuration from config pod")
+		if <-factory.ConfigPodTrigger {
+			initLog.Infof("minimum configuration from config pod available")
+		}
+
+		//Trigger background goroutine to handle further config updates
+		go func() {
+			initLog.Infof("Dynamic config update task initialised")
+			for {
+				if <-factory.ConfigPodTrigger {
+					if context.ProcessConfigUpdate() {
+						smf.SendNrfRegistration()
+					}
+				}
+			}
+		}()
+	} else {
+		initLog.Infof("Configuration is managed by Helm")
+	}
+
+	//Init SMF Service
+	context.InitSmfContext(&factory.SmfConfig)
+
+	// allocate id for each upf
+	context.AllocateUPFID()
+
+	//Init UE Specific Config
+	context.InitSMFUERouting(&factory.UERoutingConfig)
+
+	//Send NRF Registration
+	smf.SendNrfRegistration()
+
+	router := logger_util.NewGinWithLogrus(logger.GinLog)
 	oam.AddService(router)
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
@@ -348,4 +371,16 @@ func (smf *SMF) Terminate() {
 
 func (smf *SMF) Exec(c *cli.Context) error {
 	return nil
+}
+
+func (smf *SMF) SendNrfRegistration() {
+	err := consumer.SendNFRegistration()
+	if err != nil {
+		retry_err := consumer.RetrySendNFRegistration(10)
+		if retry_err != nil {
+			logger.InitLog.Errorln(retry_err)
+			return
+		}
+	}
+
 }
