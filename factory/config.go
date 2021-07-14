@@ -74,6 +74,7 @@ type SnssaiDnnInfoItem struct {
 	Dnn      string `yaml:"dnn"`
 	DNS      DNS    `yaml:"dns"`
 	UESubnet string `yaml:"ueSubnet"`
+	MTU      uint16 `yaml:"mtu"`
 }
 
 type Sbi struct {
@@ -263,6 +264,7 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 			dnnInfo.Dnn = devGrp.IpDomainDetails.DnnName
 			dnnInfo.DNS.IPv4Addr = devGrp.IpDomainDetails.DnsPrimary
 			dnnInfo.UESubnet = devGrp.IpDomainDetails.UePool
+			dnnInfo.MTU = uint16(devGrp.IpDomainDetails.Mtu)
 
 			//update to Slice structure
 			sNssaiInfoItem.DnnInfos = append(sNssaiInfoItem.DnnInfos, dnnInfo)

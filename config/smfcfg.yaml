@@ -32,6 +32,7 @@ configuration:
             ipv4: 8.8.8.8
             ipv6: 2001:4860:4860::8888
           ueSubnet: 60.60.0.0/16 # should be CIDR type
+          mtu: 1400
     - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
         sst: 1 # Slice/Service Type (uinteger, range: 0~255)
         sd: "112233" # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
@@ -41,6 +42,7 @@ configuration:
             ipv4: 8.8.8.8
             ipv6: 2001:4860:4860::8888
           ueSubnet: 60.61.0.0/16 # should be CIDR type
+          mtu: 1400
   pfcp: # the IP address of N4 interface on this SMF (PFCP)
     addr: smf
   userplane_information: # list of userplane information

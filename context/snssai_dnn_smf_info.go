@@ -17,6 +17,7 @@ type SnssaiSmfInfo struct {
 type SnssaiSmfDnnInfo struct {
 	DNS           DNS
 	UeIPAllocator *IPAllocator
+	MTU 		  uint16
 }
 
 type DNS struct {
