@@ -101,6 +101,11 @@ func (upi *UserPlaneInformation) GetUPFIDByIP(ip string) string {
 	return upi.UPFsIPtoID[ip]
 }
 
+func (upi *UserPlaneInformation) ResetDefaultUserPlanePath() {
+	logger.UPNodeLog.Infof("resetting the default user plane paths [%v]", upi.DefaultUserPlanePath)
+	upi.DefaultUserPlanePath = make(map[string][]*UPNode)
+}
+
 func (upi *UserPlaneInformation) GetDefaultUserPlanePathByDNN(selection *UPFSelectionParams) (path UPPath) {
 	path, pathExist := upi.DefaultUserPlanePath[selection.String()]
 	logger.CtxLog.Traceln("In GetDefaultUserPlanePathByDNN")
@@ -432,7 +437,7 @@ func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
 
 	logger.UPNodeLog.Infof("deleting UP Node link[%v] ", link)
 	logger.UPNodeLog.Debugf("current UP Nodes [%+v]", upi.UPNodes)
-  
+
 	nodeA := upi.UPNodes[link.A]
 	nodeB := upi.UPNodes[link.B]
 
