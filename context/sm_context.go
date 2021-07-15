@@ -32,6 +32,10 @@ import (
 	"github.com/free5gc/smf/logger"
 )
 
+const (
+	PDU_SESS_REL_CMD string = "PDUSessionReleaseCommand"
+)
+
 var (
 	smContextPool    sync.Map
 	canonicalRef     sync.Map

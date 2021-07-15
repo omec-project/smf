@@ -18,6 +18,7 @@ const (
 	SessionUpdateFailed
 	SessionReleaseSuccess
 	SessionReleaseFailed
+	SessionUpdateTimeout
 )
 
 type PFCPSessionContext struct {
@@ -52,6 +53,8 @@ func (pfcpSessionResponseStatus PFCPSessionResponseStatus) String() string {
 		return "SessionReleaseSuccess"
 	case SessionReleaseFailed:
 		return "SessionReleaseFailed"
+	case SessionUpdateTimeout:
+		return "SessionUpdateTimeout"
 	default:
 		return "Unknown PFCP Session Response Status"
 	}
