@@ -22,7 +22,7 @@ require (
 	github.com/free5gc/util_3gpp v1.0.0
 	github.com/free5gc/version v1.0.0
 	github.com/gin-gonic/gin v1.6.3
-	github.com/golang/protobuf v1.5.0
+	github.com/golang/protobuf v1.5.0 // indirect
 	github.com/google/uuid v1.1.2
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/config5g v1.0.0
