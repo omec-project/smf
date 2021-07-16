@@ -323,7 +323,7 @@ func SendPfcpSessionModificationResponse(addr *net.UDPAddr) {
 }
 
 func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.SMContext) (seqNum uint32) {
-	pfcpMsg, err := BuildPfcpSessionDeletionRequest()
+	pfcpMsg, err := BuildPfcpSessionDeletionRequest(upNodeID, ctx)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Deletion Request failed: %v", err)
 		return
@@ -439,6 +439,7 @@ func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
 	case pfcp.PFCP_SESSION_MODIFICATION_REQUEST:
 		handleSendPfcpSessModReqError(msg, pfcpErr)
 	case pfcp.PFCP_SESSION_DELETION_REQUEST:
+		handleSendPfcpSessRelReqError(msg, pfcpErr)
 	default:
 		logger.PfcpLog.Errorf("Unable to send PFCP packet type [%v] and content [%v]",
 			pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), msg)
@@ -500,4 +501,15 @@ func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
 	smContext.SubPfcpLog.Errorf("PFCP Session Modification send failure, %v", pfcpErr.Error())
 
 	smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateTimeout
+}
+
+func handleSendPfcpSessRelReqError(msg *pfcp.Message, pfcpErr error) {
+    //Lets decode the PDU request
+    pfcpRelReq, _ := msg.Body.(pfcp.PFCPSessionDeletionRequest)
+
+    SEID := pfcpRelReq.CPFSEID.Seid
+    smContext := smf_context.GetSMContextBySEID(SEID)
+    smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
+
+    smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseTimeout
 }
