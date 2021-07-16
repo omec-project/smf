@@ -837,6 +837,8 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 				Body:   response,
 			}
 
+		case smf_context.SessionReleaseTimeout:
+			fallthrough
 		case smf_context.SessionReleaseFailed:
 			// Update SmContext Request(N1 PDU Session Release Request)
 			// Send PDU Session Release Reject
@@ -939,6 +941,13 @@ func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSm
 		httpResponse = &http_wrapper.Response{
 			Status: http.StatusNoContent,
 			Body:   nil,
+		}
+
+	case smf_context.SessionReleaseTimeout:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseTimeout")
+		smContext.ChangeState(smf_context.Active)
+		httpResponse = &http_wrapper.Response{
+			Status: int(http.StatusInternalServerError),
 		}
 
 	case smf_context.SessionReleaseFailed:

@@ -477,9 +477,21 @@ func BuildPfcpSessionModificationResponse() (pfcp.PFCPSessionModificationRespons
 	return msg, nil
 }
 
-func BuildPfcpSessionDeletionRequest() (pfcp.PFCPSessionDeletionRequest, error) {
+func BuildPfcpSessionDeletionRequest(
+	upNodeID pfcpType.NodeID,
+	smContext *context.SMContext) (pfcp.PFCPSessionDeletionRequest, error) {
 	msg := pfcp.PFCPSessionDeletionRequest{}
 
+	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
+    
+	localSEID := smContext.PFCPContext[nodeIDtoIP].LocalSEID 
+	
+	msg.CPFSEID = &pfcpType.FSEID{
+        V4:          true,
+        V6:          false,
+        Seid:        localSEID,
+        Ipv4Address: context.SMF_Self().CPNodeID.NodeIdValue,
+    }
 	return msg, nil
 }
 
