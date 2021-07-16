@@ -122,7 +122,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 		// MTU
 		if smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
-			err := protocolConfigurationOptions.AddIPv4LinkMTU(1400)
+			err := protocolConfigurationOptions.AddIPv4LinkMTU(smContext.DNNInfo.MTU)
 			if err != nil {
 				smContext.SubGsmLog.Warnln("Error while adding MTU: ", err)
 			}

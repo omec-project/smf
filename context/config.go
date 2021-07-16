@@ -42,6 +42,14 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 		} else {
 			dnnInfo.UeIPAllocator = allocator
 		}
+
+		if dnnInfoConfig.MTU != 0 {
+			dnnInfo.MTU = dnnInfoConfig.MTU
+		} else {
+			//Adding default MTU value, if nothing is set in config file.
+			dnnInfo.MTU = 1400
+		}
+
 		snssaiInfo.DnnInfos[dnnInfoConfig.Dnn] = &dnnInfo
 	}
 	c.SnssaiInfos = append(c.SnssaiInfos, snssaiInfo)

@@ -50,6 +50,10 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		smContext.SubGsmLog.Infoln("Protocol Configuration Options")
 		smContext.SubGsmLog.Infoln(protocolConfigurationOptions)
 
+		//Send MTU to UE always even if UE does not request it.
+		//Preconfiguring MTU request flag.
+		smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest = true
+
 		for _, container := range protocolConfigurationOptions.ProtocolOrContainerList {
 			smContext.SubGsmLog.Traceln("Container ID: ", container.ProtocolOrContainerID)
 			smContext.SubGsmLog.Traceln("Container Length: ", container.LengthOfContents)
@@ -82,8 +86,6 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 				smContext.SubGsmLog.Infoln("Didn't Implement container type MSISDNRequestUL")
 			case nasMessage.IFOMSupportRequestUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type IFOMSupportRequestUL")
-			case nasMessage.IPv4LinkMTURequestUL:
-				smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest = true
 			case nasMessage.MSSupportOfLocalAddressInTFTIndicatorUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type MSSupportOfLocalAddressInTFTIndicatorUL")
 			case nasMessage.PCSCFReSelectionSupportUL:
