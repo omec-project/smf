@@ -67,6 +67,22 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 
 }
 
+func SetUpfInactive(nodeID pfcpType.NodeID, msgType pfcp.MessageType) {
+	upf := smf_context.RetrieveUPFNodeByNodeID(nodeID)
+	if upf == nil {
+		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
+			pfcpmsgtypes.PfcpMsgTypeString(msgType),
+			"In", "Failure", "unknown_upf")
+		return
+	}
+
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
+	upf.UPFStatus = smf_context.NotAssociated
+	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
+}
+
 func HandlePfcpPfdManagementRequest(msg *pfcpUdp.Message) {
 	logger.PfcpLog.Warnf("PFCP PFD Management Request handling is not implemented")
 }
@@ -269,6 +285,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 			}
 		} else {
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", rsp.Cause.CauseValue)
+			if rsp.Cause.CauseValue ==
+				pfcpType.CauseNoEstablishedPfcpAssociation {
+				SetUpfInactive(*rsp.NodeID, msg.PfcpMessage.Header.MessageType)
+			}
 			//UPF Reject
 			if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 				nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {

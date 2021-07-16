@@ -143,4 +143,3 @@ func SetSessStats(nodeId string, count uint64) {
 func SetSessProfileStats(id, ip, state, upf string, count uint64) {
 	smfStats.sessProfile.WithLabelValues(id, ip, state, upf).Set(float64(count))
 }
-

@@ -432,7 +432,7 @@ func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
 
 	logger.UPNodeLog.Infof("deleting UP Node link[%v] ", link)
 	logger.UPNodeLog.Debugf("current UP Nodes [%+v]", upi.UPNodes)
-  
+
 	nodeA := upi.UPNodes[link.A]
 	nodeB := upi.UPNodes[link.B]
 
