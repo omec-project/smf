@@ -288,6 +288,9 @@ func ProcessConfigUpdate() bool {
 		factory.UpdatedSmfConfig.DelLinks = nil
 	}
 
+	//Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
+	GetUserPlaneInformation().ResetDefaultUserPlanePath()
+
 	//Send NRF Re-register if Slice info got updated
 	if sendNrfRegistration {
 		SetupNFProfile(&factory.SmfConfig)
