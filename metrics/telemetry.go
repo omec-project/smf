@@ -66,7 +66,7 @@ func initSmfStats() *SmfStats {
 		sessProfile: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "smf_pdu_session_profile",
 			Help: "SMF PDU session Profile",
-		}, []string{"id", "ip", "state", "upf"}),
+		}, []string{"id", "ip", "state", "upf", "enterprise"}),
 	}
 }
 
@@ -140,6 +140,6 @@ func SetSessStats(nodeId string, count uint64) {
 }
 
 //SetSessProfileStats maintains Session profile info
-func SetSessProfileStats(id, ip, state, upf string, count uint64) {
-	smfStats.sessProfile.WithLabelValues(id, ip, state, upf).Set(float64(count))
+func SetSessProfileStats(id, ip, state, upf, enterprise string, count uint64) {
+	smfStats.sessProfile.WithLabelValues(id, ip, state, upf, enterprise).Set(float64(count))
 }
