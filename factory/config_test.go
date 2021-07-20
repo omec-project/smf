@@ -29,7 +29,7 @@ func makeDummyConfig(sst, sd string) *protos.NetworkSliceResponse {
 
 	rsp.NetworkSlice = make([]*protos.NetworkSlice, 0)
 
-	ns := protos.NetworkSlice{}
+	ns := protos.NetworkSlice{Name: "Enterprise-1"}
 	slice := protos.NSSAI{Sst: sst, Sd: sd}
 	ns.Nssai = &slice
 
@@ -40,7 +40,7 @@ func makeDummyConfig(sst, sd string) *protos.NetworkSliceResponse {
 	ns.Site = &site
 
 	ns.DeviceGroup = make([]*protos.DeviceGroup, 0)
-	ipDomain := protos.IpDomain{DnnName: "internet", UePool: "60.60.0.0/16", DnsPrimary: "8.8.8.8"}
+	ipDomain := protos.IpDomain{DnnName: "internet", UePool: "60.60.0.0/16", DnsPrimary: "8.8.8.8", Mtu: 1400}
 	devGrp := protos.DeviceGroup{IpDomainDetails: &ipDomain}
 	ns.DeviceGroup = append(ns.DeviceGroup, &devGrp)
 

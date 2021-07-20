@@ -8,6 +8,7 @@ package context
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/free5gc/smf/metrics"
@@ -220,12 +221,20 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 			upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
 			upf = strings.Split(upf, ".")[0]
 		}
+
+		//enterprise name
+		ent := "na"
+		if smfContext.EnterpriseList != nil {
+			entMap := *smfContext.EnterpriseList
+			ent = entMap[strconv.Itoa(int(smContext.Snssai.Sst))+smContext.Snssai.Sd]
+		}
+
 		if nextState == Active {
 			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), nextState.String(),
-				upf, 1)
+				upf, ent, 1)
 		} else {
 			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), smContext.SMContextState.String(),
-				upf, 0)
+				upf, ent, 0)
 		}
 	}
 

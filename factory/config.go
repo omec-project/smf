@@ -33,14 +33,15 @@ type Config struct {
 }
 
 type UpdateSmfConfig struct {
-	DelSNssaiInfo *[]SnssaiInfoItem
-	ModSNssaiInfo *[]SnssaiInfoItem
-	AddSNssaiInfo *[]SnssaiInfoItem
-	DelUPNodes    *map[string]UPNode
-	ModUPNodes    *map[string]UPNode
-	AddUPNodes    *map[string]UPNode
-	AddLinks      *[]UPLink
-	DelLinks      *[]UPLink
+	DelSNssaiInfo  *[]SnssaiInfoItem
+	ModSNssaiInfo  *[]SnssaiInfoItem
+	AddSNssaiInfo  *[]SnssaiInfoItem
+	DelUPNodes     *map[string]UPNode
+	ModUPNodes     *map[string]UPNode
+	AddUPNodes     *map[string]UPNode
+	AddLinks       *[]UPLink
+	DelLinks       *[]UPLink
+	EnterpriseList *map[string]string
 }
 
 type Info struct {
@@ -63,6 +64,7 @@ type Configuration struct {
 	ServiceNameList      []string             `yaml:"serviceNameList,omitempty"`
 	SNssaiInfo           []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
 	ULCL                 bool                 `yaml:"ulcl,omitempty"`
+	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
 }
 
 type SnssaiInfoItem struct {
@@ -245,6 +247,8 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 	}
 	c.UserPlaneInformation.Links = make([]UPLink, 0)
 
+	c.EnterpriseList = make(map[string]string)
+
 	//Iterate through all NS received
 	for _, ns := range rsp.NetworkSlice {
 		//make new SNSSAI Info structure
@@ -256,6 +260,9 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		numSst, _ := strconv.Atoi(ns.Nssai.Sst)
 		sNssai.Sst = int32(numSst)
 		sNssaiInfoItem.SNssai = &sNssai
+
+		//Populate enterprise name
+		c.EnterpriseList[ns.Nssai.Sst+ns.Nssai.Sd] = ns.Name
 
 		//make DNN Info structure
 		sNssaiInfoItem.DnnInfos = make([]SnssaiDnnInfoItem, 0)
@@ -310,9 +317,8 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 			gNbNode := UPNode{Type: "AN", NodeID: gNb.Name}
 			c.UserPlaneInformation.UPNodes[gNb.Name] = gNbNode
 		}
-
-		logger.CfgLog.Infof("Parsed SMF config : %+v \n", c)
 	}
+	logger.CfgLog.Infof("Parsed SMF config : %+v \n", c)
 	return nil
 }
 
@@ -395,6 +401,8 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 		logger.CfgLog.Infoln("no change in UP nodes links config")
 	}
 
+	//Enterprise Name
+	UpdatedSmfConfig.EnterpriseList = &newCfg.EnterpriseList
 }
 
 func compareNsDnn(c1, c2 interface{}) bool {
