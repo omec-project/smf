@@ -827,6 +827,49 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 					},
 				}, // Depends on the reason why N4 fail
 			}
+		case smf_context.SessionUpdateTimeout:
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
+
+			/* TODO: exact http error response code for this usecase is 504, so relevant cause for 
+			   this usecase is 500. If it gets added in spec 29.502 new release that can be added
+			 */
+			problemDetail := models.ProblemDetails{
+				Title:  "PFCP Session Mod Timeout",
+				Status: http.StatusInternalServerError,
+				Detail: "PFCP Session Modification Timeout",
+				Cause:  "UPF_NOT_RESPONDING",
+			}
+			var n1buf, n2buf []byte
+			var err error
+			if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
+			}
+
+			if n2buf, err = smf_context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
+			}
+
+			smContext.ChangeState(smf_context.PFCPModification)
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+
+			// It is just a template
+			httpResponse = &http_wrapper.Response{
+				Status: http.StatusServiceUnavailable,
+				Body: models.UpdateSmContextErrorResponse{
+					JsonData: &models.SmContextUpdateError{
+						Error:        &problemDetail,
+						N1SmMsg:      &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
+						N2SmInfo:     &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
+						N2SmInfoType: models.N2SmInfoType_PDU_RES_REL_CMD,
+					},
+					BinaryDataN1SmMessage:     n1buf,
+					BinaryDataN2SmInformation: n2buf,
+				}, // Depends on the reason why N4 fail
+			}
+
+			releaseTunnel(smContext)
+			
+			HandleNwInitiatedPduSessionRelease(smContextRef)
 
 		case smf_context.SessionReleaseSuccess:
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Release Success")
@@ -887,6 +930,27 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 	}
 
 	return httpResponse
+}
+
+func HandleNwInitiatedPduSessionRelease(smContextRef string) {
+	smContext := smf_context.GetSMContext(smContextRef)
+	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
+
+	switch PFCPResponseStatus {
+	case smf_context.SessionReleaseSuccess:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseSuccess")
+		smContext.ChangeState(smf_context.InActivePending)
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
+	//TODO: i will uncomment this in next PR SDCORE-209
+	//case smf_context.SessionReleaseTimeout:
+	//	fallthrough
+	case smf_context.SessionReleaseFailed:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseFailed")
+		smContext.ChangeState(smf_context.InActivePending)
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease,  SMContextState Change State: ", smContext.SMContextState.String())
+	}
+
+	smf_context.RemoveSMContext(smContext.Ref)
 }
 
 func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSmContextRequest) *http_wrapper.Response {

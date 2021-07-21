@@ -434,6 +434,7 @@ func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
 	case pfcp.PFCP_SESSION_ESTABLISHMENT_REQUEST:
 		handleSendPfcpSessEstReqError(msg, pfcpErr)
 	case pfcp.PFCP_SESSION_MODIFICATION_REQUEST:
+		handleSendPfcpSessModReqError(msg, pfcpErr)
 	case pfcp.PFCP_SESSION_DELETION_REQUEST:
 	default:
 		logger.PfcpLog.Errorf("Unable to send PFCP packet type [%v] and content [%v]",
@@ -485,4 +486,15 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 
 	//clear subscriber
 	smf_context.RemoveSMContext(smContext.Ref)
+}
+
+func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
+	//Lets decode the PDU request
+	pfcpModReq, _ := msg.Body.(pfcp.PFCPSessionModificationRequest)
+
+	SEID := pfcpModReq.CPFSEID.Seid
+	smContext := smf_context.GetSMContextBySEID(SEID)
+	smContext.SubPfcpLog.Errorf("PFCP Session Modification send failure, %v", pfcpErr.Error())
+
+	smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateTimeout
 }
