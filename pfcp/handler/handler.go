@@ -227,6 +227,14 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse")
 
 	SEID := msg.PfcpMessage.Header.SEID
+	if SEID == 0 {
+		if eventData, ok := msg.EventData.(pfcpUdp.PfcpEventData); !ok {
+			logger.PfcpLog.Warnf("PFCP Session Establish Response found invalid event data, response discarded")
+			return
+		} else {
+			SEID = eventData.LSEID
+		}
+	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
 
 	if rsp.UPFSEID != nil {
@@ -328,6 +336,15 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 	pfcpRsp := msg.PfcpMessage.Body.(pfcp.PFCPSessionModificationResponse)
 
 	SEID := msg.PfcpMessage.Header.SEID
+
+	if SEID == 0 {
+		if eventData, ok := msg.EventData.(pfcpUdp.PfcpEventData); !ok {
+			logger.PfcpLog.Warnf("PFCP Session Modification Response found invalid event data, response discarded")
+			return
+		} else {
+			SEID = eventData.LSEID
+		}
+	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
 
 	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse")
@@ -382,10 +399,18 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 	pfcpRsp := msg.PfcpMessage.Body.(pfcp.PFCPSessionDeletionResponse)
 	SEID := msg.PfcpMessage.Header.SEID
 
+	if SEID == 0 {
+		if eventData, ok := msg.EventData.(pfcpUdp.PfcpEventData); !ok {
+			logger.PfcpLog.Warnf("PFCP Session Deletion Response found invalid event data, response discarded")
+			return
+		} else {
+			SEID = eventData.LSEID
+		}
+	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
 
 	if smContext == nil {
-		logger.PfcpLog.Warnf("PFCP Session Deletion Response Found SM Context NULL, Request Rejected")
+		logger.PfcpLog.Warnf("PFCP Session Deletion Response found SM context nil, response discarded")
 		return
 		// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
 	}
