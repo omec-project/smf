@@ -523,11 +523,11 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 				nextDLTunnel := nextDLDest.DownLinkTunnel
 
 				DLFAR.ApplyAction = pfcpType.ApplyAction{
-					Buff: false,
+					Buff: true,
 					Drop: false,
 					Dupl: false,
-					Forw: true,
-					Nocp: false,
+					Forw: false,
+					Nocp: true,
 				}
 
 				iface = nextDLDest.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
