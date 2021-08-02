@@ -108,6 +108,9 @@ func HandlePathSwitchRequestTransfer(b []byte, ctx *SMContext) error {
 
 	teid := binary.BigEndian.Uint32(gtpTunnel.GTPTEID.Value)
 
+	ctx.Tunnel.ANInformation.IPAddress = gtpTunnel.TransportLayerAddress.Value.Bytes
+	ctx.Tunnel.ANInformation.TEID = teid
+
 	for _, dataPath := range ctx.Tunnel.DataPathPool {
 		if dataPath.Activated {
 			ANUPF := dataPath.FirstDPNode
