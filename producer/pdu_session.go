@@ -830,9 +830,9 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 		case smf_context.SessionUpdateTimeout:
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
 
-			/* TODO: exact http error response code for this usecase is 504, so relevant cause for 
+			/* TODO: exact http error response code for this usecase is 504, so relevant cause for
 			   this usecase is 500. If it gets added in spec 29.502 new release that can be added
-			 */
+			*/
 			problemDetail := models.ProblemDetails{
 				Title:  "PFCP Session Mod Timeout",
 				Status: http.StatusInternalServerError,
@@ -868,7 +868,7 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 			}
 
 			releaseTunnel(smContext)
-			
+
 			HandleNwInitiatedPduSessionRelease(smContextRef)
 
 		case smf_context.SessionReleaseSuccess:
@@ -980,14 +980,23 @@ func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSm
 	defer smContext.SMLock.Unlock()
 
 	smContext.SubPduSessLog.Infof("PDUSessionSMContextRelease, PDU Session SMContext Release received")
-	smContext.ChangeState(smf_context.PFCPModification)
-	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
+
+	//Send Policy delete
+	if httpStatus, err := consumer.SendSMPolicyAssociationDelete(smContext, &body); err != nil {
+		smContext.SubCtxLog.Errorf("PDUSessionSMContextRelease, SM policy delete error [%v] ", err.Error())
+	} else {
+		smContext.SubCtxLog.Errorf("PDUSessionSMContextRelease, SM policy delete success with http status [%v] ", httpStatus)
+	}
 
 	//Release UE IP-Address
 	if ip := smContext.PDUAddress; ip != nil {
 		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
 		smContext.DNNInfo.UeIPAllocator.Release(ip)
 	}
+
+	//Initiate PFCP release
+	smContext.ChangeState(smf_context.PFCPModification)
+	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
 	//Release User-plane
 	releaseTunnel(smContext)
