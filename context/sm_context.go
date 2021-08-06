@@ -11,8 +11,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	errors "github.com/free5gc/smf/smferrors"
 	"github.com/sirupsen/logrus"
 
 	"net"
@@ -540,4 +542,37 @@ func (smContextState SMContextState) String() string {
 	default:
 		return "Unknown State"
 	}
+}
+
+func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *http_wrapper.Response {
+	var httpResponse *http_wrapper.Response
+
+	if buf, err := BuildGSMPDUSessionEstablishmentReject(
+		smContext,
+		errors.ErrorCause[cause]); err != nil {
+		httpResponse = &http_wrapper.Response{
+			Header: nil,
+			Status: int(errors.ErrorType[cause].Status),
+			Body: models.PostSmContextsErrorResponse{
+				JsonData: &models.SmContextCreateError{
+					Error:   errors.ErrorType[cause],
+					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+				},
+			},
+		}
+	} else {
+		httpResponse = &http_wrapper.Response{
+			Header: nil,
+			Status: int(errors.ErrorType[cause].Status),
+			Body: models.PostSmContextsErrorResponse{
+				JsonData: &models.SmContextCreateError{
+					Error:   errors.ErrorType[cause],
+					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+				},
+				BinaryDataN1SmMessage: buf,
+			},
+		}
+	}
+
+	return httpResponse
 }
