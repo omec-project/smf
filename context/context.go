@@ -63,6 +63,8 @@ type SMFContext struct {
 	ULCLSupport         bool
 	UEPreConfigPathPool map[string]*UEPreConfigPaths
 	LocalSEIDCount      uint64
+
+	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
@@ -172,9 +174,6 @@ func InitSmfContext(config *factory.Config) {
 	smfContext.SupportedPDUSessionType = "IPv4"
 
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
-
-	//Via dynamic config
-	//ProcessConfigUpdate()
 
 	SetupNFProfile(config)
 }
@@ -287,6 +286,9 @@ func ProcessConfigUpdate() bool {
 		}
 		factory.UpdatedSmfConfig.DelLinks = nil
 	}
+
+	//Update Enterprise Info
+	SMF_Self().EnterpriseList = updatedCfg.EnterpriseList
 
 	//Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
 	GetUserPlaneInformation().ResetDefaultUserPlanePath()
