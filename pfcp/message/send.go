@@ -433,6 +433,9 @@ func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
 	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
 		pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Failure", pfcpErr.Error())
 
+	//Refresh SMF DNS Cache incase of any send failure(includes timeout)
+	pfcpType.RefreshDnsHostIpCache()
+
 	switch msg.Header.MessageType {
 	case pfcp.PFCP_SESSION_ESTABLISHMENT_REQUEST:
 		handleSendPfcpSessEstReqError(msg, pfcpErr)
@@ -493,14 +496,14 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 }
 
 func handleSendPfcpSessRelReqError(msg *pfcp.Message, pfcpErr error) {
-    //Lets decode the PDU request
-    pfcpRelReq, _ := msg.Body.(pfcp.PFCPSessionDeletionRequest)
+	//Lets decode the PDU request
+	pfcpRelReq, _ := msg.Body.(pfcp.PFCPSessionDeletionRequest)
 
-    SEID := pfcpRelReq.CPFSEID.Seid
-    smContext := smf_context.GetSMContextBySEID(SEID)
-    smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
+	SEID := pfcpRelReq.CPFSEID.Seid
+	smContext := smf_context.GetSMContextBySEID(SEID)
+	smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
 
-    smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseTimeout
+	smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseTimeout
 }
 
 func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
