@@ -942,14 +942,23 @@ func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSm
 	defer smContext.SMLock.Unlock()
 
 	smContext.SubPduSessLog.Infof("PDUSessionSMContextRelease, PDU Session SMContext Release received")
-	smContext.ChangeState(smf_context.PFCPModification)
-	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
+
+	//Send Policy delete
+	if httpStatus, err := consumer.SendSMPolicyAssociationDelete(smContext, &body); err != nil {
+		smContext.SubCtxLog.Errorf("PDUSessionSMContextRelease, SM policy delete error [%v] ", err.Error())
+	} else {
+		smContext.SubCtxLog.Errorf("PDUSessionSMContextRelease, SM policy delete success with http status [%v] ", httpStatus)
+	}
 
 	//Release UE IP-Address
 	if ip := smContext.PDUAddress; ip != nil {
 		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
 		smContext.DNNInfo.UeIPAllocator.Release(ip)
 	}
+
+	//Initiate PFCP release
+	smContext.ChangeState(smf_context.PFCPModification)
+	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
 	//Release User-plane
 	releaseTunnel(smContext)
