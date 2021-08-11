@@ -28,6 +28,11 @@ import (
 func SendNFRegistration() error {
 	sNssais := []models.Snssai{}
 
+	if len(*smf_context.SmfInfo.SNssaiSmfInfoList) == 0 {
+		logger.ConsumerLog.Errorf("slice info not available, dropping NRF registration")
+		return fmt.Errorf("slice info nil")
+	}
+
 	for _, snssaiSmfInfo := range *smf_context.SmfInfo.SNssaiSmfInfoList {
 		sNssais = append(sNssais, *snssaiSmfInfo.SNssai)
 	}
@@ -47,59 +52,59 @@ func SendNFRegistration() error {
 	var err error
 
 	// Check data (Use RESTful PUT)
-	for {
-		rep, res, err = smf_context.SMF_Self().
-			NFManagementClient.
-			NFInstanceIDDocumentApi.
-			RegisterNFInstance(context.TODO(), smf_context.SMF_Self().NfInstanceID, profile)
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "Out", "", "")
 
-		if err != nil || res == nil {
-			logger.ConsumerLog.Infof("SMF register to NRF Error[%s]", err.Error())
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", "Failure", err.Error())
-			time.Sleep(2 * time.Second)
-			continue
-		}
+	rep, res, err = smf_context.SMF_Self().
+		NFManagementClient.
+		NFInstanceIDDocumentApi.
+		RegisterNFInstance(context.TODO(), smf_context.SMF_Self().NfInstanceID, profile)
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "Out", "", "")
+
+	if err != nil || res == nil {
+		logger.ConsumerLog.Infof("SMF register to NRF Error[%s]", err.Error())
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", "Failure", err.Error())
+		return fmt.Errorf("NRF Registration failure")
+	}
+
+	if res != nil {
 		defer func() {
 			if resCloseErr := res.Body.Close(); resCloseErr != nil {
 				logger.ConsumerLog.Errorf("RegisterNFInstance response body cannot close: %+v", resCloseErr)
 			}
 		}()
+	}
 
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", http.StatusText(res.StatusCode), "")
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFRegister, "In", http.StatusText(res.StatusCode), "")
 
-		status := res.StatusCode
-		if status == http.StatusOK {
-			// NFUpdate
-			break
-		} else if status == http.StatusCreated {
-			// NFRegister
-			resourceUri := res.Header.Get("Location")
-			// resouceNrfUri := resourceUri[strings.LastIndex(resourceUri, "/"):]
-			smf_context.SMF_Self().NfInstanceID = resourceUri[strings.LastIndex(resourceUri, "/")+1:]
-			break
-		} else {
-			logger.ConsumerLog.Infof("handler returned wrong status code %d", status)
-			// fmt.Errorf("NRF return wrong status code %d", status)
-		}
+	status := res.StatusCode
+	if status == http.StatusOK {
+		// NFUpdate
+		logger.ConsumerLog.Infof("NRF Registration success, status [%v]", http.StatusText(res.StatusCode))
+	} else if status == http.StatusCreated {
+		// NFRegister
+		resourceUri := res.Header.Get("Location")
+		// resouceNrfUri := resourceUri[strings.LastIndex(resourceUri, "/"):]
+		smf_context.SMF_Self().NfInstanceID = resourceUri[strings.LastIndex(resourceUri, "/")+1:]
+		logger.ConsumerLog.Infof("NRF Registration success, status [%v]", http.StatusText(res.StatusCode))
+	} else {
+		logger.ConsumerLog.Infof("handler returned wrong status code %d", status)
+		// fmt.Errorf("NRF return wrong status code %d", status)
+		logger.ConsumerLog.Errorf("NRF Registration failure, status [%v]", http.StatusText(res.StatusCode))
+		return fmt.Errorf("NRF Registration failure, [%v]", http.StatusText(res.StatusCode))
 	}
 
 	logger.InitLog.Infof("SMF Registration to NRF %v", rep)
 	return nil
 }
 
-func RetrySendNFRegistration(MaxRetry int) error {
-	retryCount := 0
-	for retryCount < MaxRetry {
-		err := SendNFRegistration()
-		if err == nil {
-			return nil
+func ReSendNFRegistration() {
+	for {
+		if err := SendNFRegistration(); err != nil {
+			logger.ConsumerLog.Warnf("Send NFRegistration Failed, %v", err)
+			time.Sleep(time.Second * 2)
+			continue
 		}
-		logger.ConsumerLog.Warnf("Send NFRegistration Failed by %v", err)
-		retryCount++
+		return
 	}
-
-	return fmt.Errorf("[SMF] Retry NF Registration has meet maximum")
 }
 
 func SendNFDeregistration() error {

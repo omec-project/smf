@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -69,10 +71,18 @@ var smfCLi = []cli.Flag{
 	},
 }
 
+type OneInstance struct {
+	m    sync.Mutex
+	done uint32
+}
+
+var nrfRegInProgress OneInstance
+
 var initLog *logrus.Entry
 
 func init() {
 	initLog = logger.InitLog
+	nrfRegInProgress = OneInstance{}
 }
 
 func (*SMF) GetCliCmd() (flags []cli.Flag) {
@@ -280,7 +290,8 @@ func (smf *SMF) Start() {
 			for {
 				if <-factory.ConfigPodTrigger {
 					if context.ProcessConfigUpdate() {
-						smf.SendNrfRegistration()
+						//Let NRF registration happen in background
+						go smf.SendNrfRegistration()
 					}
 				}
 			}
@@ -374,13 +385,28 @@ func (smf *SMF) Exec(c *cli.Context) error {
 }
 
 func (smf *SMF) SendNrfRegistration() {
+	//At least send one NRF registration before resending incase of error
 	err := consumer.SendNFRegistration()
 	if err != nil {
-		retry_err := consumer.RetrySendNFRegistration(10)
-		if retry_err != nil {
-			logger.InitLog.Errorln(retry_err)
-			return
+		//If NRF registration is ongoing then don't start another in parallel
+		if !nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
+			logger.InitLog.Infof("NRF Registration already in progress...")
 		}
 	}
+}
 
+//Run only single instance of func f at a time
+func (o *OneInstance) intanceRun(f func()) bool {
+	if atomic.LoadUint32(&o.done) == 1 {
+		return false
+	}
+	// Slow-path.
+	o.m.Lock()
+	defer o.m.Unlock()
+	if o.done == 0 {
+		atomic.StoreUint32(&o.done, 1)
+		defer atomic.StoreUint32(&o.done, 0)
+		f()
+	}
+	return true
 }
