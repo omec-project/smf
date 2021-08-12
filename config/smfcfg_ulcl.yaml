@@ -1,0 +1,166 @@
+# SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+#
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
+
+info:
+  version: 1.0.0
+  description: SMF initial local configuration
+
+configuration:
+  smfName: SMF # the name of this SMF
+  sbi: # Service-based interface information
+    scheme: http # the protocol for sbi (http or https)
+    registerIPv4: smf # IP used to register to NRF
+    bindingIPv4: smf  # IP used to bind the service
+    port: 29502 # Port used to bind the service
+    tls: # the local path of TLS key
+      key: free5gc/support/TLS/smf.key # SMF TLS Certificate
+      pem: free5gc/support/TLS/smf.pem # SMF TLS Private key
+  serviceNameList: # the SBI services provided by this SMF, refer to TS 29.502
+    - nsmf-pdusession # Nsmf_PDUSession service
+    - nsmf-event-exposure # Nsmf_EventExposure service
+    - nsmf-oam # OAM service
+  snssaiInfos: # the S-NSSAI (Single Network Slice Selection Assistance Information) list supported by this AMF
+    - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+        sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+        sd: 010203 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+      dnnInfos: # DNN information list
+        - dnn: internet # Data Network Name
+          dns: # the IP address of DNS
+            ipv4: 8.8.8.8
+            ipv6: 2001:4860:4860::8888
+          ueSubnet: 60.60.0.0/16 # should be CIDR type
+    - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+        sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+        sd: 112233 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+      dnnInfos: # DNN information list
+        - dnn: internet # Data Network Name
+          dns: # the IP address of DNS
+            ipv4: 8.8.8.8
+            ipv6: 2001:4860:4860::8888
+          ueSubnet: 10.10.0.0/16 # should be CIDR type
+  pfcp: # the IP address of N4 interface on this SMF (PFCP)
+    addr: smf
+  ulcl: true
+  userplane_information: # list of userplane information
+    up_nodes: # information of userplane node (AN or UPF)
+      gNB1: # the name of the node
+        type: AN # the type of the node (AN or UPF)
+      BranchingUPF:  # the name of the node
+        type: UPF # the type of the node (AN or UPF)
+        node_id: pause # the IP/FQDN of N4 interface on this UPF (PFCP)
+        sNssaiUpfInfos: # S-NSSAI information list for this UPF
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 010203 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 112233 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+        interfaces: # Interface list for this UPF
+          - interfaceType: N3 # the type of the interface (N3 or N9)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.18.0.1
+            networkInstance: internet # Data Network Name (DNN)
+          - interfaceType: N9 # the type of the interface (N3 or N9)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.19.0.2
+            networkInstance: internet # Data Network Name (DNN)
+          - interfaceType: N6 # the type of the interface (N3 or N9 or N6)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.19.0.1
+            networkInstance: internet # Data Network Name (DNN)
+      AnchorUPF1:  # the name of the node
+        type: UPF # the type of the node (AN or UPF)
+        node_id: pause_1 # the IP/FQDN of N4 interface on this UPF (PFCP)
+        sNssaiUpfInfos: # S-NSSAI information list for this UPF
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 010203 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 112233 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+        interfaces: # Interface list for this UPF
+          - interfaceType: N3 # the type of the interface (N3 or N9 or N6)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.19.0.1
+            networkInstance: internet # Data Network Name (DNN)
+          - interfaceType: N6 # the type of the interface (N3 or N9 or N6)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.21.0.1
+            networkInstance: internet # Data Network Name (DNN)
+      AnchorUPF2:  # the name of the node
+        type: UPF # the type of the node (AN or UPF)
+        node_id: pause_2 # the IP/FQDN of N4 interface on this UPF (PFCP)
+        sNssaiUpfInfos: # S-NSSAI information list for this UPF
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 010203 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+          - sNssai: # S-NSSAI (Single Network Slice Selection Assistance Information)
+              sst: 1 # Slice/Service Type (uinteger, range: 0~255)
+              sd: 112233 # Slice Differentiator (3 bytes hex string, range: 000000~FFFFFF)
+            dnnUpfInfoList: # DNN information list for this S-NSSAI
+              - dnn: internet
+        interfaces: # Interface list for this UPF
+          - interfaceType: N3 # the type of the interface (N3 or N9 or N6)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.19.0.1
+            networkInstance: internet # Data Network Name (DNN)
+          - interfaceType: N6 # the type of the interface (N3 or N9 or N6)
+            endpoints: # the IP address of this N3/N9 interface on this UPF
+              - 198.21.0.2
+            networkInstance: internet # Data Network Name (DNN)
+    links: # the topology graph of userplane, A and B represent the two nodes of each link
+      - A: gNB1
+        B: BranchingUPF
+      - A: BranchingUPF
+        B: AnchorUPF1
+      - A: BranchingUPF
+        B: AnchorUPF2
+  dnn:
+    internet:
+      dns:
+        ipv4: 8.8.8.8
+        ipv6: 2001:4860:4860::8888
+    internet2:
+      dns:
+        ipv4: 8.8.4.4
+        ipv6: 2001:4860:4860::8844
+  ue_subnet: 60.60.0.0/16
+  nrfUri: http://nrf:29510 # a valid URI of NRF
+
+# the kind of log output
+  # debugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
+  # ReportCaller: enable the caller report or not, value: true or false
+logger:
+  SMF:
+    debugLevel: trace
+    ReportCaller: false
+  NAS:
+    debugLevel: trace
+    ReportCaller: false
+  NGAP:
+    debugLevel: trace
+    ReportCaller: false
+  Aper:
+    debugLevel: trace
+    ReportCaller: false
+  PathUtil:
+    debugLevel: trace
+    ReportCaller: false
+  OpenApi:
+    debugLevel: trace
+    ReportCaller: false
+  PFCP:
+    debugLevel: trace
+    ReportCaller: false
