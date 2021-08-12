@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/smf/metrics"
@@ -224,8 +223,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	if nextState == Active || smContext.SMContextState == Active {
 		var upf string
 		if smContext.Tunnel != nil {
-			upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
-			upf = strings.Split(upf, ".")[0]
+			upf = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
 		}
 
 		//enterprise name
