@@ -224,8 +224,13 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	if nextState == Active || smContext.SMContextState == Active {
 		var upf string
 		if smContext.Tunnel != nil {
-			upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
-			upf = strings.Split(upf, ".")[0]
+			//Set UPF FQDN name if provided else IP-address
+			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
+				upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
+				upf = strings.Split(upf, ".")[0]
+			} else {
+				upf = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
+			}
 		}
 
 		//enterprise name
