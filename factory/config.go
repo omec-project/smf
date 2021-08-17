@@ -417,6 +417,7 @@ func compareUpfDnn(c1, c2 interface{}) bool {
 	return c1.(models.DnnUpfInfoItem).Dnn == c2.(models.DnnUpfInfoItem).Dnn
 }
 
+//Returns false if there is mismatch
 func compareUPNode(u1, u2 UPNode) bool {
 
 	if u1.ANIP == u2.ANIP &&
@@ -427,11 +428,11 @@ func compareUPNode(u1, u2 UPNode) bool {
 		if match, _, _, _ := compareUPNetworkSlices(u1.SNssaiInfos, u2.SNssaiInfos); !match {
 			return false
 		}
-
 		//Todo: match InterfaceUpfInfoList
+		return true
 	}
 
-	return true
+	return false
 }
 
 func compareUPNodesConfigs(u1, u2 map[string]UPNode) (match bool, add, mod, del map[string]UPNode) {
@@ -447,9 +448,8 @@ func compareUPNodesConfigs(u1, u2 map[string]UPNode) (match bool, add, mod, del 
 			if node2, ok := u2[name]; ok {
 				if !compareUPNode(node1, node2) {
 					mod[name] = node2
-					found = true
-					break
 				}
+				found = true
 			}
 
 			// String not found. We add it to return slice

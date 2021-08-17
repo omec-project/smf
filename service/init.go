@@ -275,13 +275,26 @@ func (smf *SMF) Start() {
 		os.Exit(0)
 	}()
 
+	//Init SMF Service
+	context.InitSmfContext(&factory.SmfConfig)
+
+	// allocate id for each upf
+	context.AllocateUPFID()
+
+	//Init UE Specific Config
+	context.InitSMFUERouting(&factory.UERoutingConfig)
+
 	//Wait for additional/updated config from config pod
 	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 	if roc == "true" {
 		initLog.Infof("Configuration is managed by Config Pod")
 		initLog.Infof("waiting for initial configuration from config pod")
+
+		//Main thread should be blocked for config update from ROC
+		//Future config update from ROC can be handled via background go-routine.
 		if <-factory.ConfigPodTrigger {
 			initLog.Infof("minimum configuration from config pod available")
+			context.ProcessConfigUpdate()
 		}
 
 		//Trigger background goroutine to handle further config updates
@@ -299,15 +312,6 @@ func (smf *SMF) Start() {
 	} else {
 		initLog.Infof("Configuration is managed by Helm")
 	}
-
-	//Init SMF Service
-	context.InitSmfContext(&factory.SmfConfig)
-
-	// allocate id for each upf
-	context.AllocateUPFID()
-
-	//Init UE Specific Config
-	context.InitSMFUERouting(&factory.UERoutingConfig)
 
 	//Send NRF Registration
 	smf.SendNrfRegistration()

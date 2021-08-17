@@ -289,6 +289,7 @@ func ProcessConfigUpdate() bool {
 
 	//Update Enterprise Info
 	SMF_Self().EnterpriseList = updatedCfg.EnterpriseList
+	logger.CtxLog.Infof("Dynamic config update, enterprise info [%v] ", *updatedCfg.EnterpriseList)
 
 	//Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
 	GetUserPlaneInformation().ResetDefaultUserPlanePath()
