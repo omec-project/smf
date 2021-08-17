@@ -236,8 +236,13 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		//enterprise name
 		ent := "na"
 		if smfContext.EnterpriseList != nil {
+
 			entMap := *smfContext.EnterpriseList
+			smContext.SubCtxLog.Infof("context state change, Enterprises configured = [%v], subscriber slice sst [%v], sd [%v]",
+				entMap, smContext.Snssai.Sst, smContext.Snssai.Sd)
 			ent = entMap[strconv.Itoa(int(smContext.Snssai.Sst))+smContext.Snssai.Sd]
+		} else {
+			smContext.SubCtxLog.Warn("context state change, enterprise info not available")
 		}
 
 		if nextState == Active {
