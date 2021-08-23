@@ -54,6 +54,8 @@ type (
 	}
 )
 
+var refreshNrfRegistration bool
+
 var config Config
 
 var smfCLi = []cli.Flag{
@@ -389,21 +391,33 @@ func (smf *SMF) Exec(c *cli.Context) error {
 }
 
 func (smf *SMF) SendNrfRegistration() {
-	//At least send one NRF registration before resending incase of error
-	err := consumer.SendNFRegistration()
-	if err != nil {
-		//If NRF registration is ongoing then don't start another in parallel
-		if !nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
-			logger.InitLog.Infof("NRF Registration already in progress...")
+
+	//If NRF registration is ongoing then don't start another in parallel
+	//Just mark it so that once ongoing finishes then resend another
+	if nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
+		logger.InitLog.Infof("NRF Registration already in progress...")
+		refreshNrfRegistration = true
+		return
+	}
+
+	//Once the first goroutine which was sending NRF registration returns,
+	//Check if another fresh NRF registration is required
+	if refreshNrfRegistration {
+		refreshNrfRegistration = false
+		if err := consumer.SendNFRegistration(); err != nil {
+			logger.InitLog.Infof("NRF Registration failure, %v", err.Error())
 		}
 	}
 }
 
 //Run only single instance of func f at a time
 func (o *OneInstance) intanceRun(f func()) bool {
+
+	//Instance already running ?
 	if atomic.LoadUint32(&o.done) == 1 {
-		return false
+		return true
 	}
+
 	// Slow-path.
 	o.m.Lock()
 	defer o.m.Unlock()
@@ -412,5 +426,5 @@ func (o *OneInstance) intanceRun(f func()) bool {
 		defer atomic.StoreUint32(&o.done, 0)
 		f()
 	}
-	return true
+	return false
 }
