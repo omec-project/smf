@@ -59,6 +59,7 @@ const (
 	InActivePending
 	ModificationPending
 	PFCPModification
+	PFCPDeletion
 )
 
 func init() {
@@ -155,6 +156,7 @@ type SMContext struct {
 	SubPduSessLog  *logrus.Entry
 	SubCtxLog      *logrus.Entry
 	SubConsumerLog *logrus.Entry
+	SubFsmLog      *logrus.Entry
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -216,6 +218,7 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubPduSessLog = logger.PduSessLog.WithFields(subField)
 	smContext.SubGsmLog = logger.GsmLog.WithFields(subField)
 	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
+	smContext.SubFsmLog = logger.ConsumerLog.WithFields(subField)
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
