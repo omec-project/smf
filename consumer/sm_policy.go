@@ -61,6 +61,10 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 		smPolicyDecision = &smPolicyDecisionFromPCF
 	}
 
+	if err := validateSmPolicyDecision(smPolicyDecision); err != nil {
+		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
+	}
+
 	return smPolicyDecision, httpRspStatusCode, nil
 }
 
@@ -115,4 +119,23 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	} else {
 		return httpRsp.StatusCode, nil
 	}
+}
+
+func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
+
+	//Validate just presence of important IEs as of now
+	//Sess Rules
+	for name, rule := range smPolicy.SessRules {
+
+		if rule.AuthSessAmbr == nil {
+			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
+			return fmt.Errorf("authorised session ambr missing")
+		}
+
+		if rule.AuthDefQos == nil {
+			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised default qos missing", name)
+			return fmt.Errorf("authorised default qos missing")
+		}
+	}
+	return nil
 }
