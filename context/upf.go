@@ -550,3 +550,16 @@ func (upf *UPF) isSupportSnssai(snssai *SNssai) bool {
 	}
 	return false
 }
+
+func (upf *UPF) IsDnnConfigured(sDnn string) bool {
+	//iterate through slices and check if DNN is configured
+
+	for _, slice := range upf.SNssaiInfos {
+		for _, dnn := range slice.DnnList {
+			if dnn.Dnn == sDnn {
+				return true
+			}
+		}
+	}
+	return false
+}

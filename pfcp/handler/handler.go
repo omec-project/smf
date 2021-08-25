@@ -137,6 +137,15 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			return
 		}
 
+		//validate if DNNs served by UPF matches with the one provided by UPF
+		if rsp.UserPlaneIPResourceInformation != nil {
+			upfProvidedDnn := string(rsp.UserPlaneIPResourceInformation.NetworkInstance)
+			if !upf.IsDnnConfigured(upfProvidedDnn) {
+				logger.PfcpLog.Errorf("Handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+				return
+			}
+		}
+
 		upf.UpfLock.Lock()
 		defer upf.UpfLock.Unlock()
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
