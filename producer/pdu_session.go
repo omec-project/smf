@@ -87,7 +87,7 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 
 			//Check if UPF session set, send release
 			if smCtxt.Tunnel != nil {
-				releaseTunnel(smCtxt)
+				pfcp_message.ReleaseTunnel(smCtxt)
 			}
 
 			smCtxt.SMLock.Unlock()
@@ -372,7 +372,7 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 			smContext.ChangeState(smf_context.PFCPModification)
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 
-			releaseTunnel(smContext)
+			pfcp_message.ReleaseTunnel(smContext)
 
 			sendPFCPDelete = true
 		case nas.MsgTypePDUSessionReleaseComplete:
@@ -742,7 +742,7 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 		smContext.ChangeState(smf_context.PFCPModification)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 
-		releaseTunnel(smContext)
+		pfcp_message.ReleaseTunnel(smContext)
 
 		sendPFCPDelete = true
 	}
@@ -764,112 +764,10 @@ func HandlePDUSessionSMContextUpdate(smContextRef string, body models.UpdateSmCo
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, send PFCP Deletion")
 		}
 
-		PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
+		//Handles PFCP responses for PFCP Modification and PFCP Deletion
+		//Receives successful or reject http response
+		httpResponse = pfcp_message.HandlePfcpResponse(smContext, response, smContextRef)
 
-		switch PFCPResponseStatus {
-		case smf_context.SessionUpdateSuccess:
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Success")
-			smContext.ChangeState(smf_context.Active)
-			smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
-			httpResponse = &http_wrapper.Response{
-				Status: http.StatusOK,
-				Body:   response,
-			}
-		case smf_context.SessionUpdateFailed:
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Failed")
-			smContext.ChangeState(smf_context.Active)
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-			// It is just a template
-			httpResponse = &http_wrapper.Response{
-				Status: http.StatusForbidden,
-				Body: models.UpdateSmContextErrorResponse{
-					JsonData: &models.SmContextUpdateError{
-						Error: &Nsmf_PDUSession.N1SmError,
-					},
-				}, // Depends on the reason why N4 fail
-			}
-		case smf_context.SessionUpdateTimeout:
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
-
-			/* TODO: exact http error response code for this usecase is 504, so relevant cause for
-			   this usecase is 500. If it gets added in spec 29.502 new release that can be added
-			*/
-			problemDetail := models.ProblemDetails{
-				Title:  "PFCP Session Mod Timeout",
-				Status: http.StatusInternalServerError,
-				Detail: "PFCP Session Modification Timeout",
-				Cause:  "UPF_NOT_RESPONDING",
-			}
-			var n1buf, n2buf []byte
-			var err error
-			if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
-			}
-
-			if n2buf, err = smf_context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
-			}
-
-			smContext.ChangeState(smf_context.PFCPModification)
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-
-			// It is just a template
-			httpResponse = &http_wrapper.Response{
-				Status: http.StatusServiceUnavailable,
-				Body: models.UpdateSmContextErrorResponse{
-					JsonData: &models.SmContextUpdateError{
-						Error:        &problemDetail,
-						N1SmMsg:      &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-						N2SmInfo:     &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-						N2SmInfoType: models.N2SmInfoType_PDU_RES_REL_CMD,
-					},
-					BinaryDataN1SmMessage:     n1buf,
-					BinaryDataN2SmInformation: n2buf,
-				}, // Depends on the reason why N4 fail
-			}
-
-			releaseTunnel(smContext)
-
-			HandleNwInitiatedPduSessionRelease(smContextRef)
-
-		case smf_context.SessionReleaseSuccess:
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Release Success")
-			smContext.ChangeState(smf_context.InActivePending)
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-			httpResponse = &http_wrapper.Response{
-				Status: http.StatusOK,
-				Body:   response,
-			}
-
-		case smf_context.SessionReleaseTimeout:
-			fallthrough
-		case smf_context.SessionReleaseFailed:
-			// Update SmContext Request(N1 PDU Session Release Request)
-			// Send PDU Session Release Reject
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Release Failed")
-			problemDetail := models.ProblemDetails{
-				Status: http.StatusInternalServerError,
-				Cause:  "SYSTEM_FAILULE",
-			}
-			httpResponse = &http_wrapper.Response{
-				Status: int(problemDetail.Status),
-			}
-			smContext.ChangeState(smf_context.Active)
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-			errResponse := models.UpdateSmContextErrorResponse{
-				JsonData: &models.SmContextUpdateError{
-					Error: &problemDetail,
-				},
-			}
-			if buf, err := smf_context.BuildGSMPDUSessionReleaseReject(smContext); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseReject failed: %+v", err)
-			} else {
-				errResponse.BinaryDataN1SmMessage = buf
-			}
-
-			errResponse.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
-			httpResponse.Body = errResponse
-		}
 	case smf_context.ModificationPending:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, ctxt in Modification Pending")
 		smContext.ChangeState(smf_context.Active)
@@ -962,7 +860,7 @@ func HandlePDUSessionSMContextRelease(smContextRef string, body models.ReleaseSm
 	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
 	//Release User-plane
-	releaseTunnel(smContext)
+	pfcp_message.ReleaseTunnel(smContext)
 
 	var httpResponse *http_wrapper.Response
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
