@@ -28,10 +28,10 @@ func HandleSMPolicyUpdateNotify(smContextRef string, request models.SmPolicyNoti
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
-	if smContext.SMContextState != smf_context.Active {
-		// Wait till the state becomes Active again
+	if smContext.SMContextState != smf_context.SmStateActive {
+		// Wait till the state becomes SmStateActive again
 		// TODO: implement waiting in concurrent architecture
-		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be Active, but actual %s",
+		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be SmStateActive, but actual %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
 	}
 
@@ -69,7 +69,7 @@ func handleSessionRule(smContext *smf_context.SMContext, id string, sessionRuleM
 func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) error {
 	logger.PduSessLog.Traceln("In ApplySmPolicyFromDecision")
 	var err error
-	smContext.ChangeState(smf_context.ModificationPending)
+	//smContext.ChangeState(smf_context.SmStateModify)
 	selectedSessionRule := smContext.SelectedSessionRule()
 	if selectedSessionRule == nil { // No active session rule
 		// Update session rules from decision
