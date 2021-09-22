@@ -30,6 +30,10 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 		Sd:  snssaiInfoConfig.SNssai.Sd,
 	}
 
+	//PLMN ID
+	snssaiInfo.PlmnId = snssaiInfoConfig.PlmnId
+
+	//DNN Info
 	snssaiInfo.DnnInfos = make(map[string]*SnssaiSmfDnnInfo)
 
 	for _, dnnInfoConfig := range snssaiInfoConfig.DnnInfos {
@@ -53,9 +57,6 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 		snssaiInfo.DnnInfos[dnnInfoConfig.Dnn] = &dnnInfo
 	}
 	c.SnssaiInfos = append(c.SnssaiInfos, snssaiInfo)
-
-	//TODO: Update to other SMF structure also required
-	//check init config code
 
 	return nil
 }

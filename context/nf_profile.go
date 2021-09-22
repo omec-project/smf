@@ -7,10 +7,12 @@ package context
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/smf/factory"
+	"github.com/free5gc/smf/logger"
 )
 
 var NFServices *[]models.NfService
@@ -18,6 +20,10 @@ var NFServices *[]models.NfService
 var NfServiceVersion *[]models.NfServiceVersion
 
 var SmfInfo *models.SmfInfo
+
+type SmfSnssaiPlmnIdInfo map[string]models.PlmnId
+
+var SmfPlmnInfo SmfSnssaiPlmnIdInfo
 
 func SetupNFProfile(config *factory.Config) {
 	// Set time
@@ -32,6 +38,11 @@ func SetupNFProfile(config *factory.Config) {
 		},
 	}
 
+	// set smfInfo/PlmnInfo
+	SmfInfo = &models.SmfInfo{
+		SNssaiSmfInfoList: SNssaiSmfInfo(),
+	}
+
 	// set NFServices
 	NFServices = new([]models.NfService)
 	for _, serviceName := range config.Configuration.ServiceNameList {
@@ -42,23 +53,38 @@ func SetupNFProfile(config *factory.Config) {
 			Scheme:            models.UriScheme_HTTPS,
 			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
 			ApiPrefix:         fmt.Sprintf("%s://%s:%d", SMF_Self().URIScheme, SMF_Self().RegisterIPv4, SMF_Self().SBIPort),
+			AllowedPlmns:      SmfPlmnConfig(),
 		})
 	}
+}
 
-	// set smfInfo
-	SmfInfo = &models.SmfInfo{
-		SNssaiSmfInfoList: SNssaiSmfInfo(),
+func SmfPlmnConfig() *[]models.PlmnId {
+	plmns := make([]models.PlmnId, 0)
+	for _, plmn := range SmfPlmnInfo {
+		plmns = append(plmns, plmn)
 	}
+	if len(plmns) > 0 {
+		logger.CfgLog.Debugf("plmnId configured [%v] ", plmns)
+		return &plmns
+	}
+	return nil
 }
 
 func SNssaiSmfInfo() *[]models.SnssaiSmfInfoItem {
 	snssaiInfo := make([]models.SnssaiSmfInfoItem, 0)
+	SmfPlmnInfo = make(SmfSnssaiPlmnIdInfo)
 	for _, snssai := range smfContext.SnssaiInfos {
 		var snssaiInfoModel models.SnssaiSmfInfoItem
 		snssaiInfoModel.SNssai = &models.Snssai{
 			Sst: snssai.Snssai.Sst,
 			Sd:  snssai.Snssai.Sd,
 		}
+
+		//Plmn Info
+		if snssai.PlmnId.Mcc != "" && snssai.PlmnId.Mnc != "" {
+			SmfPlmnInfo[strconv.Itoa(int(snssai.Snssai.Sst))+snssai.Snssai.Sd] = snssai.PlmnId
+		}
+
 		dnnModelList := make([]models.DnnSmfInfoItem, 0)
 
 		for dnn := range snssai.DnnInfos {
