@@ -63,6 +63,7 @@ func SmfPlmnConfig() *[]models.PlmnId {
 	for _, plmn := range SmfPlmnInfo {
 		plmns = append(plmns, plmn)
 	}
+
 	if len(plmns) > 0 {
 		logger.CfgLog.Debugf("plmnId configured [%v] ", plmns)
 		return &plmns
@@ -86,7 +87,6 @@ func SNssaiSmfInfo() *[]models.SnssaiSmfInfoItem {
 		}
 
 		dnnModelList := make([]models.DnnSmfInfoItem, 0)
-
 		for dnn := range snssai.DnnInfos {
 			dnnModelList = append(dnnModelList, models.DnnSmfInfoItem{
 				Dnn: dnn,
