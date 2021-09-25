@@ -12,7 +12,6 @@ require (
 	github.com/free5gc/http2_util v1.0.0
 	github.com/free5gc/http_wrapper v1.0.0
 	github.com/free5gc/idgenerator v1.0.0
-	github.com/free5gc/logger_conf v1.0.0
 	github.com/free5gc/logger_util v1.0.0
 	github.com/free5gc/nas v1.0.0
 	github.com/free5gc/ngap v1.0.1
@@ -22,10 +21,9 @@ require (
 	github.com/free5gc/util_3gpp v1.0.0
 	github.com/free5gc/version v1.0.0
 	github.com/gin-gonic/gin v1.6.3
-	github.com/golang/protobuf v1.5.0 // indirect
 	github.com/google/uuid v1.1.2
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/omec-project/config5g v1.0.0
+	github.com/omec-project/config5g v1.0.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/sirupsen/logrus v1.8.1
