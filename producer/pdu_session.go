@@ -453,38 +453,40 @@ func HandlePDUSessionSMContextUpdate(smContext *smf_context.SMContext, body mode
 			// TODO: implement sleep wait in concurrent architecture
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, SMContext State[%v] should be SmStateActive State", smContext.SMContextState.String())
 		}
-		smContext.ChangeState(smf_context.SmStateModify)
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-		response.JsonData.UpCnxState = models.UpCnxState_DEACTIVATED
-		smContext.UpCnxState = body.JsonData.UpCnxState
-		smContext.UeLocation = body.JsonData.UeLocation
-		// TODO: Deactivate N2 downlink tunnel
-		// Set FAR and An, N3 Release Info
-		farList = []*smf_context.FAR{}
-		smContext.PendingUPF = make(smf_context.PendingUPF)
-		for _, dataPath := range smContext.Tunnel.DataPathPool {
-			ANUPF := dataPath.FirstDPNode
-			DLPDR := ANUPF.DownLinkTunnel.PDR
-			if DLPDR == nil {
-				smContext.SubPduSessLog.Errorf("AN Release Error")
-			} else {
-				DLPDR.FAR.State = smf_context.RULE_UPDATE
-				DLPDR.FAR.ApplyAction.Forw = false
-				DLPDR.FAR.ApplyAction.Buff = true
-				DLPDR.FAR.ApplyAction.Nocp = true
-				//Set DL Tunnel info to nil
-				if DLPDR.FAR.ForwardingParameters != nil {
-					DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+
+		if smContext.Tunnel != nil {
+			smContext.ChangeState(smf_context.SmStateModify)
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+			response.JsonData.UpCnxState = models.UpCnxState_DEACTIVATED
+			smContext.UpCnxState = body.JsonData.UpCnxState
+			smContext.UeLocation = body.JsonData.UeLocation
+			// TODO: Deactivate N2 downlink tunnel
+			// Set FAR and An, N3 Release Info
+			farList = []*smf_context.FAR{}
+			smContext.PendingUPF = make(smf_context.PendingUPF)
+			for _, dataPath := range smContext.Tunnel.DataPathPool {
+				ANUPF := dataPath.FirstDPNode
+				DLPDR := ANUPF.DownLinkTunnel.PDR
+				if DLPDR == nil {
+					smContext.SubPduSessLog.Errorf("AN Release Error")
+				} else {
+					DLPDR.FAR.State = smf_context.RULE_UPDATE
+					DLPDR.FAR.ApplyAction.Forw = false
+					DLPDR.FAR.ApplyAction.Buff = true
+					DLPDR.FAR.ApplyAction.Nocp = true
+					//Set DL Tunnel info to nil
+					if DLPDR.FAR.ForwardingParameters != nil {
+						DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+					}
+					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					farList = append(farList, DLPDR.FAR)
 				}
-				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 			}
 
-			farList = append(farList, DLPDR.FAR)
+			sendPFCPModification = true
+			smContext.ChangeState(smf_context.SmStatePfcpModify)
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 		}
-
-		sendPFCPModification = true
-		smContext.ChangeState(smf_context.SmStatePfcpModify)
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 	}
 
 	switch smContextUpdateData.N2SmInfoType {
@@ -1052,6 +1054,10 @@ func HandlePDUSessionSMContextRelease(smContext *smf_context.SMContext, body mod
 }
 
 func releaseTunnel(smContext *smf_context.SMContext) {
+	if smContext.Tunnel == nil {
+		smContext.SubPduSessLog.Errorf("releaseTunnel, pfcp tunnel already released")
+		return
+	}
 	deletedPFCPNode := make(map[string]bool)
 	smContext.PendingUPF = make(smf_context.PendingUPF)
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
@@ -1069,6 +1075,7 @@ func releaseTunnel(smContext *smf_context.SMContext) {
 			}
 		}
 	}
+	smContext.Tunnel = nil
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {

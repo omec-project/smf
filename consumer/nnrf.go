@@ -46,7 +46,10 @@ func SendNFRegistration() error {
 		NfServices:    smf_context.NFServices,
 		SmfInfo:       smf_context.SmfInfo,
 		SNssais:       &sNssais,
+		PlmnList:      smf_context.SmfPlmnConfig(),
+		AllowedPlmns:  smf_context.SmfPlmnConfig(),
 	}
+
 	var rep models.NfProfile
 	var res *http.Response
 	var err error

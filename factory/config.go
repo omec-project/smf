@@ -70,6 +70,7 @@ type Configuration struct {
 type SnssaiInfoItem struct {
 	SNssai   *models.Snssai      `yaml:"sNssai"`
 	DnnInfos []SnssaiDnnInfoItem `yaml:"dnnInfos"`
+	PlmnId   models.PlmnId       `yaml:"plmnId"`
 }
 
 type SnssaiDnnInfoItem struct {
@@ -260,6 +261,12 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		numSst, _ := strconv.Atoi(ns.Nssai.Sst)
 		sNssai.Sst = int32(numSst)
 		sNssaiInfoItem.SNssai = &sNssai
+
+		//Add PLMN Id Info
+		if ns.Site.Plmn != nil {
+			sNssaiInfoItem.PlmnId.Mcc = ns.Site.Plmn.Mcc
+			sNssaiInfoItem.PlmnId.Mnc = ns.Site.Plmn.Mnc
+		}
 
 		//Populate enterprise name
 		c.EnterpriseList[ns.Nssai.Sst+ns.Nssai.Sd] = ns.Name
