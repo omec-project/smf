@@ -20,6 +20,9 @@ const (
 	SessionReleaseFailed
 	SessionUpdateTimeout
 	SessionReleaseTimeout
+	SessionEstablishSuccess
+	SessionEstablishFailed
+	SessionEstablishTimeout
 )
 
 type PFCPSessionContext struct {

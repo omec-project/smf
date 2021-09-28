@@ -15,6 +15,7 @@ import (
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 	errors "github.com/free5gc/smf/smferrors"
+	"github.com/free5gc/smf/transaction"
 	"github.com/sirupsen/logrus"
 
 	"net"
@@ -50,15 +51,20 @@ var (
 	smContextActive uint64
 )
 
-type SMContextState int
+type SMContextState uint
 
 const (
-	InActive SMContextState = iota
-	ActivePending
-	Active
-	InActivePending
-	ModificationPending
-	PFCPModification
+	SmStateInit SMContextState = iota
+	SmStateActivePending
+	SmStateActive
+	SmStateInActivePending
+	SmStateModify
+	SmStatePfcpCreatePending
+	SmStatePfcpModify
+	SmStatePfcpRelease
+	SmStateRelease
+	SmStateN1N2TransferPending
+	SmStateMax
 )
 
 func init() {
@@ -155,6 +161,12 @@ type SMContext struct {
 	SubPduSessLog  *logrus.Entry
 	SubCtxLog      *logrus.Entry
 	SubConsumerLog *logrus.Entry
+	SubFsmLog      *logrus.Entry
+
+	//TxnBus per subscriber
+	TxnBus       transaction.TxnBus
+	SMTxnBusLock sync.Mutex
+	ActiveTxn    *transaction.Transaction
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -180,7 +192,7 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContextPool.Store(smContext.Ref, smContext)
 	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
-	smContext.SMContextState = InActive
+	smContext.SMContextState = SmStateInit
 	smContext.Identifier = identifier
 	smContext.PDUSessionID = pduSessID
 	smContext.PFCPContext = make(map[string]*PFCPSessionContext)
@@ -216,12 +228,13 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubPduSessLog = logger.PduSessLog.WithFields(subField)
 	smContext.SubGsmLog = logger.GsmLog.WithFields(subField)
 	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
+	smContext.SubFsmLog = logger.FsmLog.WithFields(subField)
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
 
 	//Update Subscriber profile Metrics
-	if nextState == Active || smContext.SMContextState == Active {
+	if nextState == SmStateActive || smContext.SMContextState == SmStateActive {
 		var upf string
 		if smContext.Tunnel != nil {
 			//Set UPF FQDN name if provided else IP-address
@@ -245,7 +258,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 			smContext.SubCtxLog.Warn("context state change, enterprise info not available")
 		}
 
-		if nextState == Active {
+		if nextState == SmStateActive {
 			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), nextState.String(),
 				upf, ent, 1)
 		} else {
@@ -270,12 +283,14 @@ func GetSMContext(ref string) (smContext *SMContext) {
 
 //*** add unit test ***//
 func RemoveSMContext(ref string) {
+
 	var smContext *SMContext
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
 	}
 
-	smContext.ChangeState(InActive)
+	smContext.SubCtxLog.Infof("RemoveSMContext, SM context released ")
+	smContext.ChangeState(SmStateInit)
 
 	for _, pfcpSessionContext := range smContext.PFCPContext {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
@@ -335,14 +350,14 @@ func (smContext *SMContext) PDUAddressToNAS() (addr [12]byte, addrLen uint8) {
 func (smContext *SMContext) PCFSelection() error {
 	// Send NFDiscovery for find PCF
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
-	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "Out", "", "")
+	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "Out", "", "")
 
 	rep, res, err := SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
 		SearchNFInstances(context.TODO(), models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	if err != nil {
-		metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", "Failure", err.Error())
+		metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", err.Error())
 		return err
 	}
 	defer func() {
@@ -353,7 +368,7 @@ func (smContext *SMContext) PCFSelection() error {
 
 	if res != nil {
 		if status := res.StatusCode; status != http.StatusOK {
-			metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", "Failure", err.Error())
+			metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", err.Error())
 			apiError := err.(openapi.GenericOpenAPIError)
 			problemDetails := apiError.Model().(models.ProblemDetails)
 
@@ -363,7 +378,7 @@ func (smContext *SMContext) PCFSelection() error {
 	}
 
 	// Select PCF from available PCF
-	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, svcmsgtypes.NnrfNFDiscoveryPcf, "In", http.StatusText(res.StatusCode), "")
+	metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", http.StatusText(res.StatusCode), "")
 
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
@@ -537,18 +552,25 @@ func (smContext *SMContext) SelectedSessionRule() *SessionRule {
 
 func (smContextState SMContextState) String() string {
 	switch smContextState {
-	case InActive:
-		return "InActive"
-	case ActivePending:
-		return "ActivePending"
-	case Active:
-		return "Active"
-	case InActivePending:
-		return "InActivePending"
-	case ModificationPending:
-		return "ModificationPending"
-	case PFCPModification:
-		return "PFCPModification"
+	case SmStateInit:
+		return "SmStateInit"
+	case SmStateActivePending:
+		return "SmStateActivePending"
+	case SmStateActive:
+		return "SmStateActive"
+	case SmStateInActivePending:
+		return "SmStateInActivePending"
+	case SmStateModify:
+		return "SmStateModify"
+	case SmStatePfcpCreatePending:
+		return "SmStatePfcpCreatePending"
+	case SmStatePfcpModify:
+		return "SmStatePfcpModify"
+	case SmStatePfcpRelease:
+		return "SmStatePfcpRelease"
+	case SmStateN1N2TransferPending:
+		return "SmStateN1N2TransferPending"
+
 	default:
 		return "Unknown State"
 	}
