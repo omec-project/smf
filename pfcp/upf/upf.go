@@ -18,8 +18,8 @@ import (
 
 const (
 	maxHeartbeatRetry        = 3 //sec
-	maxHeartbeatInterval     = 5 //sec
-	maxUpfProbeRetryInterval = 5 //sec
+	maxHeartbeatInterval     = 10 //sec
+	maxUpfProbeRetryInterval = 10 //sec
 )
 
 func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
