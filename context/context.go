@@ -65,6 +65,8 @@ type SMFContext struct {
 	LocalSEIDCount      uint64
 
 	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
+
+	Pprof bool // profiling option
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
@@ -93,6 +95,8 @@ func InitSmfContext(config *factory.Config) {
 	if configuration.SmfName != "" {
 		smfContext.Name = configuration.SmfName
 	}
+
+	smfContext.Pprof = configuration.Pprof
 
 	sbi := configuration.Sbi
 	if sbi == nil {

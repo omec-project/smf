@@ -65,6 +65,7 @@ type Configuration struct {
 	SNssaiInfo           []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
 	ULCL                 bool                 `yaml:"ulcl,omitempty"`
 	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
+	Pprof                bool                 `yaml:"pprof,omitempty"`
 }
 
 type SnssaiInfoItem struct {

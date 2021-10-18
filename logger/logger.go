@@ -10,7 +10,6 @@ import (
 
 	formatter "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
-
 )
 
 var (
@@ -26,6 +25,7 @@ var (
 	GinLog      *logrus.Entry
 	GrpcLog     *logrus.Entry
 	UPNodeLog   *logrus.Entry
+	ProfileLog  *logrus.Entry
 )
 
 func init() {
@@ -51,6 +51,7 @@ func init() {
 	GinLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "GIN"})
 	GrpcLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "GRPC"})
 	UPNodeLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "UPNode"})
+	ProfileLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "UPNode"})
 }
 
 func SetLogLevel(level logrus.Level) {

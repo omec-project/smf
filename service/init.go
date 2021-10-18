@@ -7,8 +7,6 @@ package service
 
 import (
 	"fmt"
-	"net/http"
-	_ "net/http/pprof" //Using package only for invoking initialization.
 	"os"
 	"os/signal"
 	"sync"
@@ -43,6 +41,7 @@ import (
 	"github.com/free5gc/smf/pfcp/message"
 	"github.com/free5gc/smf/pfcp/udp"
 	"github.com/free5gc/smf/pfcp/upf"
+	"github.com/free5gc/smf/profile"
 	"github.com/free5gc/smf/util"
 )
 
@@ -128,9 +127,10 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	}
 
 	//Initiating a server for profiling
-	go func() {
-		http.ListenAndServe(":5001", nil)
-	}()
+	if factory.SmfConfig.Configuration.Pprof {
+		logger.ProfileLog.Infof("Initiating server profiling ")
+		go profile.InitProfile()
+	}
 
 	return nil
 }

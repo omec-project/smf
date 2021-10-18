@@ -90,6 +90,7 @@ configuration:
       - A: gNB
         B: UPF2
   nrfUri: http://nrf:29510 # a valid URI of NRF
+  pprof : true #flag to invoke profiling apis
 
 # the kind of log output
   # debugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
