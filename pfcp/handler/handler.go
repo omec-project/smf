@@ -438,7 +438,7 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
 	} else {
 		if smContext.SMContextState == smf_context.PFCPModification && !smContext.LocalPurged {
-			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseFailed
+			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
 	}
