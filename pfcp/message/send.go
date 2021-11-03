@@ -501,9 +501,11 @@ func handleSendPfcpSessRelReqError(msg *pfcp.Message, pfcpErr error) {
 
 	SEID := pfcpRelReq.CPFSEID.Seid
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
-
-	smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseTimeout
+	if smContext != nil {
+		smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
+		//Always send success
+		smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
+	}
 }
 
 func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
