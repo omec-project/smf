@@ -349,12 +349,17 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				response.BinaryDataN2SmInformation = buf
 			}
 
-			smContext.ChangeState(smf_context.SmStatePfcpModify)
-			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+			if smContext.Tunnel != nil {
+				smContext.ChangeState(smf_context.SmStatePfcpModify)
+				smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+				//Send release to UPF
+				releaseTunnel(smContext)
+				sendPFCPDelete = true
+			} else {
+				smContext.ChangeState(smf_context.SmStateModify)
+				smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+			}
 
-			releaseTunnel(smContext)
-
-			sendPFCPDelete = true
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
 			if smContext.SMContextState != smf_context.SmStateInActivePending {
