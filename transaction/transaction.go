@@ -52,6 +52,7 @@ const (
 	TxnEventAbort
 	TxnEventSave
 	TxnEventCollision
+	TxnEventQueue
 	TxnEventEnd
 	TxnEventExit
 )
@@ -82,6 +83,8 @@ func (e TxnEvent) String() string {
 		return "TxnEventSave"
 	case TxnEventCollision:
 		return "TxnEventCollision"
+	case TxnEventQueue:
+		return "TxnEventQueue"
 	case TxnEventEnd:
 		return "TxnEventEnd"
 	case TxnEventExit:
@@ -177,20 +180,23 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 
 	for {
 		currEvent := nextEvent
-		if nextEvent, err = TxnFsmHandler[nextEvent](t); err != nil {
+		t.TxnFsmLog.Debugf("processing event[%v] ", currEvent.String())
+		if nextEvent, err = TxnFsmHandler[currEvent](t); err != nil {
 			t.TxnFsmLog.Errorf("TxnFsm Error, Stage[%s] Err[%v] ", currEvent.String(), err.Error())
 		}
 
-		//Schedule Next Txn if available
-		if t.NextTxn != nil && currEvent == TxnEventEnd && nextEvent == TxnEventRun {
-			t = t.NextTxn
-		}
+		//Current active txn is over, Schedule Next Txn if available
+		if currEvent == TxnEventEnd && nextEvent == TxnEventRun {
+			if t.NextTxn != nil {
+				t = t.NextTxn
+			}
+		} else
 
 		//Finish FSM
 		//Note- Pipelined Txn will not get chance to run immediately,
 		//so they shall exit FSM and shall wait to run in TxnBus
-		if nextEvent == TxnEventExit {
-			t.TxnFsmLog.Debug("TxnFsm Exit")
+		if nextEvent == TxnEventExit || nextEvent == TxnEventQueue {
+			t.TxnFsmLog.Debug("TxnFsm [%v] ", nextEvent.String())
 			return
 		}
 	}

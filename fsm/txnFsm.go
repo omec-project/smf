@@ -25,13 +25,11 @@ func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, er
 
 func (SmfTxnFsm) TxnDecode(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventDecode.String())
 	return transaction.TxnEventLoadCtxt, nil
 }
 
 func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventLoadCtxt.String())
 	switch txn.MsgType {
 	case svcmsgtypes.CreateSmContext:
 		req := txn.Req.(models.PostSmContextsRequest)
@@ -69,7 +67,6 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 
 func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventCtxtPost.String())
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
 	//If already Active Txn running then post it to SMF Txn Bus
@@ -81,7 +78,7 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 
 		//Txn has been posted and shall be scheduled later
 		txn.TxnFsmLog.Debugf("event[%v], next-event[%v], txn queued ", transaction.TxnEventCtxtPost.String(), transaction.TxnEventExit.String())
-		return transaction.TxnEventExit, nil
+		return transaction.TxnEventQueue, nil
 	}
 
 	//No other Txn running, lets proceed with current Txn
@@ -91,7 +88,6 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 
 func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventRun.String())
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
 	//There shouldn't be any active Txn if current Txn has reached to Run state
@@ -106,7 +102,7 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventProcess.String())
+
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	if smContext == nil {
 		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid ", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
@@ -142,7 +138,6 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventSuccess.String())
 
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
@@ -167,7 +162,6 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventFailure.String())
 
 	//Put Failure Rsp
 	switch txn.MsgType {
@@ -216,28 +210,23 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventAbort.String())
 	return transaction.TxnEventEnd, nil
 }
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventSave.String())
 	return transaction.TxnEventEnd, nil
 }
 
 func (SmfTxnFsm) TxnTimeout(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventTimeout.String())
 	return transaction.TxnEventEnd, nil
 }
 
 func (SmfTxnFsm) TxnCollision(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventCollision.String())
 	return transaction.TxnEventEnd, nil
 }
 
 func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventEnd.String())
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	txn.TransactionEnd()
 	smContext.ActiveTxn = nil
