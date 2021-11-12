@@ -23,8 +23,9 @@ import (
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/smf/fsm"
 	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/producer"
+	"github.com/free5gc/smf/transaction"
 
 	smf_context "github.com/free5gc/smf/context"
 	stats "github.com/free5gc/smf/metrics"
@@ -35,7 +36,7 @@ import (
 func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Create SM Context Request")
 	var request models.PostSmContextsRequest
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "In", "", "")
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
 
 	request.JsonData = new(models.SmContextCreateData)
 
@@ -55,20 +56,30 @@ func HTTPPostSmContexts(c *gin.Context) {
 			Status: http.StatusBadRequest,
 			Detail: problemDetail,
 		}
-		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(http.StatusBadRequest), "Malformed")
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "Out", http.StatusText(http.StatusBadRequest), "Malformed")
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
 
 	req := http_wrapper.NewRequest(c.Request, request)
-	HTTPResponse, errStr, smContext := producer.HandlePDUSessionSMContextCreate(req.Body.(models.PostSmContextsRequest))
+	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext))
+
+	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+	<-txn.Status //wait for txn to complete at SMF
+	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
+	smContext := txn.Ctxt.(*smf_context.SMContext)
+	errStr := ""
+	if txn.Err != nil {
+		errStr = txn.Err.Error()
+	}
+
 	//Http Response to AMF
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, svcmsgtypes.NsmfPDUSessionCreateSmContext, "Out", http.StatusText(HTTPResponse.Status), errStr)
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "Out", http.StatusText(HTTPResponse.Status), errStr)
 	switch HTTPResponse.Status {
 	case http.StatusCreated,
 		http.StatusBadRequest,
@@ -83,13 +94,14 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	go func(smContext *smf_context.SMContext) {
-		smContext.SMLock.Lock()
-		defer smContext.SMLock.Unlock()
-		//Send delayed PFCP Sess Establish if ctxt created
+
+		var txn *transaction.Transaction
 		if HTTPResponse.Status == http.StatusCreated {
-			producer.SendPFCPRules(smContext)
-		} else if smContext != nil {
-			//release ctxt incase of failure
+			txn = transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreate))
+			txn.Ctxt = smContext
+			go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+			<-txn.Status
+		} else {
 			smf_context.RemoveSMContext(smContext.Ref)
 		}
 	}(smContext)

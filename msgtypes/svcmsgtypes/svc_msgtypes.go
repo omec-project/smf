@@ -5,32 +5,41 @@
 
 package svcmsgtypes
 
+type SmfMsgType string
+
 // List of Msgs
 const (
 
 	//N11 Service
-	MsgTypeNone                         string = "none"
-	NsmfPDUSessionCreateSmContext       string = "CreateSmContext"
-	NsmfPDUSessionUpdateSmContext       string = "UpdateSmContext"
-	NsmfPDUSessionReleaseSmContext      string = "ReleaseSmContext"
-	NsmfPDUSessionNotifySmContextStatus string = "NotifySmContextStatus"
-	NsmfPDUSessionRetrieveSmContext     string = "RetrieveSmContext"
-	NsmfPDUSessionCreate                string = "Create"  //Create a PDU session in the H-SMF
-	NsmfPDUSessionUpdate                string = "Update"  //Update a PDU session in the H-SMF or V- SMF
-	NsmfPDUSessionRelease               string = "Release" //Release a PDU session in the H-SMF
+	MsgTypeNone           SmfMsgType = "none"
+	CreateSmContext       SmfMsgType = "CreateSmContext"
+	UpdateSmContext       SmfMsgType = "UpdateSmContext"
+	ReleaseSmContext      SmfMsgType = "ReleaseSmContext"
+	NotifySmContextStatus SmfMsgType = "NotifySmContextStatus"
+	RetrieveSmContext     SmfMsgType = "RetrieveSmContext"
+	NsmfPDUSessionCreate  SmfMsgType = "Create"  //Create a PDU session in the H-SMF
+	NsmfPDUSessionUpdate  SmfMsgType = "Update"  //Update a PDU session in the H-SMF or V- SMF
+	NsmfPDUSessionRelease SmfMsgType = "Release" //Release a PDU session in the H-SMF
 
 	//NNRF_NFManagement
-	NnrfNFRegister           string = "NfRegister"
-	NnrfNFDeRegister         string = "NfDeRegister"
-	NnrfNFInstanceDeRegister string = "NnrfNFInstanceDeRegister"
-	NnrfNFDiscoveryUdm       string = "NfDiscoveryUdm"
-	NnrfNFDiscoveryPcf       string = "NfDiscoveryPcf"
-	NnrfNFDiscoveryAmf       string = "NfDiscoveryAmf"
+	NnrfNFRegister           SmfMsgType = "NfRegister"
+	NnrfNFDeRegister         SmfMsgType = "NfDeRegister"
+	NnrfNFInstanceDeRegister SmfMsgType = "NnrfNFInstanceDeRegister"
+	NnrfNFDiscoveryUdm       SmfMsgType = "NfDiscoveryUdm"
+	NnrfNFDiscoveryPcf       SmfMsgType = "NfDiscoveryPcf"
+	NnrfNFDiscoveryAmf       SmfMsgType = "NfDiscoveryAmf"
 
 	//NUDM_
-	NudmSmSubscriptionDataRetrieval string = "NudmSmSubscriptionDataRetrieval"
+	SmSubscriptionDataRetrieval SmfMsgType = "SmSubscriptionDataRetrieval"
 
 	//NPCF_
-	NpcfSmPolicyAssociationCreate string = "NpcfSmPolicyAssociationCreate"
+	SmPolicyAssociationCreate SmfMsgType = "SmPolicyAssociationCreate"
+	SmPolicyAssociationDelete SmfMsgType = "SmPolicyAssociationDelete"
+
 	//AMF_
+	N1N2MessageTransfer SmfMsgType = "N1N2MessageTransfer"
+	//PFCP
+	PfcpSessCreate  SmfMsgType = "PfcpSessCreate"
+	PfcpSessModify  SmfMsgType = "PfcpSessModify"
+	PfcpSessRelease SmfMsgType = "PfcpSessRelease"
 )

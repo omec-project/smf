@@ -481,7 +481,7 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 		CommunicationClient.
 		N1N2MessageCollectionDocumentApi.
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
-	smContext.ChangeState(smf_context.InActive)
+	smContext.ChangeState(smf_context.SmStateInit)
 	smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
