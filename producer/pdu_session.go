@@ -932,10 +932,21 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	smContext.ChangeState(smf_context.SmStatePfcpModify)
 	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
-	//Release User-plane
-	releaseTunnel(smContext)
-
 	var httpResponse *http_wrapper.Response
+
+	//Release User-plane
+	if ok := releaseTunnel(smContext); !ok {
+		//already released
+		httpResponse = &http_wrapper.Response{
+			Status: http.StatusNoContent,
+			Body:   nil,
+		}
+
+		txn.Rsp = httpResponse
+		smf_context.RemoveSMContext(smContext.Ref)
+		return nil
+	}
+
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 
 	switch PFCPResponseStatus {
@@ -1015,10 +1026,10 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	return nil
 }
 
-func releaseTunnel(smContext *smf_context.SMContext) {
+func releaseTunnel(smContext *smf_context.SMContext) bool {
 	if smContext.Tunnel == nil {
 		smContext.SubPduSessLog.Errorf("releaseTunnel, pfcp tunnel already released")
-		return
+		return false
 	}
 	deletedPFCPNode := make(map[string]bool)
 	smContext.PendingUPF = make(smf_context.PendingUPF)
@@ -1038,6 +1049,7 @@ func releaseTunnel(smContext *smf_context.SMContext) {
 		}
 	}
 	smContext.Tunnel = nil
+	return true
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {
