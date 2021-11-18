@@ -220,9 +220,12 @@ func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 		compareAndProcessConfigs(c.Configuration, &cfgNew)
 
 		//Update SMF's config copy for future compare
+		//Acquire Lock before update as SMF main go-routine might be
+		//still processing initial config and we don't want to update it in middle
+		SmfConfigSyncLock.Lock()
 		c.Configuration.SNssaiInfo = cfgNew.SNssaiInfo
 		c.Configuration.UserPlaneInformation = cfgNew.UserPlaneInformation
-
+		SmfConfigSyncLock.Unlock()
 		//Send trigger to update SMF Context
 		ConfigPodTrigger <- true
 	}
