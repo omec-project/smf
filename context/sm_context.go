@@ -608,3 +608,36 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 
 	return httpResponse
 }
+
+func (smContext *SMContext) GeneratePDUSessionModificationReject(cause string) *http_wrapper.Response {
+	var httpResponse *http_wrapper.Response
+
+	if buf, err := BuildGSMPDUSessionModificationReject(
+		smContext,
+		errors.ErrorCause[cause]); err != nil {
+		httpResponse = &http_wrapper.Response{
+			Header: nil,
+			Status: int(errors.ErrorType[cause].Status),
+			Body: models.UpdateSmContextErrorResponse{
+				JsonData: &models.SmContextUpdateError{
+					Error:   errors.ErrorType[cause],
+					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+				},
+			},
+		}
+	} else {
+		httpResponse = &http_wrapper.Response{
+			Header: nil,
+			Status: int(errors.ErrorType[cause].Status),
+			Body: models.UpdateSmContextErrorResponse{
+				JsonData: &models.SmContextUpdateError{
+					Error:   errors.ErrorType[cause],
+					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+				},
+				BinaryDataN1SmMessage: buf,
+			},
+		}
+	}
+
+	return httpResponse
+}
