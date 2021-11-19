@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sync"
 
 	"gopkg.in/yaml.v2"
 
@@ -21,9 +22,10 @@ import (
 )
 
 var (
-	SmfConfig        Config
-	UERoutingConfig  RoutingConfig
-	UpdatedSmfConfig UpdateSmfConfig
+	SmfConfig         Config
+	UERoutingConfig   RoutingConfig
+	UpdatedSmfConfig  UpdateSmfConfig
+	SmfConfigSyncLock sync.Mutex
 )
 
 // TODO: Support configuration update from REST api

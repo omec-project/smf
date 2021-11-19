@@ -88,6 +88,11 @@ func InitSmfContext(config *factory.Config) {
 		return
 	}
 
+	//Acquire master SMF config lock, no one should update it in parallel,
+	//until SMF is done updating SMF context
+	factory.SmfConfigSyncLock.Lock()
+	defer factory.SmfConfigSyncLock.Unlock()
+
 	logger.CtxLog.Infof("smfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
 	if configuration.SmfName != "" {
