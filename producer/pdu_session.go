@@ -138,8 +138,14 @@ func HandlePDUSessionSMContextCreate(request models.PostSmContextsRequest) (*htt
 			smContext.PDUAddress.String())
 	}
 
-	//UDM-Fetch Subscription Data
-	smPlmnID := createData.Guami.PlmnId
+	//UDM-Fetch Subscription Data based on servingnetwork.plmn and dnn, snssai
+	var smPlmnID *models.PlmnId
+	if createData.ServingNetwork != nil {
+		smPlmnID = createData.ServingNetwork
+	} else {
+		smContext.SubPduSessLog.Infof("ServingNetwork not received from AMF, so taking from guami")
+		smPlmnID = createData.Guami.PlmnId
+	}
 	smDataParams := &Nudm_SubscriberDataManagement.GetSmDataParamOpts{
 		Dnn:         optional.NewString(createData.Dnn),
 		PlmnId:      optional.NewInterface(smPlmnID.Mcc + smPlmnID.Mnc),
