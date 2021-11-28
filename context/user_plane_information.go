@@ -166,18 +166,11 @@ func GenerateDataPath(upPath UPPath, smContext *SMContext) *DataPath {
 	return dataPath
 }
 
-func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionParams) bool {
+func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionParams) (pathExist bool) {
 	var source *UPNode
 	var destinations []*UPNode
 
-	for _, node := range upi.AccessNetwork {
-		if node.Type == UPNODE_AN {
-			source = node
-			break
-		}
-	}
-
-	if source == nil {
+	for len(upi.AccessNetwork) == 0 {
 		logger.CtxLog.Errorf("There is no AN Node in config file!")
 		return false
 	}
@@ -200,13 +193,23 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 		visited[upNode] = false
 	}
 
-	path, pathExist := getPathBetween(source, destinations[0], visited, selection)
+	for anName, node := range upi.AccessNetwork {
+		if node.Type == UPNODE_AN {
+			source = node
+			var path []*UPNode
+			path, pathExist = getPathBetween(source, destinations[0], visited, selection)
 
-	if pathExist {
-		if path[0].Type == UPNODE_AN {
-			path = path[1:]
+			if pathExist {
+				if path[0].Type == UPNODE_AN {
+					path = path[1:]
+				}
+				upi.DefaultUserPlanePath[selection.String()] = path
+				break
+			} else {
+				logger.CtxLog.Debugf("No path between an-node[%v] and upf[%v] ", anName, string(destinations[0].NodeID.NodeIdValue))
+				continue
+			}
 		}
-		upi.DefaultUserPlanePath[selection.String()] = path
 	}
 
 	return pathExist
