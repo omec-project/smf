@@ -452,6 +452,8 @@ func (upf *UPF) AddFAR() (*FAR, error) {
 	}
 
 	far := new(FAR)
+	//set default FAR action to drop
+	far.ApplyAction.Drop = true
 	if FARID, err := upf.farID(); err != nil {
 		return nil, err
 	} else {
