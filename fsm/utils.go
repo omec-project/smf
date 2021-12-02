@@ -21,6 +21,8 @@ func (e SmEvent) String() string {
 		return "SmEventPfcpSessRelease"
 	case SmEventPduSessN1N2Transfer:
 		return "SmEventPduSessN1N2Transfer"
+	case SmEventPduSessN1N2TransferFailureIndication:
+		return "SmEventPduSessN1N2TransferFailureIndication"
 	default:
 		return "invalid SM event"
 	}

@@ -22,8 +22,13 @@ import (
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
+	smf_context "github.com/free5gc/smf/context"
+	"github.com/free5gc/smf/fsm"
 	"github.com/free5gc/smf/logger"
+	stats "github.com/free5gc/smf/metrics"
+	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 	"github.com/free5gc/smf/producer"
+	"github.com/free5gc/smf/transaction"
 )
 
 // SubscriptionsPost -
@@ -54,4 +59,24 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 
 func SmPolicyControlTerminationRequestNotification(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{})
+}
+
+func N1N2FailureNotification(c *gin.Context) {
+	logger.PduSessLog.Info("Recieve N1N2 Failure Notification")
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "In", "", "")
+
+	var request models.N1N2MsgTxfrFailureNotification
+
+	req := http_wrapper.NewRequest(c.Request, request)
+
+	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
+
+	smContextRef := req.Params["smContextRef"]
+	txn := transaction.NewTransaction(req.Body.(models.N1N2MsgTxfrFailureNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransferFailureNotification))
+	txn.CtxtKey = smContextRef
+	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+	<-txn.Status
+
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "Out", http.StatusText(http.StatusNoContent), "")
+	c.Status(http.StatusNoContent)
 }

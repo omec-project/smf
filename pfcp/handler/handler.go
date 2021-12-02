@@ -389,12 +389,16 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 	seqFromUPF := msg.PfcpMessage.Header.SequenceNumber
 
 	var cause pfcpType.Cause
+	var pfcpSRflag pfcpType.PFCPSRRspFlags
 
 	if smContext == nil {
 		logger.PfcpLog.Warnf("PFCP Session Report Request Found SM Context NULL, Request Rejected")
 		cause.CauseValue = pfcpType.CauseRequestRejected
+
+		//Rejecting buffering at UPF since not able to process Session Report Request
+		pfcpSRflag.Drobu = true
 		// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
-		pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
+		pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, pfcpSRflag, seqFromUPF, SEID)
 		return
 	}
 
@@ -418,13 +422,20 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 				n1n2Request.BinaryDataN2Information = n2SmBuf
 			}
 
+			//n1n2FailureTxfNotifURI to be added in n1n2 request transfer.
+			//It is used as path by AMF to send failure notification message towards SMF
+			n1n2FailureTxfNotifURI := "/nsmf-callback/sm-n1n2failnotify/"
+			n1n2FailureTxfNotifURI += smContext.Ref
+
 			n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
 				PduSessionId: smContext.PDUSessionID,
+				SkipInd:      false,
 				// Temporarily assign SMF itself, TODO: TS 23.502 4.2.3.3 5. Namf_Communication_N1N2TransferFailureNotification
-				N1n2FailureTxfNotifURI: fmt.Sprintf("%s://%s:%d",
-					smf_context.SMF_Self().URIScheme,
-					smf_context.SMF_Self().RegisterIPv4,
-					smf_context.SMF_Self().SBIPort),
+				N1n2FailureTxfNotifURI: fmt.Sprintf("%s://%s:%d%s",
+				smf_context.SMF_Self().URIScheme,
+				smf_context.SMF_Self().RegisterIPv4,
+				smf_context.SMF_Self().SBIPort,
+				n1n2FailureTxfNotifURI),
 				N2InfoContainer: &models.N2InfoContainer{
 					N2InformationClass: models.N2InformationClass_SM,
 					SmInfo: &models.N2SmInformation{
@@ -448,18 +459,32 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 			}
 			if rspData.Cause == models.N1N2MessageTransferCause_ATTEMPTING_TO_REACH_UE {
 				smContext.SubPfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
+
+				pfcpSRflag.Drobu = false
+				cause.CauseValue = pfcpType.CauseRequestAccepted
+
 			}
 			if rspData.Cause == models.N1N2MessageTransferCause_UE_NOT_RESPONDING {
-				smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
+				smContext.SubPfcpLog.Infof("Receive %v, UE is not responding to N1N2 transfer message", rspData.Cause)
 				// TODO: TS 23.502 4.2.3.3 3c. Failure indication
+
+				//Adding Session report flag to drop buffered packet at UPF
+				pfcpSRflag.Drobu = true
+
+				//Adding Cause rejected since N1N2 Transfer message got rejected.
+				cause.CauseValue = pfcpType.CauseRequestRejected
 			}
+
+			//Sending Session Report Response to UPF.
+			smContext.SubPfcpLog.Infof("Sending Session Report to UPF with Cause %v", cause.CauseValue)
+			pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, pfcpSRflag, seqFromUPF, SEID)
 		}
 	}
 
 	// TS 23.502 4.2.3.3 2b. Send Data Notification Ack, SMF->UPF
-	cause.CauseValue = pfcpType.CauseRequestAccepted
+	//	cause.CauseValue = pfcpType.CauseRequestAccepted
 	// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
-	pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
+	//pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
 }
 
 func HandlePfcpSessionReportResponse(msg *pfcpUdp.Message) {

@@ -510,10 +510,14 @@ func BuildPfcpSessionDeletionResponse() (pfcp.PFCPSessionDeletionResponse, error
 	return msg, nil
 }
 
-func BuildPfcpSessionReportResponse(cause pfcpType.Cause) (pfcp.PFCPSessionReportResponse, error) {
+func BuildPfcpSessionReportResponse(cause pfcpType.Cause,pfcpSRflag pfcpType.PFCPSRRspFlags) (pfcp.PFCPSessionReportResponse, error) {
 	msg := pfcp.PFCPSessionReportResponse{}
 
 	msg.Cause = &cause
+
+	if pfcpSRflag.Drobu == true {
+		msg.SxSRRspFlags.Drobu = pfcpSRflag.Drobu
+	}
 
 	return msg, nil
 }
