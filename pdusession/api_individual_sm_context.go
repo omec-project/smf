@@ -125,7 +125,6 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
-
 	//HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
 	//	smContextRef, req.Body.(models.UpdateSmContextRequest))
 

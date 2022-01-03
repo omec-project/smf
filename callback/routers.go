@@ -75,4 +75,10 @@ var routes = Routes{
 		"/sm-policies/:smContextRef/terminate",
 		SmPolicyControlTerminationRequestNotification,
 	},
+	{
+		"N1N2FailureNotification",
+		"POST",
+		"/sm-n1n2failnotify/:smContextRef",
+		N1N2FailureNotification,
+	},
 }

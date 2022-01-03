@@ -37,7 +37,9 @@ const (
 	SmPolicyAssociationDelete SmfMsgType = "SmPolicyAssociationDelete"
 
 	//AMF_
-	N1N2MessageTransfer SmfMsgType = "N1N2MessageTransfer"
+	N1N2MessageTransfer                    SmfMsgType = "N1N2MessageTransfer"
+	N1N2MessageTransferFailureNotification SmfMsgType = "N1N2MessageTransferFailureNotification"
+
 	//PFCP
 	PfcpSessCreate  SmfMsgType = "PfcpSessCreate"
 	PfcpSessModify  SmfMsgType = "PfcpSessModify"

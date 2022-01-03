@@ -1127,3 +1127,132 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	smContext.SubPduSessLog.Infof("N1N2 Transfer completed")
 	return nil
 }
+
+func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
+
+	txn := eventData.(*transaction.Transaction)
+	smContext := txn.Ctxt.(*smf_context.SMContext)
+	
+	smContext.SubPduSessLog.Infof("In HandlePduSessN1N2TransFailInd, N1N2 Transfer Failure Notification received")
+	
+	var httpResponse *http_wrapper.Response
+
+	pdrList := []*smf_context.PDR{}
+	farList := []*smf_context.FAR{}
+	qerList := []*smf_context.QER{}
+	barList := []*smf_context.BAR{}
+
+	if smContext.Tunnel != nil {
+		smContext.PendingUPF = make(smf_context.PendingUPF)
+		for _, dataPath := range smContext.Tunnel.DataPathPool {
+			ANUPF := dataPath.FirstDPNode
+			DLPDR := ANUPF.DownLinkTunnel.PDR
+			if DLPDR == nil {
+				smContext.SubPduSessLog.Errorf("AN Release Error")
+				return fmt.Errorf("AN Release Error")
+			} else {
+				DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
+				DLPDR.FAR.State = smf_context.RULE_UPDATE
+				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+				farList = append(farList, DLPDR.FAR)
+			}
+		}
+
+		defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+		ANUPF := defaultPath.FirstDPNode
+
+		//Sending PFCP modification with flag set to DROP the packets.
+		pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
+	}
+
+	//Listening PFCP modification response.
+	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
+
+	httpResponse = HandlePFCPResponse(smContext, PFCPResponseStatus)
+	txn.Rsp = httpResponse
+	return nil
+}
+
+//Handles PFCP response depending upon response cause recevied.
+func HandlePFCPResponse(smContext *smf_context.SMContext,
+	PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *http_wrapper.Response {
+
+	smContext.SubPfcpLog.Traceln("In HandlePFCPResponse")
+	var httpResponse *http_wrapper.Response
+
+	switch PFCPResponseStatus {
+	case smf_context.SessionUpdateSuccess:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Success")
+		smContext.ChangeState(smf_context.SmStateActive)
+		smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
+		httpResponse = &http_wrapper.Response{
+			Status: http.StatusNoContent,
+			Body:   nil,
+		}
+	case smf_context.SessionUpdateFailed:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Failed")
+		smContext.ChangeState(smf_context.SmStateActive)
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+		// It is just a template
+		httpResponse = &http_wrapper.Response{
+			Status: http.StatusForbidden,
+			Body: models.UpdateSmContextErrorResponse{
+				JsonData: &models.SmContextUpdateError{
+					Error: &Nsmf_PDUSession.N1SmError,
+				},
+			}, // Depends on the reason why N4 fail
+		}
+	case smf_context.SessionUpdateTimeout:
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
+
+		/* TODO: exact http error response code for this usecase is 504, so relevant cause for
+		   this usecase is 500. If it gets added in spec 29.502 new release that can be added
+		*/
+		problemDetail := models.ProblemDetails{
+			Title:  "PFCP Session Mod Timeout",
+			Status: http.StatusInternalServerError,
+			Detail: "PFCP Session Modification Timeout",
+			Cause:  "UPF_NOT_RESPONDING",
+		}
+		var n1buf, n2buf []byte
+		var err error
+		if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
+			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
+		}
+
+		if n2buf, err = smf_context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
+			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
+		}
+
+		smContext.ChangeState(smf_context.SmStatePfcpModify)
+		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+
+		// It is just a template
+		httpResponse = &http_wrapper.Response{
+			Status: http.StatusServiceUnavailable,
+			Body: models.UpdateSmContextErrorResponse{
+				JsonData: &models.SmContextUpdateError{
+					Error:        &problemDetail,
+					N1SmMsg:      &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
+					N2SmInfo:     &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
+					N2SmInfoType: models.N2SmInfoType_PDU_RES_REL_CMD,
+				},
+				BinaryDataN1SmMessage:     n1buf,
+				BinaryDataN2SmInformation: n2buf,
+			}, // Depends on the reason why N4 fail
+		}
+
+		releaseTunnel(smContext)
+
+		HandleNwInitiatedPduSessionRelease(smContext.Ref)
+	default:
+		smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, SM Context State [%s] shouldn't be here\n", smContext.SMContextState)
+		httpResponse = &http_wrapper.Response{
+			Status: http.StatusNoContent,
+			Body:   nil,
+		}
+	}
+
+	smContext.SubPfcpLog.Traceln("Out HandlePFCPResponse")
+	return httpResponse
+}

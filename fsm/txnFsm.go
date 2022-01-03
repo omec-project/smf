@@ -51,6 +51,8 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		fallthrough
 	case svcmsgtypes.N1N2MessageTransfer:
 		//Pre-loaded- No action
+	case svcmsgtypes.N1N2MessageTransferFailureNotification:
+		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	default:
 		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v] ",
 			transaction.TxnEventInit.String(), transaction.TxnEventFailure.String(), txn.MsgType)
@@ -123,6 +125,8 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		event = SmEventPfcpSessCreate
 	case svcmsgtypes.N1N2MessageTransfer:
 		event = SmEventPduSessN1N2Transfer
+	case svcmsgtypes.N1N2MessageTransferFailureNotification:
+		event = SmEventPduSessN1N2TransferFailureIndication
 	default:
 		event = SmEventInvalid
 

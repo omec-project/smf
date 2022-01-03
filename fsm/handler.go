@@ -25,6 +25,7 @@ const (
 	SmEventPfcpSessModify
 	SmEventPfcpSessRelease
 	SmEventPduSessN1N2Transfer
+	SmEventPduSessN1N2TransferFailureIndication
 	SmEventMax
 )
 
@@ -57,6 +58,7 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStateN1N2TransferPending][SmEventPduSessN1N2Transfer] = HandleStateN1N2TransferPendingEventN1N2Transfer
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
+	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 }
 
 func HandleEvent(smContext *smf_context.SMContext, event SmEvent, eventData SmEventData) error {
@@ -153,6 +155,18 @@ func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData)
 
 	if err := producer.HandlePDUSessionSMContextRelease(eventData.Txn); err != nil {
 		smCtxt.SubFsmLog.Errorf("sm context release error, %v ", err.Error())
+		return smf_context.SmStateInit, err
+	}
+	return smf_context.SmStateInit, nil
+}
+
+func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
+
+	txn := eventData.Txn.(*transaction.Transaction)
+	smCtxt := txn.Ctxt.(*smf_context.SMContext)
+
+	if err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn); err != nil {
+		smCtxt.SubFsmLog.Errorf("Error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
 	return smf_context.SmStateInit, nil
