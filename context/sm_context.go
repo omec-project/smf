@@ -14,6 +14,7 @@ import (
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/free5gc/smf/qos"
 	errors "github.com/free5gc/smf/smferrors"
 	"github.com/free5gc/smf/transaction"
 	"github.com/sirupsen/logrus"
@@ -142,6 +143,10 @@ type SMContext struct {
 	PCCRules           map[string]*PCCRule
 	SessionRules       map[string]*SessionRule
 	TrafficControlPool map[string]*TrafficControlData
+	PolicyUpdate       qos.PolicyUpdate
+	SmPolicydecision   *models.SmPolicyDecision
+	PCCRulesNew        map[string]*models.PccRule
+	SessionRulesNew    map[string]*models.SessionRule
 
 	// NAS
 	Pti                     uint8

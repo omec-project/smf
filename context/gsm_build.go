@@ -12,6 +12,7 @@ import (
 	"github.com/free5gc/nas/nasConvert"
 	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/nas/nasType"
+	"github.com/free5gc/smf/qos"
 )
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
@@ -40,23 +41,26 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.SessionAMBR = nasConvert.ModelsToSessionAMBR(sessRule.AuthSessAmbr)
 	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)))
 
-	qoSRules := QoSRules{
-		QoSRule{
-			Identifier:    0x01,
-			DQR:           0x01,
-			OperationCode: OperationCodeCreateNewQoSRule,
-			Precedence:    0xff,
-			QFI:           uint8(authDefQos.Var5qi),
-			PacketFilterList: []PacketFilter{
-				{
-					Identifier:    0x01,
-					Direction:     PacketFilterDirectionBidirectional,
-					ComponentType: PacketFilterComponentTypeMatchAll,
+	qoSRules := qos.BuildQosRulesFromPccRules(smContext.SmPolicydecision)
+	/*
+		qoSRules := QoSRules{
+			QoSRule{
+				Identifier:    0x01,
+				DQR:           0x01,
+				OperationCode: OperationCodeCreateNewQoSRule,
+				Precedence:    0xff,
+				QFI:           uint8(authDefQos.Var5qi),
+				PacketFilterList: []PacketFilter{
+					{
+						Identifier:    0x01,
+						Direction:     PacketFilterDirectionBidirectional,
+						ComponentType: PacketFilterComponentTypeMatchAll,
+					},
 				},
 			},
-		},
-	}
+		}
 
+	*/
 	qosRulesBytes, err := qoSRules.MarshalBinary()
 	if err != nil {
 		return nil, err

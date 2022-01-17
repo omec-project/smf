@@ -25,6 +25,7 @@ const (
 	SmEventPfcpSessRelease
 	SmEventPduSessN1N2Transfer
 	SmEventPduSessN1N2TransferFailureIndication
+	SmEventPolicyUpdateNotify
 	SmEventMax
 )
 
@@ -58,6 +59,7 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
+	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
 }
 
 func HandleEvent(smContext *smf_context.SMContext, event SmEvent, eventData SmEventData) error {
@@ -169,4 +171,17 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 		return smf_context.SmStateInit, err
 	}
 	return smf_context.SmStateInit, nil
+}
+func HandleStateActiveEventPolicyUpdateNotify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
+	txn := eventData.Txn.(*transaction.Transaction)
+	smCtxt := txn.Ctxt.(*smf_context.SMContext)
+
+	if err := producer.HandleSMPolicyUpdateNotify(eventData.Txn); err != nil {
+		txn.Err = err
+		smCtxt.SubFsmLog.Errorf("sm policy update error, %v ", err.Error())
+		return smf_context.SmStateActive, fmt.Errorf("pdu session create error, %v ", err.Error())
+	}
+
+	return smf_context.SmStateActive, nil
+
 }

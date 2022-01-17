@@ -15,6 +15,7 @@
 package callback
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,6 @@ import (
 	"github.com/free5gc/smf/logger"
 	stats "github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
-	"github.com/free5gc/smf/producer"
 	"github.com/free5gc/smf/transaction"
 )
 
@@ -46,7 +46,14 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	reqWrapper.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := reqWrapper.Params["smContextRef"]
-	HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
+	log.Printf("###### HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
+
+	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
+	txn.CtxtKey = smContextRef
+	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+	<-txn.Status //wait for txn to complete at SMF
+	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
+	//HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])

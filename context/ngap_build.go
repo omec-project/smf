@@ -11,6 +11,7 @@ import (
 	"github.com/free5gc/aper"
 	"github.com/free5gc/ngap/ngapConvert"
 	"github.com/free5gc/ngap/ngapType"
+	"github.com/free5gc/openapi/models"
 )
 
 const DefaultNonGBR5QI = 9
@@ -84,6 +85,15 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	}
 	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
 
+	arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
+	if sessRule.AuthDefQos.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
+		arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
+	}
+
+	arpPreemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
+	if sessRule.AuthDefQos.Arp.PreemptVuln == models.PreemptionVulnerability_PREEMPTABLE {
+		arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+	}
 	// QoS Flow Setup Request List
 	// use Default 5qi, arp
 	// TODO: Get QFI from PCF/UDM
@@ -96,26 +106,26 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			List: []ngapType.QosFlowSetupRequestItem{
 				{
 					QosFlowIdentifier: ngapType.QosFlowIdentifier{
-						Value: DefaultNonGBR5QI,
+						Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
 					},
 					QosFlowLevelQosParameters: ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
 							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
 								FiveQI: ngapType.FiveQI{
-									Value: DefaultNonGBR5QI,
+									Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
 								},
 							},
 						},
 						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
 							PriorityLevelARP: ngapType.PriorityLevelARP{
-								Value: 15,
+								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), //15,
 							},
 							PreEmptionCapability: ngapType.PreEmptionCapability{
-								Value: ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
+								Value: arpPreemptCap, //ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
 							},
 							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
-								Value: ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
+								Value: arpPreemptVul, //ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
 							},
 						},
 					},
@@ -131,6 +141,108 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	} else {
 		return buf, nil
 	}
+}
+
+func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error) {
+	resourceModifyRequestTransfer := ngapType.PDUSessionResourceModifyRequestTransfer{}
+
+	// PDU Session Aggregate Maximum Bit Rate
+	// This IE is Conditional and shall be present when at least one NonGBR QoS flow is being setup.
+	// TODO: should check if there is at least one NonGBR QoS flow
+	ie := ngapType.PDUSessionResourceModifyRequestTransferIEs{}
+	ie.Id.Value = ngapType.ProtocolIEIDPDUSessionAggregateMaximumBitRate
+	ie.Criticality.Value = ngapType.CriticalityPresentReject
+	sessRule := ctx.SelectedSessionRule()
+	if sessRule == nil || sessRule.AuthSessAmbr == nil {
+		return nil, fmt.Errorf("No PDU Session AMBR")
+	}
+	ie.Value = ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+		Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentPDUSessionAggregateMaximumBitRate,
+		PDUSessionAggregateMaximumBitRate: &ngapType.PDUSessionAggregateMaximumBitRate{
+			PDUSessionAggregateMaximumBitRateDL: ngapType.BitRate{
+				Value: ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Downlink),
+			},
+			PDUSessionAggregateMaximumBitRateUL: ngapType.BitRate{
+				Value: ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Uplink),
+			},
+		},
+	}
+	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+
+	// QoS Flow Modify Request List
+	// use Default 5qi, arp
+	// TODO: Get QFI from PCF/UDM
+	arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
+	if sessRule.AuthDefQos.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
+		arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
+	}
+
+	arpPreemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
+	if sessRule.AuthDefQos.Arp.PreemptVuln == models.PreemptionVulnerability_PREEMPTABLE {
+		arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+	}
+
+	ie = ngapType.PDUSessionResourceModifyRequestTransferIEs{}
+	ie.Id.Value = ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList
+	ie.Criticality.Value = ngapType.CriticalityPresentReject
+	ie.Value = ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+		Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
+		QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
+			List: []ngapType.QosFlowAddOrModifyRequestItem{
+				{
+					QosFlowIdentifier: ngapType.QosFlowIdentifier{
+						Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+					},
+					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
+						QosCharacteristics: ngapType.QosCharacteristics{
+							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
+							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
+								FiveQI: ngapType.FiveQI{
+									Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+								},
+							},
+						},
+						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
+							PriorityLevelARP: ngapType.PriorityLevelARP{
+								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), //15,
+							},
+							PreEmptionCapability: ngapType.PreEmptionCapability{
+								Value: arpPreemptCap, //ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
+							},
+							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
+								Value: arpPreemptVul, //ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+
+	//Encode
+	if buf, err := aper.MarshalWithParams(resourceModifyRequestTransfer, "valueExt"); err != nil {
+		return nil, fmt.Errorf("encode resourceModifyRequestTransfer failed: %s", err)
+	} else {
+		return buf, nil
+	}
+}
+
+func BuildPDUSessionResourceReleaseCommandTransfer(ctx *SMContext) (buf []byte, err error) {
+	resourceReleaseCommandTransfer := ngapType.PDUSessionResourceReleaseCommandTransfer{
+		Cause: ngapType.Cause{
+			Present: ngapType.CausePresentNas,
+			Nas: &ngapType.CauseNas{
+				Value: ngapType.CauseNasPresentNormalRelease,
+			},
+		},
+	}
+	buf, err = aper.MarshalWithParams(resourceReleaseCommandTransfer, "valueExt")
+	if err != nil {
+		return nil, err
+	}
+	return
 }
 
 // TS 38.413 9.3.4.9
@@ -211,22 +323,6 @@ func BuildPathSwitchRequestUnsuccessfulTransfer(causePresent int, causeValue ape
 	}
 
 	buf, err = aper.MarshalWithParams(pathSwitchRequestUnsuccessfulTransfer, "valueExt")
-	if err != nil {
-		return nil, err
-	}
-	return
-}
-
-func BuildPDUSessionResourceReleaseCommandTransfer(ctx *SMContext) (buf []byte, err error) {
-	resourceReleaseCommandTransfer := ngapType.PDUSessionResourceReleaseCommandTransfer{
-		Cause: ngapType.Cause{
-			Present: ngapType.CausePresentNas,
-			Nas: &ngapType.CauseNas{
-				Value: ngapType.CauseNasPresentNormalRelease,
-			},
-		},
-	}
-	buf, err = aper.MarshalWithParams(resourceReleaseCommandTransfer, "valueExt")
 	if err != nil {
 		return nil, err
 	}
