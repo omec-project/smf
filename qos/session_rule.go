@@ -11,21 +11,16 @@ import (
 
 //Handle Session Rule related info
 type SessRulesUpdate struct {
-	add, mod, del []*models.SessionRule
-}
-
-type PccRulesUpdate struct {
-	add, mod, del []*models.PccRule
-}
-
-type PolicyUpdate struct {
-	SessRuleUpdate *SessRulesUpdate
-	PccRuleUpdate  *PccRulesUpdate
+	add, mod, del map[string]*models.SessionRule
 }
 
 //Get Session rule changes delta
-func GetSessionRuleChanges(pcfSessRules, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
-	var change SessRulesUpdate
+func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
+	change := SessRulesUpdate{
+		add: make(map[string]*models.SessionRule),
+		mod: make(map[string]*models.SessionRule),
+		del: make(map[string]*models.SessionRule),
+	}
 
 	//Iterate through all session rules from PCF and check agains ctxt session rules
 

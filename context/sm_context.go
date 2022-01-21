@@ -143,10 +143,13 @@ type SMContext struct {
 	PCCRules           map[string]*PCCRule
 	SessionRules       map[string]*SessionRule
 	TrafficControlPool map[string]*TrafficControlData
-	PolicyUpdate       qos.PolicyUpdate
-	SmPolicydecision   *models.SmPolicyDecision
-	PCCRulesNew        map[string]*models.PccRule
-	SessionRulesNew    map[string]*models.SessionRule
+
+	//Last SmPolicyDecision from PCF
+	SmPolicyDecision *models.SmPolicyDecision
+	// Updates in policy from PCF
+	SmPolicyUpdates []*qos.PolicyUpdate
+	//Holds Session/PCC Rules and Qos/Cond/Charging Data
+	SmPolicyData qos.SmCtxtPolicyData
 
 	// NAS
 	Pti                     uint8
@@ -204,6 +207,7 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext.SessionRules = make(map[string]*SessionRule)
 	smContext.TrafficControlPool = make(map[string]*TrafficControlData)
 	smContext.SBIPFCPCommunicationChan = make(chan PFCPSessionResponseStatus, 1)
+	smContext.SmPolicyUpdates = make([]*qos.PolicyUpdate, 1)
 
 	smContext.ProtocolConfigurationOptions = &ProtocolConfigurationOptions{
 		DNSIPv4Request: false,
