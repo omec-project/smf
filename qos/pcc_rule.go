@@ -13,6 +13,9 @@ func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *mode
 
 	update := &PolicyUpdate{}
 
+	//Keep copy of SmPolicyDecision received from PCF
+	update.SmPolicyDecision = smPolicyDecision
+
 	//Qos Flows update
 	update.QosFlowUpdate = GetQosFlowDescUpdate(smPolicyDecision.QosDecs, smCtxtPolData.SmCtxtQosData.QosData)
 

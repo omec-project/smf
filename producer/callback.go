@@ -38,7 +38,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	//[400 Bad Request] ErrorReport
 
 	//Derive QoS change(compare existing vs received Policy Decision)
-	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smContext.SmPolicyDecision)
+	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, pcfPolicyDecision)
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 
 	//Update UPF
@@ -147,7 +147,6 @@ func handleSessionRule(smContext *smf_context.SMContext, id string, sessionRuleM
 
 func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) error {
 
-	smContext.SmPolicyDecision = decision
 	logger.PduSessLog.Traceln("In ApplySmPolicyFromDecision")
 	var err error
 	//smContext.ChangeState(smf_context.SmStateModify)

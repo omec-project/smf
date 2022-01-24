@@ -17,6 +17,9 @@ type PolicyUpdate struct {
 	SessRuleUpdate *SessRulesUpdate
 	PccRuleUpdate  *PccRulesUpdate
 	QosFlowUpdate  *QosFlowsUpdate
+
+	//relevant SM Policy Decision from PCF
+	SmPolicyDecision *models.SmPolicyDecision
 }
 
 type SmCtxtPolicyData struct {
@@ -55,13 +58,3 @@ type SmCtxtChargingData struct {
 type SmCtxtCondData struct {
 	CondData map[string]*models.ConditionData
 }
-
-/*
-//maintain all pcc rule-info and associated Qos-Data/Condition data
-type SmCtxtPccRule struct {
-	PccRule      *models.PccRule
-	QosData      *models.QosData
-	ChargingData *models.ChargingData
-	CondData     *models.ConditionData
-}
-*/

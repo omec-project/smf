@@ -210,9 +210,10 @@ func BuildDefaultQosRule() *QoSRule {
 }
 */
 
-func BuildQosRules(smPolicyUpdates *PolicyUpdate, smPolicyDecision *models.SmPolicyDecision) QoSRules {
+func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	qosRules := QoSRules{}
 
+	smPolicyDecision := smPolicyUpdates.SmPolicyDecision
 	pccRulesUpdate := smPolicyUpdates.PccRuleUpdate
 
 	//New Rules to be added
@@ -315,6 +316,7 @@ func GetPfDirectionFromPccFlowInfo(flowDir models.FlowDirectionRm) uint8 {
 }
 
 //BuildPfContent- builds PF content from Flow Description(only if required to be sent to UE)
+// e.x. permit out ip from 0.0.0.0/0 to assigned
 func GetPfContent(flowDes string) []PacketFilterComponent {
 	//Tokenize flow desc and make PF components
 	//strings.Fields("string")

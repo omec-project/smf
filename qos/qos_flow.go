@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/openapi/models"
 )
 
@@ -49,18 +50,122 @@ const (
 	QFDQfiBitmask    uint8 = 0x3f //bits 6 to 1 of octet
 	QFDOpCodeBitmask uint8 = 0xe0 // bits 8 to 6 of octet
 	QFDEbit          uint8 = 0x40 // 7th bit of param length octet
-
 )
+
+const (
+	QFDFixLen uint8 = 0x03
+)
+
+type QosFlowDescriptionsAuthorized struct {
+	IeType  uint8
+	IeLen   uint16
+	Content []byte
+}
 
 type QoSFlowDescription struct {
 	Qfi        uint8
 	OpCode     uint8
 	NumOfParam uint8
 	ParamList  []QosFlowParameter
+	QFDLen     uint8
+}
+
+//Qos Flow Description Parameter
+type QosFlowParameter struct {
+	ParamId      uint8
+	ParamLen     uint8
+	ParamContent []byte
 }
 
 type QosFlowsUpdate struct {
 	add, mod, del map[string]*models.QosData
+}
+
+//Build Qos Flow Description to be sent to UE
+func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowDescriptionsAuthorized {
+
+	QFDescriptions := QosFlowDescriptionsAuthorized{
+		IeType:  nasMessage.PDUSessionEstablishmentAcceptAuthorizedQosFlowDescriptionsType,
+		Content: make([]byte, 0),
+	}
+
+	qosFlowUpdate := smPolicyUpdates.QosFlowUpdate
+
+	//QoS Flow Description to be Added
+	for name, qosFlow := range qosFlowUpdate.add {
+		log.Printf("Adding Qos Flow Description [%v] ", name)
+		QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow)
+	}
+
+	//QoS Flow Description to be Modified
+	//TODO
+
+	//QoS Flow Description to be Deleted
+	//TODO
+
+	return &QFDescriptions
+}
+
+func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *models.QosData) {
+
+	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
+
+	//Set QFI
+	qfd.SetQoSFlowDescQfi(uint8(qosData.Var5qi))
+
+	//Operation Code
+	qfd.SetQoSFlowDescOpCode(QFDOpCreate)
+
+	//Create Params
+	//5QI
+	qfd.AddQosFlowParam5Qi(uint8(qosData.Var5qi))
+
+	//MFBR uplink
+	if qosData.MaxbrUl != "" {
+		qfd.addQosFlowRateParam(qosData.MaxbrUl, QFDParameterIdMfbrUl)
+	}
+
+	//MFBR downlink
+	if qosData.MaxbrDl != "" {
+		qfd.addQosFlowRateParam(qosData.MaxbrDl, QFDParameterIdMfbrDl)
+	}
+
+	//GFBR uplink
+	if qosData.GbrUl != "" {
+		qfd.addQosFlowRateParam(qosData.GbrUl, QFDParameterIdGfbrUl)
+	}
+
+	//GFBR downlink
+	if qosData.GbrDl != "" {
+		qfd.addQosFlowRateParam(qosData.GbrDl, QFDParameterIdGfbrDl)
+	}
+
+	//Set E-Bit of QFD for the "create new QoS flow description" operation
+	qfd.SetQFDEBitCreateNewQFD()
+
+	//Add QFD to Authorised QFD IE
+	d.AddQFD(&qfd)
+}
+
+func BuildModQosFlowDescFromQoSDesc(qosData *models.QosData) {
+	//TODO
+}
+
+func BuildDelQosFlowDescFromQoSDesc(qosData *models.QosData) {
+
+	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
+
+	//Set QFI
+	qfd.SetQoSFlowDescQfi(uint8(qosData.Var5qi))
+
+	//Operation Code
+	qfd.SetQoSFlowDescOpCode(QFDOpDelete)
+
+	//Delete Params
+	//No Params need to be added
+
+	//Set E-Bit of QFD for the "Delete existing QoS flow description" operation
+	qfd.SetQFDEBitDeleteExistingQFD()
 }
 
 func GetBitRate(sBitRate string) (val uint16, unit uint8) {
@@ -122,20 +227,6 @@ func (f *QoSFlowDescription) SetQFDEBitModReplaceAllParamQFD() {
 	f.NumOfParam |= QFDEbit
 }
 
-//make and encode Authorized Qos Flow Description Parameter
-type QosFlowParameter struct {
-	ParamId      uint8
-	ParamLen     uint8
-	ParamContent []byte
-}
-
-func (p *QosFlowParameter) SetQosFlowParam5Qi(val uint8) {
-
-	p.ParamId = QFDParameterId5Qi
-	p.ParamLen = 1 //1 Octet
-	p.ParamContent = []byte{val}
-}
-
 func (p *QosFlowParameter) SetQosFlowParamBitRate(rateType, rateUnit uint8, rateVal uint16) {
 
 	p.ParamId = rateType //(i.e. QosFlowDescriptionParameterIdGfbrUl)
@@ -144,48 +235,46 @@ func (p *QosFlowParameter) SetQosFlowParamBitRate(rateType, rateUnit uint8, rate
 	p.ParamContent = append(p.ParamContent, byte(rateVal>>8), byte(rateVal&0xff))
 }
 
-//Build Qos Flow Description to be sent to UE
-func BuildQosFlowDescription(smCtxtPolicyData SmCtxtPolicyData, smPolicyDec *models.SmPolicyDecision) {
+//Encode QoSFlowDescriptions IE
+func (d *QosFlowDescriptionsAuthorized) AddQFD(qfd *QoSFlowDescription) {
 
+	//Add QFI byte
+	d.Content = append(d.Content, qfd.Qfi)
+
+	//Add Operation Code byte
+	d.Content = append(d.Content, qfd.OpCode)
+
+	//Add Num of Param byte
+	d.Content = append(d.Content, qfd.NumOfParam)
+
+	//Iterate through Qos Flow Description's parameters
+	for _, param := range qfd.ParamList {
+
+		//Add Param Id
+		d.Content = append(d.Content, param.ParamId)
+
+		//Add Param Length
+		d.Content = append(d.Content, param.ParamLen)
+
+		//Add Param Content
+		d.Content = append(d.Content, param.ParamContent...)
+	}
+
+	//Add QFD Len
+	d.IeLen += uint16(qfd.QFDLen)
 }
 
-func BuildQosFlowDescFromQoSDesc(qosData *models.QosData) {
+func (q *QoSFlowDescription) AddQosFlowParam5Qi(val uint8) {
+	qfp := QosFlowParameter{}
+	qfp.ParamId = QFDParameterId5Qi
+	qfp.ParamLen = 1 //1 Octet
+	qfp.ParamContent = []byte{val}
 
-	qfd := QoSFlowDescription{}
-
-	//Set QFI
-	qfd.SetQoSFlowDescQfi(uint8(qosData.Var5qi))
-
-	//Operation Code
-	qfd.SetQoSFlowDescOpCode(QFDOpCreate)
-
-	//Create Params
-	//5QI
-	qfp5Qi := QosFlowParameter{}
-	qfp5Qi.SetQosFlowParam5Qi(uint8(qosData.Var5qi))
 	//Add to QosFlowDescription
-	qfd.NumOfParam += 1
-	qfd.ParamList = append(qfd.ParamList, qfp5Qi)
+	q.NumOfParam += 1
+	q.ParamList = append(q.ParamList, qfp)
 
-	//MFBR uplink
-	if qosData.MaxbrUl != "" {
-		qfd.addQosFlowRateParam(qosData.MaxbrUl, QFDParameterIdMfbrUl)
-	}
-
-	//MFBR downlink
-	if qosData.MaxbrDl != "" {
-		qfd.addQosFlowRateParam(qosData.MaxbrDl, QFDParameterIdMfbrDl)
-	}
-
-	//GFBR uplink
-	if qosData.GbrUl != "" {
-		qfd.addQosFlowRateParam(qosData.GbrUl, QFDParameterIdGfbrUl)
-	}
-
-	//GFBR downlink
-	if qosData.GbrDl != "" {
-		qfd.addQosFlowRateParam(qosData.GbrDl, QFDParameterIdGfbrDl)
-	}
+	q.QFDLen += 3 //(Id + Len + content)
 }
 
 func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) {
@@ -195,6 +284,8 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 	//Add to QosFlowDescription
 	qfd.NumOfParam += 1
 	qfd.ParamList = append(qfd.ParamList, flowParam)
+
+	qfd.QFDLen += 5 //(Id-1 + len-1 + Content-3)
 }
 
 func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
@@ -226,9 +317,29 @@ func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *Q
 
 //Compare if any change in QoS Data
 func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
+	//TODO
 	return false
 }
 
 func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refQosData string) *models.QosData {
 	return smPolicyDecision.QosDecs[refQosData]
+}
+
+func (d *QosFlowDescriptionsAuthorized) AddDefaultQosFlowDescription(sessRule *models.SessionRule) {
+	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
+
+	//Set QFI
+	qfd.SetQoSFlowDescQfi(uint8(sessRule.AuthDefQos.Var5qi))
+
+	//Operation Code
+	qfd.SetQoSFlowDescOpCode(QFDOpCreate)
+
+	//Create Params
+	//5QI
+	qfd.AddQosFlowParam5Qi(uint8(sessRule.AuthDefQos.Var5qi))
+
+	//Set E-Bit of QFD for the "create new QoS flow description" operation
+	qfd.SetQFDEBitCreateNewQFD()
+
+	d.AddQFD(&qfd)
 }

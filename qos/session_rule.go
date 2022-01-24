@@ -11,7 +11,9 @@ import (
 
 //Handle Session Rule related info
 type SessRulesUpdate struct {
-	add, mod, del map[string]*models.SessionRule
+	add, mod, del  map[string]*models.SessionRule
+	ActiveSessRule *models.SessionRule
+	activeRuleName string
 }
 
 //Get Session rule changes delta
@@ -22,7 +24,11 @@ func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.Sessio
 		del: make(map[string]*models.SessionRule),
 	}
 
-	//Iterate through all session rules from PCF and check agains ctxt session rules
-
+	//TODO: Iterate through all session rules from PCF and check agains ctxt session rules
+	//Get only active session Rule for now
+	for name, sessRule := range pcfSessRules {
+		change.activeRuleName = name
+		change.ActiveSessRule = sessRule
+	}
 	return &change
 }

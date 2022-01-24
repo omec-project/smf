@@ -14,6 +14,7 @@ import (
 	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/free5gc/smf/qos"
 	"github.com/free5gc/smf/transaction"
 
 	"github.com/free5gc/http_wrapper"
@@ -207,6 +208,10 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	} else {
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, Policy association create success")
 		smPolicyDecision = smPolicyDecisionRsp
+
+		//Derive QoS change(compare existing vs received Policy Decision)
+		policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smPolicyDecisionRsp)
+		smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 	}
 
 	// dataPath selection
