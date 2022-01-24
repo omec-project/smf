@@ -144,8 +144,6 @@ type SMContext struct {
 	SessionRules       map[string]*SessionRule
 	TrafficControlPool map[string]*TrafficControlData
 
-	//Last SmPolicyDecision from PCF
-	//SmPolicyDecision *models.SmPolicyDecision
 	// Updates in policy from PCF
 	SmPolicyUpdates []*qos.PolicyUpdate
 	//Holds Session/PCC Rules and Qos/Cond/Charging Data
