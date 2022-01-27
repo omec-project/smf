@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package qos
 
@@ -41,9 +40,9 @@ const (
 )
 
 const (
-	QFDOpCreate uint8 = 0x01
-	QFDOpModify uint8 = 0x02
-	QFDOpDelete uint8 = 0x03
+	QFDOpCreate uint8 = 0x20
+	QFDOpModify uint8 = 0x40
+	QFDOpDelete uint8 = 0x60
 )
 
 const (
@@ -296,23 +295,44 @@ func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *Q
 		del: make(map[string]*models.QosData),
 	}
 
-	//Iterate through pcf qos data to identify find add/mod qos flows
+	//Iterate through pcf qos data to identify find add/mod/del qos flows
 	for name, pcfQF := range pcfQosData {
-		if ctxtQF := ctxtQosData[name]; ctxtQF != nil {
+		//if pcfQF is null then rule is deleted
+		if pcfQF == nil {
+			update.del[name] = pcfQF //nil
+			continue
+		}
+
+		//Flows to add
+		if ctxtQF := ctxtQosData[name]; ctxtQF == nil {
 			update.add[name] = pcfQF
 		} else if GetQosDataChanges(pcfQF, ctxtQF) {
 			update.mod[name] = pcfQF
 		}
 	}
 
-	//Identify Qos Flow to be deleted
-	for name, ctxtQF := range ctxtQosData {
-		if pcfQF := pcfQosData[name]; pcfQF != nil {
-			update.del[name] = ctxtQF
+	return &update
+}
+
+func CommitQosFlowDescUpdate(smCtxtPolData *SmCtxtPolicyData, update *QosFlowsUpdate) {
+	//Iterate through Add/Mod/Del Qos Flows
+
+	//Add new Flows
+	if len(update.add) > 0 {
+		for name, qosData := range update.add {
+			smCtxtPolData.SmCtxtQosData.QosData[name] = qosData
 		}
 	}
 
-	return &update
+	//Mod flows
+	//TODO
+
+	//Del flows
+	if len(update.del) > 0 {
+		for name := range update.del {
+			delete(smCtxtPolData.SmCtxtQosData.QosData, name)
+		}
+	}
 }
 
 //Compare if any change in QoS Data

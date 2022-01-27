@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package qos
 
@@ -9,23 +9,8 @@ import (
 	"github.com/free5gc/openapi/models"
 )
 
-func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *models.SmPolicyDecision) *PolicyUpdate {
-
-	update := &PolicyUpdate{}
-
-	//Keep copy of SmPolicyDecision received from PCF
-	update.SmPolicyDecision = smPolicyDecision
-
-	//Qos Flows update
-	update.QosFlowUpdate = GetQosFlowDescUpdate(smPolicyDecision.QosDecs, smCtxtPolData.SmCtxtQosData.QosData)
-
-	//Pcc Rules update
-	update.PccRuleUpdate = GetPccRulesUpdate(smPolicyDecision.PccRules, smCtxtPolData.SmCtxtPccRules.PccRules)
-
-	//Session Rules update
-	update.SessRuleUpdate = GetSessionRulesUpdate(smPolicyDecision.SessRules, smCtxtPolData.SmCtxtSessionRules.SessionRules)
-
-	return update
+type PccRulesUpdate struct {
+	add, mod, del map[string]*models.PccRule
 }
 
 func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *PccRulesUpdate {
@@ -37,7 +22,14 @@ func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *Pc
 
 	//Compare against Ctxt rules to get added or modified rules
 	for name, pcfRule := range pcfPccRules {
-		//match against SM ctxt Rules
+
+		//if pcfRule is nil then it need to be deleted
+		if pcfRule == nil {
+			change.del[name] = pcfRule //nil
+			continue
+		}
+
+		//match against SM ctxt Rules for add/mod
 		if ctxtrule := ctxtPccRules[name]; ctxtrule == nil {
 			change.add[name] = pcfRule
 		} else if GetPccRuleChanges(pcfRule, ctxtrule) {
@@ -45,14 +37,28 @@ func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *Pc
 		}
 	}
 
-	//Compare Ctxt rules against PCF rules to get deleted rules
-	for name, ctxtRule := range ctxtPccRules {
-		//match against PCF provided Rules
-		if pcfRule := pcfPccRules[name]; pcfRule == nil {
-			change.del[name] = ctxtRule
+	return &change
+}
+
+func CommitPccRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *PccRulesUpdate) {
+	//Iterate through Add/Mod/Del rules
+
+	//Add new Rules
+	if len(update.add) > 0 {
+		for name, rule := range update.add {
+			smCtxtPolData.SmCtxtPccRules.PccRules[name] = rule
 		}
 	}
-	return &change
+
+	//Mod rules
+	//TODO
+
+	//Del Rules
+	if len(update.del) > 0 {
+		for name := range update.del {
+			delete(smCtxtPolData.SmCtxtPccRules.PccRules, name)
+		}
+	}
 }
 
 //Get the difference between 2 pcc rules

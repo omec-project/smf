@@ -346,14 +346,7 @@ func (dataPath *DataPath) validateDataPathUpfStatus() error {
 	return nil
 }
 
-func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) error {
-
-	if err := dataPath.validateDataPathUpfStatus(); err != nil {
-		logger.PduSessLog.Error("One or more UPF in DataPath not associated")
-		return err
-	}
-	smContext.AllocateLocalSEIDForDataPath(dataPath)
-
+func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
 	firstDPNode := dataPath.FirstDPNode
 	logger.PduSessLog.Traceln("In ActivateTunnelAndPDR")
 	logger.PduSessLog.Traceln(dataPath.String())
@@ -369,12 +362,31 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 			return err
 		}
 	}
+	return nil
+}
+
+func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) error {
+
+	//Check if UPF association is good
+	if err := dataPath.validateDataPathUpfStatus(); err != nil {
+		logger.PduSessLog.Error("One or more UPF in DataPath not associated")
+		return err
+	}
+
+	//Allocate Local SEIDs
+	smContext.AllocateLocalSEIDForDataPath(dataPath)
+
+	//Allocate UL/DL PDRs for the Tunnels
+	if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
+		logger.PduSessLog.Errorf("Activate UL/DL Tunnel error %v", err.Error())
+		return err
+	}
 
 	sessionRule := smContext.SelectedSessionRule()
 	AuthDefQos := sessionRule.AuthDefQos
 
 	// Activate PDR
-	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+	for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		var flowQER *QER
 
 		if newQER, err := curDataPathNode.UPF.AddQER(); err != nil {

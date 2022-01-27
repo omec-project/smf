@@ -140,10 +140,6 @@ type SMContext struct {
 	DNNInfo *SnssaiSmfDnnInfo
 
 	// SM Policy related
-	PCCRules           map[string]*PCCRule
-	SessionRules       map[string]*SessionRule
-	TrafficControlPool map[string]*TrafficControlData
-
 	// Updates in policy from PCF
 	SmPolicyUpdates []*qos.PolicyUpdate
 	//Holds Session/PCC Rules and Qos/Cond/Charging Data
@@ -165,6 +161,7 @@ type SMContext struct {
 	SubCtxLog      *logrus.Entry
 	SubConsumerLog *logrus.Entry
 	SubFsmLog      *logrus.Entry
+	SubQosLog      *logrus.Entry
 
 	//TxnBus per subscriber
 	TxnBus       transaction.TxnBus
@@ -201,11 +198,9 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext.PFCPContext = make(map[string]*PFCPSessionContext)
 
 	// initialize SM Policy Data
-	smContext.PCCRules = make(map[string]*PCCRule)
-	smContext.SessionRules = make(map[string]*SessionRule)
-	smContext.TrafficControlPool = make(map[string]*TrafficControlData)
 	smContext.SBIPFCPCommunicationChan = make(chan PFCPSessionResponseStatus, 1)
-	smContext.SmPolicyUpdates = make([]*qos.PolicyUpdate, 1)
+	smContext.SmPolicyUpdates = make([]*qos.PolicyUpdate, 0)
+	smContext.SmPolicyData.Initialize()
 
 	smContext.ProtocolConfigurationOptions = &ProtocolConfigurationOptions{
 		DNSIPv4Request: false,
@@ -232,6 +227,7 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubGsmLog = logger.GsmLog.WithFields(subField)
 	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
 	smContext.SubFsmLog = logger.FsmLog.WithFields(subField)
+	smContext.SubQosLog = logger.QosLog.WithFields(subField)
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
@@ -548,14 +544,13 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 // SM Policy related operation
 
 // SelectedSessionRule - return the SMF selected session rule for this SM Context
-func (smContext *SMContext) SelectedSessionRule() *SessionRule {
-	for _, sessionRule := range smContext.SessionRules {
-		if sessionRule.isActivate {
-			return sessionRule
-		}
+func (smContext *SMContext) SelectedSessionRule() *models.SessionRule {
+	//Policy update in progress
+	if len(smContext.SmPolicyUpdates) > 0 {
+		return smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
+	} else {
+		return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
 	}
-
-	return nil
 }
 
 func (smContextState SMContextState) String() string {
@@ -615,4 +610,24 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 	}
 
 	return httpResponse
+}
+
+func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
+
+	//Lock SM context
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	if status {
+		qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
+	}
+
+	//Release 0th index update
+	if len(smContext.SmPolicyUpdates) >= 1 {
+		smContext.SmPolicyUpdates = smContext.SmPolicyUpdates[1:]
+	}
+
+	//Notify PCF of failure ?
+	//TODO
+	return nil
 }

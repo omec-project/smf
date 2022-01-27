@@ -42,27 +42,26 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 
 	//Update UPF
+	//TODO
 
-	//Form N1/N2 Msg based on QoS Change and Trigger N1/N2 Msg
-	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
-		//Send error rsp to PCF
-	}
-
-	// Send status to PCF
 	httpResponse := http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
 	txn.Rsp = httpResponse
 
-	//N1N2 and UPF update Success
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
-	if err := ApplySmPolicyFromDecision(smContext, pcfPolicyDecision); err != nil {
-		logger.PduSessLog.Errorf("apply sm policy decision error: %+v", err)
-		// TODO: Fill the error body
+	//Form N1/N2 Msg based on QoS Change and Trigger N1/N2 Msg
+	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
+		//smContext.CommitSmPolicyDecision(false)
+		//Send error rsp to PCF
 		httpResponse.Status = http.StatusBadRequest
 		txn.Err = err
 		return err
 	}
 
+	//N1N2 and UPF update Success
+	//Commit SM Policy Decision to SM Context
+	//TODO
+	//smContext.SMLock.Lock()
+	//defer smContext.SMLock.Unlock()
+	//smContext.CommitSmPolicyDecision(true)
 	return nil
 }
 
@@ -126,60 +125,4 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 	}
 	smContext.SubPduSessLog.Infof("QoS N1N2 Transfer completed")
 	return nil
-}
-
-func handleSessionRule(smContext *smf_context.SMContext, id string, sessionRuleModel *models.SessionRule) {
-	if sessionRuleModel == nil {
-		logger.PduSessLog.Debugf("Delete SessionRule[%s]", id)
-		delete(smContext.SessionRules, id)
-	} else {
-		sessRule := smf_context.NewSessionRuleFromModel(sessionRuleModel)
-		// Session rule installation
-		if oldSessRule, exist := smContext.SessionRules[id]; !exist {
-			logger.PduSessLog.Debugf("Install SessionRule[%s]", id)
-			smContext.SessionRules[id] = sessRule
-		} else { // Session rule modification
-			logger.PduSessLog.Debugf("Modify SessionRule[%s]", oldSessRule.SessionRuleID)
-			smContext.SessionRules[id] = sessRule
-		}
-	}
-}
-
-func ApplySmPolicyFromDecision(smContext *smf_context.SMContext, decision *models.SmPolicyDecision) error {
-
-	logger.PduSessLog.Traceln("In ApplySmPolicyFromDecision")
-	var err error
-	//smContext.ChangeState(smf_context.SmStateModify)
-	selectedSessionRule := smContext.SelectedSessionRule()
-	if selectedSessionRule == nil { // No active session rule
-		// Update session rules from decision
-		for id, sessRuleModel := range decision.SessRules {
-			handleSessionRule(smContext, id, sessRuleModel)
-		}
-		for id := range smContext.SessionRules {
-			// Randomly choose a session rule to activate
-			smf_context.SetSessionRuleActivateState(smContext.SessionRules[id], true)
-			break
-		}
-	} else {
-		selectedSessionRuleID := selectedSessionRule.SessionRuleID
-		// Update session rules from decision
-		for id, sessRuleModel := range decision.SessRules {
-			handleSessionRule(smContext, id, sessRuleModel)
-		}
-		if _, exist := smContext.SessionRules[selectedSessionRuleID]; !exist {
-			// Original active session rule is deleted; choose again
-			for id := range smContext.SessionRules {
-				// Randomly choose a session rule to activate
-				smf_context.SetSessionRuleActivateState(smContext.SessionRules[id], true)
-				break
-			}
-		} else {
-			// Activate original active session rule
-			smf_context.SetSessionRuleActivateState(smContext.SessionRules[selectedSessionRuleID], true)
-		}
-	}
-
-	logger.PduSessLog.Traceln("End of ApplySmPolicyFromDecision")
-	return err
 }

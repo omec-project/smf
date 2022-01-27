@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package qos_test
 
@@ -11,6 +10,7 @@ import (
 
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/smf/qos"
+	"github.com/stretchr/testify/require"
 )
 
 var flowDesc = []string{
@@ -28,10 +28,11 @@ func TestDecodeFlowDescToIPFilters(t *testing.T) {
 }
 
 func TestGetPfContent(t *testing.T) {
+	pf := &qos.PacketFilter{}
 	for i, flow := range flowDesc {
-		pfcList := qos.GetPfContent(flow)
+		pf.GetPfContent(flow)
 		fmt.Println("Flow:", i)
-		for _, pfc := range pfcList {
+		for _, pfc := range pf.Content {
 			fmt.Printf("%v", pfc.String())
 		}
 	}
@@ -46,18 +47,33 @@ func TestBuildQosRules(t *testing.T) {
 
 	smPolicyDecision.PccRules = makeSamplePccRules()
 	smPolicyDecision.QosDecs = makeSampleQosData()
+	smPolicyDecision.SessRules = makeSampleSessionRule()
 
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(smCtxtPolData, smPolicyDecision)
 
 	qosRules := qos.BuildQosRules(smPolicyUpdates)
 
 	fmt.Println("QosRules:", qosRules)
+
+	if bytes, err := qosRules.MarshalBinary(); err != nil {
+		fmt.Printf("Marshal Error : %v", err.Error())
+	} else {
+		fmt.Printf("Encoded Bytes: %v", bytes)
+		expectedBytes := []byte{0x1, 0x0, 0x37, 0x32, 0x31, 0x18, 0x10, 0x1, 0x1,
+			0x1, 0x1, 0xff, 0xff, 0xff, 0xff, 0x50, 0x3, 0xe8, 0x11, 0x2, 0x2, 0x2,
+			0x2, 0xff, 0xff, 0xff, 0xff, 0x40, 0x7, 0xd0, 0x32, 0x18, 0x10, 0x3, 0x3,
+			0x3, 0x3, 0xff, 0xff, 0xff, 0xff, 0x50, 0xb, 0xb8, 0x11, 0x4, 0x4, 0x4,
+			0x4, 0xff, 0xff, 0xff, 0xff, 0x40, 0xf, 0xa0, 0xc8, 0x5, 0xff, 0x0, 0x6,
+			0x31, 0xff, 0x1, 0x1, 0xff, 0x8}
+		require.Equal(t, expectedBytes, bytes)
+	}
+
 }
 
 func makeSamplePccRules() map[string]*models.PccRule {
 
 	pccRule1 := models.PccRule{
-		PccRuleId:  "PccRule1",
+		PccRuleId:  "1",
 		Precedence: 200,
 		RefQosData: []string{"QosData1"},
 		FlowInfos:  make([]models.FlowInformation, 0),
@@ -112,9 +128,40 @@ func makeSampleQosData() map[string]*models.QosData {
 	}
 }
 
-/*
-func TestBuildPFCompProtocolId(t *testing.T) {
-	pfc := qos.BuildPFCompProtocolId("17")
-	fmt.Printf("PFC: %v \n", pfc.String())
+func makeSampleSessionRule() map[string]*models.SessionRule {
+	sessRule1 := models.SessionRule{
+		AuthSessAmbr: &models.Ambr{
+			Uplink:   "77 Mbps",
+			Downlink: "99 Mbps",
+		},
+		AuthDefQos: &models.AuthorizedDefaultQos{
+			Var5qi: 9,
+			Arp: &models.Arp{
+				PriorityLevel: 8,
+				PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,
+				PreemptVuln:   models.PreemptionVulnerability_NOT_PREEMPTABLE,
+			},
+			PriorityLevel: 8,
+		},
+	}
+	sessRule2 := models.SessionRule{
+		AuthSessAmbr: &models.Ambr{
+			Uplink:   "55 Mbps",
+			Downlink: "33 Mbps",
+		},
+		AuthDefQos: &models.AuthorizedDefaultQos{
+			Var5qi: 8,
+			Arp: &models.Arp{
+				PriorityLevel: 7,
+				PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,
+				PreemptVuln:   models.PreemptionVulnerability_NOT_PREEMPTABLE,
+			},
+			PriorityLevel: 7,
+		},
+	}
+
+	return map[string]*models.SessionRule{
+		"SessRule1": &sessRule1,
+		"SessRule2": &sessRule2,
+	}
 }
-*/

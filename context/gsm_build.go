@@ -23,8 +23,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	m.PDUSessionEstablishmentAccept = nasMessage.NewPDUSessionEstablishmentAccept(0x0)
 	pDUSessionEstablishmentAccept := m.PDUSessionEstablishmentAccept
 
-	sessRule := smContext.SelectedSessionRule()
-	//authDefQos := sessRule.AuthDefQos
+	sessRule := smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
 
 	pDUSessionEstablishmentAccept.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionEstablishmentAccept.SetMessageType(nas.MsgTypePDUSessionEstablishmentAccept)
@@ -42,25 +41,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)))
 
 	qoSRules := qos.BuildQosRules(smContext.SmPolicyUpdates[0])
-	/*
-		qoSRules := QoSRules{
-			QoSRule{
-				Identifier:    0x01,
-				DQR:           0x01,
-				OperationCode: OperationCodeCreateNewQoSRule,
-				Precedence:    0xff,
-				QFI:           uint8(authDefQos.Var5qi),
-				PacketFilterList: []PacketFilter{
-					{
-						Identifier:    0x01,
-						Direction:     PacketFilterDirectionBidirectional,
-						ComponentType: PacketFilterComponentTypeMatchAll,
-					},
-				},
-			},
-		}
 
-	*/
 	qosRulesBytes, err := qoSRules.MarshalBinary()
 	if err != nil {
 		return nil, err

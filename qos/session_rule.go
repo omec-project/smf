@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package qos
 
@@ -31,4 +30,29 @@ func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.Sessio
 		change.ActiveSessRule = sessRule
 	}
 	return &change
+}
+
+func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRulesUpdate) {
+	//Iterate through Add/Mod/Del rules
+
+	//Add new Rules
+	if len(update.add) > 0 {
+		for name, rule := range update.add {
+			smCtxtPolData.SmCtxtSessionRules.SessionRules[name] = rule
+		}
+	}
+
+	//Mod rules
+	//TODO
+
+	//Del Rules
+	if len(update.del) > 0 {
+		for name := range update.del {
+			delete(smCtxtPolData.SmCtxtSessionRules.SessionRules, name)
+		}
+	}
+
+	//Set Active Rule
+	smCtxtPolData.SmCtxtSessionRules.ActiveRule = update.ActiveSessRule
+	smCtxtPolData.SmCtxtSessionRules.ActiveRuleName = update.activeRuleName
 }

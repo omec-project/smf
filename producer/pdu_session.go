@@ -209,18 +209,18 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, Policy association create success")
 		smPolicyDecision = smPolicyDecisionRsp
 
+		//smPolicyDecision = qos.TestMakeSamplePolicyDecision()
 		//Derive QoS change(compare existing vs received Policy Decision)
-		policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smPolicyDecisionRsp)
+		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, received SM policy data: %v",
+			qos.SmPolicyDecisionString(smPolicyDecision))
+		policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smPolicyDecision)
+		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, generated SM policy update: %v",
+			policyUpdates)
 		smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 	}
 
 	// dataPath selection
 	smContext.Tunnel = smf_context.NewUPTunnel()
-	if err := ApplySmPolicyFromDecision(smContext, smPolicyDecision); err != nil {
-		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, apply sm policy decision error: %+v", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("ApplySMPolicyFailure")
-		return fmt.Errorf("ApplySmPolicyError")
-	}
 	var defaultPath *smf_context.DataPath
 	upfSelectionParams := &smf_context.UPFSelectionParams{
 		Dnn: createData.Dnn,
@@ -1123,12 +1123,16 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed, %v ", err.Error())
+		smContext.CommitSmPolicyDecision(false)
 		return err
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
+		smContext.CommitSmPolicyDecision(false)
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
+
+	smContext.CommitSmPolicyDecision(true)
 	smContext.SubPduSessLog.Infof("N1N2 Transfer completed")
 	return nil
 }
