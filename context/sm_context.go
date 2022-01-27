@@ -88,9 +88,6 @@ func GetSMContextCount() uint64 {
 type SMContext struct {
 	Ref string
 
-	LocalSEID  uint64
-	RemoteSEID uint64
-
 	UnauthenticatedSupi bool
 	// SUPI or PEI
 	Supi           string
@@ -196,7 +193,6 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext.Identifier = identifier
 	smContext.PDUSessionID = pduSessID
 	smContext.PFCPContext = make(map[string]*PFCPSessionContext)
-	smContext.LocalSEID = GetSMContextCount()
 
 	// initialize SM Policy Data
 	smContext.PCCRules = make(map[string]*PCCRule)
@@ -296,6 +292,11 @@ func RemoveSMContext(ref string) {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
 	}
 
+	//Release UE IP-Address
+	if ip := smContext.PDUAddress; ip != nil {
+		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
+		smContext.DNNInfo.UeIPAllocator.Release(ip)
+	}
 	smContextPool.Delete(ref)
 	//Sess Stats
 	smContextActive := decSMContextActive()

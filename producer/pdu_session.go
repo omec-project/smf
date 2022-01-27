@@ -134,7 +134,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		return fmt.Errorf("IpAllocError")
 	} else {
 		smContext.PDUAddress = ip
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, IP alloc succes IP[%s]",
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, IP alloc success IP[%s]",
 			smContext.PDUAddress.String())
 	}
 
