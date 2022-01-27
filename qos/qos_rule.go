@@ -318,7 +318,7 @@ func GetPfContent(flowDesc string) []PacketFilterComponent {
 	//Make Packet Filter Component from decoded IPFilters
 
 	//Protocol identifier/Next header type
-	if pfc := buildPFCompProtocolId(ipf.protoId); pfc != nil {
+	if pfc := BuildPFCompProtocolId(ipf.protoId); pfc != nil {
 		pfcList = append(pfcList, *pfc)
 	}
 
@@ -422,7 +422,7 @@ func buildPFCompPort(local bool, val string) *PacketFilterComponent {
 		ComponentValue: make([]byte, 2),
 	}
 
-	if port, err := strconv.Atoi(val); err != nil {
+	if port, err := strconv.Atoi(val); err == nil {
 		port16 := uint16(port)
 		pfc.ComponentValue = []byte{byte(port16 >> 8), byte(port16 & 0xff)}
 	}
@@ -446,28 +446,33 @@ func buildPFCompPortRange(local bool, val IPFilterRulePortRange) *PacketFilterCo
 	}
 
 	//low port value
-	if port, err := strconv.Atoi(val.lowLimit); err != nil {
+	if port, err := strconv.Atoi(val.lowLimit); err == nil {
 		port16 := uint16(port)
 		pfc.ComponentValue = []byte{byte(port16 >> 8), byte(port16 & 0xff)}
 	}
 
 	//high port value
-	if port, err := strconv.Atoi(val.highLimit); err != nil {
+	if port, err := strconv.Atoi(val.highLimit); err == nil {
 		port16 := uint16(port)
 		pfc.ComponentValue = append(pfc.ComponentValue, byte(port16>>8), byte(port16&0xff))
 	}
 	return pfc
 }
 
-func buildPFCompProtocolId(val string) *PacketFilterComponent {
-	pfc := &PacketFilterComponent{
-		ComponentType: PFComponentTypeProtocolIdentifierOrNextHeader,
+func BuildPFCompProtocolId(val string) *PacketFilterComponent {
+	if val == "ip" {
+		return nil
 	}
 
-	if pfcVal, err := strconv.Atoi(val); err != nil {
+	pfc := &PacketFilterComponent{
+		ComponentType:  PFComponentTypeProtocolIdentifierOrNextHeader,
+		ComponentValue: make([]byte, 1),
+	}
+
+	if pfcVal, err := strconv.Atoi(val); err == nil {
 		bs := make([]byte, 4)
 		binary.BigEndian.PutUint32(bs, uint32(pfcVal))
-		pfc.ComponentValue = bs
+		pfc.ComponentValue = []byte{bs[3]}
 	} else {
 		//log TODO
 		return nil
