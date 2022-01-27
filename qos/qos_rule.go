@@ -96,6 +96,7 @@ type QosRule struct {
 	PacketFilterList []PacketFilter
 	Precedence       uint8
 	QFI              uint8
+	Length           uint8
 }
 
 /*
@@ -127,7 +128,7 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	//New Rules to be added
 	for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
 		log.Printf("Building QoS Rule from PCC rule [%s]", pccRuleName)
-		refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[1])
+		refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 		qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
 		qosRules = append(qosRules, *qosRule)
 	}
