@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package context
 
@@ -377,22 +376,22 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		var flowQER *QER
 
-    if newQER, err := curDataPathNode.UPF.AddQER(); err != nil {
-      logger.PduSessLog.Errorln("new QER failed")
-      return err
-    } else {
-      newQER.QFI.QFI = uint8(AuthDefQos.Var5qi)
-      newQER.GateStatus = &pfcpType.GateStatus{
-        ULGate: pfcpType.GateOpen,
-        DLGate: pfcpType.GateOpen,
-      }
-      newQER.MBR = &pfcpType.MBR{
-        ULMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Uplink),
-        DLMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Downlink),
-      }
+		if newQER, err := curDataPathNode.UPF.AddQER(); err != nil {
+			logger.PduSessLog.Errorln("new QER failed")
+			return err
+		} else {
+			newQER.QFI.QFI = uint8(AuthDefQos.Var5qi)
+			newQER.GateStatus = &pfcpType.GateStatus{
+				ULGate: pfcpType.GateOpen,
+				DLGate: pfcpType.GateOpen,
+			}
+			newQER.MBR = &pfcpType.MBR{
+				ULMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Uplink),
+				DLMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Downlink),
+			}
 
-      flowQER = newQER
-    }
+			flowQER = newQER
+		}
 
 		logger.CtxLog.Traceln("Calculate ", curDataPathNode.UPF.PFCPAddr().String())
 		curULTunnel := curDataPathNode.UpLinkTunnel

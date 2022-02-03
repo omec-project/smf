@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package upf
 
@@ -17,7 +16,7 @@ import (
 )
 
 const (
-	maxHeartbeatRetry        = 3 //sec
+	maxHeartbeatRetry        = 3  //sec
 	maxHeartbeatInterval     = 10 //sec
 	maxUpfProbeRetryInterval = 10 //sec
 )

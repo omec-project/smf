@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package handler
 
@@ -432,10 +431,10 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 				SkipInd:      false,
 				// Temporarily assign SMF itself, TODO: TS 23.502 4.2.3.3 5. Namf_Communication_N1N2TransferFailureNotification
 				N1n2FailureTxfNotifURI: fmt.Sprintf("%s://%s:%d%s",
-				smf_context.SMF_Self().URIScheme,
-				smf_context.SMF_Self().RegisterIPv4,
-				smf_context.SMF_Self().SBIPort,
-				n1n2FailureTxfNotifURI),
+					smf_context.SMF_Self().URIScheme,
+					smf_context.SMF_Self().RegisterIPv4,
+					smf_context.SMF_Self().SBIPort,
+					n1n2FailureTxfNotifURI),
 				N2InfoContainer: &models.N2InfoContainer{
 					N2InformationClass: models.N2InformationClass_SM,
 					SmInfo: &models.N2SmInformation{

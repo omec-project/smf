@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package message
 
@@ -483,15 +482,15 @@ func BuildPfcpSessionDeletionRequest(
 	msg := pfcp.PFCPSessionDeletionRequest{}
 
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
-    
-	localSEID := smContext.PFCPContext[nodeIDtoIP].LocalSEID 
-	
+
+	localSEID := smContext.PFCPContext[nodeIDtoIP].LocalSEID
+
 	msg.CPFSEID = &pfcpType.FSEID{
-        V4:          true,
-        V6:          false,
-        Seid:        localSEID,
-        Ipv4Address: context.SMF_Self().CPNodeID.NodeIdValue,
-    }
+		V4:          true,
+		V6:          false,
+		Seid:        localSEID,
+		Ipv4Address: context.SMF_Self().CPNodeID.NodeIdValue,
+	}
 	return msg, nil
 }
 
@@ -510,7 +509,7 @@ func BuildPfcpSessionDeletionResponse() (pfcp.PFCPSessionDeletionResponse, error
 	return msg, nil
 }
 
-func BuildPfcpSessionReportResponse(cause pfcpType.Cause,pfcpSRflag pfcpType.PFCPSRRspFlags) (pfcp.PFCPSessionReportResponse, error) {
+func BuildPfcpSessionReportResponse(cause pfcpType.Cause, pfcpSRflag pfcpType.PFCPSRRspFlags) (pfcp.PFCPSessionReportResponse, error) {
 	msg := pfcp.PFCPSessionReportResponse{}
 
 	msg.Cause = &cause
