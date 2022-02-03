@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 //
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: LicenseRef-ONF-Member-Only-1.0
 
 package producer
 
@@ -1132,9 +1131,9 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
-	
+
 	smContext.SubPduSessLog.Infof("In HandlePduSessN1N2TransFailInd, N1N2 Transfer Failure Notification received")
-	
+
 	var httpResponse *http_wrapper.Response
 
 	pdrList := []*smf_context.PDR{}

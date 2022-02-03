@@ -2,7 +2,7 @@ module github.com/free5gc/smf
 
 go 1.14
 
-replace github.com/free5gc/pfcp => ./lib/pfcp
+replace github.com/free5gc/pfcp v1.0.1 => github.com/omec-project/pfcp v1.0.2
 
 require (
 	github.com/antihax/optional v1.0.0
