@@ -28,15 +28,22 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 		qerList := make([]*smf_context.QER, 0, 2)
 
 		if curDataPathNode.UpLinkTunnel != nil && curDataPathNode.UpLinkTunnel.PDR != nil {
-			pdrList = append(pdrList, curDataPathNode.UpLinkTunnel.PDR)
-			farList = append(farList, curDataPathNode.UpLinkTunnel.PDR.FAR)
-			if curDataPathNode.DownLinkTunnel.PDR.QER != nil {
-				qerList = append(qerList, curDataPathNode.DownLinkTunnel.PDR.QER...)
+			for _, pdr := range curDataPathNode.UpLinkTunnel.PDR {
+				pdrList = append(pdrList, pdr)
+				farList = append(farList, pdr.FAR)
+				if pdr.QER != nil {
+					qerList = append(qerList, pdr.QER...)
+				}
 			}
 		}
 		if curDataPathNode.DownLinkTunnel != nil && curDataPathNode.DownLinkTunnel.PDR != nil {
-			pdrList = append(pdrList, curDataPathNode.DownLinkTunnel.PDR)
-			farList = append(farList, curDataPathNode.DownLinkTunnel.PDR.FAR)
+			for _, pdr := range curDataPathNode.DownLinkTunnel.PDR {
+				pdrList = append(pdrList, pdr)
+				farList = append(farList, pdr.FAR)
+				if pdr.QER != nil {
+					qerList = append(qerList, pdr.QER...)
+				}
+			}
 		}
 
 		sessionContext, exist := smContext.PFCPContext[curDataPathNode.GetNodeIP()]
@@ -62,16 +69,23 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 				qerList := make([]*smf_context.QER, 0, 2)
 
 				if curDataPathNode.UpLinkTunnel != nil && curDataPathNode.UpLinkTunnel.PDR != nil {
-					pdrList = append(pdrList, curDataPathNode.UpLinkTunnel.PDR)
-					farList = append(farList, curDataPathNode.UpLinkTunnel.PDR.FAR)
-					if curDataPathNode.UpLinkTunnel.PDR.QER != nil {
-						qerList = append(qerList, curDataPathNode.UpLinkTunnel.PDR.QER...)
+					for _, pdr := range curDataPathNode.UpLinkTunnel.PDR {
+						pdrList = append(pdrList, pdr)
+						farList = append(farList, pdr.FAR)
+						if pdr.QER != nil {
+							qerList = append(qerList, pdr.QER...)
+						}
 					}
 				}
 				if curDataPathNode.DownLinkTunnel != nil && curDataPathNode.DownLinkTunnel.PDR != nil {
-					pdrList = append(pdrList, curDataPathNode.DownLinkTunnel.PDR)
-					farList = append(farList, curDataPathNode.DownLinkTunnel.PDR.FAR)
-					// skip send QER because uplink and downlink shared one QER
+					for _, pdr := range curDataPathNode.DownLinkTunnel.PDR {
+						pdrList = append(pdrList, pdr)
+						farList = append(farList, pdr.FAR)
+
+						if pdr.QER != nil {
+							qerList = append(qerList, pdr.QER...)
+						}
+					}
 				}
 
 				pfcpState := pfcpPool[curDataPathNode.GetNodeIP()]
@@ -105,12 +119,16 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 func removeDataPath(smContext *smf_context.SMContext, datapath *smf_context.DataPath) {
 	for curDPNode := datapath.FirstDPNode; curDPNode != nil; curDPNode = curDPNode.Next() {
 		if curDPNode.DownLinkTunnel != nil && curDPNode.DownLinkTunnel.PDR != nil {
-			curDPNode.DownLinkTunnel.PDR.State = smf_context.RULE_REMOVE
-			curDPNode.DownLinkTunnel.PDR.FAR.State = smf_context.RULE_REMOVE
+			for _, pdr := range curDPNode.DownLinkTunnel.PDR {
+				pdr.State = smf_context.RULE_REMOVE
+				pdr.FAR.State = smf_context.RULE_REMOVE
+			}
 		}
 		if curDPNode.UpLinkTunnel != nil && curDPNode.UpLinkTunnel.PDR != nil {
-			curDPNode.UpLinkTunnel.PDR.State = smf_context.RULE_REMOVE
-			curDPNode.UpLinkTunnel.PDR.FAR.State = smf_context.RULE_REMOVE
+			for _, pdr := range curDPNode.UpLinkTunnel.PDR {
+				pdr.State = smf_context.RULE_REMOVE
+				pdr.FAR.State = smf_context.RULE_REMOVE
+			}
 		}
 	}
 }

@@ -446,20 +446,21 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			smContext.PendingUPF = make(smf_context.PendingUPF)
 			for _, dataPath := range smContext.Tunnel.DataPathPool {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
-				if DLPDR == nil {
-					smContext.SubPduSessLog.Errorf("AN Release Error")
-				} else {
-					DLPDR.FAR.State = smf_context.RULE_UPDATE
-					DLPDR.FAR.ApplyAction.Forw = false
-					DLPDR.FAR.ApplyAction.Buff = true
-					DLPDR.FAR.ApplyAction.Nocp = true
-					//Set DL Tunnel info to nil
-					if DLPDR.FAR.ForwardingParameters != nil {
-						DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+					if DLPDR == nil {
+						smContext.SubPduSessLog.Errorf("AN Release Error")
+					} else {
+						DLPDR.FAR.State = smf_context.RULE_UPDATE
+						DLPDR.FAR.ApplyAction.Forw = false
+						DLPDR.FAR.ApplyAction.Buff = true
+						DLPDR.FAR.ApplyAction.Nocp = true
+						//Set DL Tunnel info to nil
+						if DLPDR.FAR.ForwardingParameters != nil {
+							DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+						}
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+						farList = append(farList, DLPDR.FAR)
 					}
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-					farList = append(farList, DLPDR.FAR)
 				}
 			}
 
@@ -488,24 +489,25 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 
-				DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
-				DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
-					DestinationInterface: pfcpType.DestinationInterface{
-						InterfaceValue: pfcpType.DestinationInterfaceAccess,
-					},
-					NetworkInstance: []byte(smContext.Dnn),
-				}
+					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
+					DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
+						DestinationInterface: pfcpType.DestinationInterface{
+							InterfaceValue: pfcpType.DestinationInterfaceAccess,
+						},
+						NetworkInstance: []byte(smContext.Dnn),
+					}
 
-				DLPDR.State = smf_context.RULE_UPDATE
-				DLPDR.FAR.State = smf_context.RULE_UPDATE
+					DLPDR.State = smf_context.RULE_UPDATE
+					DLPDR.FAR.State = smf_context.RULE_UPDATE
 
-				pdrList = append(pdrList, DLPDR)
-				farList = append(farList, DLPDR.FAR)
+					pdrList = append(pdrList, DLPDR)
+					farList = append(farList, DLPDR.FAR)
 
-				if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					}
 				}
 			}
 		}
@@ -597,13 +599,14 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 
-				pdrList = append(pdrList, DLPDR)
-				farList = append(farList, DLPDR.FAR)
+					pdrList = append(pdrList, DLPDR)
+					farList = append(farList, DLPDR.FAR)
 
-				if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					}
 				}
 			}
 		}
@@ -1155,15 +1158,17 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		smContext.PendingUPF = make(smf_context.PendingUPF)
 		for _, dataPath := range smContext.Tunnel.DataPathPool {
 			ANUPF := dataPath.FirstDPNode
-			DLPDR := ANUPF.DownLinkTunnel.PDR
-			if DLPDR == nil {
-				smContext.SubPduSessLog.Errorf("AN Release Error")
-				return fmt.Errorf("AN Release Error")
-			} else {
-				DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
-				DLPDR.FAR.State = smf_context.RULE_UPDATE
-				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-				farList = append(farList, DLPDR.FAR)
+			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+
+				if DLPDR == nil {
+					smContext.SubPduSessLog.Errorf("AN Release Error")
+					return fmt.Errorf("AN Release Error")
+				} else {
+					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
+					DLPDR.FAR.State = smf_context.RULE_UPDATE
+					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					farList = append(farList, DLPDR.FAR)
+				}
 			}
 		}
 

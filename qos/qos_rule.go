@@ -131,18 +131,22 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	pccRulesUpdate := smPolicyUpdates.PccRuleUpdate
 
 	//New Rules to be added
-	for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
-		log.Printf("Building QoS Rule from PCC rule [%s]", pccRuleName)
-		refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
-		qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
-		qosRules = append(qosRules, *qosRule)
+	if pccRulesUpdate != nil {
+		for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
+			log.Printf("Building QoS Rule from PCC rule [%s]", pccRuleName)
+			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
+			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
+			qosRules = append(qosRules, *qosRule)
+		}
 	}
 
 	//Add default Matchall QosRule as well
-	if smPolicyUpdates.SessRuleUpdate != nil {
-		defQosRule := BuildAddDefaultQosRule(uint8(smPolicyUpdates.SessRuleUpdate.ActiveSessRule.AuthDefQos.Var5qi))
-		qosRules = append(qosRules, *defQosRule)
-	}
+	/*
+		if smPolicyUpdates.SessRuleUpdate != nil {
+			defQosRule := BuildAddDefaultQosRule(uint8(smPolicyUpdates.SessRuleUpdate.ActiveSessRule.AuthDefQos.Var5qi))
+			qosRules = append(qosRules, *defQosRule)
+		}
+	*/
 
 	//Rules to be modified
 	//TODO
@@ -159,7 +163,7 @@ func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData
 		DQR:           btou(qosData.DefQosFlowIndication),
 		OperationCode: pccRuleOpCode,
 		Precedence:    uint8(pccRule.Precedence),
-		QFI:           uint8(qosData.Var5qi),
+		QFI:           GetQosFlowIdFromQosId(qosData.QosId),
 	}
 
 	qRule.BuildPacketFilterListFromPccRule(pccRule)
@@ -282,6 +286,13 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 	return ipfRule
 }
 
+func (ipf *IPFilterRule) IsMatchAllIPFilter() bool {
+	if ipf.sAddrv4.addr == "any" && ipf.dAddrv4.addr == "assigned" {
+		return true
+	}
+	return false
+}
+
 func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) error {
 
 	//check if it is single port or range
@@ -311,7 +322,7 @@ func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) error
 	if source {
 		ipfRule.sAddrv4.addr = ipAndMask[0] // can be x.x.x.x or "any"
 	} else {
-		ipfRule.dAddrv4.addr = ipAndMask[0]
+		ipfRule.dAddrv4.addr = ipAndMask[0] // can be x.x.x.x or "assigned"
 	}
 
 	//mask can be nil
@@ -332,6 +343,18 @@ func (pf *PacketFilter) GetPfContent(flowDesc string) {
 	ipf := DecodeFlowDescToIPFilters(flowDesc)
 
 	//Make Packet Filter Component from decoded IPFilters
+
+	//MatchAll Packet Filter
+	if ipf.IsMatchAllIPFilter() {
+		pfc := &PacketFilterComponent{
+			ComponentType: PFComponentTypeMatchAll,
+		}
+
+		pfcList = append(pfcList, *pfc)
+		pf.ContentLength += 1
+		pf.Content = pfcList
+		return
+	}
 
 	//Protocol identifier/Next header type
 	if pfc, len := BuildPFCompProtocolId(ipf.protoId); pfc != nil {
@@ -374,12 +397,6 @@ func (pf *PacketFilter) GetPfContent(flowDesc string) {
 		pfcList = append(pfcList, *pfc)
 		pf.ContentLength += len
 	}
-
-	/*
-		pfc := PacketFilterComponent{
-			ComponentType: PacketFilterComponentTypeMatchAll,
-		}
-	*/
 
 	pf.Content = pfcList
 }

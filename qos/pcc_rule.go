@@ -15,6 +15,10 @@ type PccRulesUpdate struct {
 
 func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *PccRulesUpdate {
 
+	if len(pcfPccRules) == 0 {
+		return nil
+	}
+
 	change := PccRulesUpdate{
 		add: make(map[string]*models.PccRule),
 		mod: make(map[string]*models.PccRule),
@@ -65,4 +69,8 @@ func CommitPccRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *PccRulesUpdat
 func GetPccRuleChanges(s, d *models.PccRule) bool {
 	//TODO
 	return false
+}
+
+func (upd *PccRulesUpdate) GetAddPccRuleUpdate() map[string]*models.PccRule {
+	return upd.add
 }

@@ -204,7 +204,7 @@ func (obj QosFlowParameter) String() string {
 }
 
 func (obj PolicyUpdate) String() string {
-	return fmt.Sprintf("Policy Update:[%v, %v, %v %v]",
+	return fmt.Sprintf("Policy Update:[\nPccRule:[%v], \nSessRules:[%v], \nQosData:[%v], \nTcData:[%v]]",
 		obj.PccRuleUpdate, obj.SessRuleUpdate, obj.QosFlowUpdate, obj.TCUpdate)
 }
 
@@ -331,9 +331,28 @@ func TestMakeSamplePolicyDecision() *models.SmPolicyDecision {
 // TestMakePccRules - Locally generate PCC Rule data
 func TestMakePccRules() map[string]*models.PccRule {
 
+	pccRuleDef := models.PccRule{
+		PccRuleId:  "255",
+		Precedence: 255,
+		RefQosData: []string{"QosData1"},
+		RefTcData:  []string{"TC1"},
+		FlowInfos:  make([]models.FlowInformation, 0),
+	}
+
+	flowInfosDef := []models.FlowInformation{
+		{
+			FlowDescription:   "permit out ip from any to assigned",
+			PackFiltId:        "1",
+			PacketFilterUsage: true,
+			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
+		},
+	}
+
+	pccRuleDef.FlowInfos = append(pccRuleDef.FlowInfos, flowInfosDef...)
+
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
-		Precedence: 200,
+		Precedence: 111,
 		RefQosData: []string{"QosData1"},
 		RefTcData:  []string{"TC1"},
 		FlowInfos:  make([]models.FlowInformation, 0),
@@ -341,7 +360,7 @@ func TestMakePccRules() map[string]*models.PccRule {
 
 	flowInfos := []models.FlowInformation{
 		{
-			FlowDescription:   "permit out ip from 1.1.1.1 1000-1200 to 2.2.2.2 2000-2200",
+			FlowDescription:   "permit out ip from 1.1.1.1 1000-1200 to assigned",
 			PackFiltId:        "1",
 			PacketFilterUsage: true,
 			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
@@ -356,31 +375,66 @@ func TestMakePccRules() map[string]*models.PccRule {
 
 	pccRule1.FlowInfos = append(pccRule1.FlowInfos, flowInfos...)
 
-	return map[string]*models.PccRule{"PccRule1": &pccRule1}
+	pccRule2 := models.PccRule{
+		PccRuleId:  "2",
+		Precedence: 222,
+		RefQosData: []string{"QosData2"},
+		RefTcData:  []string{"TC2"},
+		FlowInfos:  make([]models.FlowInformation, 0),
+	}
+
+	flowInfos1 := []models.FlowInformation{
+		{
+			FlowDescription:   "permit out ip from 5.5.5.5 1000-1200 to assigned",
+			PackFiltId:        "1",
+			PacketFilterUsage: true,
+			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
+		},
+		{
+			FlowDescription:   "permit out 17 from 3.3.3.3/24 3000 to 4.4.4.4/24 4000",
+			PackFiltId:        "2",
+			PacketFilterUsage: true,
+			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
+		},
+	}
+
+	pccRule2.FlowInfos = append(pccRule2.FlowInfos, flowInfos1...)
+
+	return map[string]*models.PccRule{"PccRule1": &pccRule1, "PccRule2": &pccRule2, "PccRuleDef": &pccRuleDef}
 }
 
 //TestMakeQosData - Locally generate Qos Flow data
 func TestMakeQosData() map[string]*models.QosData {
 	qosData1 := models.QosData{
-		QosId:                "QosData1",
-		Var5qi:               5,
+		QosId:                "1",
+		Var5qi:               9,
 		MaxbrUl:              "101 Mbps",
 		MaxbrDl:              "201 Mbps",
 		GbrUl:                "11 Mbps",
 		GbrDl:                "21 Mbps",
 		PriorityLevel:        5,
 		DefQosFlowIndication: true,
+		Arp: &models.Arp{
+			PriorityLevel: 3,
+			PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,
+			PreemptVuln:   models.PreemptionVulnerability_PREEMPTABLE,
+		},
 	}
 
 	qosData2 := models.QosData{
-		QosId:                "QosData2",
-		Var5qi:               3,
+		QosId:                "2",
+		Var5qi:               9,
 		MaxbrUl:              "301 Mbps",
 		MaxbrDl:              "401 Mbps",
 		GbrUl:                "31 Mbps",
 		GbrDl:                "41 Mbps",
 		PriorityLevel:        3,
 		DefQosFlowIndication: false,
+		Arp: &models.Arp{
+			PriorityLevel: 3,
+			PreemptCap:    models.PreemptionCapability_NOT_PREEMPT,
+			PreemptVuln:   models.PreemptionVulnerability_NOT_PREEMPTABLE,
+		},
 	}
 
 	return map[string]*models.QosData{
@@ -414,7 +468,7 @@ func TestMakeSessionRule() map[string]*models.SessionRule {
 			Downlink: "33 Mbps",
 		},
 		AuthDefQos: &models.AuthorizedDefaultQos{
-			Var5qi: 8,
+			Var5qi: 9,
 			Arp: &models.Arp{
 				PriorityLevel: 7,
 				PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,

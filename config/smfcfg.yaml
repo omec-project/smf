@@ -90,7 +90,7 @@ logger:
     debugLevel: debug
     ReportCaller: false
   Aper:
-    debugLevel: debug
+    debugLevel: info
     ReportCaller: false
   PathUtil:
     debugLevel: debug

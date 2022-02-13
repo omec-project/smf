@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"reflect"
+	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
@@ -420,6 +421,62 @@ func (upf *UPF) qerID() (uint32, error) {
 	}
 
 	return qerID, nil
+}
+
+func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
+
+	var pdr *PDR
+	var err error
+
+	//create empty PDR
+	if pdr, err = upf.AddPDR(); err != nil {
+		return nil, err
+	}
+
+	//SDF Filter
+	sdfFilter := pfcpType.SDFFilter{}
+
+	//First Flow
+	flow := rule.FlowInfos[0]
+
+	//Flow Description
+	if flow.FlowDescription != "" {
+		sdfFilter.Fd = true
+		sdfFilter.FlowDescription = []byte(flow.FlowDescription)
+		sdfFilter.LengthOfFlowDescription = uint16(len(sdfFilter.FlowDescription))
+		if id, err := strconv.ParseUint(flow.PackFiltId, 10, 32); err != nil {
+			return nil, err
+		} else {
+			sdfFilter.SdfFilterId = uint32(id)
+		}
+	}
+
+	//ToS Traffic Class
+	if flow.TosTrafficClass != "" {
+		sdfFilter.Ttc = true
+		sdfFilter.TosTrafficClass = []byte(flow.TosTrafficClass)
+	}
+
+	//Flow Label
+	if flow.FlowLabel != "" {
+		sdfFilter.Fl = true
+		sdfFilter.FlowLabel = []byte(flow.FlowLabel)
+	}
+
+	//Security Parameter Index
+	if flow.Spi != "" {
+		sdfFilter.Spi = true
+		sdfFilter.SecurityParameterIndex = []byte(flow.Spi)
+	}
+
+	pdi := PDI{
+		SDFFilter: &sdfFilter,
+	}
+
+	pdr.PDI = pdi
+	pdr.Precedence = uint32(rule.Precedence)
+
+	return pdr, nil
 }
 
 func (upf *UPF) AddPDR() (*PDR, error) {

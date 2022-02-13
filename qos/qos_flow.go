@@ -80,6 +80,15 @@ type QosFlowsUpdate struct {
 	add, mod, del map[string]*models.QosData
 }
 
+func GetQosFlowIdFromQosId(qosId string) uint8 {
+	if id, err := strconv.Atoi(qosId); err != nil {
+		//TODO: Error Log
+		return 0
+	} else {
+		return uint8(id)
+	}
+}
+
 //Build Qos Flow Description to be sent to UE
 func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowDescriptionsAuthorized {
 
@@ -91,9 +100,11 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 	qosFlowUpdate := smPolicyUpdates.QosFlowUpdate
 
 	//QoS Flow Description to be Added
-	for name, qosFlow := range qosFlowUpdate.add {
-		log.Printf("Adding Qos Flow Description [%v] ", name)
-		QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow)
+	if qosFlowUpdate != nil {
+		for name, qosFlow := range qosFlowUpdate.add {
+			log.Printf("Adding Qos Flow Description [%v] ", name)
+			QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow)
+		}
 	}
 
 	//QoS Flow Description to be Modified
@@ -110,7 +121,7 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	//Set QFI
-	qfd.SetQoSFlowDescQfi(uint8(qosData.Var5qi))
+	qfd.SetQoSFlowDescQfi(GetQosFlowIdFromQosId(qosData.QosId))
 
 	//Operation Code
 	qfd.SetQoSFlowDescOpCode(QFDOpCreate)
@@ -289,6 +300,10 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 
 func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
 
+	if len(pcfQosData) == 0 {
+		return nil
+	}
+
 	update := QosFlowsUpdate{
 		add: make(map[string]*models.QosData),
 		mod: make(map[string]*models.QosData),
@@ -362,4 +377,8 @@ func (d *QosFlowDescriptionsAuthorized) AddDefaultQosFlowDescription(sessRule *m
 	qfd.SetQFDEBitCreateNewQFD()
 
 	d.AddQFD(&qfd)
+}
+
+func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
+	return upd.add
 }

@@ -12,6 +12,10 @@ type TrafficControlUpdate struct {
 
 func GetTrafficControlUpdate(tcData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
 
+	if len(tcData) == 0 {
+		return nil
+	}
+
 	change := TrafficControlUpdate{
 		add: make(map[string]*models.TrafficControlData),
 		mod: make(map[string]*models.TrafficControlData),
@@ -61,4 +65,8 @@ func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *Traffic
 func GetTCDataChanges(pcfTc, ctxtTc *models.TrafficControlData) bool {
 	//TODO
 	return false
+}
+
+func GetTcDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refTcData string) *models.TrafficControlData {
+	return smPolicyDecision.TraffContDecs[refTcData]
 }

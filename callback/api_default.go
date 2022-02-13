@@ -46,7 +46,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	reqWrapper.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := reqWrapper.Params["smContextRef"]
-	log.Printf("###### HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
+	log.Printf("HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
 
 	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
 	txn.CtxtKey = smContextRef
