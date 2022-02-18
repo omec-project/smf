@@ -14,6 +14,7 @@ import (
 	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/free5gc/smf/qos"
 	"github.com/free5gc/smf/transaction"
 
 	"github.com/free5gc/http_wrapper"
@@ -207,15 +208,19 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	} else {
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, Policy association create success")
 		smPolicyDecision = smPolicyDecisionRsp
+
+		//smPolicyDecision = qos.TestMakeSamplePolicyDecision()
+		//Derive QoS change(compare existing vs received Policy Decision)
+		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, received SM policy data: %v",
+			qos.SmPolicyDecisionString(smPolicyDecision))
+		policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smPolicyDecision)
+		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, generated SM policy update: %v",
+			policyUpdates)
+		smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 	}
 
 	// dataPath selection
 	smContext.Tunnel = smf_context.NewUPTunnel()
-	if err := ApplySmPolicyFromDecision(smContext, smPolicyDecision); err != nil {
-		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, apply sm policy decision error: %+v", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("ApplySMPolicyFailure")
-		return fmt.Errorf("ApplySmPolicyError")
-	}
 	var defaultPath *smf_context.DataPath
 	upfSelectionParams := &smf_context.UPFSelectionParams{
 		Dnn: createData.Dnn,
@@ -441,20 +446,21 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			smContext.PendingUPF = make(smf_context.PendingUPF)
 			for _, dataPath := range smContext.Tunnel.DataPathPool {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
-				if DLPDR == nil {
-					smContext.SubPduSessLog.Errorf("AN Release Error")
-				} else {
-					DLPDR.FAR.State = smf_context.RULE_UPDATE
-					DLPDR.FAR.ApplyAction.Forw = false
-					DLPDR.FAR.ApplyAction.Buff = true
-					DLPDR.FAR.ApplyAction.Nocp = true
-					//Set DL Tunnel info to nil
-					if DLPDR.FAR.ForwardingParameters != nil {
-						DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+					if DLPDR == nil {
+						smContext.SubPduSessLog.Errorf("AN Release Error")
+					} else {
+						DLPDR.FAR.State = smf_context.RULE_UPDATE
+						DLPDR.FAR.ApplyAction.Forw = false
+						DLPDR.FAR.ApplyAction.Buff = true
+						DLPDR.FAR.ApplyAction.Nocp = true
+						//Set DL Tunnel info to nil
+						if DLPDR.FAR.ForwardingParameters != nil {
+							DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
+						}
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+						farList = append(farList, DLPDR.FAR)
 					}
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-					farList = append(farList, DLPDR.FAR)
 				}
 			}
 
@@ -483,24 +489,25 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 
-				DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
-				DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
-					DestinationInterface: pfcpType.DestinationInterface{
-						InterfaceValue: pfcpType.DestinationInterfaceAccess,
-					},
-					NetworkInstance: []byte(smContext.Dnn),
-				}
+					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
+					DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
+						DestinationInterface: pfcpType.DestinationInterface{
+							InterfaceValue: pfcpType.DestinationInterfaceAccess,
+						},
+						NetworkInstance: []byte(smContext.Dnn),
+					}
 
-				DLPDR.State = smf_context.RULE_UPDATE
-				DLPDR.FAR.State = smf_context.RULE_UPDATE
+					DLPDR.State = smf_context.RULE_UPDATE
+					DLPDR.FAR.State = smf_context.RULE_UPDATE
 
-				pdrList = append(pdrList, DLPDR)
-				farList = append(farList, DLPDR.FAR)
+					pdrList = append(pdrList, DLPDR)
+					farList = append(farList, DLPDR.FAR)
 
-				if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					}
 				}
 			}
 		}
@@ -592,13 +599,14 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR
+				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 
-				pdrList = append(pdrList, DLPDR)
-				farList = append(farList, DLPDR.FAR)
+					pdrList = append(pdrList, DLPDR)
+					farList = append(farList, DLPDR.FAR)
 
-				if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
+						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					}
 				}
 			}
 		}
@@ -1118,12 +1126,16 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed, %v ", err.Error())
+		smContext.CommitSmPolicyDecision(false)
 		return err
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
+		smContext.CommitSmPolicyDecision(false)
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
+
+	smContext.CommitSmPolicyDecision(true)
 	smContext.SubPduSessLog.Infof("N1N2 Transfer completed")
 	return nil
 }
@@ -1146,15 +1158,17 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		smContext.PendingUPF = make(smf_context.PendingUPF)
 		for _, dataPath := range smContext.Tunnel.DataPathPool {
 			ANUPF := dataPath.FirstDPNode
-			DLPDR := ANUPF.DownLinkTunnel.PDR
-			if DLPDR == nil {
-				smContext.SubPduSessLog.Errorf("AN Release Error")
-				return fmt.Errorf("AN Release Error")
-			} else {
-				DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
-				DLPDR.FAR.State = smf_context.RULE_UPDATE
-				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-				farList = append(farList, DLPDR.FAR)
+			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+
+				if DLPDR == nil {
+					smContext.SubPduSessLog.Errorf("AN Release Error")
+					return fmt.Errorf("AN Release Error")
+				} else {
+					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
+					DLPDR.FAR.State = smf_context.RULE_UPDATE
+					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+					farList = append(farList, DLPDR.FAR)
+				}
 			}
 		}
 

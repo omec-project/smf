@@ -12,6 +12,7 @@ import (
 	"github.com/free5gc/nas/nasConvert"
 	"github.com/free5gc/nas/nasMessage"
 	"github.com/free5gc/nas/nasType"
+	"github.com/free5gc/smf/qos"
 )
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
@@ -22,8 +23,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	m.PDUSessionEstablishmentAccept = nasMessage.NewPDUSessionEstablishmentAccept(0x0)
 	pDUSessionEstablishmentAccept := m.PDUSessionEstablishmentAccept
 
-	sessRule := smContext.SelectedSessionRule()
-	authDefQos := sessRule.AuthDefQos
+	sessRule := smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
 
 	pDUSessionEstablishmentAccept.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionEstablishmentAccept.SetMessageType(nas.MsgTypePDUSessionEstablishmentAccept)
@@ -40,22 +40,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.SessionAMBR = nasConvert.ModelsToSessionAMBR(sessRule.AuthSessAmbr)
 	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)))
 
-	qoSRules := QoSRules{
-		QoSRule{
-			Identifier:    0x01,
-			DQR:           0x01,
-			OperationCode: OperationCodeCreateNewQoSRule,
-			Precedence:    0xff,
-			QFI:           uint8(authDefQos.Var5qi),
-			PacketFilterList: []PacketFilter{
-				{
-					Identifier:    0x01,
-					Direction:     PacketFilterDirectionBidirectional,
-					ComponentType: PacketFilterComponentTypeMatchAll,
-				},
-			},
-		},
-	}
+	qoSRules := qos.BuildQosRules(smContext.SmPolicyUpdates[0])
 
 	qosRulesBytes, err := qoSRules.MarshalBinary()
 	if err != nil {
@@ -74,10 +59,17 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 		pDUSessionEstablishmentAccept.PDUAddress.SetPDUAddressInformation(addr)
 	}
 
+	//Get Authorized QoS Flow Descriptions
+	authQfd := qos.BuildAuthorizedQosFlowDescriptions(smContext.SmPolicyUpdates[0])
+	//Add Default Qos Flow
+	//authQfd.AddDefaultQosFlowDescription(smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule)
+
 	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions =
 		nasType.NewAuthorizedQosFlowDescriptions(nasMessage.PDUSessionEstablishmentAcceptAuthorizedQosFlowDescriptionsType)
-	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(6)
-	pDUSessionEstablishmentAccept.SetQoSFlowDescriptions([]uint8{uint8(authDefQos.Var5qi), 0x20, 0x41, 0x01, 0x01, 0x09})
+	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(authQfd.IeLen)
+	pDUSessionEstablishmentAccept.SetQoSFlowDescriptions(authQfd.Content)
+	//pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(6)
+	//pDUSessionEstablishmentAccept.SetQoSFlowDescriptions([]uint8{uint8(authDefQos.Var5qi), 0x20, 0x41, 0x01, 0x01, 0x09})
 
 	var sd [3]uint8
 

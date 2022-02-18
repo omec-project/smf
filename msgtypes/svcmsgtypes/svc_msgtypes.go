@@ -32,8 +32,10 @@ const (
 	SmSubscriptionDataRetrieval SmfMsgType = "SmSubscriptionDataRetrieval"
 
 	//NPCF_
-	SmPolicyAssociationCreate SmfMsgType = "SmPolicyAssociationCreate"
-	SmPolicyAssociationDelete SmfMsgType = "SmPolicyAssociationDelete"
+	SmPolicyAssociationCreate       SmfMsgType = "SmPolicyAssociationCreate"
+	SmPolicyAssociationDelete       SmfMsgType = "SmPolicyAssociationDelete"
+	SmPolicyUpdateNotification      SmfMsgType = "SmPolicyUpdateNotification"
+	SmPolicyTerminationNotification SmfMsgType = "SmPolicyTerminationNotification"
 
 	//AMF_
 	N1N2MessageTransfer                    SmfMsgType = "N1N2MessageTransfer"

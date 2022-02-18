@@ -182,7 +182,7 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
 		return false
 	} else {
-		logger.CtxLog.Tracef("Find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", selection.Dnn,
+		logger.CtxLog.Debugf("Found UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", selection.Dnn,
 			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
 	}
 

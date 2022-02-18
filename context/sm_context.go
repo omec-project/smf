@@ -14,6 +14,7 @@ import (
 	"github.com/free5gc/http_wrapper"
 	"github.com/free5gc/smf/metrics"
 	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/free5gc/smf/qos"
 	errors "github.com/free5gc/smf/smferrors"
 	"github.com/free5gc/smf/transaction"
 	"github.com/sirupsen/logrus"
@@ -139,9 +140,10 @@ type SMContext struct {
 	DNNInfo *SnssaiSmfDnnInfo
 
 	// SM Policy related
-	PCCRules           map[string]*PCCRule
-	SessionRules       map[string]*SessionRule
-	TrafficControlPool map[string]*TrafficControlData
+	// Updates in policy from PCF
+	SmPolicyUpdates []*qos.PolicyUpdate
+	//Holds Session/PCC Rules and Qos/Cond/Charging Data
+	SmPolicyData qos.SmCtxtPolicyData
 
 	// NAS
 	Pti                     uint8
@@ -159,6 +161,7 @@ type SMContext struct {
 	SubCtxLog      *logrus.Entry
 	SubConsumerLog *logrus.Entry
 	SubFsmLog      *logrus.Entry
+	SubQosLog      *logrus.Entry
 
 	//TxnBus per subscriber
 	TxnBus       transaction.TxnBus
@@ -195,10 +198,9 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext.PFCPContext = make(map[string]*PFCPSessionContext)
 
 	// initialize SM Policy Data
-	smContext.PCCRules = make(map[string]*PCCRule)
-	smContext.SessionRules = make(map[string]*SessionRule)
-	smContext.TrafficControlPool = make(map[string]*TrafficControlData)
 	smContext.SBIPFCPCommunicationChan = make(chan PFCPSessionResponseStatus, 1)
+	smContext.SmPolicyUpdates = make([]*qos.PolicyUpdate, 0)
+	smContext.SmPolicyData.Initialize()
 
 	smContext.ProtocolConfigurationOptions = &ProtocolConfigurationOptions{
 		DNSIPv4Request: false,
@@ -225,6 +227,7 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubGsmLog = logger.GsmLog.WithFields(subField)
 	smContext.SubConsumerLog = logger.ConsumerLog.WithFields(subField)
 	smContext.SubFsmLog = logger.FsmLog.WithFields(subField)
+	smContext.SubQosLog = logger.QosLog.WithFields(subField)
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
@@ -440,12 +443,15 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 	}
 }
 
-func (smContext *SMContext) PutPDRtoPFCPSession(nodeID pfcpType.NodeID, pdr *PDR) error {
+func (smContext *SMContext) PutPDRtoPFCPSession(nodeID pfcpType.NodeID, pdrList map[string]*PDR) error {
+	//TODO: Iterate over PDRS
 	NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 	if pfcpSessCtx, exist := smContext.PFCPContext[NodeIDtoIP]; exist {
-		pfcpSessCtx.PDRs[pdr.PDRID] = pdr
+		for name, pdr := range pdrList {
+			pfcpSessCtx.PDRs[pdrList[name].PDRID] = pdr
+		}
 	} else {
-		return fmt.Errorf("Can't find PFCPContext[%s] to put PDR(%d)", NodeIDtoIP, pdr.PDRID)
+		return fmt.Errorf("error, can't find PFCPContext[%s] to put PDR(%v)", NodeIDtoIP, pdrList)
 	}
 	return nil
 }
@@ -541,14 +547,13 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 // SM Policy related operation
 
 // SelectedSessionRule - return the SMF selected session rule for this SM Context
-func (smContext *SMContext) SelectedSessionRule() *SessionRule {
-	for _, sessionRule := range smContext.SessionRules {
-		if sessionRule.isActivate {
-			return sessionRule
-		}
+func (smContext *SMContext) SelectedSessionRule() *models.SessionRule {
+	//Policy update in progress
+	if len(smContext.SmPolicyUpdates) > 0 {
+		return smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
+	} else {
+		return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
 	}
-
-	return nil
 }
 
 func (smContextState SMContextState) String() string {
@@ -608,4 +613,24 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 	}
 
 	return httpResponse
+}
+
+func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
+
+	//Lock SM context
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	if status {
+		qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
+	}
+
+	//Release 0th index update
+	if len(smContext.SmPolicyUpdates) >= 1 {
+		smContext.SmPolicyUpdates = smContext.SmPolicyUpdates[1:]
+	}
+
+	//Notify PCF of failure ?
+	//TODO
+	return nil
 }

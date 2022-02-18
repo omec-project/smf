@@ -27,6 +27,7 @@ var (
 	UPNodeLog   *logrus.Entry
 	FsmLog      *logrus.Entry
 	TxnFsmLog   *logrus.Entry
+	QosLog      *logrus.Entry
 )
 
 func init() {
@@ -54,6 +55,7 @@ func init() {
 	UPNodeLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "UPNode"})
 	FsmLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "Fsm"})
 	TxnFsmLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "TxnFsm"})
+	QosLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "QosFsm"})
 }
 
 func SetLogLevel(level logrus.Level) {

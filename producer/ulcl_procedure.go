@@ -126,7 +126,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 
 			logger.PduSessLog.Traceln("Send to upf addr: ", addr.String())
 
-			upLinkPDR := curDataPathNode.UpLinkTunnel.PDR
+			upLinkPDR := curDataPathNode.UpLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
 
 			pdrList := []*context.PDR{upLinkPDR}
 			farList := []*context.FAR{upLinkPDR.FAR}
@@ -136,7 +136,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 			lastNode := curDataPathNode.Prev()
 
 			if lastNode != nil && !reflect.DeepEqual(lastNode.UPF.NodeID, ulcl.NodeID) {
-				downLinkPDR := curDataPathNode.DownLinkTunnel.PDR
+				downLinkPDR := curDataPathNode.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
 				pdrList = append(pdrList, downLinkPDR)
 				farList = append(farList, downLinkPDR.FAR)
 			}
@@ -168,8 +168,8 @@ func EstablishULCL(smContext *context.SMContext) {
 	// find updatedUPF in activatingPath
 	for curDPNode := activatingPath.FirstDPNode; curDPNode != nil; curDPNode = curDPNode.Next() {
 		if reflect.DeepEqual(ulcl.NodeID, curDPNode.UPF.NodeID) {
-			UPLinkPDR := curDPNode.UpLinkTunnel.PDR
-			DownLinkPDR := curDPNode.DownLinkTunnel.PDR
+			UPLinkPDR := curDPNode.UpLinkTunnel.PDR["default"]     //TODO: Iterate over all PDRs
+			DownLinkPDR := curDPNode.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
 			UPLinkPDR.State = context.RULE_INITIAL
 
 			FlowDespcription := flowdesc.NewIPFilterRule()
@@ -245,7 +245,7 @@ func UpdatePSA2DownLink(smContext *context.SMContext) {
 
 		if lastNode != nil {
 			if reflect.DeepEqual(lastNode.UPF.NodeID, ulcl.NodeID) {
-				downLinkPDR := curDataPathNode.DownLinkTunnel.PDR
+				downLinkPDR := curDataPathNode.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
 				downLinkPDR.State = context.RULE_INITIAL
 				downLinkPDR.FAR.State = context.RULE_INITIAL
 
@@ -279,12 +279,12 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 
 	// Uplink ANUPF In TEID
 	activatingANUPF.UpLinkTunnel.TEID = defaultANUPF.UpLinkTunnel.TEID
-	activatingANUPF.UpLinkTunnel.PDR.PDI.LocalFTeid.Teid = defaultANUPF.UpLinkTunnel.PDR.PDI.LocalFTeid.Teid
+	activatingANUPF.UpLinkTunnel.PDR["default"].PDI.LocalFTeid.Teid = defaultANUPF.UpLinkTunnel.PDR["default"].PDI.LocalFTeid.Teid //TODO: Iterate over all PDRs
 
 	// Downlink ANUPF OutTEID
 
-	defaultANUPFDLFAR := defaultANUPF.DownLinkTunnel.PDR.FAR
-	activatingANUPFDLFAR := activatingANUPF.DownLinkTunnel.PDR.FAR
+	defaultANUPFDLFAR := defaultANUPF.DownLinkTunnel.PDR["default"].FAR       //TODO: Iterate over all PDRs
+	activatingANUPFDLFAR := activatingANUPF.DownLinkTunnel.PDR["default"].FAR //TODO: Iterate over all PDRs
 	activatingANUPFDLFAR.ApplyAction = pfcpType.ApplyAction{
 		Buff: false,
 		Drop: false,
@@ -318,8 +318,8 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 		if reflect.DeepEqual(ulcl.NodeID, curDPNode.UPF.NodeID) {
 			break
 		} else {
-			UPLinkPDR := curDPNode.UpLinkTunnel.PDR
-			DownLinkPDR := curDPNode.DownLinkTunnel.PDR
+			UPLinkPDR := curDPNode.UpLinkTunnel.PDR["default"]     //TODO: Iterate over all PDRs
+			DownLinkPDR := curDPNode.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
 			UPLinkPDR.State = context.RULE_INITIAL
 			DownLinkPDR.State = context.RULE_INITIAL
 

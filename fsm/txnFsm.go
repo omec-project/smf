@@ -41,11 +41,12 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		txn.Ctxt = smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
 
 	case svcmsgtypes.UpdateSmContext:
-		//req := txn.Req.(models.UpdateSmContextRequest)
 		fallthrough
 	case svcmsgtypes.ReleaseSmContext:
+		fallthrough
+	case svcmsgtypes.SmPolicyUpdateNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
-		//req := txn.Req.(models.ReleaseSmContextRequest)
+
 	case svcmsgtypes.PfcpSessCreate:
 		fallthrough
 	case svcmsgtypes.N1N2MessageTransfer:
@@ -126,6 +127,8 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		event = SmEventPduSessN1N2Transfer
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		event = SmEventPduSessN1N2TransferFailureIndication
+	case svcmsgtypes.SmPolicyUpdateNotification:
+		event = SmEventPolicyUpdateNotify
 	default:
 		event = SmEventInvalid
 
