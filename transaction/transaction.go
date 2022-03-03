@@ -195,7 +195,7 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 		//Note- Pipelined Txn will not get chance to run immediately,
 		//so they shall exit FSM and shall wait to run in TxnBus
 		if nextEvent == TxnEventExit || nextEvent == TxnEventQueue {
-			t.TxnFsmLog.Debug("TxnFsm [%v] ", nextEvent.String())
+			t.TxnFsmLog.Debugf("TxnFsm [%v] ", nextEvent.String())
 			return
 		}
 	}
