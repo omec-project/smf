@@ -515,8 +515,8 @@ func BuildPfcpSessionReportResponse(cause pfcpType.Cause, pfcpSRflag pfcpType.PF
 
 	msg.Cause = &cause
 
-	if pfcpSRflag.Drobu == true {
-		msg.SxSRRspFlags.Drobu = pfcpSRflag.Drobu
+	if pfcpSRflag.Drobu {
+		msg.SxSRRspFlags = &pfcpType.PFCPSRRspFlags{Drobu: true}
 	}
 
 	return msg, nil
