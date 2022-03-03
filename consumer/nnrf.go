@@ -148,6 +148,16 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "Out", "", "")
 
 	if localErr == nil {
+		if result.NfInstances == nil {
+			if status := httpResp.StatusCode; status != http.StatusOK {
+				logger.ConsumerLog.Warnln("handler returned wrong status code", status)
+			}
+
+			logger.ConsumerLog.Warnln("NfInstances is nil")
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
+			return nil, openapi.ReportError("NfInstances is nil")
+		}
+
 		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), "")
 		smf_context.SMF_Self().UDMProfile = result.NfInstances[0]
 
