@@ -55,12 +55,12 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	default:
 		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v] ",
-			transaction.TxnEventInit.String(), transaction.TxnEventFailure.String(), txn.MsgType)
+			transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), txn.MsgType)
 		return transaction.TxnEventFailure, fmt.Errorf("invalid Msg to load Txn")
 	}
 
-	if txn.Ctxt == nil {
-		txn.TxnFsmLog.Errorf("handle event[%v], ctxt [%v] not found", transaction.TxnEventInit.String(), txn.CtxtKey)
+	if txn.Ctxt.(*smf_context.SMContext) == nil {
+		txn.TxnFsmLog.Errorf("handle event[%v], ctxt [%v] not found", transaction.TxnEventLoadCtxt.String(), txn.CtxtKey)
 		return transaction.TxnEventFailure, fmt.Errorf("ctxt not found")
 	}
 
@@ -233,8 +233,12 @@ func (SmfTxnFsm) TxnCollision(txn *transaction.Transaction) (transaction.TxnEven
 
 func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 
-	smContext := txn.Ctxt.(*smf_context.SMContext)
 	txn.TransactionEnd()
+
+	smContext := txn.Ctxt.(*smf_context.SMContext)
+	if smContext == nil {
+		return transaction.TxnEventExit, nil
+	}
 	smContext.ActiveTxn = nil
 
 	var nextTxn *transaction.Transaction
