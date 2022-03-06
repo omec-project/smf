@@ -252,6 +252,14 @@ func ProcessConfigUpdate() bool {
 		sendNrfRegistration = true
 	}
 
+	//UP Node Links should be deleted before underlying UPFs are deleted
+	if updatedCfg.DelLinks != nil {
+		for _, link := range *updatedCfg.DelLinks {
+			GetUserPlaneInformation().DeleteUPNodeLinks(&link)
+		}
+		factory.UpdatedSmfConfig.DelLinks = nil
+	}
+
 	//Iterate through UserPlane Info
 	if updatedCfg.DelUPNodes != nil {
 		for name, upf := range *updatedCfg.DelUPNodes {
@@ -277,19 +285,13 @@ func ProcessConfigUpdate() bool {
 		factory.UpdatedSmfConfig.ModUPNodes = nil
 	}
 
-	//Iterate through UP Node Links info
+	//Iterate through add UP Node Links info
+	//UP Links should be added only after underlying UPFs have been added
 	if updatedCfg.AddLinks != nil {
 		for _, link := range *updatedCfg.AddLinks {
 			GetUserPlaneInformation().InsertUPNodeLinks(&link)
 		}
 		factory.UpdatedSmfConfig.AddLinks = nil
-	}
-
-	if updatedCfg.DelLinks != nil {
-		for _, link := range *updatedCfg.DelLinks {
-			GetUserPlaneInformation().DeleteUPNodeLinks(&link)
-		}
-		factory.UpdatedSmfConfig.DelLinks = nil
 	}
 
 	//Update Enterprise Info
