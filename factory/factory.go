@@ -41,7 +41,8 @@ func InitConfigFactory(f string) error {
 
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
-			commChannel := client.ConfigWatcher()
+			gClient := client.ConnectToConfigServer("webui:9876")
+			commChannel := gClient.PublishOnConfigChange(false)
 			go SmfConfig.updateConfig(commChannel)
 		}
 	}
