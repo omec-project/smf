@@ -517,7 +517,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	}
 
 	//Initiate PFCP release
-	smContext.ChangeState(smf_context.SmStatePfcpModify)
+	smContext.ChangeState(smf_context.SmStatePfcpRelease)
 	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
 	var httpResponse *http_wrapper.Response
