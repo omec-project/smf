@@ -362,7 +362,7 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 	}
 
 	if pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-		if smContext.SMContextState == smf_context.SmStatePfcpModify {
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease{
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
@@ -374,7 +374,7 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
 	} else {
-		if smContext.SMContextState == smf_context.SmStatePfcpModify && !smContext.LocalPurged {
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease&& !smContext.LocalPurged {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
