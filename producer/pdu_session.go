@@ -134,9 +134,9 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("IpAllocError")
 		return fmt.Errorf("IpAllocError")
 	} else {
-		smContext.PDUAddress = ip
+		smContext.PDUAddress = &smf_context.UeIpAddr{Ip: ip, UpfProvided: false}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, IP alloc success IP[%s]",
-			smContext.PDUAddress.String())
+			smContext.PDUAddress.Ip.String())
 	}
 
 	//UDM-Fetch Subscription Data based on servingnetwork.plmn and dnn, snssai
@@ -511,10 +511,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	}
 
 	//Release UE IP-Address
-	if ip := smContext.PDUAddress; ip != nil {
-		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
-		smContext.DNNInfo.UeIPAllocator.Release(ip)
-	}
+	smContext.ReleaseUeIpAddr()
 
 	//Initiate PFCP release
 	smContext.ChangeState(smf_context.SmStatePfcpRelease)

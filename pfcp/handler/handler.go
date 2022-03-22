@@ -151,6 +151,11 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
 		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
+		//Supported Features of UPF
+		if rsp.UPFunctionFeatures != nil {
+			upf.UPFunctionFeatures = rsp.UPFunctionFeatures
+		}
+
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation
 
@@ -244,12 +249,26 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
+	smContext.SMLock.Lock()
 
 	if rsp.UPFSEID != nil {
 		NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		pfcpSessionCtx.RemoteSEID = rsp.UPFSEID.Seid
 	}
+
+	//UE IP-Addr(only v4 supported)
+	if rsp.CreatedPDR != nil && rsp.CreatedPDR.UEIPAddress != nil {
+		smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", rsp.CreatedPDR.UEIPAddress.Ipv4Address)
+
+		// Release previous locally allocated UE IP-Addr
+		smContext.ReleaseUeIpAddr()
+
+		//Update with one received from UPF
+		smContext.PDUAddress.Ip = rsp.CreatedPDR.UEIPAddress.Ipv4Address
+		smContext.PDUAddress.UpfProvided = true
+	}
+	smContext.SMLock.Unlock()
 
 	//Get N3 interface UPF
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
@@ -362,7 +381,7 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 	}
 
 	if pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
-		if smContext.SMContextState == smf_context.SmStatePfcpRelease{
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
@@ -374,7 +393,7 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
 	} else {
-		if smContext.SMContextState == smf_context.SmStatePfcpRelease&& !smContext.LocalPurged {
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)

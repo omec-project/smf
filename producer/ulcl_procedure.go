@@ -189,7 +189,7 @@ func EstablishULCL(smContext *context.SMContext) {
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
-			err = FlowDespcription.SetSourceIP(smContext.PDUAddress.To4().String())
+			err = FlowDespcription.SetSourceIP(smContext.PDUAddress.Ip.To4().String())
 			if err != nil {
 				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 			}
@@ -342,7 +342,7 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}
-				err = FlowDespcription.SetSourceIP(smContext.PDUAddress.To4().String())
+				err = FlowDespcription.SetSourceIP(smContext.PDUAddress.Ip.To4().String())
 				if err != nil {
 					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
 				}

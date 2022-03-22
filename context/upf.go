@@ -58,13 +58,14 @@ func (s UPFStatus) String() string {
 }
 
 type UPF struct {
-	uuid         uuid.UUID
-	NodeID       pfcpType.NodeID
-	UPIPInfo     pfcpType.UserPlaneIPResourceInformation
-	UPFStatus    UPFStatus
-	SNssaiInfos  []SnssaiUPFInfo
-	N3Interfaces []UPFInterfaceInfo
-	N9Interfaces []UPFInterfaceInfo
+	uuid               uuid.UUID
+	NodeID             pfcpType.NodeID
+	UPIPInfo           pfcpType.UserPlaneIPResourceInformation
+	UPFStatus          UPFStatus
+	SNssaiInfos        []SnssaiUPFInfo
+	N3Interfaces       []UPFInterfaceInfo
+	N9Interfaces       []UPFInterfaceInfo
+	UPFunctionFeatures *pfcpType.UPFunctionFeatures
 
 	pdrPool sync.Map
 	farPool sync.Map
@@ -619,6 +620,17 @@ func (upf *UPF) IsDnnConfigured(sDnn string) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+//IsUpfSupportUeIpAddrAlloc UE IP addr alloc by UPF supported
+func (upf *UPF) IsUpfSupportUeIpAddrAlloc() bool {
+	if upf.UPFunctionFeatures != nil &&
+		upf.UPFunctionFeatures.SupportedFeatures1&pfcpType.UpFunctionFeatures1Ueip == 1 {
+
+		return true
+
 	}
 	return false
 }

@@ -141,8 +141,6 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()
 
-	if ip := smContext.PDUAddress; ip != nil {
-		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
-		smContext.DNNInfo.UeIPAllocator.Release(ip)
-	}
+	//Release UE IP Addr
+	smContext.ReleaseUeIpAddr()
 }

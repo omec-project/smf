@@ -328,8 +328,8 @@ github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQ
 github.com/olekukonko/tablewriter v0.0.0-20170122224234-a0225b3f23b5/go.mod h1:vsDQFd/mU46D+Z4whnwzcISnGGzXWMclvtLoiIKAKIo=
 github.com/omec-project/config5g v1.0.7 h1:qgSRHKiLaNkeIABSxAQJPb6KOk0HCUjHfCDXiBEqMbA=
 github.com/omec-project/config5g v1.0.7/go.mod h1:Cn6IaxX/z7tHYhL7315C4iVVr8IVX81J+cKuHYanKiI=
-github.com/omec-project/pfcp v1.0.2 h1:63usRbrjK63SDLOXx5hvGrNM2uZgzrnzy7y2Ojf51Pw=
-github.com/omec-project/pfcp v1.0.2/go.mod h1:TvuAVN5tytkPLKUfK1UXk1fFT/5DEIRXZ44XZBX+gFM=
+github.com/omec-project/pfcp v1.0.4 h1:09MxNkrAIDNuO31eroJDtX+3XwpzEZeAvrD0IiTotb4=
+github.com/omec-project/pfcp v1.0.4/go.mod h1:TvuAVN5tytkPLKUfK1UXk1fFT/5DEIRXZ44XZBX+gFM=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.7.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/gomega v1.4.3/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
