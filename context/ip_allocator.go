@@ -89,6 +89,7 @@ type _IDPool struct {
 	minValue int64
 	maxValue int64
 	isUsed   map[int64]bool
+	index    int64
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
@@ -96,13 +97,24 @@ func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
 	idPool.minValue = minValue
 	idPool.maxValue = maxValue
 	idPool.isUsed = make(map[int64]bool)
+	idPool.index = 1
 	return
 }
 
-func (i *_IDPool) allocate() (id int64, err error) {
-	for id := i.minValue; id <= i.maxValue; id++ {
+func (i *_IDPool) allocate() (int64, error) {
+	var id int64
+
+	for id = i.index; id <= i.maxValue; id++ {
 		if _, exist := i.isUsed[id]; !exist {
 			i.isUsed[id] = true
+			i.index = (id%i.maxValue) + 1
+			return id, nil
+		}
+	}
+	for id = 1; id < i.index; id++ {
+		if _, exist := i.isUsed[id]; !exist {
+			i.isUsed[id] = true
+			i.index = id + 1
 			return id, nil
 		}
 	}
