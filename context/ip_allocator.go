@@ -91,7 +91,7 @@ type _IDPool struct {
 	minValue int64
 	maxValue int64
 	isUsed   map[int64]bool
-	lock sync.Mutex
+	lock     sync.Mutex
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
