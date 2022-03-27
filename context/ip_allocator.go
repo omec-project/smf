@@ -7,6 +7,8 @@ package context
 import (
 	"errors"
 	"net"
+
+	"sync"
 )
 
 type IPAllocator struct {
@@ -89,6 +91,7 @@ type _IDPool struct {
 	minValue int64
 	maxValue int64
 	isUsed   map[int64]bool
+	lock     sync.Mutex
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
@@ -100,6 +103,8 @@ func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
 }
 
 func (i *_IDPool) allocate() (id int64, err error) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
 	for id := i.minValue; id <= i.maxValue; id++ {
 		if _, exist := i.isUsed[id]; !exist {
 			i.isUsed[id] = true
@@ -110,5 +115,7 @@ func (i *_IDPool) allocate() (id int64, err error) {
 }
 
 func (i *_IDPool) release(id int64) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
 	delete(i.isUsed, id)
 }
