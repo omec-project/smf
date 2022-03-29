@@ -387,12 +387,16 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				//Form Modify err rsp
 				httpResponse = makePduCtxtModifyErrRsp(smContext, err.Error())
 
-				//PFCP Modify Err, initiate release
-				SendPfcpSessionReleaseReq(smContext)
+				/*
+					// TODO: Add Ctxt cleanup if PFCP response is context not found,
+					// just initiating PFCP session release will not help
+						//PFCP Modify Err, initiate release
+						SendPfcpSessionReleaseReq(smContext)
 
-				//Change state to InactivePending
-				smContext.ChangeState(smf_context.SmStateInActivePending)
-				smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+						//Change state to InactivePending
+						smContext.ChangeState(smf_context.SmStateInActivePending)
+						smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
+				*/
 
 			} else {
 				//Modify Success

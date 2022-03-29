@@ -71,11 +71,13 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
+	//Lock the bus before modifying
+	smContext.SMTxnBusLock.Lock()
+	defer smContext.SMTxnBusLock.Unlock()
+
 	//If already Active Txn running then post it to SMF Txn Bus
 	if smContext.ActiveTxn != nil {
-		//Lock the bus before modifying
-		smContext.SMTxnBusLock.Lock()
-		defer smContext.SMTxnBusLock.Unlock()
+
 		smContext.TxnBus = smContext.TxnBus.AddTxn(txn)
 
 		//Txn has been posted and shall be scheduled later
@@ -94,6 +96,9 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	//There shouldn't be any active Txn if current Txn has reached to Run state
 	//Probably, abort it
+	smContext.SMTxnBusLock.Lock()
+	defer smContext.SMTxnBusLock.Unlock()
+
 	if smContext.ActiveTxn != nil {
 		logger.TxnFsmLog.Errorf("active transaction [%v] not completed", smContext.ActiveTxn)
 	}
@@ -239,14 +244,18 @@ func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, err
 	if smContext == nil {
 		return transaction.TxnEventExit, nil
 	}
+
+	//Lock txnbus to access
+	smContext.SMTxnBusLock.Lock()
+	defer smContext.SMTxnBusLock.Unlock()
+
+	//Reset Active Txn
 	smContext.ActiveTxn = nil
 
 	var nextTxn *transaction.Transaction
 	//Active Txn is over, now Pull out head Txn and Run it
 	if len(smContext.TxnBus) > 0 {
-		//Lock txnbus to access
-		smContext.SMTxnBusLock.Lock()
-		defer smContext.SMTxnBusLock.Unlock()
+
 		nextTxn, smContext.TxnBus = smContext.TxnBus.PopTxn()
 		txn.NextTxn = nextTxn
 		return transaction.TxnEventRun, nil

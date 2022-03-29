@@ -92,6 +92,7 @@ type _IDPool struct {
 	maxValue int64
 	isUsed   map[int64]bool
 	lock     sync.Mutex
+	index    int64
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
@@ -99,19 +100,31 @@ func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
 	idPool.minValue = minValue
 	idPool.maxValue = maxValue
 	idPool.isUsed = make(map[int64]bool)
+	idPool.index = 1
 	return
 }
 
 func (i *_IDPool) allocate() (id int64, err error) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
-	for id := i.minValue; id <= i.maxValue; id++ {
+
+	for id = i.index; id <= i.maxValue; id++ {
 		if _, exist := i.isUsed[id]; !exist {
 			i.isUsed[id] = true
+			i.index = (id % i.maxValue) + 1
 			return id, nil
 		}
 	}
-	return 0, errors.New("No available value range to allocate id")
+
+	for id = 1; id < i.index; id++ {
+		if _, exist := i.isUsed[id]; !exist {
+			i.isUsed[id] = true
+			i.index = id + 1
+			return id, nil
+		}
+	}
+
+	return 0, errors.New("no available value range to allocate id")
 }
 
 func (i *_IDPool) release(id int64) {
