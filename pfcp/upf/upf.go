@@ -31,11 +31,12 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
 				err := message.SendHeartbeatRequest(upf.NodeID)
 				if err != nil {
-					logger.PfcpLog.Errorf("Send PFCP Heartbeat Request failed: %v for UPF: %v", err, upf.NodeID)
+					logger.PfcpLog.Errorf("send pfcp heartbeat request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
 				} else {
 					upf.UPF.NHeartBeat++
 				}
 			} else if upf.UPF.NHeartBeat == maxHeartbeatRetry {
+				logger.PfcpLog.Errorf("pfcp heartbeat failure for UPF: [%v]", upf.NodeID)
 				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(pfcp.PFCP_HEARTBEAT_REQUEST), "Out", "Failure", "Timeout")
 				upf.UPF.UPFStatus = context.NotAssociated
 			}
