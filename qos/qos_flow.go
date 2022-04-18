@@ -382,3 +382,15 @@ func (d *QosFlowDescriptionsAuthorized) AddDefaultQosFlowDescription(sessRule *m
 func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
 	return upd.add
 }
+
+func GetDefaultQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision) *models.QosData {
+	for _, qosData := range smPolicyDecision.QosDecs {
+
+		if qosData.DefQosFlowIndication {
+			return qosData
+		}
+	}
+
+	log.Fatal("Default Qos Data not received from PCF")
+	return nil
+}

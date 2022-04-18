@@ -433,7 +433,7 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 		logger.PduSessLog.Errorln("new QER failed")
 		return nil, err
 	} else {
-		newQER.QFI.QFI = uint8(refQos.Var5qi)
+		newQER.QFI.QFI = qos.GetQosFlowIdFromQosId(refQos.QosId)
 
 		//Flow Status
 		newQER.GateStatus = &pfcpType.GateStatus{
@@ -457,12 +457,16 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	var flowQER *QER
 
 	sessionRule := smContext.SelectedSessionRule()
-	AuthDefQos := sessionRule.AuthDefQos
+
+	//Get Default Qos-Data for the session
+	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
+
+	defQosData := qos.GetDefaultQoSDataFromPolicyDecision(smPolicyDec)
 	if newQER, err := dpNode.UPF.AddQER(); err != nil {
 		logger.PduSessLog.Errorln("new QER failed")
 		return nil, err
 	} else {
-		newQER.QFI.QFI = uint8(AuthDefQos.Var5qi)
+		newQER.QFI.QFI = qos.GetQosFlowIdFromQosId(defQosData.QosId)
 		newQER.GateStatus = &pfcpType.GateStatus{
 			ULGate: pfcpType.GateOpen,
 			DLGate: pfcpType.GateOpen,
