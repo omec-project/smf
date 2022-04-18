@@ -82,7 +82,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 		FetchPfcpTxn(message.Header.SequenceNumber)
 		return err
 	}
-	logger.PfcpLog.Infof("Sent PFCP Heartbeat Request Seq[%d] to NodeID[%s]", message.Header.SequenceNumber,
+	logger.PfcpLog.Debugf("sent pfcp heartbeat request seq[%d] to NodeID[%s]", message.Header.SequenceNumber,
 		upNodeID.ResolveNodeIdToIp().String())
 	return nil
 }
