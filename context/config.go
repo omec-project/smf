@@ -6,6 +6,7 @@
 package context
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/free5gc/smf/factory"
@@ -22,6 +23,12 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 
 	if smfContext.SnssaiInfos == nil {
 		c.SnssaiInfos = make([]SnssaiSmfInfo, 0)
+	}
+
+	//Check if prev slice with same sst+sd exist
+	if slice := c.getSmfNssaiInfo(snssaiInfoConfig.SNssai.Sst, snssaiInfoConfig.SNssai.Sd); slice != nil {
+		logger.InitLog.Errorf("network slice [%v] already exist, deleting", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*snssaiInfoConfig}))
+		c.deleteSmfNssaiInfo(snssaiInfoConfig)
 	}
 
 	snssaiInfo := SnssaiSmfInfo{}
@@ -64,8 +71,13 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 func (c *SMFContext) updateSmfNssaiInfo(modSliceInfo *factory.SnssaiInfoItem) error {
 	//identify slices to be updated
 	logger.InitLog.Infof("Network Slices to be modified [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*modSliceInfo}))
-	c.deleteSmfNssaiInfo(modSliceInfo)
-	c.insertSmfNssaiInfo(modSliceInfo)
+	if err := c.deleteSmfNssaiInfo(modSliceInfo); err != nil {
+		logger.InitLog.Errorf("network slice delete error %v", err)
+	}
+
+	if err := c.insertSmfNssaiInfo(modSliceInfo); err != nil {
+		logger.InitLog.Errorf("network slice insert error %v", err)
+	}
 	return nil
 }
 
@@ -76,7 +88,21 @@ func (c *SMFContext) deleteSmfNssaiInfo(delSliceInfo *factory.SnssaiInfoItem) er
 	for index, slice := range c.SnssaiInfos {
 		if slice.Snssai.Sd == delSliceInfo.SNssai.Sd && slice.Snssai.Sst == delSliceInfo.SNssai.Sst {
 			//Remove the desired slice
+			logger.InitLog.Infof("network slices deleted [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*delSliceInfo}))
 			c.SnssaiInfos = append(c.SnssaiInfos[:index], c.SnssaiInfos[index+1:]...)
+			return nil
+		}
+	}
+
+	err := fmt.Errorf("network slice [%v] to be deleted not found", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*delSliceInfo}))
+	logger.InitLog.Errorf("%v", err.Error())
+	return err
+}
+
+func (c *SMFContext) getSmfNssaiInfo(sst int32, sd string) *SnssaiSmfInfo {
+	for _, slice := range c.SnssaiInfos {
+		if slice.Snssai.Sd == sd && slice.Snssai.Sst == sst {
+			return &slice
 		}
 	}
 	return nil
