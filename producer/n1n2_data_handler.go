@@ -1,6 +1,6 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
-//
 // SPDX-License-Identifier: Apache-2.0
 
 package producer
@@ -101,7 +101,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			smContext.ChangeState(smf_context.SmStateInit)
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 			response.JsonData.UpCnxState = models.UpCnxState_DEACTIVATED
-			/*problemDetails, err := consumer.SendSMContextStatusNotification(smContext.SmStatusNotifyUri)
+			problemDetails, err := consumer.SendSMContextStatusNotification(smContext.SmStatusNotifyUri)
 			if problemDetails != nil || err != nil {
 				if problemDetails != nil {
 					smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, send SMContext Status Notification Problem[%+v]", problemDetails)
@@ -112,8 +112,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				}
 			} else {
 				smContext.SubPduSessLog.Traceln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
-			}*/
-			smContext.SubPduSessLog.Traceln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
+			}
 		}
 	} else {
 		smContext.SubPduSessLog.Traceln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage is nil!")
