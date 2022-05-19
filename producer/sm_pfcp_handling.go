@@ -7,10 +7,10 @@ package producer
 
 import (
 	"fmt"
-	smf_context "github.com/free5gc/smf/context"
-	pfcp_message "github.com/free5gc/smf/pfcp/message"
-)
 
+	smf_context "github.com/omec-project/smf/context"
+	pfcp_message "github.com/omec-project/smf/pfcp/message"
+)
 
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()

@@ -20,15 +20,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/models"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/fsm"
-	"github.com/free5gc/smf/logger"
-	stats "github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/fsm"
+	"github.com/omec-project/smf/logger"
+	stats "github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/transaction"
 )
 
 // SubscriptionsPost -

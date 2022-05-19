@@ -5,7 +5,7 @@
 package pfcpmsgtypes
 
 import (
-	"github.com/free5gc/pfcp"
+	"github.com/omec-project/pfcp"
 )
 
 var msgTypeText = map[pfcp.MessageType]string{

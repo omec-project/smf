@@ -36,9 +36,9 @@ RUN apk update
 RUN apk add -U vim strace net-tools curl netcat-openbsd bind-tools
 
 # Set working dir
-WORKDIR /free5gc
+WORKDIR /omec-project
 RUN mkdir -p smf/
 
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* ./smf
-WORKDIR /free5gc/smf
+WORKDIR /omec-project/smf

@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/openapi/models"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/qos"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/transaction"
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {

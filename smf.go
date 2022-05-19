@@ -21,9 +21,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/service"
-	"github.com/free5gc/version"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/service"
 )
 
 var SMF = &service.SMF{}
@@ -38,8 +37,8 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "smf"
 	fmt.Print(app.Name, "\n")
-	appLog.Infoln("SMF version: ", version.GetVersion())
-	app.Usage = "-free5gccfg common configuration file -smfcfg smf configuration file"
+	//appLog.Infoln("SMF version: ", version.GetVersion())
+	app.Usage = "-cfg common configuration file -smfcfg smf_configuration_file"
 	app.Action = action
 	app.Flags = SMF.GetCliCmd()
 

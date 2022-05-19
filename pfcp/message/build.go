@@ -8,10 +8,10 @@ package message
 import (
 	"net"
 
-	"github.com/free5gc/pfcp"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/pfcp/udp"
+	"github.com/omec-project/pfcp"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/pfcp/udp"
 )
 
 //BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs

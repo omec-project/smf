@@ -8,8 +8,8 @@ package context
 import (
 	"fmt"
 
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/util_3gpp"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/util_3gpp"
 )
 
 const (

@@ -19,16 +19,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/smf/fsm"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/fsm"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/transaction"
 
-	smf_context "github.com/free5gc/smf/context"
-	stats "github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	smf_context "github.com/omec-project/smf/context"
+	stats "github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 )
 
 // HTTPPostSmContexts - Create SM Context

@@ -10,11 +10,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/free5gc/aper"
-	"github.com/free5gc/ngap/ngapType"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/aper"
+	"github.com/omec-project/ngap/ngapType"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/logger"
 )
 
 func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (err error) {

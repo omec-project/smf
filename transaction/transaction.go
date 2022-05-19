@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/sirupsen/logrus"
 )
 

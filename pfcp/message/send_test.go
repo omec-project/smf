@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	smf_pfcp "github.com/free5gc/smf/pfcp"
-	"github.com/free5gc/smf/pfcp/message"
-	"github.com/free5gc/smf/pfcp/udp"
+	smf_pfcp "github.com/omec-project/smf/pfcp"
+	"github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/udp"
 )
 
 func TestSendPfcpAssociationSetupRequest(t *testing.T) {

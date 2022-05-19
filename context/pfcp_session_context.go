@@ -8,7 +8,7 @@ package context
 import (
 	"fmt"
 
-	"github.com/free5gc/pfcp/pfcpType"
+	"github.com/omec-project/pfcp/pfcpType"
 )
 
 type PFCPSessionResponseStatus int

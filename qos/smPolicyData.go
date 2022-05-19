@@ -4,7 +4,7 @@
 
 package qos
 
-import "github.com/free5gc/openapi/models"
+import "github.com/omec-project/openapi/models"
 
 //Define SMF Session-Rule/PccRule/Rule-Qos-Data
 

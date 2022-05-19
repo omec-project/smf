@@ -7,9 +7,9 @@ package fsm
 import (
 	"fmt"
 
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/producer"
-	"github.com/free5gc/smf/transaction"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/producer"
+	"github.com/omec-project/smf/transaction"
 )
 
 //Define SM Context level Events

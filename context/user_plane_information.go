@@ -10,9 +10,9 @@ import (
 	"net"
 	"reflect"
 
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/factory"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
 )
 
 // UserPlaneInformation store userplane topology

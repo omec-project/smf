@@ -12,10 +12,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/free5gc/nas/nasConvert"
-	"github.com/free5gc/openapi/models"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/nas/nasConvert"
+	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
