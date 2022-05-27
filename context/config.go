@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/free5gc/smf/factory"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
 )
 
 func SetupSMFContext(config *factory.Config) error {

@@ -12,16 +12,16 @@ import (
 
 	"sync/atomic"
 
-	"github.com/free5gc/nas/nasMessage"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/pfcp/pfcpUdp"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/msgtypes/pfcpmsgtypes"
-	"github.com/free5gc/smf/pfcp/udp"
+	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/pfcp/pfcpUdp"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
+	"github.com/omec-project/smf/pfcp/udp"
 )
 
 var seq uint32

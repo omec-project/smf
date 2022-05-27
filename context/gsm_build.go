@@ -8,11 +8,11 @@ package context
 import (
 	"encoding/hex"
 
-	"github.com/free5gc/nas"
-	"github.com/free5gc/nas/nasConvert"
-	"github.com/free5gc/nas/nasMessage"
-	"github.com/free5gc/nas/nasType"
-	"github.com/free5gc/smf/qos"
+	"github.com/omec-project/nas"
+	"github.com/omec-project/nas/nasConvert"
+	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/nas/nasType"
+	"github.com/omec-project/smf/qos"
 )
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {

@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/smf/context"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/context"
 )
 
 type PDUSessionInfo struct {

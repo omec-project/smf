@@ -8,11 +8,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/free5gc/aper"
-	"github.com/free5gc/ngap/ngapConvert"
-	"github.com/free5gc/ngap/ngapType"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/smf/qos"
+	"github.com/omec-project/aper"
+	"github.com/omec-project/ngap/ngapConvert"
+	"github.com/omec-project/ngap/ngapType"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/qos"
 )
 
 const DefaultNonGBR5QI = 9

@@ -9,7 +9,7 @@ import (
 	"net"
 	"testing"
 
-	smf_context "github.com/free5gc/smf/context"
+	smf_context "github.com/omec-project/smf/context"
 )
 
 func TestIPPoolAlloc(t *testing.T) {

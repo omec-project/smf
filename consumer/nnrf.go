@@ -13,16 +13,16 @@ import (
 	"time"
 
 	"github.com/antihax/optional"
-	"github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
 	"github.com/mohae/deepcopy"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nnrf_NFDiscovery"
-	"github.com/free5gc/openapi/Nudm_SubscriberDataManagement"
-	"github.com/free5gc/openapi/models"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
+	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
 )
 
 func SendNFRegistration() error {

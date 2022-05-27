@@ -4,7 +4,7 @@
 
 package context
 
-import "github.com/free5gc/openapi/models"
+import "github.com/omec-project/openapi/models"
 
 type SNssai struct {
 	Sst int32

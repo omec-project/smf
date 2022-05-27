@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/smf/factory"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
 )
 
 var NFServices *[]models.NfService

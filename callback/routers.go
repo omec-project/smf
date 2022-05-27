@@ -17,8 +17,8 @@ package callback
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/free5gc/logger_util"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/logger_util"
+	"github.com/omec-project/smf/logger"
 )
 
 // Route is the information for every URI.

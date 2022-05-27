@@ -19,31 +19,30 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
-	aperLogger "github.com/free5gc/aper/logger"
-	"github.com/free5gc/http2_util"
-	"github.com/free5gc/logger_util"
-	nasLogger "github.com/free5gc/nas/logger"
-	ngapLogger "github.com/free5gc/ngap/logger"
-	openApiLogger "github.com/free5gc/openapi/logger"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/path_util"
-	pathUtilLogger "github.com/free5gc/path_util/logger"
-	pfcpLogger "github.com/free5gc/pfcp/logger"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/callback"
-	"github.com/free5gc/smf/consumer"
-	"github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/eventexposure"
-	"github.com/free5gc/smf/factory"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/oam"
-	"github.com/free5gc/smf/pdusession"
-	"github.com/free5gc/smf/pfcp"
-	"github.com/free5gc/smf/pfcp/message"
-	"github.com/free5gc/smf/pfcp/udp"
-	"github.com/free5gc/smf/pfcp/upf"
-	"github.com/free5gc/smf/util"
+	aperLogger "github.com/omec-project/aper/logger"
+	"github.com/omec-project/http2_util"
+	"github.com/omec-project/logger_util"
+	nasLogger "github.com/omec-project/nas/logger"
+	ngapLogger "github.com/omec-project/ngap/logger"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/path_util"
+	pathUtilLogger "github.com/omec-project/path_util/logger"
+	pfcpLogger "github.com/omec-project/pfcp/logger"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/callback"
+	"github.com/omec-project/smf/consumer"
+	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/eventexposure"
+	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/oam"
+	"github.com/omec-project/smf/pdusession"
+	"github.com/omec-project/smf/pfcp"
+	"github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/pfcp/upf"
+	"github.com/omec-project/smf/util"
 )
 
 type SMF struct{}
@@ -62,7 +61,7 @@ var config Config
 
 var smfCLi = []cli.Flag{
 	cli.StringFlag{
-		Name:  "free5gccfg",
+		Name:  "cfg",
 		Usage: "common config file",
 	},
 	cli.StringFlag{
@@ -104,7 +103,7 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 			return err
 		}
 	} else {
-		DefaultSmfConfigPath := path_util.Free5gcPath("free5gc/config/smfcfg.yaml")
+		DefaultSmfConfigPath := path_util.Free5gcPath("omec-project/smf/config/smfcfg.yaml")
 		if err := factory.InitConfigFactory(DefaultSmfConfigPath); err != nil {
 			return err
 		}
@@ -115,7 +114,7 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 			return err
 		}
 	} else {
-		DefaultUERoutingPath := path_util.Free5gcPath("free5gc/config/uerouting.yaml")
+		DefaultUERoutingPath := path_util.Free5gcPath("omec-project/smf/config/uerouting.yaml")
 		if err := factory.InitRoutingConfigFactory(DefaultUERoutingPath); err != nil {
 			return err
 		}
@@ -220,22 +219,6 @@ func (smf *SMF) setLogLevel() {
 			pathUtilLogger.SetLogLevel(logrus.InfoLevel)
 		}
 		pathUtilLogger.SetReportCaller(factory.SmfConfig.Logger.PathUtil.ReportCaller)
-	}
-
-	if factory.SmfConfig.Logger.OpenApi != nil {
-		if factory.SmfConfig.Logger.OpenApi.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				openApiLogger.OpenApiLog.Warnf("OpenAPI Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.OpenApi.DebugLevel)
-				openApiLogger.SetLogLevel(logrus.InfoLevel)
-			} else {
-				openApiLogger.SetLogLevel(level)
-			}
-		} else {
-			openApiLogger.OpenApiLog.Warnln("OpenAPI Log level not set. Default set to [info] level")
-			openApiLogger.SetLogLevel(logrus.InfoLevel)
-		}
-		openApiLogger.SetReportCaller(factory.SmfConfig.Logger.OpenApi.ReportCaller)
 	}
 
 	if factory.SmfConfig.Logger.PFCP != nil {

@@ -5,10 +5,10 @@
 package producer
 
 import (
-	"github.com/free5gc/pfcp/pfcpType"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
-	pfcp_message "github.com/free5gc/smf/pfcp/message"
+	"github.com/omec-project/pfcp/pfcpType"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
+	pfcp_message "github.com/omec-project/smf/pfcp/message"
 )
 
 type PFCPState struct {

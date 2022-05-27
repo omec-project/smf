@@ -8,14 +8,14 @@ package producer
 import (
 	"net/http"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/nas"
-	"github.com/free5gc/openapi/Nsmf_PDUSession"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/consumer"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/nas"
+	"github.com/omec-project/openapi/Nsmf_PDUSession"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/consumer"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/transaction"
 )
 
 type pfcpAction struct {

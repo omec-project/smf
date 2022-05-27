@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/smf/metrics"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
-	"github.com/free5gc/smf/qos"
-	errors "github.com/free5gc/smf/smferrors"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/qos"
+	errors "github.com/omec-project/smf/smferrors"
+	"github.com/omec-project/smf/transaction"
 	"github.com/sirupsen/logrus"
 
 	"net"
@@ -26,15 +26,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/free5gc/nas/nasConvert"
-	"github.com/free5gc/nas/nasMessage"
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Namf_Communication"
-	"github.com/free5gc/openapi/Nnrf_NFDiscovery"
-	"github.com/free5gc/openapi/Npcf_SMPolicyControl"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/nas/nasConvert"
+	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/openapi"
+	"github.com/omec-project/openapi/Namf_Communication"
+	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/logger"
 )
 
 const (

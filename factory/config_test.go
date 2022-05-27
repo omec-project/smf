@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/free5gc/openapi/models"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
+	"github.com/omec-project/openapi/models"
 )
 
 func TestUpdateSliceInfo(t *testing.T) {

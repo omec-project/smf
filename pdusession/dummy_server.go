@@ -8,12 +8,12 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/free5gc/http2_util"
-	"github.com/free5gc/logger_util"
-	"github.com/free5gc/path_util"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/pfcp"
-	"github.com/free5gc/smf/pfcp/udp"
+	"github.com/omec-project/http2_util"
+	"github.com/omec-project/logger_util"
+	"github.com/omec-project/path_util"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/pfcp"
+	"github.com/omec-project/smf/pfcp/udp"
 )
 
 func DummyServer() {

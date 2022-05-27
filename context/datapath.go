@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/qos"
-	"github.com/free5gc/smf/util"
-	"github.com/free5gc/util_3gpp"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/util"
+	"github.com/omec-project/util_3gpp"
 )
 
 // GTPTunnel represents the GTP tunnel information

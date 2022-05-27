@@ -16,13 +16,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/free5gc/idgenerator"
-	"github.com/free5gc/nas/nasMessage"
-	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/pfcp/pfcpUdp"
-	"github.com/free5gc/smf/factory"
-	"github.com/free5gc/smf/logger"
+	"github.com/omec-project/idgenerator"
+	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/pfcp/pfcpUdp"
+	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
 )
 
 var upfPool sync.Map

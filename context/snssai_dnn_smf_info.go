@@ -8,7 +8,7 @@ package context
 import (
 	"net"
 
-	"github.com/free5gc/openapi/models"
+	"github.com/omec-project/openapi/models"
 )
 
 // SnssaiSmfInfo records the SMF S-NSSAI related information

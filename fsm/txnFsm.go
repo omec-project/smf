@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/free5gc/http_wrapper"
-	"github.com/free5gc/openapi/models"
-	smf_context "github.com/free5gc/smf/context"
-	"github.com/free5gc/smf/logger"
-	"github.com/free5gc/smf/msgtypes/svcmsgtypes"
-	"github.com/free5gc/smf/producer"
-	"github.com/free5gc/smf/transaction"
+	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/producer"
+	"github.com/omec-project/smf/transaction"
 )
 
 func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, error) {

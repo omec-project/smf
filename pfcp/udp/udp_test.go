@@ -11,12 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/free5gc/pfcp"
-	"github.com/free5gc/pfcp/pfcpType"
-	"github.com/free5gc/pfcp/pfcpUdp"
-	"github.com/free5gc/smf/context"
-	smf_pfcp "github.com/free5gc/smf/pfcp"
-	"github.com/free5gc/smf/pfcp/udp"
+	"github.com/omec-project/pfcp"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/pfcp/pfcpUdp"
+	"github.com/omec-project/smf/context"
+	smf_pfcp "github.com/omec-project/smf/pfcp"
+	"github.com/omec-project/smf/pfcp/udp"
 )
 
 const testPfcpClientPort = 12345
