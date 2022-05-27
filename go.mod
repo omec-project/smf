@@ -12,19 +12,19 @@ require (
 	github.com/gin-gonic/gin v1.7.0
 	github.com/google/uuid v1.1.2
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/omec-project/aper v1.0.100-dev
-	github.com/omec-project/config5g v1.0.101-dev
-	github.com/omec-project/flowdesc v1.0.100-dev
-	github.com/omec-project/http2_util v1.0.100-dev
-	github.com/omec-project/http_wrapper v1.0.102-dev
-	github.com/omec-project/idgenerator v1.0.100-dev
-	github.com/omec-project/logger_util v1.0.100-dev
-	github.com/omec-project/nas v1.0.107-dev
-	github.com/omec-project/ngap v1.0.101-dev
-	github.com/omec-project/openapi v1.2.99
-	github.com/omec-project/path_util v1.0.100-dev
-	github.com/omec-project/pfcp v1.0.100-dev
-	github.com/omec-project/util_3gpp v1.0.101-dev
+	github.com/omec-project/aper v1.1.0
+	github.com/omec-project/config5g v1.1.0
+	github.com/omec-project/flowdesc v1.1.0
+	github.com/omec-project/http2_util v1.1.0
+	github.com/omec-project/http_wrapper v1.1.0
+	github.com/omec-project/idgenerator v1.1.0
+	github.com/omec-project/logger_util v1.1.0
+	github.com/omec-project/nas v1.1.1
+	github.com/omec-project/ngap v1.1.0
+	github.com/omec-project/openapi v1.1.0
+	github.com/omec-project/path_util v1.1.0
+	github.com/omec-project/pfcp v1.1.1
+	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2
 	github.com/sirupsen/logrus v1.8.1
@@ -53,8 +53,8 @@ require (
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/omec-project/logger_conf v1.0.100-dev // indirect
-	github.com/omec-project/tlv v1.0.100-dev // indirect
+	github.com/omec-project/logger_conf v1.1.0 // indirect
+	github.com/omec-project/tlv v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
