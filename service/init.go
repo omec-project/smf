@@ -50,8 +50,9 @@ type SMF struct{}
 type (
 	// Config information.
 	Config struct {
-		smfcfg    string
-		uerouting string
+		smfcfg         string
+		uerouting      string
+		heartBeatTimer string
 	}
 )
 
@@ -73,6 +74,11 @@ var smfCLi = []cli.Flag{
 		Usage: "config file",
 	},
 }
+
+var (
+	KeepAliveTimer      *time.Timer
+	KeepAliveTimerMutex sync.Mutex
+)
 
 type OneInstance struct {
 	m    sync.Mutex
@@ -380,6 +386,66 @@ func (smf *SMF) Exec(c *cli.Context) error {
 	return nil
 }
 
+func StartKeepAliveTimer(nfProfile models.NfProfile) {
+	KeepAliveTimerMutex.Lock()
+	defer KeepAliveTimerMutex.Unlock()
+	if nfProfile.HeartBeatTimer == 0 {
+		nfProfile.HeartBeatTimer = 30
+	}
+	logger.InitLog.Infof("Started KeepAlive Timer: %v sec", nfProfile.HeartBeatTimer)
+	//AfterFunc starts timer and waits for KeepAliveTimer to elapse and then calls smf.UpdateNF function
+	KeepAliveTimer = time.AfterFunc(time.Duration(nfProfile.HeartBeatTimer)*time.Second, UpdateNF)
+}
+
+func StopKeepAliveTimer() {
+	KeepAliveTimerMutex.Lock()
+	defer KeepAliveTimerMutex.Unlock()
+	if KeepAliveTimer != nil {
+		logger.InitLog.Infof("Stopped KeepAlive Timer.")
+		KeepAliveTimer.Stop()
+		KeepAliveTimer = nil
+	}
+}
+
+//UpdateNF is the callback function, this is called when keepalivetimer elapsed
+func UpdateNF() {
+	KeepAliveTimerMutex.Lock()
+	defer KeepAliveTimerMutex.Unlock()
+	if KeepAliveTimer == nil {
+		initLog.Warnf("KeepAlive timer has been stopped.")
+		return
+	}
+	//setting default value 30 sec
+	var heartBeatTimer int32 = 30
+	pitem := models.PatchItem{
+		Op:    "replace",
+		Path:  "/nfStatus",
+		Value: "REGISTERED",
+	}
+	var patchItem []models.PatchItem
+	patchItem = append(patchItem, pitem)
+	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
+	if problemDetails != nil {
+		initLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
+		//5xx response from NRF, 404 Not Found, 400 Bad Request
+		if (problemDetails.Status/100) == 5 ||
+			problemDetails.Status == 404 || problemDetails.Status == 400 {
+			//register with NRF full profile
+			nfProfile, err = consumer.SendNFRegistration()
+		}
+	} else if err != nil {
+		initLog.Errorf("SMF update to NRF Error[%s]", err.Error())
+		nfProfile, err = consumer.SendNFRegistration()
+	}
+
+	if nfProfile.HeartBeatTimer != 0 {
+		// use hearbeattimer value with received timer value from NRF
+		heartBeatTimer = nfProfile.HeartBeatTimer
+	}
+	logger.InitLog.Debugf("Restarted KeepAlive Timer: %v sec", heartBeatTimer)
+	//restart timer with received HeartBeatTimer value
+	KeepAliveTimer = time.AfterFunc(time.Duration(heartBeatTimer)*time.Second, UpdateNF)
+}
 func (smf *SMF) SendNrfRegistration() {
 
 	//If NRF registration is ongoing then don't start another in parallel
@@ -394,14 +460,18 @@ func (smf *SMF) SendNrfRegistration() {
 	//Check if another fresh NRF registration is required
 	if refreshNrfRegistration {
 		refreshNrfRegistration = false
-		if err := consumer.SendNFRegistration(); err != nil {
+		if prof, err := consumer.SendNFRegistration(); err != nil {
 			logger.InitLog.Infof("NRF Registration failure, %v", err.Error())
+		} else {
+			StopKeepAliveTimer()
+			StartKeepAliveTimer(prof)
+			logger.CfgLog.Infof("Sent Register NF Instance with updated profile")
 		}
 	}
 }
 
 //Run only single instance of func f at a time
-func (o *OneInstance) intanceRun(f func()) bool {
+func (o *OneInstance) intanceRun(f func() models.NfProfile) bool {
 
 	//Instance already running ?
 	if atomic.LoadUint32(&o.done) == 1 {
@@ -414,7 +484,10 @@ func (o *OneInstance) intanceRun(f func()) bool {
 	if o.done == 0 {
 		atomic.StoreUint32(&o.done, 1)
 		defer atomic.StoreUint32(&o.done, 0)
-		f()
+		nfProfile := f()
+		StopKeepAliveTimer()
+		StartKeepAliveTimer(nfProfile)
+
 	}
 	return false
 }
