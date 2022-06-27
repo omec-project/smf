@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -86,6 +87,11 @@ func GetSMContextCount() uint64 {
 	return smContextCount
 }
 
+type UeIpAddr struct {
+	UpfProvided bool
+	Ip          net.IP
+}
+
 type SMContext struct {
 	Ref string
 
@@ -113,7 +119,7 @@ type SMContext struct {
 	OldPduSessionId int32
 	HoState         models.HoState
 
-	PDUAddress             net.IP
+	PDUAddress             *UeIpAddr
 	SelectedPDUSessionType uint8
 
 	DnnConfiguration models.DnnConfiguration
@@ -258,10 +264,10 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		}
 
 		if nextState == SmStateActive {
-			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), nextState.String(),
+			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.Ip.String(), nextState.String(),
 				upf, ent, 1)
 		} else {
-			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.String(), smContext.SMContextState.String(),
+			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.Ip.String(), smContext.SMContextState.String(),
 				upf, ent, 0)
 		}
 	}
@@ -296,10 +302,8 @@ func RemoveSMContext(ref string) {
 	}
 
 	//Release UE IP-Address
-	if ip := smContext.PDUAddress; ip != nil {
-		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
-		smContext.DNNInfo.UeIPAllocator.Release(ip)
-	}
+	smContext.ReleaseUeIpAddr()
+
 	smContextPool.Delete(ref)
 	//Sess Stats
 	smContextActive := decSMContextActive()
@@ -312,6 +316,14 @@ func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 		smContext = value.(*SMContext)
 	}
 	return
+}
+
+func (smContext *SMContext) ReleaseUeIpAddr() error {
+	if ip := smContext.PDUAddress.Ip; ip != nil && !smContext.PDUAddress.UpfProvided {
+		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.Ip.String())
+		smContext.DNNInfo.UeIPAllocator.Release(ip)
+	}
+	return nil
 }
 
 //*** add unit test ***//
@@ -339,7 +351,7 @@ func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCre
 }
 
 func (smContext *SMContext) PDUAddressToNAS() (addr [12]byte, addrLen uint8) {
-	copy(addr[:], smContext.PDUAddress)
+	copy(addr[:], smContext.PDUAddress.Ip)
 	switch smContext.SelectedPDUSessionType {
 	case nasMessage.PDUSessionTypeIPv4:
 		addrLen = 4 + 1

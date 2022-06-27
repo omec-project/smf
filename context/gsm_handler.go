@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -141,8 +142,6 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()
 
-	if ip := smContext.PDUAddress; ip != nil {
-		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.String())
-		smContext.DNNInfo.UeIPAllocator.Release(ip)
-	}
+	//Release UE IP Addr
+	smContext.ReleaseUeIpAddr()
 }
