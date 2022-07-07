@@ -23,7 +23,7 @@ require (
 	github.com/omec-project/ngap v1.1.0
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
-	github.com/omec-project/pfcp v1.1.1
+	github.com/omec-project/pfcp v1.1.2
 	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2

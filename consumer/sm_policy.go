@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -39,7 +40,7 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	smPolicyData.PduSessionType = nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
 	smPolicyData.AccessType = smContext.AnType
 	smPolicyData.RatType = smContext.RatType
-	smPolicyData.Ipv4Address = smContext.PDUAddress.To4().String()
+	smPolicyData.Ipv4Address = smContext.PDUAddress.Ip.To4().String()
 	smPolicyData.SubsSessAmbr = smContext.DnnConfiguration.SessionAmbr
 	smPolicyData.SubsDefQos = smContext.DnnConfiguration.Var5gQosProfile
 	smPolicyData.SliceInfo = smContext.Snssai

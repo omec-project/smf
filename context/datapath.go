@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -484,6 +485,15 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 
 //ActivateUpLinkPdr
 func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32) error {
+
+	ueIpAddr := pfcpType.UEIPAddress{}
+	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+		ueIpAddr.CHV4 = true
+	} else {
+		ueIpAddr.V4 = true
+		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+	}
+
 	curULTunnel := dpNode.UpLinkTunnel
 	for name, ULPDR := range curULTunnel.PDR {
 		ULDestUPF := curULTunnel.DestEndPoint.UPF
@@ -512,10 +522,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 				Teid:        curULTunnel.TEID,
 			}
 
-			ULPDR.PDI.UEIPAddress = &pfcpType.UEIPAddress{
-				V4:          true,
-				Ipv4Address: smContext.PDUAddress.To4(),
-			}
+			ULPDR.PDI.UEIPAddress = &ueIpAddr
 
 			ULPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
 		}
@@ -567,6 +574,16 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32, dataPath *DataPath) error {
 	var iface *UPFInterfaceInfo
 	curDLTunnel := dpNode.DownLinkTunnel
+
+	//UPF provided UE ip-addr
+	ueIpAddr := pfcpType.UEIPAddress{}
+	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+		ueIpAddr.CHV4 = true
+	} else {
+		ueIpAddr.V4 = true
+		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+	}
+
 	for name, DLPDR := range curDLTunnel.PDR {
 		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v] ", name, DLPDR)
 		DLDestUPF := curDLTunnel.DestEndPoint.UPF
@@ -577,10 +594,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 		}
 
 		if dpNode.IsAnchorUPF() {
-			DLPDR.PDI.UEIPAddress = &pfcpType.UEIPAddress{
-				V4:          true,
-				Ipv4Address: smContext.PDUAddress.To4(),
-			}
+			DLPDR.PDI.UEIPAddress = &ueIpAddr
 		} else {
 			DLPDR.OuterHeaderRemoval = &pfcpType.OuterHeaderRemoval{
 				OuterHeaderRemovalDescription: pfcpType.OuterHeaderRemovalGtpUUdpIpv4,
@@ -598,10 +612,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 					Teid:        curDLTunnel.TEID,
 				}
 
-				DLPDR.PDI.UEIPAddress = &pfcpType.UEIPAddress{
-					V4:          true,
-					Ipv4Address: smContext.PDUAddress.To4(),
-				}
+				DLPDR.PDI.UEIPAddress = &ueIpAddr
 			}
 		}
 
@@ -700,16 +711,21 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 			}
 		}
 
+		ueIpAddr := pfcpType.UEIPAddress{}
+		if curDataPathNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+			ueIpAddr.CHV4 = true
+		} else {
+			ueIpAddr.V4 = true
+			ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+		}
+
 		if curDataPathNode.DownLinkTunnel != nil {
 			if curDataPathNode.DownLinkTunnel.SrcEndPoint == nil {
 				for _, DNDLPDR := range curDataPathNode.DownLinkTunnel.PDR {
 
 					DNDLPDR.PDI.SourceInterface = pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceCore}
 					DNDLPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
-					DNDLPDR.PDI.UEIPAddress = &pfcpType.UEIPAddress{
-						V4:          true,
-						Ipv4Address: smContext.PDUAddress.To4(),
-					}
+					DNDLPDR.PDI.UEIPAddress = &ueIpAddr
 				}
 			}
 		}
