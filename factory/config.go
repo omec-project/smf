@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -482,6 +483,19 @@ func compareUPNodesConfigs(u1, u2 map[string]UPNode) (match bool, add, mod, del 
 
 }
 
+func compareNetworkSliceInstance(s1, s2 SnssaiInfoItem) (match bool) {
+
+	if matching, _, _ := compareGenericSlices(s1.DnnInfos, s2.DnnInfos, compareNsDnn); !matching {
+		return false
+	}
+
+	if s1.PlmnId != s2.PlmnId {
+		return false
+	}
+
+	return true
+}
+
 func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod, del []SnssaiInfoItem) {
 
 	match = true
@@ -491,9 +505,9 @@ func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod
 		for _, s1 := range slice1 {
 			found := false
 			for _, s2 := range slice2 {
-				//fmt.Printf("Comparing slices[%+v, %+v] VS [%+v,%+v]\n", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
+				logger.CfgLog.Debugf("comparing slices [existing sd/sst:%+v/%+v][received sd/sst:%+v/%+v]", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
 				if s1.SNssai.Sd == s2.SNssai.Sd && s1.SNssai.Sst == s2.SNssai.Sst {
-					if matching, _, _ := compareGenericSlices(s1.DnnInfos, s2.DnnInfos, compareNsDnn); !matching && i == 0 {
+					if matching := compareNetworkSliceInstance(s1, s2); !matching && i == 0 {
 						//only keep updated slice
 						mod = append(mod, s2)
 						match = false
@@ -531,7 +545,7 @@ func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bo
 		for _, s1 := range slice1 {
 			found := false
 			for _, s2 := range slice2 {
-				//fmt.Printf("Comparing UP slices[%+v, %+v] VS [%+v,%+v]\n", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
+				logger.CfgLog.Debugf("comparing up slices[existing sd/sst: %+v/%+v][received sd/sst: %+v/%+v]", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
 				if s1.SNssai.Sd == s2.SNssai.Sd && s1.SNssai.Sst == s2.SNssai.Sst {
 					if matching, _, _ := compareGenericSlices(s1.DnnUpfInfoList, s2.DnnUpfInfoList, compareUpfDnn); !matching && i == 0 {
 						//only keep updated slice

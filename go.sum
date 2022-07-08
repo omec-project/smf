@@ -222,8 +222,8 @@ github.com/omec-project/logger_conf v1.1.0/go.mod h1:2+SOX9OFbPZ+UNv8k+tvPnaWHo4
 github.com/omec-project/logger_util v1.0.100-dev/go.mod h1:UkD09amIhlh8P0k82A6Uz/atiZGeFS3C2wd334CKpuY=
 github.com/omec-project/logger_util v1.1.0 h1:R7tT80+ML1HlK4OoTrNv/UK+2H/u2GdIFNBx41g630Q=
 github.com/omec-project/logger_util v1.1.0/go.mod h1:UkD09amIhlh8P0k82A6Uz/atiZGeFS3C2wd334CKpuY=
-github.com/omec-project/nas v1.1.1 h1:NY54Flhh2SDfP/BYuKQsYp4QJElvy3xzCLjIJ1b9T2c=
-github.com/omec-project/nas v1.1.1/go.mod h1:WRl/gOe8pZATzTk5pHbAcqUuWbmLdVV/jzjnl5lCcJ8=
+github.com/omec-project/nas v1.1.2 h1:ApgVHVVvxPydy8H5Dd2fuiGafrvjCIgGgf37h824kd8=
+github.com/omec-project/nas v1.1.2/go.mod h1:gXqi/IZwEGXno26X8wg8ITsAUiemRQ7PkIJOWP1NzGA=
 github.com/omec-project/ngap v1.1.0 h1:J9bkPEzzyGd1787nGY/aZVp3gckkZBoJB4tkTo59eyw=
 github.com/omec-project/ngap v1.1.0/go.mod h1:A+T3+JKk+6AuhnMr6W319Tc7E176ig6rIRDVSKQ7E5g=
 github.com/omec-project/openapi v1.0.100-dev/go.mod h1:Fv9ajWROYypcNER+ZwWXPhLCdV4pBz75KqFp/R/2gCw=
@@ -232,8 +232,8 @@ github.com/omec-project/openapi v1.1.0/go.mod h1:Fv9ajWROYypcNER+ZwWXPhLCdV4pBz7
 github.com/omec-project/path_util v1.0.100-dev/go.mod h1:O1ch35al6+FXKmg6+5vOpKusl4fiB0u36oYjxwI4QK4=
 github.com/omec-project/path_util v1.1.0 h1:vzzLsay8+uexyYEqS06th8lMcwp+N+CXcaHhaypZn1Q=
 github.com/omec-project/path_util v1.1.0/go.mod h1:O1ch35al6+FXKmg6+5vOpKusl4fiB0u36oYjxwI4QK4=
-github.com/omec-project/pfcp v1.1.1 h1:GCgUx5S71w7wuo+EWfKXn1hnVNn5wVIEIGXdaK1prdc=
-github.com/omec-project/pfcp v1.1.1/go.mod h1:nPKZhoKK7xeW/aw6adMryAXoEl4BTUKCuZcUs7VnEpQ=
+github.com/omec-project/pfcp v1.1.2 h1:RvC3R8phjKR0B3d+qyZ02bLcP9h68P5+vackw6U7L34=
+github.com/omec-project/pfcp v1.1.2/go.mod h1:nPKZhoKK7xeW/aw6adMryAXoEl4BTUKCuZcUs7VnEpQ=
 github.com/omec-project/tlv v1.1.0 h1:djelZMkZKd+3ZvFbvzu6Uxfp4rnUGfoKjnx0R8ZS1Ss=
 github.com/omec-project/tlv v1.1.0/go.mod h1:FdPaQhfld4Zs5/oR5nsphb1JKGqGaFwFfqzIK9IVA3E=
 github.com/omec-project/util_3gpp v1.1.1 h1:lT8J2uvCuKaOrIasZgV7+bXSjBb9/i8FG9ZFQnpx2yE=
