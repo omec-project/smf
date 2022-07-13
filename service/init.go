@@ -386,9 +386,10 @@ func (smf *SMF) Exec(c *cli.Context) error {
 	return nil
 }
 
-func StartKeepAliveTimer(nfProfile models.NfProfile) {
+func StartKeepAliveTimer(nfProfile *models.NfProfile) {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
+	StopKeepAliveTimer()
 	if nfProfile.HeartBeatTimer == 0 {
 		nfProfile.HeartBeatTimer = 30
 	}
@@ -398,8 +399,6 @@ func StartKeepAliveTimer(nfProfile models.NfProfile) {
 }
 
 func StopKeepAliveTimer() {
-	KeepAliveTimerMutex.Lock()
-	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer != nil {
 		logger.InitLog.Infof("Stopped KeepAlive Timer.")
 		KeepAliveTimer.Stop()
@@ -463,7 +462,6 @@ func (smf *SMF) SendNrfRegistration() {
 		if prof, err := consumer.SendNFRegistration(); err != nil {
 			logger.InitLog.Infof("NRF Registration failure, %v", err.Error())
 		} else {
-			StopKeepAliveTimer()
 			StartKeepAliveTimer(prof)
 			logger.CfgLog.Infof("Sent Register NF Instance with updated profile")
 		}
@@ -471,7 +469,7 @@ func (smf *SMF) SendNrfRegistration() {
 }
 
 //Run only single instance of func f at a time
-func (o *OneInstance) intanceRun(f func() models.NfProfile) bool {
+func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
 
 	//Instance already running ?
 	if atomic.LoadUint32(&o.done) == 1 {
@@ -485,7 +483,6 @@ func (o *OneInstance) intanceRun(f func() models.NfProfile) bool {
 		atomic.StoreUint32(&o.done, 1)
 		defer atomic.StoreUint32(&o.done, 0)
 		nfProfile := f()
-		StopKeepAliveTimer()
 		StartKeepAliveTimer(nfProfile)
 
 	}

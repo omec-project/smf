@@ -512,7 +512,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 		}
 
 		if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-			logger.CtxLog.Errorln("activate UpLink PDR[%v] failed %v ", name, err)
+			logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v ", name, err)
 			return err
 		} else {
 			ULPDR.PDI.SourceInterface = pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceAccess}
@@ -556,7 +556,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 			iface = nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-				logger.CtxLog.Errorln("activate UpLink PDR[%v] failed %v ", name, err)
+				logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v ", name, err)
 				return err
 			} else {
 				ULFAR.ForwardingParameters.OuterHeaderCreation = &pfcpType.OuterHeaderCreation{
@@ -602,7 +602,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 
 			iface = DLDestUPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-				logger.CtxLog.Errorln("activate Downlink PDR[%v] failed %v ", name, err)
+				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v ", name, err)
 				return err
 			} else {
 				DLPDR.PDI.SourceInterface = pfcpType.SourceInterface{InterfaceValue: pfcpType.SourceInterfaceCore}
@@ -635,7 +635,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 			iface = nextDLDest.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-				logger.CtxLog.Errorln("activate Downlink PDR[%v] failed %v ", name, err)
+				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v ", name, err)
 				return err
 			} else {
 				DLFAR.ForwardingParameters = &ForwardingParameters{

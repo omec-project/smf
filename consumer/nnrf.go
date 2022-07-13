@@ -26,13 +26,13 @@ import (
 	"github.com/omec-project/smf/logger"
 )
 
-func SendNFRegistration() (models.NfProfile, error) {
+func SendNFRegistration() (*models.NfProfile, error) {
 	var rep models.NfProfile
 	sNssais := []models.Snssai{}
 
 	if len(*smf_context.SmfInfo.SNssaiSmfInfoList) == 0 {
 		logger.ConsumerLog.Errorf("slice info not available, dropping NRF registration")
-		return rep, fmt.Errorf("slice info nil")
+		return &rep, fmt.Errorf("slice info nil")
 	}
 
 	for _, snssaiSmfInfo := range *smf_context.SmfInfo.SNssaiSmfInfoList {
@@ -66,7 +66,7 @@ func SendNFRegistration() (models.NfProfile, error) {
 	if err != nil || res == nil {
 		logger.ConsumerLog.Infof("SMF register to NRF Error[%s]", err.Error())
 		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", "Failure", err.Error())
-		return rep, fmt.Errorf("NRF Registration failure")
+		return &rep, fmt.Errorf("NRF Registration failure")
 	}
 
 	if res != nil {
@@ -93,14 +93,14 @@ func SendNFRegistration() (models.NfProfile, error) {
 		logger.ConsumerLog.Infof("handler returned wrong status code %d", status)
 		// fmt.Errorf("NRF return wrong status code %d", status)
 		logger.ConsumerLog.Errorf("NRF Registration failure, status [%v]", http.StatusText(res.StatusCode))
-		return rep, fmt.Errorf("NRF Registration failure, [%v]", http.StatusText(res.StatusCode))
+		return &rep, fmt.Errorf("NRF Registration failure, [%v]", http.StatusText(res.StatusCode))
 	}
 
 	logger.InitLog.Infof("SMF Registration to NRF %v", rep)
-	return rep, nil
+	return &rep, nil
 }
 
-func ReSendNFRegistration() (profile models.NfProfile) {
+func ReSendNFRegistration() (profile *models.NfProfile) {
 	for {
 		var err error
 		if profile, err = SendNFRegistration(); err != nil {
@@ -112,7 +112,7 @@ func ReSendNFRegistration() (profile models.NfProfile) {
 	}
 }
 
-var SendUpdateNFInstance = func(patchItem []models.PatchItem) (nfProfile models.NfProfile, problemDetails *models.ProblemDetails, err error) {
+var SendUpdateNFInstance = func(patchItem []models.PatchItem) (nfProfile *models.NfProfile, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugf("Send Update NFInstance")
 
 	smfSelf := smf_context.SMF_Self()
@@ -121,9 +121,10 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (nfProfile models.
 	client := Nnrf_NFManagement.NewAPIClient(configuration)
 
 	var res *http.Response
-	nfProfile, res, err = client.NFInstanceIDDocumentApi.UpdateNFInstance(context.Background(), smfSelf.NfInstanceID, patchItem)
+	var nf models.NfProfile
+	nf, res, err = client.NFInstanceIDDocumentApi.UpdateNFInstance(context.Background(), smfSelf.NfInstanceID, patchItem)
 	if err == nil {
-		return
+		return &nf, nil, nil
 	} else if res != nil {
 		defer func() {
 			if resCloseErr := res.Body.Close(); resCloseErr != nil {
@@ -132,14 +133,14 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (nfProfile models.
 		}()
 		if res.Status != err.Error() {
 			logger.ConsumerLog.Errorf("UpdateNFInstance received error response: %v", res.Status)
-			return
+			return &nf, problemDetails, err
 		}
 		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		problemDetails = &problem
 	} else {
 		err = openapi.ReportError("server no response")
 	}
-	return
+	return &nf, problemDetails, err
 }
 
 func SendNFDeregistration() error {
