@@ -88,7 +88,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	m := nas.NewMessage()
 	if err := m.GsmMessageDecode(&request.BinaryDataN1SmMessage); err != nil ||
 		m.GsmHeader.GetMessageType() != nas.MsgTypePDUSessionEstablishmentRequest {
-		logger.PduSessLog.Errorf("PDUSessionSMContextCreate, GsmMessageDecode Error: ", err)
+		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, GsmMessageDecode Error: ", err)
 
 		txn.Rsp = formContextCreateErrRsp(http.StatusForbidden, &Nsmf_PDUSession.N1SmError, nil)
 		return fmt.Errorf("GsmMsgDecodeError")
@@ -187,7 +187,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	smContext.HandlePDUSessionEstablishmentRequest(establishmentRequest)
 
 	if err := smContext.PCFSelection(); err != nil {
-		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, send NF Discovery Serving PCF Error[%v]", err)
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving PCF Error[%v]", err)
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFDiscoveryFailure")
 		return fmt.Errorf("PcfError")
 	}
