@@ -10,6 +10,8 @@ info:
   description: SMF initial local configuration
 
 configuration:
+  enableDBStore: false
+  enableUPFAdapter: true
   smfName: SMF # the name of this SMF
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)

@@ -84,7 +84,7 @@ type UPF struct {
 	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
 
 	// lock
-	UpfLock sync.Mutex
+	UpfLock sync.RWMutex
 }
 
 // UPFSelectionParams ... parameters for upf selection
