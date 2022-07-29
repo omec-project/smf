@@ -6,6 +6,7 @@
 package message
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/omec-project/pfcp"
@@ -281,7 +282,7 @@ func BuildPfcpSessionEstablishmentRequest(
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
 
 	localSEID := smContext.PFCPContext[nodeIDtoIP].LocalSEID
-
+	fmt.Printf("in BuildPfcpSessionEstablishmentRequest localSEID %v\n", localSEID)
 	msg.CPFSEID = &pfcpType.FSEID{
 		V4:          isv4,
 		V6:          !isv4,

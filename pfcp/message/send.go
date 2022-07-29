@@ -94,15 +94,27 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter err %v\n", err)
 		if rsp.StatusCode == http.StatusOK {
-			pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// if err != nil {
+			// 	logger.PfcpLog.Fatalln(err)
+			// }
+			// pfcpMsgString := string(pfcpMsgBytes)
+			// logger.PfcpLog.Infof(pfcpMsgString)
+			// pfcpRspMsg := pfcp.Message{}
+			// json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+			// adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPfcpRspMsgBytes, err := io.ReadAll(rsp.Body)
 			if err != nil {
 				logger.PfcpLog.Fatalln(err)
 			}
-			pfcpMsgString := string(pfcpMsgBytes)
+			pfcpMsgString := string(udpPfcpRspMsgBytes)
 			logger.PfcpLog.Infof(pfcpMsgString)
-			pfcpRspMsg := pfcp.Message{}
-			json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-			adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPodPfcpRspMsg := UdpPodPfcpRspMsg{}
+			// unmarshal the pfcp msg here
+			json.Unmarshal(udpPfcpRspMsgBytes, &udpPodPfcpRspMsg)
+			adapter.HandleAdapterPfcpRsp(udpPodPfcpRspMsg.Msg)
 		}
 	} else {
 		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
@@ -153,15 +165,27 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter err %v\n", err)
 		if rsp.StatusCode == http.StatusOK {
-			pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// if err != nil {
+			// 	logger.PfcpLog.Fatalln(err)
+			// }
+			// pfcpMsgString := string(pfcpMsgBytes)
+			// logger.PfcpLog.Infof(pfcpMsgString)
+			// pfcpRspMsg := pfcp.Message{}
+			// json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+			// adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPfcpRspMsgBytes, err := io.ReadAll(rsp.Body)
 			if err != nil {
 				logger.PfcpLog.Fatalln(err)
 			}
-			pfcpMsgString := string(pfcpMsgBytes)
+			pfcpMsgString := string(udpPfcpRspMsgBytes)
 			logger.PfcpLog.Infof(pfcpMsgString)
-			pfcpRspMsg := pfcp.Message{}
-			json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-			adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPodPfcpRspMsg := UdpPodPfcpRspMsg{}
+			// unmarshal the pfcp msg here
+			json.Unmarshal(udpPfcpRspMsgBytes, &udpPodPfcpRspMsg)
+			adapter.HandleAdapterPfcpRsp(udpPodPfcpRspMsg.Msg)
 		}
 	} else {
 		udp.SendPfcp(message, addr, nil)
@@ -258,7 +282,7 @@ func SendPfcpSessionEstablishmentRequest(
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
 		return
 	}
-
+	fmt.Printf("in SendPfcpSessionEstablishmentRequest pfcpMsg.CPFSEID.Seid %v\n", pfcpMsg.CPFSEID.Seid)
 	ip := upNodeID.ResolveNodeIdToIp()
 
 	message := pfcp.Message{
@@ -280,22 +304,35 @@ func SendPfcpSessionEstablishmentRequest(
 	}
 	ctx.SubPduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
 	ctx.SubPduSessLog.Traceln("Send to addr ", upaddr.String())
+	logger.PfcpLog.Infof("in SendPfcpSessionEstablishmentRequest fseid %v\n", pfcpMsg.CPFSEID.Seid)
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		rsp, err := SendPfcpMsgToAdapter(upNodeID, message, upaddr, nil)
-		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter pfcp msg.Header %v\n", message.Header)
-		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
+		// logger.PfcpLog.Infof("after SendPfcpMsgToAdapter pfcp msg.Header %v\n", message.Header)
+		// logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter err %v\n", err)
 		if rsp.StatusCode == http.StatusOK {
-			pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// if err != nil {
+			// 	logger.PfcpLog.Fatalln(err)
+			// }
+			// pfcpMsgString := string(pfcpMsgBytes)
+			// logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+			// pfcpRspMsg := pfcp.Message{}
+			// json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+			// adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPfcpRspMsgBytes, err := io.ReadAll(rsp.Body)
 			if err != nil {
 				logger.PfcpLog.Fatalln(err)
 			}
-			pfcpMsgString := string(pfcpMsgBytes)
-			logger.PfcpLog.Infof(pfcpMsgString)
-			pfcpRspMsg := pfcp.Message{}
-			json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-			adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			pfcpMsgString := string(udpPfcpRspMsgBytes)
+			logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+
+			udpPodPfcpRspMsg := UdpPodPfcpRspMsg{}
+			// unmarshal the pfcp msg here
+			json.Unmarshal(udpPfcpRspMsgBytes, &udpPodPfcpRspMsg)
+			adapter.HandleAdapterPfcpRsp(udpPodPfcpRspMsg.Msg)
 		}
 	} else {
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -364,15 +401,27 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter err %v\n", err)
 		if rsp.StatusCode == http.StatusOK {
-			pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// if err != nil {
+			// 	logger.PfcpLog.Fatalln(err)
+			// }
+			// pfcpMsgString := string(pfcpMsgBytes)
+			// logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+			// pfcpRspMsg := pfcp.Message{}
+			// json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+			// adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPfcpRspMsgBytes, err := io.ReadAll(rsp.Body)
 			if err != nil {
 				logger.PfcpLog.Fatalln(err)
 			}
-			pfcpMsgString := string(pfcpMsgBytes)
+			pfcpMsgString := string(udpPfcpRspMsgBytes)
 			logger.PfcpLog.Infof(pfcpMsgString)
-			pfcpRspMsg := pfcp.Message{}
-			json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-			adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPodPfcpRspMsg := UdpPodPfcpRspMsg{}
+			// unmarshal the pfcp msg here
+			json.Unmarshal(udpPfcpRspMsgBytes, &udpPodPfcpRspMsg)
+			adapter.HandleAdapterPfcpRsp(udpPodPfcpRspMsg.Msg)
 		}
 	} else {
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -440,15 +489,27 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter rsp %v\n", rsp)
 		logger.PfcpLog.Infof("after SendPfcpMsgToAdapter err %v\n", err)
 		if rsp.StatusCode == http.StatusOK {
-			pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+			// if err != nil {
+			// 	logger.PfcpLog.Fatalln(err)
+			// }
+			// pfcpMsgString := string(pfcpMsgBytes)
+			// logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+			// pfcpRspMsg := pfcp.Message{}
+			// json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+			// adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPfcpRspMsgBytes, err := io.ReadAll(rsp.Body)
 			if err != nil {
 				logger.PfcpLog.Fatalln(err)
 			}
-			pfcpMsgString := string(pfcpMsgBytes)
+			pfcpMsgString := string(udpPfcpRspMsgBytes)
 			logger.PfcpLog.Infof(pfcpMsgString)
-			pfcpRspMsg := pfcp.Message{}
-			json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-			adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+
+			udpPodPfcpRspMsg := UdpPodPfcpRspMsg{}
+			// unmarshal the pfcp msg here
+			json.Unmarshal(udpPfcpRspMsgBytes, &udpPodPfcpRspMsg)
+			adapter.HandleAdapterPfcpRsp(udpPodPfcpRspMsg.Msg)
 		}
 	} else {
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -625,13 +686,13 @@ func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
 type UdpPodMsgType int
 
 type UdpPodPfcpMsg struct {
-	SEID     string
-	SmfIp    string
-	UpNodeID pfcpType.NodeID
+	SEID     string          `json:"seid"`
+	SmfIp    string          `json:"smfIp"`
+	UpNodeID pfcpType.NodeID `json:"upNodeID"`
 	// message type contains in Msg.Header
-	Msg       pfcp.Message
-	Addr      *net.UDPAddr
-	EventData interface{}
+	Msg       pfcp.Message `json:"-"`
+	Addr      *net.UDPAddr `json:"addr"`
+	EventData interface{}  `json:"eventData"`
 }
 
 func GetLocalIP() string {
@@ -655,6 +716,88 @@ func SeidConv(seid uint64) (seidStr string) {
 	return seidStr
 }
 
+// type customizedPfcpMsg struct{}
+
+type CustomFieldsUdpPodPfcpMsg struct {
+	Msg   pfcp.Message `json:"msg"`
+	Fseid string       `json:"fseid"`
+}
+
+func (udpPodPfcpMsg *UdpPodPfcpMsg) MarshalJSON() ([]byte, error) {
+	type Alias UdpPodPfcpMsg
+
+	fseid := "0"
+
+	if udpPodPfcpMsg.Msg.Header.MessageType == pfcp.PFCP_SESSION_ESTABLISHMENT_REQUEST {
+		fseid = SeidConv(udpPodPfcpMsg.Msg.Body.(pfcp.PFCPSessionEstablishmentRequest).CPFSEID.Seid)
+	} else if udpPodPfcpMsg.Msg.Header.MessageType == pfcp.PFCP_SESSION_DELETION_REQUEST {
+		fseid = SeidConv(udpPodPfcpMsg.Msg.Body.(pfcp.PFCPSessionDeletionRequest).CPFSEID.Seid)
+	} else if udpPodPfcpMsg.Msg.Header.MessageType == pfcp.PFCP_SESSION_MODIFICATION_REQUEST {
+		fseid = SeidConv(udpPodPfcpMsg.Msg.Body.(pfcp.PFCPSessionModificationRequest).CPFSEID.Seid)
+	}
+
+	customMsg := CustomFieldsUdpPodPfcpMsg{
+		Msg:   udpPodPfcpMsg.Msg,
+		Fseid: fseid,
+	}
+
+	logger.PfcpLog.Infoln("in (udpPodPfcpMsg *UdpPodPfcpMsg) MarshalJSON() CustomFieldsUdpPodPfcpMsg =  %v", customMsg)
+
+	return json.Marshal(&struct {
+		CustomMsg CustomFieldsUdpPodPfcpMsg `json:"customFieldsUdpPodPfcpMsg"`
+		*Alias
+	}{
+		CustomMsg: customMsg,
+		Alias:     (*Alias)(udpPodPfcpMsg),
+	})
+}
+
+type CustomFieldsUdpPodPfcpRspMsg struct {
+	Fseid string `json:"fseid"`
+}
+
+type UdpPodPfcpRspMsg struct {
+	// message type contains in Msg.Header
+	Msg       pfcp.Message                 `json:"msg"`
+	CustomMsg CustomFieldsUdpPodPfcpRspMsg `json:"-"`
+}
+
+func (udpPodPfcpRspMsg *UdpPodPfcpRspMsg) UnmarshalJSON(data []byte) error {
+	type Alias UdpPodPfcpRspMsg
+	auxCustom := &struct {
+		CustomMsg CustomFieldsUdpPodPfcpRspMsg `json:"customFieldsUdpPodPfcpMsg"`
+		*Alias
+	}{
+		Alias: (*Alias)(udpPodPfcpRspMsg),
+	}
+	if err := json.Unmarshal(data, &auxCustom); err != nil {
+		fmt.Printf("UdpPodPfcpMsg unmarshall error %v\n", err)
+		return err
+	}
+	fseidStr := auxCustom.CustomMsg.Fseid
+
+	fseid, _ := strconv.ParseUint(fseidStr, 16, 64)
+
+	// udpPodPfcpRspMsg.Msg = auxCustom.CustomMsg.Msg
+
+	// fmt.Printf("in UdpPodPfcpRspMsg unmarshall... udpPodPfcpMsg.Msg.Header %v\n", udpPodPfcpRspMsg.Msg.Header)
+	// fmt.Printf("in UdpPodPfcpRspMsg unmarshall... udpPodPfcpMsg.Msg.Header.MessageType %v\n", udpPodPfcpRspMsg.Msg.Header.MessageType)
+	if udpPodPfcpRspMsg.Msg.Header.MessageType == pfcp.PFCP_SESSION_ESTABLISHMENT_RESPONSE {
+
+		fmt.Printf("in UdpPodPfcpRspMsg unmarshall... PFCP_SESSION_ESTABLISHMENT_REQUEST fseid %v\n", fseid)
+		fmt.Printf("in UdpPodPfcpRspMsg unmarshall... PFCP_SESSION_ESTABLISHMENT_REQUEST fseid str %v\n", fseidStr)
+
+		jsonString, _ := json.Marshal(udpPodPfcpRspMsg.Msg.Body)
+
+		body := pfcp.PFCPSessionEstablishmentResponse{}
+		json.Unmarshal(jsonString, &body)
+
+		body.UPFSEID.Seid = fseid
+		udpPodPfcpRspMsg.Msg.Body = body
+	}
+	return nil
+}
+
 func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) (*http.Response, error) {
 	// localVarHeaderParams := make(map[string]string)
 
@@ -674,8 +817,6 @@ func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.
 	fmt.Println("udpPodMsg := ", udpPodMsg)
 
 	udpPodMsgJson, _ := json.Marshal(udpPodMsg)
-	//fmt.Println("udpPodMsgJson := ", udpPodMsgJson)
-	//fmt.Println("udpPodMsgJson := ", string(udpPodMsgJson))
 
 	// change the IP here
 	fmt.Printf("send to http://upf-adapter:%d\n", upfAdpPort)
