@@ -325,6 +325,9 @@ func (smf *SMF) Start() {
 			eventexposure.AddService(router)
 		}
 	}
+	initLog.Infof("SetupSmfCollection")
+	context.SetupSmfCollection()
+
 	udp.Run(pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {

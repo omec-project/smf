@@ -21,6 +21,8 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+
+	"github.com/badhrinathpa/MongoDBLibrary"
 )
 
 func init() {
@@ -78,8 +80,16 @@ func RetrieveDnnInformation(Snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo 
 }
 
 func AllocateLocalSEID() uint64 {
+	if smfContext.LocalSEIDCount >= 5000 {
+		logger.CtxLog.Errorln("existing SEID count %v reached maximum support UE number (5000)", smfContext.LocalSEIDCount)
+		return 0
+	}
 	atomic.AddUint64(&smfContext.LocalSEIDCount, 1)
-	return smfContext.LocalSEIDCount
+	smfCount := MongoDBLibrary.GetSmfCountFromDb()
+	seid := (int64(smfCount)-1)*5000 + int64(smfContext.LocalSEIDCount)
+	logger.CtxLog.Infof("unique id -  Allocated seid %v", seid)
+	logger.CtxLog.Infof("unique id -  smfCount %v", smfCount)
+	return uint64(seid)
 }
 
 func InitSmfContext(config *factory.Config) {
