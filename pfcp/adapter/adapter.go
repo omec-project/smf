@@ -194,7 +194,8 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
-
+	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
+	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
 	if rsp.UPFSEID != nil {
 		NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
