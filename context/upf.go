@@ -275,7 +275,11 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 		id = uint32(tmpID)
 	}
 
-	return id, nil
+	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
+	offset := (MongoDBLibrary.GetSmfCountFromDb() -1) * 5000
+	uniqueId := id + offset
+	// return id, nil
+	return uniqueId, nil
 }
 
 func (upf *UPF) PFCPAddr() *net.UDPAddr {
