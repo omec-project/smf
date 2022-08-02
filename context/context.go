@@ -22,7 +22,9 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 
-	"github.com/badhrinathpa/MongoDBLibrary"
+	// "github.com/badhrinathpa/MongoDBLibrary"
+	"strconv"
+
 )
 
 func init() {
@@ -85,7 +87,9 @@ func AllocateLocalSEID() uint64 {
 		return 0
 	}
 	atomic.AddUint64(&smfContext.LocalSEIDCount, 1)
-	smfCount := MongoDBLibrary.GetSmfCountFromDb()
+	// smfCount := MongoDBLibrary.GetSmfCountFromDb()
+	smfCountStr := os.Getenv("SMF_COUNT")
+	smfCount, _ := strconv.Atoi(smfCountStr)
 	seid := (int64(smfCount)-1)*5000 + int64(smfContext.LocalSEIDCount)
 	logger.CtxLog.Infof("unique id -  Allocated seid %v", seid)
 	logger.CtxLog.Infof("unique id -  smfCount %v", smfCount)

@@ -11,7 +11,10 @@ import (
 
 	"sync"
 
-	"github.com/badhrinathpa/MongoDBLibrary"
+	// "github.com/badhrinathpa/MongoDBLibrary"
+
+	"os"
+	"strconv"
 )
 
 type IPAllocator struct {
@@ -81,7 +84,10 @@ func (a *IPAllocator) Allocate() (net.IP, error) {
 	if offset, err := a.g.allocate(); err != nil {
 		return nil, errors.New("ip allocation failed" + err.Error())
 	} else {
-		smfCount := MongoDBLibrary.GetSmfCountFromDb()
+		// smfCount := MongoDBLibrary.GetSmfCountFromDb()
+
+		smfCountStr := os.Getenv("SMF_COUNT")
+		smfCount, _ := strconv.Atoi(smfCountStr)
 		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000)
 		fmt.Printf("unique id - ip %v \n", ip)
 		fmt.Printf("unique id - offset %v \n", offset)

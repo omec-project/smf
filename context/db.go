@@ -24,6 +24,8 @@ import (
 	"strconv"
 
 	"github.com/omec-project/idgenerator"
+
+	"os"
 )
 
 const (
@@ -52,6 +54,10 @@ func SetupSmfCollection() {
 	}
 	smfCount := MongoDBLibrary.GetUniqueIdentity("smfCount")
 	logger.CtxLog.Infoln("unique id - init smfCount %v", smfCount)
+
+	// set os env
+	os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
+
 }
 
 // print out sm context

@@ -24,6 +24,9 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+
+	// "github.com/badhrinathpa/MongoDBLibrary"
+	"os"
 )
 
 var upfPool sync.Map
@@ -276,8 +279,12 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 	}
 
 	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
-	offset := (MongoDBLibrary.GetSmfCountFromDb() -1) * 5000
-	uniqueId := id + offset
+	
+	smfCountStr := os.Getenv("SMF_COUNT")
+	smfCount, _ := strconv.Atoi(smfCountStr)
+
+	offset := (smfCount - 1) * 5000
+	uniqueId := id + uint32(offset)
 	// return id, nil
 	return uniqueId, nil
 }

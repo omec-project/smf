@@ -31,12 +31,22 @@ import (
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
+
+	// "github.com/badhrinathpa/MongoDBLibrary"
+	"os"
 )
 
 var seq uint32
 
 func getSeqNumber() uint32 {
-	return atomic.AddUint32(&seq, 1)
+	// smfCount := MongoDBLibrary.GetSmfCountFromDb()
+	
+	smfCountStr := os.Getenv("SMF_COUNT")
+	smfCount, _ := strconv.Atoi(smfCountStr)
+
+	seqNum := atomic.AddUint32(&seq, 1) + uint32((smfCount - 1)*5000)
+	fmt.Printf("unique seq num: smfCount from os: %v; seqNum %v\n", smfCount, seqNum)
+	return seqNum
 }
 
 func init() {
