@@ -15,6 +15,7 @@ import (
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/smf/factory"
 )
 
 func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, error) {
@@ -118,6 +119,16 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	var event SmEvent
 
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		smContextPool := smf_context.GetSmContextPool()
+		val, ok := smContextPool.Load(smContext.Ref)
+		if ok {
+			fmt.Println("db - smContext in smContextPool ", val)
+		} else {
+			smf_context.StoreSmContextPool(smContext)
+		}
+	}
+
 	switch txn.MsgType {
 	case svcmsgtypes.CreateSmContext:
 		event = SmEventPduSessCreate
@@ -169,7 +180,7 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	//put Success Rsp
 	txn.Status <- true
-	return transaction.TxnEventEnd, nil
+	return transaction.TxnEventSave, nil
 }
 
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
@@ -225,6 +236,11 @@ func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, e
 }
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		smf_context.StoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
+		// clear sm context in memory for test
+		// smf_context.ClearSMContextInMem(txn.Ctxt.(*smf_context.SMContext).Ref)
+	}
 	return transaction.TxnEventEnd, nil
 }
 

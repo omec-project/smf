@@ -10,7 +10,7 @@ info:
   description: SMF initial local configuration
 
 configuration:
-  enableDBStore: false
+  enableDBStore: true
   enableUPFAdapter: true
   smfName: SMF # the name of this SMF
   sbi: # Service-based interface information
