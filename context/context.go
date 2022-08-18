@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -9,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync/atomic"
 
 	"github.com/google/uuid"
 
@@ -21,10 +21,7 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-
-	// "github.com/badhrinathpa/MongoDBLibrary"
-	"strconv"
-
+	"github.com/omec-project/util/drsm"
 )
 
 func init() {
@@ -32,6 +29,12 @@ func init() {
 }
 
 var smfContext SMFContext
+
+type DrsmCtxts struct {
+	TeidPool *drsm.Drsm
+	SeidPool *drsm.Drsm
+	UeIpPool *drsm.Drsm
+}
 
 type SMFContext struct {
 	Name         string
@@ -67,6 +70,7 @@ type SMFContext struct {
 	ULCLSupport         bool
 	UEPreConfigPathPool map[string]*UEPreConfigPaths
 	LocalSEIDCount      uint64
+	DrsmCtxts           DrsmCtxts
 
 	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
 }
@@ -81,25 +85,30 @@ func RetrieveDnnInformation(Snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo 
 	return nil
 }
 
-func AllocateLocalSEID() uint64 {
-	if smfContext.LocalSEIDCount >= 5000 {
-		logger.CtxLog.Errorln("existing SEID count %v reached maximum support UE number (5000)", smfContext.LocalSEIDCount)
-		return 0
+func AllocateLocalSEID() (uint64, error) {
+	seid32, err := smfContext.DrsmCtxts.SeidPool.AllocateInt32ID()
+	if err != nil {
+		logger.CtxLog.Errorf("allocate SEID error: %+v", err)
+		return 0, err
 	}
-	atomic.AddUint64(&smfContext.LocalSEIDCount, 1)
-	// smfCount := MongoDBLibrary.GetSmfCountFromDb()
-	smfCountStr := os.Getenv("SMF_COUNT")
-	smfCount, _ := strconv.Atoi(smfCountStr)
-	seid := (int64(smfCount)-1)*5000 + int64(smfContext.LocalSEIDCount)
-	logger.CtxLog.Infof("unique id -  Allocated seid %v", seid)
-	logger.CtxLog.Infof("unique id -  smfCount %v", smfCount)
-	return uint64(seid)
+
+	return uint64(seid32), nil
 }
 
-func InitSmfContext(config *factory.Config) {
+func ReleaseLocalSEID(seid uint64) error {
+	seid32 := (int32)(seid)
+	err := smfContext.DrsmCtxts.SeidPool.ReleaseInt32ID(seid32)
+	if err != nil {
+		logger.CtxLog.Errorf("allocate SEID error: %+v", err)
+		return err
+	}
+	return nil
+}
+
+func InitSmfContext(config *factory.Config) *SMFContext {
 	if config == nil {
 		logger.CtxLog.Error("Config is nil")
-		return
+		return nil
 	}
 
 	//Acquire master SMF config lock, no one should update it in parallel,
@@ -118,7 +127,7 @@ func InitSmfContext(config *factory.Config) {
 	logger.CtxLog.Infof("sbi lb - localIp %v", localIp)
 	if sbi == nil {
 		logger.CtxLog.Errorln("Configuration needs \"sbi\" value")
-		return
+		return nil
 	} else {
 		smfContext.URIScheme = models.UriScheme(sbi.Scheme)
 		smfContext.RegisterIPv4 = factory.SMF_DEFAULT_IPV4 // default localhost
@@ -201,6 +210,8 @@ func InitSmfContext(config *factory.Config) {
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
 
 	SetupNFProfile(config)
+
+	return &smfContext
 }
 
 func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
@@ -327,4 +338,36 @@ func ProcessConfigUpdate() bool {
 	}
 
 	return sendNrfRegistration
+}
+
+func (smfCtxt *SMFContext) InitDrsm() error {
+	podname := os.Getenv("HOSTNAME")
+	podip := os.Getenv("POD_IP")
+	podId := drsm.PodId{PodName: podname, PodIp: podip}
+	dbUrl := "mongodb://mongodb-arbiter-headless"
+
+	if factory.SmfConfig.Configuration.DbName == "" {
+		factory.SmfConfig.Configuration.DbName = "sdcore"
+	}
+	opt := &drsm.Options{ResIdSize: 24, Mode: drsm.ResourceClient}
+	db := drsm.DbInfo{Url: dbUrl, Name: factory.SmfConfig.Configuration.DbName}
+
+	//for local FSEID
+	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
+		smfCtxt.DrsmCtxts.SeidPool = drsmCtxt
+	} else {
+		return err
+	}
+
+	//for local FTEID
+	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt); err == nil {
+		smfCtxt.DrsmCtxts.TeidPool = drsmCtxt
+	} else {
+		return err
+	}
+
+	//for IP-Addr
+	//TODO, use UPF based allocation for now
+
+	return nil
 }

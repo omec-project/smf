@@ -152,11 +152,11 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	if teid, err := destUPF.GenerateTEID(); err != nil {
+	if teid, err := smfContext.DrsmCtxts.TeidPool.AllocateInt32ID(); err != nil {
 		logger.CtxLog.Errorf("Generate uplink TEID fail: %s", err)
 		return err
 	} else {
-		node.UpLinkTunnel.TEID = teid
+		node.UpLinkTunnel.TEID = (uint32(teid))
 	}
 
 	return nil
@@ -200,11 +200,11 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	}
 
 	//Generate TEID for Tunnel
-	if teid, err := destUPF.GenerateTEID(); err != nil {
+	if teid, err := smfContext.DrsmCtxts.TeidPool.AllocateInt32ID(); err != nil {
 		logger.CtxLog.Errorf("Generate downlink TEID fail: %s", err)
 		return err
 	} else {
-		node.DownLinkTunnel.TEID = teid
+		node.DownLinkTunnel.TEID = (uint32(teid))
 	}
 
 	return nil
@@ -252,7 +252,7 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	node.UPF.teidGenerator.FreeID(int64(teid))
+	smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
 	node.DownLinkTunnel = &GTPTunnel{}
 }
 
@@ -298,7 +298,7 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	node.UPF.teidGenerator.FreeID(int64(teid))
+	smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
 	node.DownLinkTunnel = &GTPTunnel{}
 }
 

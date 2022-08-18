@@ -35,8 +35,8 @@ import (
 	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/logger"
 )
 
 const (
@@ -122,7 +122,7 @@ type SMContext struct {
 
 	// PDUAddress             net.IP `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
 	PDUAddress             *UeIpAddr `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
-	SelectedPDUSessionType uint8  `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
+	SelectedPDUSessionType uint8     `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
 
 	DnnConfiguration models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
@@ -291,7 +291,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
-	}  else {
+	} else {
 		if factory.SmfConfig.Configuration.EnableDbStore {
 			smContext = GetSMContextByRefInDB(ref)
 			smContextPool.Store(ref, smContext)
@@ -318,7 +318,7 @@ func RemoveSMContext(ref string) {
 			DeleteSmContextInDBBySEID(pfcpSessionContext.LocalSEID)
 		}
 	}
-	
+
 	//Release UE IP-Address
 	smContext.ReleaseUeIpAddr()
 
@@ -449,7 +449,7 @@ func (smContext *SMContext) AllocateLocalSEIDForUPPath(path UPPath) {
 	for _, upNode := range path {
 		NodeIDtoIP := upNode.NodeID.ResolveNodeIdToIp().String()
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID := AllocateLocalSEID()
+			allocatedSEID, _ := AllocateLocalSEID()
 
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),
@@ -473,7 +473,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 		NodeIDtoIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 		logger.PduSessLog.Traceln("NodeIDtoIP: ", NodeIDtoIP)
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID := AllocateLocalSEID()
+			allocatedSEID, _ := AllocateLocalSEID()
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),
 				NodeID:    curDataPathNode.UPF.NodeID,
@@ -481,7 +481,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 			}
 
 			seidSMContextMap.Store(allocatedSEID, smContext)
-			
+
 			if factory.SmfConfig.Configuration.EnableDbStore {
 				StoreSeidContextInDB(allocatedSEID, smContext)
 				StoreRefToSeidInDB(allocatedSEID, smContext)

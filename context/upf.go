@@ -25,7 +25,7 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 
-	// "github.com/badhrinathpa/MongoDBLibrary"
+	// "github.com/omec-project/MongoDBLibrary"
 	"os"
 )
 
@@ -134,7 +134,7 @@ func NewUPFInterfaceInfo(i *factory.InterfaceUpfInfoItem) *UPFInterfaceInfo {
 // IP returns the IP of the user plane IP information of the pduSessType
 func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
 	if (pduSessType == nasMessage.PDUSessionTypeIPv4 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv4EndPointAddresses) != 0 {
-		return i.IPv4EndPointAddresses[0], nil
+		return i.IPv4EndPointAddresses[0].To4(), nil
 	}
 
 	if (pduSessType == nasMessage.PDUSessionTypeIPv6 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv6EndPointAddresses) != 0 {
@@ -279,7 +279,7 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 	}
 
 	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
-	
+
 	smfCountStr := os.Getenv("SMF_COUNT")
 	smfCount, _ := strconv.Atoi(smfCountStr)
 

@@ -1,5 +1,4 @@
-// db changes
-
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -14,7 +13,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/badhrinathpa/MongoDBLibrary"
+	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/smf/logger"
@@ -42,12 +41,12 @@ var dbMutex sync.Mutex
 
 func SetupSmfCollection() {
 	fmt.Println("db - SetupSmfCollection")
-	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb")
+	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb-arbiter-headless")
 	_, err := MongoDBLibrary.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
 		logger.CtxLog.Errorf("Create index failed on ref field.")
 	}
-	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb")
+	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb-arbiter-headless")
 	_, err = MongoDBLibrary.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
 		logger.CtxLog.Errorf("Create index failed on TxnId field.")

@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2022-present Intel Corporation
 # SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 # Copyright 2019 free5GC.org
 #
@@ -10,7 +11,7 @@ info:
   description: SMF initial local configuration
 
 configuration:
-  enableDBStore: true
+  enableDBStore: false
   enableUPFAdapter: true
   smfName: SMF # the name of this SMF
   sbi: # Service-based interface information

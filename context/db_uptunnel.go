@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+//
+// SPDX-License-Identifier: Apache-2.0
+
 package context
 
 import (
@@ -5,7 +9,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/badhrinathpa/MongoDBLibrary"
+	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/idgenerator"
