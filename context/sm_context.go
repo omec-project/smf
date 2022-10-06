@@ -35,6 +35,7 @@ import (
 	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 )
 
@@ -93,86 +94,95 @@ type UeIpAddr struct {
 }
 
 type SMContext struct {
-	Ref string
+	Ref string `json:"ref" yaml:"ref" bson:"ref"`
 
-	UnauthenticatedSupi bool
+	UnauthenticatedSupi bool `json:"unauthenticatedSupi,omitempty" yaml:"unauthenticatedSupi" bson:"unauthenticatedSupi,omitempty"` // ignore
 	// SUPI or PEI
-	Supi           string
-	Pei            string
-	Identifier     string
-	Gpsi           string
-	PDUSessionID   int32
-	Dnn            string
-	Snssai         *models.Snssai
-	HplmnSnssai    *models.Snssai
-	ServingNetwork *models.PlmnId
-	ServingNfId    string
+	Supi           string         `json:"supi,omitempty" yaml:"supi" bson:"supi,omitempty"`
+	Pei            string         `json:"pei,omitempty" yaml:"pei" bson:"pei,omitempty"`
+	Identifier     string         `json:"identifier" yaml:"identifier" bson:"identifier"`
+	Gpsi           string         `json:"gpsi,omitempty" yaml:"gpsi" bson:"gpsi,omitempty"`
+	PDUSessionID   int32          `json:"pduSessionID" yaml:"pduSessionID" bson:"pduSessionID"`
+	Dnn            string         `json:"dnn" yaml:"dnn" bson:"dnn"`
+	Snssai         *models.Snssai `json:"snssai" yaml:"snssai" bson:"snssai"`
+	HplmnSnssai    *models.Snssai `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
+	ServingNetwork *models.PlmnId `json:"servingNetwork,omitempty" yaml:"servingNetwork" bson:"servingNetwork,omitempty"`
+	ServingNfId    string         `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
 
-	UpCnxState models.UpCnxState
+	UpCnxState models.UpCnxState `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
 
-	AnType          models.AccessType
-	RatType         models.RatType
-	PresenceInLadn  models.PresenceState
-	UeLocation      *models.UserLocation
-	UeTimeZone      string
-	AddUeLocation   *models.UserLocation
-	OldPduSessionId int32
-	HoState         models.HoState
+	AnType          models.AccessType    `json:"anType" yaml:"anType" bson:"anType"`
+	RatType         models.RatType       `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
+	PresenceInLadn  models.PresenceState `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	UeLocation      *models.UserLocation `json:"ueLocation,omitempty" yaml:"ueLocation" bson:"ueLocation,omitempty"`
+	UeTimeZone      string               `json:"ueTimeZone,omitempty" yaml:"ueTimeZone" bson:"ueTimeZone,omitempty"`          // ignore
+	AddUeLocation   *models.UserLocation `json:"addUeLocation,omitempty" yaml:"addUeLocation" bson:"addUeLocation,omitempty"` // ignore
+	OldPduSessionId int32                `json:"oldPduSessionId,omitempty" yaml:"oldPduSessionId" bson:"oldPduSessionId,omitempty"`
+	HoState         models.HoState       `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
 
-	PDUAddress             *UeIpAddr
-	SelectedPDUSessionType uint8
+	// PDUAddress             net.IP `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
+	PDUAddress             *UeIpAddr `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
+	SelectedPDUSessionType uint8     `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
 
-	DnnConfiguration models.DnnConfiguration
+	DnnConfiguration models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
 	// Client
-	SMPolicyClient      *Npcf_SMPolicyControl.APIClient
-	CommunicationClient *Namf_Communication.APIClient
+	SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty" yaml:"smPolicyClient" bson:"smPolicyClient,omitempty"`                // ?
+	CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty" yaml:"communicationClient" bson:"communicationClient,omitempty"` // ?
 
-	AMFProfile         models.NfProfile
-	SelectedPCFProfile models.NfProfile
-	SmStatusNotifyUri  string
+	AMFProfile         models.NfProfile `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
+	SelectedPCFProfile models.NfProfile `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
+	SmStatusNotifyUri  string           `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
 
-	SMContextState SMContextState
+	SMContextState SMContextState `json:"smContextState" yaml:"smContextState" bson:"smContextState"`
 
-	Tunnel    *UPTunnel
-	BPManager *BPManager
+	// encountered a cycle via *context.GTPTunnel
+	Tunnel *UPTunnel `json:"-" yaml:"tunnel" bson:"-"`
+
+	BPManager *BPManager `json:"bpManager,omitempty" yaml:"bpManager" bson:"bpManager,omitempty"` // ignore
 	// NodeID(string form) to PFCP Session Context
-	PFCPContext                         map[string]*PFCPSessionContext
-	SBIPFCPCommunicationChan            chan PFCPSessionResponseStatus
-	PendingUPF                          PendingUPF
-	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool
-	LocalPurged                         bool
+	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
+	// unsupported structure - madatory!
+	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
 
-	DNNInfo *SnssaiSmfDnnInfo
+	PendingUPF                          PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"`                                                                            // ignore
+	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool       `json:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty" yaml:"pduSessionRelease_DUE_TO_DUP_PDU_ID" bson:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty"` // ignore
+	LocalPurged                         bool       `json:"localPurged,omitempty" yaml:"localPurged" bson:"localPurged,omitempty"`                                                                         // ignore
+
+	DNNInfo *SnssaiSmfDnnInfo `json:"dnnInfo,omitempty" yaml:"dnnInfo" bson:"dnnInfo,omitempty"`
 
 	// SM Policy related
 	// Updates in policy from PCF
-	SmPolicyUpdates []*qos.PolicyUpdate
+	SmPolicyUpdates []*qos.PolicyUpdate `json:"smPolicyUpdates" yaml:"smPolicyUpdates" bson:"smPolicyUpdates"` // ignore
 	//Holds Session/PCC Rules and Qos/Cond/Charging Data
-	SmPolicyData qos.SmCtxtPolicyData
+	SmPolicyData qos.SmCtxtPolicyData `json:"smPolicyData" yaml:"smPolicyData" bson:"smPolicyData"`
 
 	// NAS
-	Pti                     uint8
-	EstAcceptCause5gSMValue uint8
+	Pti                     uint8 `json:"pti,omitempty" yaml:"pti" bson:"pti,omitempty"` // ignore
+	EstAcceptCause5gSMValue uint8 `json:"estAcceptCause5gSMValue,omitempty" yaml:"estAcceptCause5gSMValue" bson:"estAcceptCause5gSMValue,omitempty"`
 
 	// PCO Related
-	ProtocolConfigurationOptions *ProtocolConfigurationOptions
+	ProtocolConfigurationOptions *ProtocolConfigurationOptions `json:"protocolConfigurationOptions" yaml:"protocolConfigurationOptions" bson:"protocolConfigurationOptions"` // ignore
 
 	// lock
-	SMLock sync.Mutex
+	// SMLock sync.Mutex `json:"smLock,omitempty" yaml:"smLock" bson:"smLock,omitempty"` // ignore
+	SMLock sync.Mutex `json:"-" yaml:"smLock" bson:"-"` // ignore
 
-	SubGsmLog      *logrus.Entry
-	SubPfcpLog     *logrus.Entry
-	SubPduSessLog  *logrus.Entry
-	SubCtxLog      *logrus.Entry
-	SubConsumerLog *logrus.Entry
-	SubFsmLog      *logrus.Entry
-	SubQosLog      *logrus.Entry
+	SubGsmLog      *logrus.Entry `json:"-" yaml:"subGsmLog" bson:"-,"`     // ignore
+	SubPfcpLog     *logrus.Entry `json:"-" yaml:"subPfcpLog" bson:"-"`     // ignore
+	SubPduSessLog  *logrus.Entry `json:"-" yaml:"subPduSessLog" bson:"-"`  // ignore
+	SubCtxLog      *logrus.Entry `json:"-" yaml:"subCtxLog" bson:"-"`      // ignore
+	SubConsumerLog *logrus.Entry `json:"-" yaml:"subConsumerLog" bson:"-"` // ignore
+	SubFsmLog      *logrus.Entry `json:"-" yaml:"subFsmLog" bson:"-"`      // ignore
+	SubQosLog      *logrus.Entry `json:"-" yaml:"subQosLog" bson:"-"`      // ignore
 
 	//TxnBus per subscriber
-	TxnBus       transaction.TxnBus
-	SMTxnBusLock sync.Mutex
-	ActiveTxn    *transaction.Transaction
+	TxnBus transaction.TxnBus `json:"-" yaml:"txnBus" bson:"-"` // ignore
+	// SMTxnBusLock sync.Mutex         `json:"smTxnBusLock,omitempty" yaml:"smTxnBusLock" bson:"smTxnBusLock,omitempty"` // ignore
+	SMTxnBusLock sync.Mutex `json:"-" yaml:"smTxnBusLock" bson:"-"` // ignore
+
+	// encountered a cycle via *context.SMContext
+	ActiveTxn *transaction.Transaction `json:"-" yaml:"activeTxn" bson:"-,"` // ignore
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -281,6 +291,11 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
+	} else {
+		if factory.SmfConfig.Configuration.EnableDbStore {
+			smContext = GetSMContextByRefInDB(ref)
+			smContextPool.Store(ref, smContext)
+		}
 	}
 
 	return
@@ -299,6 +314,9 @@ func RemoveSMContext(ref string) {
 
 	for _, pfcpSessionContext := range smContext.PFCPContext {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
+		if factory.SmfConfig.Configuration.EnableDbStore {
+			DeleteSmContextInDBBySEID(pfcpSessionContext.LocalSEID)
+		}
 	}
 
 	//Release UE IP-Address
@@ -308,12 +326,19 @@ func RemoveSMContext(ref string) {
 	//Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		DeleteSmContextInDBByRef(smContext.Ref)
+	}
 }
 
 //*** add unit test ***//
 func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 	if value, ok := seidSMContextMap.Load(SEID); ok {
 		smContext = value.(*SMContext)
+	} else {
+		if factory.SmfConfig.Configuration.EnableDbStore {
+			smContext = GetSMContextBySEIDInDB(SEID)
+		}
 	}
 	return
 }
@@ -424,7 +449,7 @@ func (smContext *SMContext) AllocateLocalSEIDForUPPath(path UPPath) {
 	for _, upNode := range path {
 		NodeIDtoIP := upNode.NodeID.ResolveNodeIdToIp().String()
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID := AllocateLocalSEID()
+			allocatedSEID, _ := AllocateLocalSEID()
 
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),
@@ -433,6 +458,11 @@ func (smContext *SMContext) AllocateLocalSEIDForUPPath(path UPPath) {
 			}
 
 			seidSMContextMap.Store(allocatedSEID, smContext)
+
+			if factory.SmfConfig.Configuration.EnableDbStore {
+				StoreSeidContextInDB(allocatedSEID, smContext)
+				StoreRefToSeidInDB(allocatedSEID, smContext)
+			}
 		}
 	}
 }
@@ -443,7 +473,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 		NodeIDtoIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 		logger.PduSessLog.Traceln("NodeIDtoIP: ", NodeIDtoIP)
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID := AllocateLocalSEID()
+			allocatedSEID, _ := AllocateLocalSEID()
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),
 				NodeID:    curDataPathNode.UPF.NodeID,
@@ -451,6 +481,11 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 			}
 
 			seidSMContextMap.Store(allocatedSEID, smContext)
+
+			if factory.SmfConfig.Configuration.EnableDbStore {
+				StoreSeidContextInDB(allocatedSEID, smContext)
+				StoreRefToSeidInDB(allocatedSEID, smContext)
+			}
 		}
 	}
 }

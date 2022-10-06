@@ -66,6 +66,9 @@ type Configuration struct {
 	SNssaiInfo           []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
 	ULCL                 bool                 `yaml:"ulcl,omitempty"`
 	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
+	EnableDbStore        bool                 `yaml:"enableDBStore,omitempty"`
+	EnableUpfAdapter     bool                 `yaml:"enableUPFAdapter,omitempty"`
+	DbName               string               `yaml:"dbName,omitempty"`
 }
 
 type SnssaiInfoItem struct {

@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -274,7 +275,7 @@ func (smf *SMF) Start() {
 	}()
 
 	//Init SMF Service
-	context.InitSmfContext(&factory.SmfConfig)
+	smfCtxt := context.InitSmfContext(&factory.SmfConfig)
 
 	// allocate id for each upf
 	context.AllocateUPFID()
@@ -325,6 +326,15 @@ func (smf *SMF) Start() {
 			eventexposure.AddService(router)
 		}
 	}
+	initLog.Infof("SetupSmfCollection")
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		context.SetupSmfCollection()
+
+		if err := smfCtxt.InitDrsm(); err != nil {
+			initLog.Errorf("initialse drsm failed, %v ", err.Error())
+		}
+	}
+
 	udp.Run(pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {

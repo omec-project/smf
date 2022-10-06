@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -6,6 +7,7 @@
 package message
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/omec-project/pfcp"
@@ -281,7 +283,7 @@ func BuildPfcpSessionEstablishmentRequest(
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
 
 	localSEID := smContext.PFCPContext[nodeIDtoIP].LocalSEID
-
+	fmt.Printf("in BuildPfcpSessionEstablishmentRequest localSEID %v\n", localSEID)
 	msg.CPFSEID = &pfcpType.FSEID{
 		V4:          isv4,
 		V6:          !isv4,

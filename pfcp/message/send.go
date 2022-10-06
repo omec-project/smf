@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -6,9 +7,16 @@
 package message
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"strconv"
 	"sync"
+	"time"
 
 	"sync/atomic"
 
@@ -18,16 +26,30 @@ import (
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
+	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
+
+	// "github.com/omec-project/MongoDBLibrary"
+	"os"
 )
 
 var seq uint32
 
 func getSeqNumber() uint32 {
-	return atomic.AddUint32(&seq, 1)
+	// smfCount := MongoDBLibrary.GetSmfCountFromDb()
+
+	smfCount := 1
+	if smfCountStr, ok := os.LookupEnv("SMF_COUNT"); ok {
+		smfCount, _ = strconv.Atoi(smfCountStr)
+	}
+
+	seqNum := atomic.AddUint32(&seq, 1) + uint32((smfCount-1)*5000)
+	logger.PfcpLog.Debugf("unique seq num: smfCount from os: %v; seqNum %v\n", smfCount, seqNum)
+	return seqNum
 }
 
 func init() {
@@ -77,10 +99,32 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 		Port: pfcpUdp.PFCP_PORT,
 	}
 
-	InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
-	if err := udp.SendPfcp(message, addr, nil); err != nil {
-		FetchPfcpTxn(message.Header.SequenceNumber)
-		return err
+	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		adapter.InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
+		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, addr, nil); err != nil {
+			logger.PfcpLog.Errorf("send pfcp heartbeat msg to upf-adapter error [%v] ", err.Error())
+			return err
+		} else {
+			logger.PfcpLog.Debugf("send pfcp heartbeat response [%v] ", rsp)
+			defer rsp.Body.Close()
+			if rsp.StatusCode == http.StatusOK {
+				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+				if err != nil {
+					logger.PfcpLog.Fatalln(err)
+				}
+				pfcpMsgString := string(pfcpMsgBytes)
+				logger.PfcpLog.Infof(pfcpMsgString)
+				pfcpRspMsg := pfcp.Message{}
+				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			}
+		}
+	} else {
+		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
+		if err := udp.SendPfcp(message, addr, nil); err != nil {
+			FetchPfcpTxn(message.Header.SequenceNumber)
+			return err
+		}
 	}
 	logger.PfcpLog.Debugf("sent pfcp heartbeat request seq[%d] to NodeID[%s]", message.Header.SequenceNumber,
 		upNodeID.ResolveNodeIdToIp().String())
@@ -115,8 +159,30 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 		Port: pfcpUdp.PFCP_PORT,
 	}
 
-	udp.SendPfcp(message, addr, nil)
 	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+
+	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+
+		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, addr, nil); err != nil {
+			logger.PfcpLog.Errorf("send pfcp association msg to upf-adapter error [%v] ", err.Error())
+			return
+		} else {
+			logger.PfcpLog.Debugf("send pfcp association response [%v] ", rsp)
+			if rsp.StatusCode == http.StatusOK {
+				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+				if err != nil {
+					logger.PfcpLog.Fatalln(err)
+				}
+				pfcpMsgString := string(pfcpMsgBytes)
+				logger.PfcpLog.Infof(pfcpMsgString)
+				pfcpRspMsg := pfcp.Message{}
+				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			}
+		}
+	} else {
+		udp.SendPfcp(message, addr, nil)
+	}
 }
 
 func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause) {
@@ -209,7 +275,7 @@ func SendPfcpSessionEstablishmentRequest(
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
 		return
 	}
-
+	logger.PfcpLog.Debugf("in SendPfcpSessionEstablishmentRequest pfcpMsg.CPFSEID.Seid %v\n", pfcpMsg.CPFSEID.Seid)
 	ip := upNodeID.ResolveNodeIdToIp()
 
 	message := pfcp.Message{
@@ -231,9 +297,33 @@ func SendPfcpSessionEstablishmentRequest(
 	}
 	ctx.SubPduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
 	ctx.SubPduSessLog.Traceln("Send to addr ", upaddr.String())
+	logger.PfcpLog.Infof("in SendPfcpSessionEstablishmentRequest fseid %v\n", pfcpMsg.CPFSEID.Seid)
 
-	eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
-	udp.SendPfcp(message, upaddr, eventData)
+	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, upaddr, nil); err != nil {
+			logger.PfcpLog.Errorf("send pfcp session establish msg to upf-adapter error [%v] ", err.Error())
+			return
+		} else {
+			logger.PfcpLog.Debugf("send pfcp session establish response [%v] ", rsp)
+			if rsp.StatusCode == http.StatusOK {
+				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+				if err != nil {
+					logger.PfcpLog.Fatalln(err)
+				}
+				pfcpMsgString := string(pfcpMsgBytes)
+				logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+				pfcpRspMsg := pfcp.Message{}
+				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			} else {
+				//http status !OK
+				HandlePfcpSendError(&message, fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode))
+			}
+		}
+	} else {
+		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
+		udp.SendPfcp(message, upaddr, eventData)
+	}
 	ctx.SubPfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", ip.String())
 }
 
@@ -291,9 +381,29 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 		Port: pfcpUdp.PFCP_PORT,
 	}
 
-	eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
+	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, upaddr, nil); err != nil {
+			logger.PfcpLog.Errorf("send pfcp session modify msg to upf-adapter error [%v] ", err.Error())
+			return 0
+		} else {
+			logger.PfcpLog.Debugf("send pfcp session modify response [%v] ", rsp)
+			if rsp.StatusCode == http.StatusOK {
+				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+				if err != nil {
+					logger.PfcpLog.Fatalln(err)
+				}
+				pfcpMsgString := string(pfcpMsgBytes)
+				logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+				pfcpRspMsg := pfcp.Message{}
+				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			}
+		}
+	} else {
+		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
 
-	udp.SendPfcp(message, upaddr, eventData)
+		udp.SendPfcp(message, upaddr, eventData)
+	}
 	ctx.SubPfcpLog.Infof("Sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
 }
@@ -349,9 +459,30 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 		Port: pfcpUdp.PFCP_PORT,
 	}
 
-	eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
+	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, upaddr, nil); err != nil {
+			logger.PfcpLog.Errorf("send pfcp session delete msg to upf-adapter error [%v] ", err.Error())
+			return 0
+		} else {
 
-	udp.SendPfcp(message, upaddr, eventData)
+			logger.PfcpLog.Debugf("send pfcp session delete response [%v] ", rsp)
+			if rsp.StatusCode == http.StatusOK {
+				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+				if err != nil {
+					logger.PfcpLog.Fatalln(err)
+				}
+				pfcpMsgString := string(pfcpMsgBytes)
+				logger.PfcpLog.Infof("http.StatusOK!! ", pfcpMsgString)
+				pfcpRspMsg := pfcp.Message{}
+				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+			}
+		}
+	} else {
+		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
+
+		udp.SendPfcp(message, upaddr, eventData)
+	}
 
 	ctx.SubPfcpLog.Infof("Sent PFCP Session Delete Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return seqNum
@@ -517,4 +648,76 @@ func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
 	smContext.SubPfcpLog.Errorf("PFCP Session Modification send failure, %v", pfcpErr.Error())
 
 	smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateTimeout
+}
+
+type UdpPodPfcpMsg struct {
+	SmfIp    string          `json:"smfIp"`
+	UpNodeID pfcpType.NodeID `json:"upNodeID"`
+	// message type contains in Msg.Header
+	Msg  pfcp.Message `json:"pfcpMsg"`
+	Addr *net.UDPAddr `json:"addr"`
+}
+
+type UdpPodPfcpRspMsg struct {
+	// message type contains in Msg.Header
+	Msg pfcp.Message `json:"msg"`
+}
+
+func GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
+//SendPfcpMsgToAdapter send pfcp msg to upf-adapter in http/json encoded format
+func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) (*http.Response, error) {
+
+	// get IP
+	ip_str := GetLocalIP()
+	udpPodMsg := &UdpPodPfcpMsg{
+		UpNodeID: upNodeID,
+		SmfIp:    ip_str,
+		Msg:      msg,
+		Addr:     addr,
+	}
+	upfAdpPort := 8090
+
+	udpPodMsgJson, _ := json.Marshal(udpPodMsg)
+
+	logger.PfcpLog.Debugf("json encoded udpPodMsg [%s] ", udpPodMsgJson)
+
+	// change the IP here
+	logger.PfcpLog.Debugf("send to http://upf-adapter:%d\n", upfAdpPort)
+	requestURL := fmt.Sprintf("http://upf-adapter:%d", upfAdpPort)
+	jsonBody := []byte(udpPodMsgJson)
+
+	bodyReader := bytes.NewReader(jsonBody)
+	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)
+	if err != nil {
+		logger.PfcpLog.Errorf("client: could not create request: %s\n", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := http.Client{
+		Timeout: 30 * time.Second,
+	}
+	// waiting for http response
+	rsp, err := client.Do(req)
+	if err != nil {
+		logger.PfcpLog.Errorf("client: error making http request: %s\n", err)
+		return nil, err
+	}
+
+	return rsp, nil
 }

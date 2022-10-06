@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
 // Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -6,9 +7,15 @@ package context
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	"sync"
+
+	// "github.com/omec-project/MongoDBLibrary"
+
+	"os"
+	"strconv"
 )
 
 type IPAllocator struct {
@@ -78,7 +85,15 @@ func (a *IPAllocator) Allocate() (net.IP, error) {
 	if offset, err := a.g.allocate(); err != nil {
 		return nil, errors.New("ip allocation failed" + err.Error())
 	} else {
-		return IPAddrWithOffset(a.ipNetwork.IP, int(offset)), nil
+		// smfCount := MongoDBLibrary.GetSmfCountFromDb()
+
+		smfCountStr := os.Getenv("SMF_COUNT")
+		smfCount, _ := strconv.Atoi(smfCountStr)
+		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000)
+		fmt.Printf("unique id - ip %v \n", ip)
+		fmt.Printf("unique id - offset %v \n", offset)
+		fmt.Printf("unique id - smfCount %v \n", smfCount)
+		return ip, nil
 	}
 }
 

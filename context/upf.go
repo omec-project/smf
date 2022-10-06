@@ -24,6 +24,9 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+
+	// "github.com/omec-project/MongoDBLibrary"
+	"os"
 )
 
 var upfPool sync.Map
@@ -84,7 +87,7 @@ type UPF struct {
 	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
 
 	// lock
-	UpfLock sync.Mutex
+	UpfLock sync.RWMutex
 }
 
 // UPFSelectionParams ... parameters for upf selection
@@ -131,7 +134,7 @@ func NewUPFInterfaceInfo(i *factory.InterfaceUpfInfoItem) *UPFInterfaceInfo {
 // IP returns the IP of the user plane IP information of the pduSessType
 func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
 	if (pduSessType == nasMessage.PDUSessionTypeIPv4 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv4EndPointAddresses) != 0 {
-		return i.IPv4EndPointAddresses[0], nil
+		return i.IPv4EndPointAddresses[0].To4(), nil
 	}
 
 	if (pduSessType == nasMessage.PDUSessionTypeIPv6 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv6EndPointAddresses) != 0 {
@@ -275,7 +278,15 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 		id = uint32(tmpID)
 	}
 
-	return id, nil
+	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
+
+	smfCountStr := os.Getenv("SMF_COUNT")
+	smfCount, _ := strconv.Atoi(smfCountStr)
+
+	offset := (smfCount - 1) * 5000
+	uniqueId := id + uint32(offset)
+	// return id, nil
+	return uniqueId, nil
 }
 
 func (upf *UPF) PFCPAddr() *net.UDPAddr {
