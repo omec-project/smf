@@ -23,6 +23,8 @@ RUN cd $GOPATH/src && mkdir -p smf
 COPY . $GOPATH/src/smf
 RUN cd $GOPATH/src/smf \
     && make all
+# compile upf-adapter binary
+RUN cd $GOPATH/src/smf/upfadapter && go build
 
 FROM alpine:3.16 as smf
 
@@ -37,7 +39,12 @@ RUN apk update && apk add -U vim strace net-tools curl netcat-openbsd bind-tools
 # Set working dir
 WORKDIR /free5gc
 RUN mkdir -p smf/
+RUN mkdir -p bin/
 
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* ./smf
+
+# copy upf-adapter image
+COPY --from=builder /go/src/smf/upfadapter/upf-adapter ./bin
+
 WORKDIR /free5gc/smf
