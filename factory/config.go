@@ -56,6 +56,11 @@ const (
 	SMF_DEFAULT_PORT_INT = 8000
 )
 
+type Mongodb struct {
+	Name string `yaml:"name"`
+	Url  string `yaml:"url"`
+}
+
 type Configuration struct {
 	SmfName              string               `yaml:"smfName,omitempty"`
 	Sbi                  *Sbi                 `yaml:"sbi,omitempty"`
@@ -68,7 +73,8 @@ type Configuration struct {
 	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
 	EnableDbStore        bool                 `yaml:"enableDBStore,omitempty"`
 	EnableUpfAdapter     bool                 `yaml:"enableUPFAdapter,omitempty"`
-	DbName               string               `yaml:"dbName,omitempty"`
+	SmfDbName            string               `yaml:"smfDBName,omitempty"`
+	Mongodb              *Mongodb             `yaml:"mongodb,omitempty"`
 }
 
 type SnssaiInfoItem struct {

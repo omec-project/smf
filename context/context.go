@@ -344,13 +344,21 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	podname := os.Getenv("HOSTNAME")
 	podip := os.Getenv("POD_IP")
 	podId := drsm.PodId{PodName: podname, PodIp: podip}
+	dbName := "sdcore_smf"
 	dbUrl := "mongodb://mongodb-arbiter-headless"
 
-	if factory.SmfConfig.Configuration.DbName == "" {
-		factory.SmfConfig.Configuration.DbName = "sdcore"
+	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
+		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url
 	}
+
+	if factory.SmfConfig.Configuration.SmfDbName != "" {
+		dbName = factory.SmfConfig.Configuration.SmfDbName
+	}
+
+	logger.CfgLog.Infof("initialising drsm name [%v] url [%v] ", dbName, dbUrl)
+
 	opt := &drsm.Options{ResIdSize: 24, Mode: drsm.ResourceClient}
-	db := drsm.DbInfo{Url: dbUrl, Name: factory.SmfConfig.Configuration.DbName}
+	db := drsm.DbInfo{Url: dbUrl, Name: dbName}
 
 	//for local FSEID
 	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
