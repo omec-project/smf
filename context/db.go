@@ -16,6 +16,7 @@ import (
 	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 
 	// "github.com/free5gc/openapi/models"
@@ -40,17 +41,34 @@ const (
 var dbMutex sync.Mutex
 
 func SetupSmfCollection() {
-	fmt.Println("db - SetupSmfCollection")
-	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb-arbiter-headless")
+
+	dbName := "sdcore_smf"
+	dbUrl := "mongodb://mongodb-arbiter-headless"
+
+	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
+		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url
+	}
+
+	if factory.SmfConfig.Configuration.SmfDbName != "" {
+		dbName = factory.SmfConfig.Configuration.SmfDbName
+	}
+
+	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
+
+	//UUID table
+	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
 	_, err := MongoDBLibrary.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
 		logger.CtxLog.Errorf("Create index failed on ref field.")
 	}
-	MongoDBLibrary.SetMongoDB("sdcore", "mongodb://mongodb-arbiter-headless")
+
+	//SEID Table
+	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
 	_, err = MongoDBLibrary.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
 		logger.CtxLog.Errorf("Create index failed on TxnId field.")
 	}
+
 	smfCount := MongoDBLibrary.GetUniqueIdentity("smfCount")
 	logger.CtxLog.Infoln("unique id - init smfCount %v", smfCount)
 
