@@ -24,7 +24,7 @@ COPY . $GOPATH/src/smf
 RUN cd $GOPATH/src/smf \
     && make all
 # compile upf-adapter binary
-RUN cd $GOPATH/src/smf/upfadapter && go build
+RUN cd $GOPATH/src/smf/upfadapter && CGO_ENABLED=0 go build
 
 FROM alpine:3.16 as smf
 
