@@ -20,12 +20,12 @@ require (
 	github.com/omec-project/http_wrapper v1.1.0
 	github.com/omec-project/idgenerator v1.1.0
 	github.com/omec-project/logger_util v1.1.0
-	github.com/omec-project/nas v1.1.2
+	github.com/omec-project/nas v1.1.4
 	github.com/omec-project/ngap v1.1.0
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
 	github.com/omec-project/pfcp v1.1.3
-	github.com/omec-project/util v1.0.4
+	github.com/omec-project/util v1.0.6
 	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.12.2
