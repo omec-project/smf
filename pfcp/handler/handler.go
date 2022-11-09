@@ -57,7 +57,7 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		//change UPF state to not associated so that
 		//PFCP Association can be initiated again
 		upf.UPFStatus = smf_context.NotAssociated
-		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed", upf.NodeID)
+		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed, previous [%v], new [%v] ", upf.NodeID, upf.RecoveryTimeStamp, *rsp.RecoveryTimeStamp)
 
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
@@ -177,7 +177,7 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
 			}
 
-			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
+			logger.PfcpLog.Infof("UPF(%s)[%s] setup association success",
 				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)
 		} else {
 			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
