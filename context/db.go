@@ -38,8 +38,6 @@ const (
 	SmfCounterCol = "smf.data.smfCount"
 )
 
-var dbMutex sync.Mutex
-
 func SetupSmfCollection() {
 
 	dbName := "sdcore_smf"
@@ -332,10 +330,13 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	filter["seid"] = seid
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
-	ref := result["ref"].(string)
-	fmt.Println("StoreSeidContextInDB, result string : ", ref)
-
-	return GetSMContext(ref)
+	if result != nil {
+		ref := result["ref"].(string)
+		return GetSMContext(ref)
+	} else {
+		logger.CtxLog.Infof("DB entry doesn't exist with seid: ", seid)
+		return nil
+	}
 }
 
 // Delete SMContext By SEID from DB
@@ -347,10 +348,14 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	logger.CtxLog.Infof("filter : ", filter)
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
-	ref := result["ref"].(string)
+	if result != nil {
+		ref := result["ref"].(string)
 
-	MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
-	DeleteSmContextInDBByRef(ref)
+		MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
+		DeleteSmContextInDBByRef(ref)
+	} else {
+		logger.CtxLog.Infof("DB entry doesn't exist with seid: ", seid)
+	}
 
 }
 
