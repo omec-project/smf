@@ -37,6 +37,7 @@ const (
 type UPNode struct {
 	Type   UPNodeType
 	NodeID pfcpType.NodeID
+	Port   uint16
 	ANIP   net.IP
 	Dnn    string
 	Links  []*UPNode
@@ -281,6 +282,7 @@ func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *facto
 
 	upNode := new(UPNode)
 	upNode.Type = UPNodeType(node.Type)
+	upNode.Port = node.Port
 	switch upNode.Type {
 	case UPNODE_AN:
 		upNode.ANIP = net.ParseIP(node.ANIP)
@@ -317,6 +319,7 @@ func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *facto
 		}
 
 		upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
+		upNode.UPF.Port = upNode.Port
 
 		snssaiInfos := make([]SnssaiUPFInfo, 0)
 		for _, snssaiInfoConfig := range node.SNssaiInfos {
