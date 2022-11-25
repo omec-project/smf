@@ -11,6 +11,7 @@ import (
 
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/context"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -41,7 +42,7 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		}
 		//Create fresh context
 		txn.Ctxt = smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
-
+		txn.CtxtKey, _ = smf_context.ResolveRef(createData.Supi, createData.PduSessionId)
 	case svcmsgtypes.UpdateSmContext:
 		fallthrough
 	case svcmsgtypes.ReleaseSmContext:
@@ -51,7 +52,10 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 
 	case svcmsgtypes.PfcpSessCreate:
 		fallthrough
+		//txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	case svcmsgtypes.N1N2MessageTransfer:
+		//Pre-loaded- No action
+	case svcmsgtypes.PfcpSessCreateFailure:
 		//Pre-loaded- No action
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
@@ -140,6 +144,8 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		event = SmEventPduSessRelease
 	case svcmsgtypes.PfcpSessCreate:
 		event = SmEventPfcpSessCreate
+	case svcmsgtypes.PfcpSessCreateFailure:
+		event = SmEventPfcpSessCreateFailure
 	case svcmsgtypes.N1N2MessageTransfer:
 		event = SmEventPduSessN1N2Transfer
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
@@ -188,6 +194,22 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	//Put Failure Rsp
 	switch txn.MsgType {
+	case svcmsgtypes.PfcpSessCreate:
+		if txn.Ctxt != nil && txn.Ctxt.(*smf_context.SMContext).SMContextState == context.SmStatePfcpCreatePending {
+			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreateFailure))
+			nextTxn.Ctxt = txn.Ctxt
+			smContext := txn.Ctxt.(*smf_context.SMContext)
+			smContext.SMTxnBusLock.Lock()
+			smContext.TxnBus = smContext.TxnBus.AddTxn(nextTxn)
+			smContext.SMTxnBusLock.Unlock()
+			go func(nextTxn *transaction.Transaction) {
+				//Initiate N1N2 Transfer
+
+				//nextTxn.StartTxnLifeCycle(SmfTxnFsmHandle)
+				<-nextTxn.Status
+			}(nextTxn)
+		}
+
 	case svcmsgtypes.UpdateSmContext:
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)

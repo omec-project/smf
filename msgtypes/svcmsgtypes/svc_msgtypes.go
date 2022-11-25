@@ -39,6 +39,7 @@ const (
 
 	//AMF_
 	N1N2MessageTransfer                    SmfMsgType = "N1N2MessageTransfer"
+	PfcpSessCreateFailure                  SmfMsgType = "PfcpSessCreateFailure"
 	N1N2MessageTransferFailureNotification SmfMsgType = "N1N2MessageTransferFailureNotification"
 
 	//PFCP

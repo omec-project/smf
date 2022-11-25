@@ -293,8 +293,10 @@ func GetSMContext(ref string) (smContext *SMContext) {
 		smContext = value.(*SMContext)
 	} else {
 		if factory.SmfConfig.Configuration.EnableDbStore {
-			smContext = GetSMContextByRefInDB(ref)
-			smContextPool.Store(ref, smContext)
+			smContext := GetSMContextByRefInDB(ref)
+			if smContext != nil {
+				smContextPool.Store(ref, smContext)
+			}
 		}
 	}
 
@@ -323,6 +325,8 @@ func RemoveSMContext(ref string) {
 	smContext.ReleaseUeIpAddr()
 
 	smContextPool.Delete(ref)
+
+	canonicalRef.Delete(canonicalName(smContext.Supi, smContext.PDUSessionID))
 	//Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)

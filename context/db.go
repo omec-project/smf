@@ -306,19 +306,22 @@ func GetSeidByRefInDB(ref string) (seid uint64) {
 
 // GetSMContext By Ref from DB
 func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
-	fmt.Println("db - in GetSMContextByRefInDB")
+	logger.CtxLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
 	smContext = &SMContext{}
 	filter := bson.M{}
 	filter["ref"] = ref
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SmContextDataColl, filter)
 
-	err := json.Unmarshal(mapToByte(result), smContext)
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
+	if result != nil {
+		err := json.Unmarshal(mapToByte(result), smContext)
 
-	if err != nil {
-		logger.CtxLog.Errorf("smContext unmarshall error: %v", err)
+		if err != nil {
+			logger.CtxLog.Errorf("smContext unmarshall error: %v", err)
+			return nil
+		}
+	} else {
+		logger.CtxLog.Warningf("SmContext doesn't exist with ref: %v", ref)
 		return nil
 	}
 
@@ -332,10 +335,14 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	filter["seid"] = seid
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
-	ref := result["ref"].(string)
-	fmt.Println("StoreSeidContextInDB, result string : ", ref)
-
-	return GetSMContext(ref)
+	if result != nil {
+		ref := result["ref"].(string)
+		logger.CtxLog.Debugln("StoreSeidContextInDB, result string : ", ref)
+		return GetSMContext(ref)
+	} else {
+		logger.CtxLog.Warningf("SmContext doesn't exist with seid: %v", seid)
+		return nil
+	}
 }
 
 // Delete SMContext By SEID from DB
@@ -347,10 +354,12 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	logger.CtxLog.Infof("filter : ", filter)
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
-	ref := result["ref"].(string)
+	if result != nil {
+		ref := result["ref"].(string)
 
-	MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
-	DeleteSmContextInDBByRef(ref)
+		MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
+		DeleteSmContextInDBByRef(ref)
+	}
 
 }
 

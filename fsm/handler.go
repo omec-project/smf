@@ -21,6 +21,7 @@ const (
 	SmEventPduSessModify
 	SmEventPduSessRelease
 	SmEventPfcpSessCreate
+	SmEventPfcpSessCreateFailure
 	SmEventPfcpSessModify
 	SmEventPfcpSessRelease
 	SmEventPduSessN1N2Transfer
@@ -55,6 +56,7 @@ func InitFsm() {
 
 	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessCreate] = HandleStateInitEventPduSessCreate
 	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreate] = HandleStatePfcpCreatePendingEventPfcpSessCreate
+	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreateFailure] = HandleStatePfcpCreatePendingEventPfcpSessCreateFailure
 	SmfFsmHandler[smf_context.SmStateN1N2TransferPending][SmEventPduSessN1N2Transfer] = HandleStateN1N2TransferPendingEventN1N2Transfer
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
@@ -114,7 +116,7 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreate(event SmEvent, eventData *S
 	case smf_context.SessionEstablishFailed:
 		fallthrough
 	default:
-		smCtxt.SubFsmLog.Error("pfcp session establish response failure")
+		smCtxt.SubFsmLog.Errorf("pfcp session establish response failure")
 		return smf_context.SmStatePfcpCreatePending, fmt.Errorf("pfcp establishment failure")
 	}
 }
@@ -125,10 +127,23 @@ func HandleStateN1N2TransferPendingEventN1N2Transfer(event SmEvent, eventData *S
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.SendPduSessN1N2Transfer(smCtxt, true); err != nil {
-		smCtxt.SubFsmLog.Error("N1N2 transfer failure error, %v ", err.Error())
+		smCtxt.SubFsmLog.Errorf("N1N2 transfer failure error, %v ", err.Error())
 		return smf_context.SmStateN1N2TransferPending, fmt.Errorf("N1N2 Transfer failure error, %v ", err.Error())
 	}
 	return smf_context.SmStateActive, nil
+}
+
+func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
+
+	txn := eventData.Txn.(*transaction.Transaction)
+	smCtxt := txn.Ctxt.(*smf_context.SMContext)
+
+	// sending n1n2 transfer failure to amf
+	if err := producer.SendPduSessN1N2Transfer(smCtxt, false); err != nil {
+		smCtxt.SubFsmLog.Errorf("N1N2 transfer failure error, %v ", err.Error())
+		return smf_context.SmStateN1N2TransferPending, fmt.Errorf("N1N2 Transfer failure error, %v ", err.Error())
+	}
+	return smf_context.SmStateInit, nil
 }
 
 func HandleStateActiveEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {

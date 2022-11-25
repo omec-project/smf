@@ -300,8 +300,10 @@ func SendPfcpSessionEstablishmentRequest(
 	logger.PfcpLog.Infof("in SendPfcpSessionEstablishmentRequest fseid %v\n", pfcpMsg.CPFSEID.Seid)
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		adapter.InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, upaddr, nil); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session establish msg to upf-adapter error [%v] ", err.Error())
+			HandlePfcpSendError(&message, err)
 			return
 		} else {
 			logger.PfcpLog.Debugf("send pfcp session establish response [%v] ", rsp)
