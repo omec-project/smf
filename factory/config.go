@@ -61,6 +61,12 @@ type Mongodb struct {
 	Url  string `yaml:"url"`
 }
 
+type KafkaInfo struct {
+	BrokerUri  string `yaml:"brokerUri,omitempty"`
+	BrokerPort int    `yaml:"brokerPort,omitempty"`
+	Topic      string `yaml:"topicName,omitempty"`
+}
+
 type Configuration struct {
 	SmfName              string               `yaml:"smfName,omitempty"`
 	Sbi                  *Sbi                 `yaml:"sbi,omitempty"`
@@ -75,6 +81,8 @@ type Configuration struct {
 	EnableUpfAdapter     bool                 `yaml:"enableUPFAdapter,omitempty"`
 	SmfDbName            string               `yaml:"smfDBName,omitempty"`
 	Mongodb              *Mongodb             `yaml:"mongodb,omitempty"`
+	KafkaInfo            KafkaInfo            `yaml:"kafkaInfo,omitempty"`
+	DebugProfilePort     int                  `yaml:"debugProfilePort,omitempty"`
 }
 
 type SnssaiInfoItem struct {

@@ -59,6 +59,7 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 		//Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
 		smf_context.RemoveSMContext(smCtxt.Ref)
 
+		smCtxt.PublishSmCtxtInfo()
 		//check if PCF session set, send release(Npcf_SMPolicyControl_Delete)
 		//TODO: not done as part of ctxt release
 
@@ -542,7 +543,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	switch PFCPResponseStatus {
 	case smf_context.SessionReleaseSuccess:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseSuccess")
-		smContext.ChangeState(smf_context.SmStateInit)
+		smContext.ChangeState(smf_context.SmStatePfcpRelease)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 		httpResponse = &http_wrapper.Response{
 			Status: http.StatusNoContent,

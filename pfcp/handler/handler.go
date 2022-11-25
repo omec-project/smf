@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
@@ -62,6 +63,12 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
+
+	//Send Metric event
+	upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
+		NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
+			NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue)}}
+	metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 
 	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
@@ -141,7 +148,7 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upfProvidedDnn := string(rsp.UserPlaneIPResourceInformation.NetworkInstance)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("Handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
 				return
 			}
 		}
@@ -152,9 +159,15 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
 		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
+		//Send Metric event
+		upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
+			NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
+				NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue)}}
+		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+
 		//Supported Features of UPF
 		if rsp.UPFunctionFeatures != nil {
-			logger.PfcpLog.Debugf("Handle PFCP Association Setup Response, received UPFunctionFeatures= %v ", rsp.UPFunctionFeatures)
+			logger.PfcpLog.Debugf("Handle PFCP Association Setup success Response, received UPFunctionFeatures= %v ", rsp.UPFunctionFeatures)
 			upf.UPFunctionFeatures = rsp.UPFunctionFeatures
 		}
 

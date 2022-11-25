@@ -9,7 +9,7 @@ go 1.16
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
-	github.com/gin-gonic/gin v1.7.3
+	github.com/gin-gonic/gin v1.8.1
 	github.com/google/uuid v1.3.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/MongoDBLibrary v1.1.3
@@ -28,11 +28,15 @@ require (
 	github.com/omec-project/util v1.0.6
 	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.12.2
+	github.com/prometheus/client_golang v1.13.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.0
 	github.com/urfave/cli v1.22.9
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require go.mongodb.org/mongo-driver v1.10.1
+require (
+	github.com/omec-project/metricfunc v1.1.1
+	github.com/segmentio/kafka-go v0.4.38
+	go.mongodb.org/mongo-driver v1.10.1
+)
