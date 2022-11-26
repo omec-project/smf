@@ -68,5 +68,5 @@ Design section for SMF is available at [SMF Design](https://docs.sd-core.opennet
 ## Reach out to us thorugh 
 
 1. #sdcore-dev channel in [ONF Community Slack](https://onf-community.slack.com/)
-2. Raise Github issues
+2. Raise Github issues #
 
