@@ -16,7 +16,7 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	ANUPF := defaultPath.FirstDPNode
 	pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
-		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList)
+		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, ANUPF.UPF.Port)
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 

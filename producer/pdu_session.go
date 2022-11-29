@@ -632,7 +632,7 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 				continue
 			}
 			if _, exist := deletedPFCPNode[curUPFID]; !exist {
-				pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext)
+				pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext, curDataPathNode.UPF.Port)
 				deletedPFCPNode[curUPFID] = true
 				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
 			}
@@ -752,7 +752,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		ANUPF := defaultPath.FirstDPNode
 
 		//Sending PFCP modification with flag set to DROP the packets.
-		pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
+		pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, ANUPF.UPF.Port)
 	}
 
 	//Listening PFCP modification response.
