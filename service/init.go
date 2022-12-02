@@ -134,9 +134,12 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	}
 
 	//Initiating a server for profiling
-	go func() {
-		http.ListenAndServe(":5001", nil)
-	}()
+	if factory.SmfConfig.Configuration.DebugProfilePort != 0 {
+		addr := fmt.Sprintf(":%d", factory.SmfConfig.Configuration.DebugProfilePort)
+		go func() {
+			http.ListenAndServe(addr, nil)
+		}()
+	}
 
 	return nil
 }
@@ -335,6 +338,11 @@ func (smf *SMF) Start() {
 	//Init DRSM for unique FSEID/FTEID/IP-Addr
 	if err := smfCtxt.InitDrsm(); err != nil {
 		initLog.Errorf("initialse drsm failed, %v ", err.Error())
+	}
+
+	//Init Kafka stream
+	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
+		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
 
 	udp.Run(pfcp.Dispatch)
