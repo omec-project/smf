@@ -77,7 +77,7 @@ func InsertPfcpTxn(seqNo uint32, upNodeID *pfcpType.NodeID) {
 	PfcpTxns[seqNo] = upNodeID
 }
 
-func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
+func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 	pfcpMsg, err := BuildPfcpHeartbeatRequest()
 	if err != nil {
 		logger.PfcpLog.Errorf("Build PFCP Heartbeat Request failed: %v", err)
@@ -97,7 +97,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
@@ -132,9 +132,9 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID) error {
 	return nil
 }
 
-func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
+func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 
-	//Send Metric event
+  //Send Metric event
 	upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
 		NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
 			NfStatus: mi.NfStatusDisconnected, NfName: string(upNodeID.NodeIdValue)}}
@@ -164,7 +164,7 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -189,11 +189,12 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID) {
 			}
 		}
 	} else {
+		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 		udp.SendPfcp(message, addr, nil)
 	}
 }
 
-func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause) {
+func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause, upfPort uint16) {
 	pfcpMsg, err := BuildPfcpAssociationSetupResponse(cause)
 	if err != nil {
 		logger.PfcpLog.Errorf("Build PFCP Association Setup Response failed: %v", err)
@@ -213,14 +214,14 @@ func SendPfcpAssociationSetupResponse(upNodeID pfcpType.NodeID, cause pfcpType.C
 
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	udp.SendPfcp(message, addr, nil)
 	logger.PfcpLog.Infof("Sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
-func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID) {
+func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 	pfcpMsg, err := BuildPfcpAssociationReleaseRequest()
 	if err != nil {
 		logger.PfcpLog.Errorf("Build PFCP Association Release Request failed: %v", err)
@@ -240,14 +241,14 @@ func SendPfcpAssociationReleaseRequest(upNodeID pfcpType.NodeID) {
 
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	udp.SendPfcp(message, addr, nil)
 	logger.PfcpLog.Infof("Sent PFCP Association Release Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 }
 
-func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause) {
+func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType.Cause, upfPort uint16) {
 	pfcpMsg, err := BuildPfcpAssociationReleaseResponse(cause)
 	if err != nil {
 		logger.PfcpLog.Errorf("Build PFCP Association Release Response failed: %v", err)
@@ -267,7 +268,7 @@ func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType
 
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	udp.SendPfcp(message, addr, nil)
@@ -277,7 +278,7 @@ func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType
 func SendPfcpSessionEstablishmentRequest(
 	upNodeID pfcpType.NodeID,
 	ctx *smf_context.SMContext,
-	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER) {
+	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16) {
 	pfcpMsg, err := BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
@@ -301,7 +302,7 @@ func SendPfcpSessionEstablishmentRequest(
 
 	upaddr := &net.UDPAddr{
 		IP:   ip,
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 	ctx.SubPduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
 	ctx.SubPduSessLog.Traceln("Send to addr ", upaddr.String())
@@ -329,6 +330,7 @@ func SendPfcpSessionEstablishmentRequest(
 			}
 		}
 	} else {
+		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 		udp.SendPfcp(message, upaddr, eventData)
 	}
@@ -361,7 +363,7 @@ func SendPfcpSessionEstablishmentResponse(addr *net.UDPAddr) {
 
 func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 	ctx *smf_context.SMContext,
-	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER) (seqNum uint32) {
+	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16) (seqNum uint32) {
 	pfcpMsg, err := BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Modification Request failed: %v", err)
@@ -386,7 +388,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 
 	upaddr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
@@ -408,6 +410,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 			}
 		}
 	} else {
+		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
 
 		udp.SendPfcp(message, upaddr, eventData)
@@ -440,7 +443,7 @@ func SendPfcpSessionModificationResponse(addr *net.UDPAddr) {
 	udp.SendPfcp(message, addr, nil)
 }
 
-func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.SMContext) (seqNum uint32) {
+func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.SMContext, upfPort uint16) (seqNum uint32) {
 	pfcpMsg, err := BuildPfcpSessionDeletionRequest(upNodeID, ctx)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Deletion Request failed: %v", err)
@@ -464,7 +467,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 
 	upaddr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: int(upfPort),
 	}
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
@@ -487,6 +490,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 			}
 		}
 	} else {
+		InsertPfcpTxn(message.Header.SequenceNumber, &upNodeID)
 		eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
 
 		udp.SendPfcp(message, upaddr, eventData)

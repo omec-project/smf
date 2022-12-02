@@ -12,13 +12,16 @@ package factory
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/logger_util"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/logger"
 )
 
@@ -185,6 +188,7 @@ type UserPlaneInformation struct {
 type UPNode struct {
 	Type                 string                     `yaml:"type"`
 	NodeID               string                     `yaml:"node_id"`
+	Port                 uint16                     `yaml:"port"`
 	ANIP                 string                     `yaml:"an_ip"`
 	Dnn                  string                     `yaml:"dnn"`
 	SNssaiInfos          []models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
@@ -271,6 +275,18 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 
 	c.EnterpriseList = make(map[string]string)
 
+	//should be updated to be received from webui.
+	//currently adding port info in webui causes crash.
+	pfcpPortStr := os.Getenv("PFCP_PORT_UPF")
+	pfcpPortVal := pfcpUdp.PFCP_PORT
+	if pfcpPortStr != "" {
+		if val, err := strconv.ParseUint(pfcpPortStr, 10, 32); err != nil {
+			logger.CtxLog.Infoln("Parse pfcp port failed : ", pfcpPortStr)
+		} else {
+			pfcpPortVal = int(val)
+		}
+	}
+
 	//Iterate through all NS received
 	for _, ns := range rsp.NetworkSlice {
 		//make new SNSSAI Info structure
@@ -308,9 +324,27 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		//Update to SMF config structure
 		c.SNssaiInfo = append(c.SNssaiInfo, sNssaiInfoItem)
 
+		//Check if port number is received as part of UpfName.
+		//If yes, then use it as port number. else use common port number
+		//from environment variable or if that also isn't available
+		//then use default PFCP port 8805.
+		portVal := uint16(pfcpPortVal)
+		portStr := ns.Site.Upf.UpfName[strings.LastIndex(ns.Site.Upf.UpfName, ":")+1:]
+		nodeStr := ns.Site.Upf.UpfName
+		if portStr != "" {
+			if val, err := strconv.ParseUint(portStr, 10, 32); err != nil {
+				logger.CtxLog.Infoln("Parse Upf port failed : ", portStr)
+			} else {
+				portVal = uint16(val)
+			}
+			nodeStr = ns.Site.Upf.UpfName[:strings.LastIndex(ns.Site.Upf.UpfName, ":")]
+		}
+
+		ns.Site.Upf.UpfName = nodeStr
 		//iterate through UPFs config received
 		upf := UPNode{Type: "UPF",
 			NodeID:               ns.Site.Upf.UpfName,
+			Port:                 portVal,
 			SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
 			InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0)}
 
@@ -638,7 +672,7 @@ func compareGenericSlices(t1, t2 interface{}, compare func(i, j interface{}) boo
 func PrettyPrintUPNodes(u map[string]UPNode) (s string) {
 
 	for name, node := range u {
-		s += fmt.Sprintf("\n UPNode Name[%v], Type[%v], NodeId[%v], ", name, node.Type, node.NodeID)
+		s += fmt.Sprintf("\n UPNode Name[%v], Type[%v], NodeId[%v], Port[%v], ", name, node.Type, node.NodeID, node.Port)
 		s += PrettyPrintUPSlices(node.SNssaiInfos)
 		s += PrettyPrintUPInterfaces(node.InterfaceUpfInfoList)
 	}

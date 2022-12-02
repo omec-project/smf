@@ -64,6 +64,7 @@ func (s UPFStatus) String() string {
 type UPF struct {
 	uuid               uuid.UUID
 	NodeID             pfcpType.NodeID
+	Port               uint16
 	UPIPInfo           pfcpType.UserPlaneIPResourceInformation
 	UPFStatus          UPFStatus
 	SNssaiInfos        []SnssaiUPFInfo
