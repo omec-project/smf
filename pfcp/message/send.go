@@ -134,7 +134,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 
 func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 
-  //Send Metric event
+	//Send Metric event
 	upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
 		NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
 			NfStatus: mi.NfStatusDisconnected, NfName: string(upNodeID.NodeIdValue)}}

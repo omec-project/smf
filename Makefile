@@ -81,3 +81,37 @@ docker-push:
 	for target in $(DOCKER_TARGETS); do \
 		docker push ${DOCKER_REGISTRY}${DOCKER_REPOSITORY}5gc-$$target:${DOCKER_TAG}; \
 	done
+
+.coverage:
+	rm -rf $(CURDIR)/.coverage
+	mkdir -p $(CURDIR)/.coverage
+
+test: .coverage
+	docker run --rm -v $(CURDIR):/smf -w /smf golang:latest \
+		go test \
+			-race \
+			-failfast \
+			-coverprofile=.coverage/coverage-unit.txt \
+			-covermode=atomic \
+			-v \
+			./ ./...
+
+
+fmt:
+	@go fmt ./...
+
+golint:
+	@docker run --rm -v $(CURDIR):/app -w /app golangci/golangci-lint:latest golangci-lint run -v --config /app/.golangci.yml
+
+check-reuse:
+	@docker run --rm -v $(CURDIR):/smf -w /smf omecproject/reuse-verify:latest reuse lint
+
+run-aiab:
+	rm -rf $(HOME)/aether-in-a-box && rm -rf $(HOME)/cord
+	cd $(HOME) && git clone "https://gerrit.opencord.org/aether-in-a-box"
+	mkdir $(HOME)/cord && cd $(HOME)/cord && \
+		git clone "https://gerrit.opencord.org/sdcore-helm-charts" && \
+		git clone "https://gerrit.opencord.org/sdfabric-helm-charts" && cd ../aether-in-a-box && \
+			yq -i '.5g-control-plane.images |= {"smf": "5gc-smf:0.0.1-dev"}' sd-core-5g-values.yaml && \
+                make 5g-test
+
