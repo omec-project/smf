@@ -329,8 +329,13 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		//from environment variable or if that also isn't available
 		//then use default PFCP port 8805.
 		portVal := uint16(pfcpPortVal)
-		portStr := ns.Site.Upf.UpfName[strings.LastIndex(ns.Site.Upf.UpfName, ":")+1:]
+		portStr := ""
 		nodeStr := ns.Site.Upf.UpfName
+		if strings.Contains(ns.Site.Upf.UpfName, ":") {
+			if strings.LastIndex(ns.Site.Upf.UpfName, ":") < len(ns.Site.Upf.UpfName) {
+				portStr = ns.Site.Upf.UpfName[strings.LastIndex(ns.Site.Upf.UpfName, ":")+1:]
+			}
+		}
 		if portStr != "" {
 			if val, err := strconv.ParseUint(portStr, 10, 32); err != nil {
 				logger.CtxLog.Infoln("Parse Upf port failed : ", portStr)
