@@ -10,7 +10,7 @@ on:
   pull_request:
 
 jobs:
-  unit-test-pfcpiface:
+  unit-test-smf:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

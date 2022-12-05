@@ -15,7 +15,7 @@ jobs:
       # DOCKER_REGISTRY: "docker.io/"
       # DOCKER_REPOSITORY: "badhrinathpa/"
       # VERSION: "PR-${{ github.event.pull_request.number }}"
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       # Checkout and build
       - uses: actions/checkout@v3
@@ -38,7 +38,7 @@ jobs:
       - name: Update PR with changes
         uses: gr2m/create-or-update-pull-request-action@v1.x
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           body: |
             Updated with changes from CI
@@ -51,4 +51,20 @@ jobs:
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod a+x /usr/local/bin/yq
           make docker-build
-          make run-aiab
+          rm -rf $HOME/aether-in-a-box
+          rm -rf $HOME/cord
+          cd $HOME
+          git clone "https://gerrit.opencord.org/aether-in-a-box"
+          mkdir $HOME/cord
+          cd $HOME/cord
+          git clone "https://gerrit.opencord.org/sdcore-helm-charts"
+          git clone "https://gerrit.opencord.org/sdfabric-helm-charts"
+          cd ../aether-in-a-box
+          yq -i '.5g-control-plane.images |= {"smf": "5gc-smf:0.0.1-dev"}' sd-core-5g-values.yaml
+          #sed -i 's/= rke2/= kubespray/' Makefile
+          make 5g-test
+          curl -LO "https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/linux/amd64/kubectl"
+          sudo chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          kubectl get pods --all-namespaces
+          make clean

@@ -113,5 +113,5 @@ run-aiab:
 		git clone "https://gerrit.opencord.org/sdcore-helm-charts" && \
 		git clone "https://gerrit.opencord.org/sdfabric-helm-charts" && cd ../aether-in-a-box && \
 			yq -i '.5g-control-plane.images |= {"smf": "5gc-smf:0.0.1-dev"}' sd-core-5g-values.yaml && \
-                make 5g-test
+                make 5g-core && sleep 10 && make 5g-test
 
