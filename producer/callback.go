@@ -8,6 +8,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
+
+	nrf_cache "github.com/omec-project/nrf/nrfcache"
 
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
@@ -15,6 +18,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/smf/consumer"
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -124,5 +128,54 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
 	smContext.SubPduSessLog.Infof("QoS N1N2 Transfer completed")
+	return nil
+}
+
+func HandleNfSubscriptionStatusNotify(request *http_wrapper.Request) *http_wrapper.Response {
+	logger.PduSessLog.Traceln("[SMF] Handle NF Status Notify")
+
+	notificationData := request.Body.(models.NotificationData)
+
+	problemDetails := NfSubscriptionStatusNotifyProcedure(notificationData)
+	if problemDetails != nil {
+		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+	} else {
+		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+	}
+}
+
+func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationData) *models.ProblemDetails {
+	logger.PduSessLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
+
+	if notificationData.Event == "" || notificationData.NfInstanceUri == "" {
+		problemDetails := &models.ProblemDetails{
+			Status: http.StatusBadRequest,
+			Cause:  "MANDATORY_IE_MISSING", // Defined in TS 29.510 6.1.6.2.17
+			Detail: "Missing IE [Event]/[NfInstanceUri] in NotificationData",
+		}
+		return problemDetails
+	}
+	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
+
+	// If nrf caching is enabled, go ahead and delete the entry from the cache.
+	// This will force the smf to do nf discovery and get the updated nf profile from the nrf.
+	if smf_context.SMF_Self().EnableNrfCaching {
+		ok := nrf_cache.RemoveNfProfileFromNrfCache(nfInstanceId)
+		logger.PduSessLog.Tracef("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
+	}
+	if subscriptionId, ok := smf_context.SMF_Self().NfStatusSubscriptions.Load(nfInstanceId); ok {
+		logger.PduSessLog.Debugf("SubscriptionId of nfInstance %v is %v",nfInstanceId,subscriptionId.(string))
+		problemDetails, err := consumer.SendRemoveSubscription(subscriptionId.(string))
+		if problemDetails != nil {
+			logger.PduSessLog.Errorf("Remove NF Subscription Failed Problem[%+v]", problemDetails)
+		} else if err != nil {
+			logger.PduSessLog.Errorf("Remove NF Subscription Error[%+v]", err)
+		} else {
+			logger.PduSessLog.Infoln("[SMF] Remove NF Subscription successful")
+			smf_context.SMF_Self().NfStatusSubscriptions.Delete(nfInstanceId)
+		}
+	} else {
+		logger.PduSessLog.Infof("nfinstance %v not found in map", nfInstanceId)
+	}
 	return nil
 }

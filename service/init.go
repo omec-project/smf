@@ -25,6 +25,7 @@ import (
 	"github.com/omec-project/logger_util"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
+	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/path_util"
 	pathUtilLogger "github.com/omec-project/path_util/logger"
@@ -317,6 +318,11 @@ func (smf *SMF) Start() {
 
 	//Send NRF Registration
 	smf.SendNrfRegistration()
+
+	if smfCtxt.EnableNrfCaching {
+		initLog.Infoln("Enable NRF caching feature")
+		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
+	}
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
 	oam.AddService(router)

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/omec-project/smf/metrics"
 
@@ -70,13 +72,16 @@ type SMFContext struct {
 	SupportedPDUSessionType string
 
 	//*** For ULCL ** //
-	ULCLSupport         bool
-	UEPreConfigPathPool map[string]*UEPreConfigPaths
-	LocalSEIDCount      uint64
-	DrsmCtxts           DrsmCtxts
+	ULCLSupport              bool
+	UEPreConfigPathPool      map[string]*UEPreConfigPaths
+	LocalSEIDCount           uint64
+	DrsmCtxts                DrsmCtxts
+	EnterpriseList           *map[string]string // map to contain slice-name:enterprise-name
+	EnableNrfCaching         bool
+	NrfCacheEvictionInterval time.Duration
 
-	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
-	PodIp          string
+	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
+	PodIp                 string
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
@@ -212,6 +217,10 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	smfContext.SupportedPDUSessionType = "IPv4"
 
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
+
+	smfContext.EnableNrfCaching = configuration.EnableNrfCaching
+
+	smfContext.NrfCacheEvictionInterval = time.Duration(configuration.NrfCacheEvictionInterval)
 
 	smfContext.PodIp = os.Getenv("POD_IP")
 	SetupNFProfile(config)
