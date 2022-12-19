@@ -114,7 +114,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
@@ -182,7 +182,7 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
@@ -320,7 +320,7 @@ func SendPfcpSessionEstablishmentRequest(
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
@@ -403,7 +403,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
@@ -483,7 +483,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)

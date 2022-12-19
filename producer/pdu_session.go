@@ -29,6 +29,7 @@ import (
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 )
 

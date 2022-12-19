@@ -70,7 +70,7 @@ func SetupSmfCollection() {
 	}
 
 	smfCount := MongoDBLibrary.GetUniqueIdentity("smfCount")
-	logger.CtxLog.Infoln("unique id - init smfCount %v", smfCount)
+	logger.CtxLog.Infof("unique id - init smfCount %v", smfCount)
 
 	// set os env
 	os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
@@ -250,7 +250,7 @@ func StoreSmContextInDB(smContext *SMContext) {
 	defer smContext.SMLock.Unlock()
 	smContextBsonA := ToBsonM(smContext)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.CtxLog.Infof("filter: ", filter)
+	logger.CtxLog.Infof("filter: %v", filter)
 
 	MongoDBLibrary.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
 
@@ -275,7 +275,7 @@ func StoreSeidContextInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"seid": seid}
-	logger.CtxLog.Infof("filter : ", filter)
+	logger.CtxLog.Infof("filter : %v", filter)
 
 	MongoDBLibrary.RestfulAPIPost(SeidSmContextCol, filter, itemBsonA)
 }
@@ -289,7 +289,7 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.CtxLog.Infof("filter : ", filter)
+	logger.CtxLog.Infof("filter : %v", filter)
 
 	MongoDBLibrary.RestfulAPIPost(RefSeidCol, filter, itemBsonA)
 }
@@ -344,7 +344,7 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
 	fmt.Println("db - delete SMContext In DB by seid")
 	filter := bson.M{"seid": seid}
-	logger.CtxLog.Infof("filter : ", filter)
+	logger.CtxLog.Infof("filter : %v", filter)
 
 	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
 	ref := result["ref"].(string)
@@ -358,7 +358,7 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 func DeleteSmContextInDBByRef(ref string) {
 	fmt.Println("db - delete SMContext In DB w ref")
 	filter := bson.M{"ref": ref}
-	logger.CtxLog.Infof("filter : ", filter)
+	logger.CtxLog.Infof("filter : %v", filter)
 	MongoDBLibrary.RestfulAPIDeleteOne(SmContextDataColl, filter)
 }
 

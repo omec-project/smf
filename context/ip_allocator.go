@@ -88,6 +88,9 @@ func (a *IPAllocator) Allocate() (net.IP, error) {
 		// smfCount := MongoDBLibrary.GetSmfCountFromDb()
 
 		smfCountStr := os.Getenv("SMF_COUNT")
+		if smfCountStr == "" {
+			smfCountStr = "1"
+		}
 		smfCount, _ := strconv.Atoi(smfCountStr)
 		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000)
 		fmt.Printf("unique id - ip %v \n", ip)

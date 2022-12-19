@@ -197,8 +197,8 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
+	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
+	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
 	if rsp.UPFSEID != nil {
 		NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
@@ -229,13 +229,13 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse")
 
 	pfcpRsp := msg.PfcpMessage.Body.(pfcp.PFCPSessionModificationResponse)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse pfcpRsp.Cause.CauseValue = [%v], accepted?? %v", pfcpRsp.Cause.CauseValue, pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse pfcpRsp.Cause.CauseValue = [%v], accepted?? %v", pfcpRsp.Cause.CauseValue, pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted)
 
 	SEID := msg.PfcpMessage.Header.SEID
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse SEID %v", SEID)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse SEID %v", SEID)
 
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(pfcpUdp.PfcpEventData); !ok {
