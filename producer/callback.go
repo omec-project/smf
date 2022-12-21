@@ -18,7 +18,6 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
-	"github.com/omec-project/smf/consumer"
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -163,19 +162,6 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 		ok := nrf_cache.RemoveNfProfileFromNrfCache(nfInstanceId)
 		logger.PduSessLog.Tracef("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
 	}
-	if subscriptionId, ok := smf_context.SMF_Self().NfStatusSubscriptions.Load(nfInstanceId); ok {
-		logger.PduSessLog.Debugf("SubscriptionId of nfInstance %v is %v",nfInstanceId,subscriptionId.(string))
-		problemDetails, err := consumer.SendRemoveSubscription(subscriptionId.(string))
-		if problemDetails != nil {
-			logger.PduSessLog.Errorf("Remove NF Subscription Failed Problem[%+v]", problemDetails)
-		} else if err != nil {
-			logger.PduSessLog.Errorf("Remove NF Subscription Error[%+v]", err)
-		} else {
-			logger.PduSessLog.Infoln("[SMF] Remove NF Subscription successful")
-			smf_context.SMF_Self().NfStatusSubscriptions.Delete(nfInstanceId)
-		}
-	} else {
-		logger.PduSessLog.Infof("nfinstance %v not found in map", nfInstanceId)
-	}
+
 	return nil
 }

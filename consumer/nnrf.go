@@ -239,7 +239,7 @@ func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfTy
 			SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
 			ReqNfType:  requestNfType,
 		}
-		nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData)
+		nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData, targetNfType)
 		if problemDetails != nil {
 			logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
 		} else if err != nil {
@@ -381,8 +381,8 @@ func SendDeregisterNFInstance() (*models.ProblemDetails, error) {
 	}
 }
 
-func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
-	logger.ConsumerLog.Debugf("Send Create Subscription")
+func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData, targetNfType models.NfType) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
+	logger.ConsumerLog.Debugf("Send Create Subscription for %v", targetNfType)
 
 	var res *http.Response
 	nrfSubData, res, err = smf_context.SMF_Self().NFManagementClient.SubscriptionsCollectionApi.CreateSubscription(context.TODO(), nrfSubscriptionData)
@@ -406,8 +406,28 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscri
 	return
 }
 
+func SendRemoveSubscriptionProcedure(notificationData models.NotificationData) {
+	logger.ConsumerLog.Infof("[SMF] Send Remove Subscription Procedure")
+	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
+
+	if subscriptionId, ok := smf_context.SMF_Self().NfStatusSubscriptions.Load(nfInstanceId); ok {
+		logger.ConsumerLog.Debugf("SubscriptionId of nfInstance %v is %v", nfInstanceId, subscriptionId.(string))
+		problemDetails, err := SendRemoveSubscription(subscriptionId.(string))
+		if problemDetails != nil {
+			logger.ConsumerLog.Errorf("Remove NF Subscription Failed Problem[%+v]", problemDetails)
+		} else if err != nil {
+			logger.ConsumerLog.Errorf("Remove NF Subscription Error[%+v]", err)
+		} else {
+			logger.ConsumerLog.Infoln("[SMF] Remove NF Subscription successful")
+			smf_context.SMF_Self().NfStatusSubscriptions.Delete(nfInstanceId)
+		}
+	} else {
+		logger.ConsumerLog.Infof("nfinstance %v not found in map", nfInstanceId)
+	}
+}
+
 func SendRemoveSubscription(subscriptionId string) (problemDetails *models.ProblemDetails, err error) {
-	logger.ConsumerLog.Infoln("[SMF] Send Remove Subscription")
+	logger.ConsumerLog.Infof("[SMF] Send Remove Subscription for Subscription Id: %v", subscriptionId)
 
 	var res *http.Response
 	res, err = smf_context.SMF_Self().NFManagementClient.SubscriptionIDDocumentApi.RemoveSubscription(context.Background(), subscriptionId)

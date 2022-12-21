@@ -8,6 +8,7 @@ import (
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/producer"
 )
@@ -56,5 +57,6 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody)
+		consumer.SendRemoveSubscriptionProcedure(nfSubscriptionStatusNotification)
 	}
 }

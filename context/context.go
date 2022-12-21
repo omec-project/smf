@@ -72,16 +72,17 @@ type SMFContext struct {
 	SupportedPDUSessionType string
 
 	//*** For ULCL ** //
-	ULCLSupport              bool
-	UEPreConfigPathPool      map[string]*UEPreConfigPaths
-	LocalSEIDCount           uint64
-	DrsmCtxts                DrsmCtxts
-	EnterpriseList           *map[string]string // map to contain slice-name:enterprise-name
-	EnableNrfCaching         bool
-	NrfCacheEvictionInterval time.Duration
+	ULCLSupport         bool
+	UEPreConfigPathPool map[string]*UEPreConfigPaths
+	LocalSEIDCount      uint64
+	DrsmCtxts           DrsmCtxts
+	EnterpriseList      *map[string]string // map to contain slice-name:enterprise-name
 
 	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
 	PodIp                 string
+
+	EnableNrfCaching         bool
+	NrfCacheEvictionInterval time.Duration
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN

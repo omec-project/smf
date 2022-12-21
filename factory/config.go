@@ -71,23 +71,24 @@ type KafkaInfo struct {
 }
 
 type Configuration struct {
-	SmfName                  string               `yaml:"smfName,omitempty"`
-	Sbi                      *Sbi                 `yaml:"sbi,omitempty"`
-	PFCP                     *PFCP                `yaml:"pfcp,omitempty"`
-	NrfUri                   string               `yaml:"nrfUri,omitempty"`
-	UserPlaneInformation     UserPlaneInformation `yaml:"userplane_information"`
-	ServiceNameList          []string             `yaml:"serviceNameList,omitempty"`
-	SNssaiInfo               []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
-	ULCL                     bool                 `yaml:"ulcl,omitempty"`
-	EnterpriseList           map[string]string    `yaml:"enterpriseList,omitempty"`
-	EnableDbStore            bool                 `yaml:"enableDBStore,omitempty"`
-	EnableUpfAdapter         bool                 `yaml:"enableUPFAdapter,omitempty"`
-	SmfDbName                string               `yaml:"smfDBName,omitempty"`
-	Mongodb                  *Mongodb             `yaml:"mongodb,omitempty"`
-	EnableNrfCaching         bool                 `yaml:"enableNrfCaching"`
-	NrfCacheEvictionInterval int                  `yaml:"nrfCacheEvictionInterval"`
-	KafkaInfo                KafkaInfo            `yaml:"kafkaInfo,omitempty"`
-	DebugProfilePort         int                  `yaml:"debugProfilePort,omitempty"`
+	SmfName              string               `yaml:"smfName,omitempty"`
+	Sbi                  *Sbi                 `yaml:"sbi,omitempty"`
+	PFCP                 *PFCP                `yaml:"pfcp,omitempty"`
+	NrfUri               string               `yaml:"nrfUri,omitempty"`
+	UserPlaneInformation UserPlaneInformation `yaml:"userplane_information"`
+	ServiceNameList      []string             `yaml:"serviceNameList,omitempty"`
+	SNssaiInfo           []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
+	ULCL                 bool                 `yaml:"ulcl,omitempty"`
+	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
+	EnableDbStore        bool                 `yaml:"enableDBStore,omitempty"`
+	EnableUpfAdapter     bool                 `yaml:"enableUPFAdapter,omitempty"`
+	SmfDbName            string               `yaml:"smfDBName,omitempty"`
+	Mongodb              *Mongodb             `yaml:"mongodb,omitempty"`
+	KafkaInfo            KafkaInfo            `yaml:"kafkaInfo,omitempty"`
+	DebugProfilePort     int                  `yaml:"debugProfilePort,omitempty"`
+
+	EnableNrfCaching         bool `yaml:"enableNrfCaching"`
+	NrfCacheEvictionInterval int  `yaml:"nrfCacheEvictionInterval"`
 }
 
 type SnssaiInfoItem struct {

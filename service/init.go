@@ -320,7 +320,7 @@ func (smf *SMF) Start() {
 	smf.SendNrfRegistration()
 
 	if smfCtxt.EnableNrfCaching {
-		initLog.Infoln("Enable NRF caching feature")
+		initLog.Infof("Enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
 		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
