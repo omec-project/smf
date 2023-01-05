@@ -31,7 +31,7 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 			upf.UPF.UpfLock.Lock()
 			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
 
-				err := message.SendHeartbeatRequest(upf.NodeID) //needs lock in sync rsp(adapter mode)
+				err := message.SendHeartbeatRequest(upf.NodeID, upf.Port) //needs lock in sync rsp(adapter mode)
 				if err != nil {
 					logger.PfcpLog.Errorf("send pfcp heartbeat request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
 				} else {
@@ -55,7 +55,7 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 		for _, upf := range upfs.UPFs {
 			upf.UPF.UpfLock.Lock()
 			if upf.UPF.UPFStatus == context.NotAssociated {
-				message.SendPfcpAssociationSetupRequest(upf.NodeID)
+				message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
 			}
 			upf.UPF.UpfLock.Unlock()
 		}

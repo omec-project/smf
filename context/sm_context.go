@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/omec-project/http_wrapper"
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/qos"
@@ -282,6 +283,8 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		}
 	}
 
+	smContext.PublishSmCtxtInfo()
+
 	smContext.SubCtxLog.Infof("context state change, current state[%v] next state[%v]",
 		smContext.SMContextState.String(), nextState.String())
 	smContext.SMContextState = nextState
@@ -312,7 +315,7 @@ func RemoveSMContext(ref string) {
 	}
 
 	smContext.SubCtxLog.Infof("RemoveSMContext, SM context released ")
-	smContext.ChangeState(SmStateInit)
+	smContext.ChangeState(SmStateRelease)
 
 	for _, pfcpSessionContext := range smContext.PFCPContext {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
@@ -351,6 +354,7 @@ func (smContext *SMContext) ReleaseUeIpAddr() error {
 	if ip := smContext.PDUAddress.Ip; ip != nil && !smContext.PDUAddress.UpfProvided {
 		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.Ip.String())
 		smContext.DNNInfo.UeIPAllocator.Release(ip)
+		smContext.PDUAddress.Ip = net.IPv4(0, 0, 0, 0)
 	}
 	return nil
 }
@@ -684,4 +688,70 @@ func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
 	//Notify PCF of failure ?
 	//TODO
 	return nil
+}
+
+func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
+	var upfName, upfIP string
+	if smContext.SMContextState == SmStateActive {
+
+		if smContext.Tunnel != nil {
+			//Set UPF FQDN name if provided else IP-address
+			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
+				upfName = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
+				upfName = strings.Split(upfName, ".")[0]
+				upfIP = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.ResolveNodeIdToIp().String()
+			} else {
+				upfName = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
+				upfIP = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
+			}
+		}
+	}
+	return upfName, upfIP
+}
+
+//Collect Ctxt info and publish on Kafka stream
+func (smContext *SMContext) PublishSmCtxtInfo() {
+	var op mi.SubscriberOp
+	kafkaSmCtxt := mi.CoreSubscriber{}
+
+	//Populate kafka sm ctxt struct
+	kafkaSmCtxt.Imsi = smContext.Supi
+	kafkaSmCtxt.IPAddress = smContext.PDUAddress.Ip.String()
+	kafkaSmCtxt.SmfSubState, op = mapPduSessStateToMetricStateAndOp(smContext.SMContextState)
+	kafkaSmCtxt.SmfId = smContext.Ref
+	kafkaSmCtxt.Slice = "sd:" + smContext.Snssai.Sd + " sst:" + strconv.Itoa(int(smContext.Snssai.Sst))
+	kafkaSmCtxt.Dnn = smContext.Dnn
+	kafkaSmCtxt.UpfName, kafkaSmCtxt.UpfAddr = smContext.getSmCtxtUpf()
+	kafkaSmCtxt.SmfIp = SMF_Self().PodIp
+
+	//Send to stream
+	metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
+}
+
+func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {
+
+	switch state {
+	case SmStateInit:
+		return "Idle", mi.SubsOpAdd
+	case SmStateActivePending:
+		return "Idle", mi.SubsOpMod
+	case SmStateActive:
+		return "Connected", mi.SubsOpMod
+	case SmStateInActivePending:
+		return "Idle", mi.SubsOpMod
+	case SmStateModify:
+		return "Connected", mi.SubsOpMod
+	case SmStatePfcpCreatePending:
+		return "Idle", mi.SubsOpMod
+	case SmStatePfcpModify:
+		return "Connected", mi.SubsOpMod
+	case SmStatePfcpRelease:
+		return "Disconnected", mi.SubsOpDel
+	case SmStateRelease:
+		return "Disconnected", mi.SubsOpDel
+	case SmStateN1N2TransferPending:
+		return "Idle", mi.SubsOpMod
+	default:
+		return "unknown", mi.SubsOpDel
+	}
 }

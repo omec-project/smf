@@ -11,6 +11,8 @@ import (
 	"net"
 	"os"
 
+	"github.com/omec-project/smf/metrics"
+
 	"github.com/google/uuid"
 
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
@@ -26,6 +28,7 @@ import (
 
 func init() {
 	smfContext.NfInstanceID = uuid.New().String()
+	metrics.SetNfInstanceId(smfContext.NfInstanceID)
 }
 
 var smfContext SMFContext
@@ -73,6 +76,7 @@ type SMFContext struct {
 	DrsmCtxts           DrsmCtxts
 
 	EnterpriseList *map[string]string // map to contain slice-name:enterprise-name
+	PodIp          string
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
@@ -209,6 +213,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
 
+	smfContext.PodIp = os.Getenv("POD_IP")
 	SetupNFProfile(config)
 
 	return &smfContext

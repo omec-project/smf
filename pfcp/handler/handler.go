@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
@@ -62,6 +63,12 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		//TODO: Session cleanup required and updated to AMF/PCF
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
+
+	//Send Metric event
+	upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
+		NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
+			NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue)}}
+	metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 
 	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
@@ -117,7 +124,7 @@ func HandlePfcpAssociationSetupRequest(msg *pfcpUdp.Message) {
 	cause := pfcpType.Cause{
 		CauseValue: pfcpType.CauseRequestAccepted,
 	}
-	pfcp_message.SendPfcpAssociationSetupResponse(*nodeID, cause)
+	pfcp_message.SendPfcpAssociationSetupResponse(*nodeID, cause, upf.Port)
 }
 
 func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
@@ -131,6 +138,16 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		}
 		logger.PfcpLog.Infof("Handle PFCP Association Setup Response with NodeID[%s]", nodeID.ResolveNodeIdToIp().String())
 
+		//Get NodeId from Seq:NodeId Map
+		seq := msg.PfcpMessage.Header.SequenceNumber
+		nodeID = pfcp_message.FetchPfcpTxn(seq)
+
+		if nodeID == nil {
+			logger.PfcpLog.Errorf("No pending pfcp Assoc req for sequence no: %v", seq)
+			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
+			return
+		}
+
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
@@ -141,7 +158,7 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upfProvidedDnn := string(rsp.UserPlaneIPResourceInformation.NetworkInstance)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("Handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
 				return
 			}
 		}
@@ -152,9 +169,15 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
 		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 
+		//Send Metric event
+		upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
+			NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
+				NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue)}}
+		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+
 		//Supported Features of UPF
 		if rsp.UPFunctionFeatures != nil {
-			logger.PfcpLog.Debugf("Handle PFCP Association Setup Response, received UPFunctionFeatures= %v ", rsp.UPFunctionFeatures)
+			logger.PfcpLog.Debugf("Handle PFCP Association Setup success Response, received UPFunctionFeatures= %v ", rsp.UPFunctionFeatures)
 			upf.UPFunctionFeatures = rsp.UPFunctionFeatures
 		}
 
@@ -206,7 +229,7 @@ func HandlePfcpAssociationReleaseRequest(msg *pfcpUdp.Message) {
 		cause.CauseValue = pfcpType.CauseNoEstablishedPfcpAssociation
 	}
 
-	pfcp_message.SendPfcpAssociationReleaseResponse(*pfcpMsg.NodeID, cause)
+	pfcp_message.SendPfcpAssociationReleaseResponse(*pfcpMsg.NodeID, cause, upf.Port)
 }
 
 func HandlePfcpAssociationReleaseResponse(msg *pfcpUdp.Message) {
@@ -253,8 +276,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	smContext := smf_context.GetSMContextBySEID(SEID)
 	smContext.SMLock.Lock()
 
+	//Get NodeId from Seq:NodeId Map
+	seq := msg.PfcpMessage.Header.SequenceNumber
+	nodeID := pfcp_message.FetchPfcpTxn(seq)
+
 	if rsp.UPFSEID != nil {
-		NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
+		//NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
+		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		pfcpSessionCtx.RemoteSEID = rsp.UPFSEID.Seid
 	}
@@ -276,7 +304,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	//Get N3 interface UPF
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(rsp.NodeID.ResolveNodeIdToIp()) {
+	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		// UPF Accept
 		if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess
