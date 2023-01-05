@@ -326,6 +326,8 @@ func RemoveSMContext(ref string) {
 	smContext.ReleaseUeIpAddr()
 
 	smContextPool.Delete(ref)
+
+	canonicalRef.Delete(canonicalName(smContext.Supi, smContext.PDUSessionID))
 	//Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)

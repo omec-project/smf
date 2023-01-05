@@ -117,7 +117,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
 			}
 		}
 	} else {
@@ -185,7 +185,7 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
 			}
 		}
 	} else {
@@ -323,7 +323,8 @@ func SendPfcpSessionEstablishmentRequest(
 				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
 			} else {
 				//http status !OK
 				HandlePfcpSendError(&message, fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode))
@@ -406,7 +407,8 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
 			}
 		}
 	} else {
@@ -486,7 +488,8 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 				logger.PfcpLog.Debugf("pfcp rsp status ok, ", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg)
+				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
+				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
 			}
 		}
 	} else {

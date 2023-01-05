@@ -53,11 +53,11 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 	for {
 		time.Sleep(maxUpfProbeRetryInterval * time.Second)
 		for _, upf := range upfs.UPFs {
-			upf.UPF.UpfLock.RLock()
+			upf.UPF.UpfLock.Lock()
 			if upf.UPF.UPFStatus == context.NotAssociated {
 				message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
 			}
-			upf.UPF.UpfLock.RUnlock()
+			upf.UPF.UpfLock.Unlock()
 		}
 	}
 }
