@@ -23,21 +23,6 @@ var ServerStartTime time.Time
 var CPNodeID *pfcpType.NodeID
 
 func init() {
-
-	/*podIpStr := os.Getenv("POD_IP")
-	podIp := net.ParseIP(podIpStr)
-	podIpV4 := podIp.To4()*/
-
-	/*
-		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", "127.0.0.1", 8006))
-		if err != nil {
-			fmt.Printf("PFCP Parse Addr Fail: %v", err)
-		}
-
-			nodeIdType := 0
-			nodeIdValue := addr.IP.To4()
-			CPNodeID = &pfcpType.NodeID{NodeIdType: uint8(nodeIdType), NodeIdValue: nodeIdValue}
-	*/
 	CPNodeID = &pfcpType.NodeID{NodeIdType: uint8(0), NodeIdValue: []byte(config.UpfAdapterIp)}
 }
 

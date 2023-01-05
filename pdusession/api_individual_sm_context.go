@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/omec-project/http_wrapper"
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/fsm"
@@ -36,6 +37,7 @@ import (
 func HTTPReleaseSmContext(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Release SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
+	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
 
 	var request models.ReleaseSmContextRequest
 	request.JsonData = new(models.SmContextReleaseData)
@@ -87,6 +89,7 @@ func RetrieveSmContext(c *gin.Context) {
 func HTTPUpdateSmContext(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Update SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
+	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_req)
 
 	var request models.UpdateSmContextRequest
 	request.JsonData = new(models.SmContextUpdateData)

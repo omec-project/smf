@@ -13,6 +13,14 @@ info:
 configuration:
   enableDBStore: false
   enableUPFAdapter: true
+  debugProfilePort: 5001
+  mongodb:
+    name: sdcore_smf
+    url: "mongodb://mongodb-arbiter-headless"
+  kafkaInfo:
+    brokerUri: "sd-core-kafka-headless"
+    brokerPort: 9092
+    topicName: "sdcore-data-source-smf"
   smfName: SMF # the name of this SMF
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)

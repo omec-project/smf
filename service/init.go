@@ -134,9 +134,12 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	}
 
 	//Initiating a server for profiling
-	go func() {
-		http.ListenAndServe(":5001", nil)
-	}()
+	if factory.SmfConfig.Configuration.DebugProfilePort != 0 {
+		addr := fmt.Sprintf(":%d", factory.SmfConfig.Configuration.DebugProfilePort)
+		go func() {
+			http.ListenAndServe(addr, nil)
+		}()
+	}
 
 	return nil
 }
@@ -337,6 +340,11 @@ func (smf *SMF) Start() {
 		initLog.Errorf("initialse drsm failed, %v ", err.Error())
 	}
 
+	//Init Kafka stream
+	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
+		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
+	}
+
 	udp.Run(pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
@@ -346,7 +354,7 @@ func (smf *SMF) Start() {
 		} else {
 			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
 		}
-		message.SendPfcpAssociationSetupRequest(upf.NodeID)
+		message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
 	}
 
 	//Trigger PFCP Heartbeat towards all connected UPFs

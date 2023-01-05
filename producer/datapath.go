@@ -13,6 +13,7 @@ import (
 
 type PFCPState struct {
 	nodeID  pfcpType.NodeID
+	port    uint16
 	pdrList []*smf_context.PDR
 	farList []*smf_context.FAR
 	qerList []*smf_context.QER
@@ -49,10 +50,10 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 		sessionContext, exist := smContext.PFCPContext[curDataPathNode.GetNodeIP()]
 		if !exist || sessionContext.RemoteSEID == 0 {
 			pfcp_message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList)
+				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
 		} else {
 			pfcp_message.SendPfcpSessionModificationRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList)
+				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
 		}
 	}
 }
@@ -92,6 +93,7 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 				if pfcpState == nil {
 					pfcpPool[curDataPathNode.GetNodeIP()] = &PFCPState{
 						nodeID:  curDataPathNode.UPF.NodeID,
+						port:    curDataPathNode.UPF.Port,
 						pdrList: pdrList,
 						farList: farList,
 						qerList: qerList,
@@ -108,10 +110,10 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 		sessionContext, exist := smContext.PFCPContext[ip]
 		if !exist || sessionContext.RemoteSEID == 0 {
 			pfcp_message.SendPfcpSessionEstablishmentRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList)
+				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
 		} else {
 			pfcp_message.SendPfcpSessionModificationRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList)
+				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
 		}
 	}
 }
