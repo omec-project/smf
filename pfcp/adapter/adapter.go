@@ -39,7 +39,11 @@ func InsertPfcpTxn(seqNo uint32, upNodeID *pfcpType.NodeID) {
 	PfcpTxns[seqNo] = upNodeID
 }
 
-func HandleAdapterPfcpRsp(pfcpMsg pfcp.Message) error {
+/* This function is called when smf runs with upfadapter and the communication between
+   them is sync. smf already holds the lock before calling to the below API, so not required
+   upfLock in handler functions
+*/
+func HandleAdapterPfcpRsp(pfcpMsg pfcp.Message, evtData *pfcpUdp.PfcpEventData) error {
 	pfcpBodyJson, _ := json.Marshal(pfcpMsg.Body)
 
 	switch pfcpMsg.Header.MessageType {
@@ -63,21 +67,21 @@ func HandleAdapterPfcpRsp(pfcpMsg pfcp.Message) error {
 		json.Unmarshal(pfcpBodyJson, &pfcpRsp)
 
 		pfcpMsg.Body = pfcpRsp
-		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg}
+		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg, EventData: *evtData}
 		HandlePfcpSessionEstablishmentResponse(&msg)
 	case pfcp.PFCP_SESSION_MODIFICATION_RESPONSE:
 		pfcpRsp := pfcp.PFCPSessionModificationResponse{}
 		json.Unmarshal(pfcpBodyJson, &pfcpRsp)
 
 		pfcpMsg.Body = pfcpRsp
-		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg}
+		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg, EventData: *evtData}
 		HandlePfcpSessionModificationResponse(&msg)
 	case pfcp.PFCP_SESSION_DELETION_RESPONSE:
 		pfcpRsp := pfcp.PFCPSessionDeletionResponse{}
 		json.Unmarshal(pfcpBodyJson, &pfcpRsp)
 
 		pfcpMsg.Body = pfcpRsp
-		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg}
+		msg := pfcpUdp.Message{PfcpMessage: &pfcpMsg, EventData: *evtData}
 		HandlePfcpSessionDeletionResponse(&msg)
 	default:
 		logger.PfcpLog.Errorf("upf adapter invalid msg type: %v", pfcpMsg)
@@ -112,8 +116,6 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			}
 		}
 
-		upf.UpfLock.Lock()
-		defer upf.UpfLock.Unlock()
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
 		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
@@ -167,9 +169,6 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		return
 	}
 
-	upf.UpfLock.Lock()
-	defer upf.UpfLock.Unlock()
-
 	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
 		//change UPF state to not associated so that
 		//PFCP Association can be initiated again
@@ -197,7 +196,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
+	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID ", SEID)
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
 
 	//Get NodeId from Seq:NodeId Map
@@ -208,7 +207,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		pfcpSessionCtx.RemoteSEID = rsp.UPFSEID.Seid
-		smContext.SubPfcpLog.Infof("in adt HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rsp.UPFSEID.Seid)
+		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rsp.UPFSEID.Seid)
 	}
 
 	//Get N3 interface UPF

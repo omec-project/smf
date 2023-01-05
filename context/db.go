@@ -38,8 +38,6 @@ const (
 	SmfCounterCol = "smf.data.smfCount"
 )
 
-var dbMutex sync.Mutex
-
 func SetupSmfCollection() {
 
 	dbName := "sdcore_smf"
@@ -359,6 +357,8 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 
 		MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
 		DeleteSmContextInDBByRef(ref)
+	} else {
+		logger.CtxLog.Infof("DB entry doesn't exist with seid: ", seid)
 	}
 
 }

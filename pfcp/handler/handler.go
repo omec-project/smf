@@ -50,7 +50,6 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "unknown_upf")
 		return
 	}
-
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
 
