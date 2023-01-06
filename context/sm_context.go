@@ -296,8 +296,10 @@ func GetSMContext(ref string) (smContext *SMContext) {
 		smContext = value.(*SMContext)
 	} else {
 		if factory.SmfConfig.Configuration.EnableDbStore {
-			smContext = GetSMContextByRefInDB(ref)
-			smContextPool.Store(ref, smContext)
+			smContext := GetSMContextByRefInDB(ref)
+			if smContext != nil {
+				smContextPool.Store(ref, smContext)
+			}
 		}
 	}
 

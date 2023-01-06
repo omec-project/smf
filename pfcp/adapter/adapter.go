@@ -198,8 +198,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	smContext := smf_context.GetSMContextBySEID(SEID)
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID ", SEID)
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
+
+	//Get NodeId from Seq:NodeId Map
+	seq := msg.PfcpMessage.Header.SequenceNumber
+	nodeID := FetchPfcpTxn(seq)
+
 	if rsp.UPFSEID != nil {
-		NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
+		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		pfcpSessionCtx.RemoteSEID = rsp.UPFSEID.Seid
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rsp.UPFSEID.Seid)
@@ -208,7 +213,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	//Get N3 interface UPF
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(rsp.NodeID.ResolveNodeIdToIp()) {
+	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		// UPF Accept
 		if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess
@@ -291,7 +296,6 @@ func HandlePfcpSessionDeletionResponse(msg *pfcpUdp.Message) {
 	if smContext == nil {
 		logger.PfcpLog.Warnf("PFCP Session Deletion Response found SM context nil, response discarded")
 		return
-		// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
 	}
 
 	if pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
@@ -324,8 +328,6 @@ func SetUpfInactive(nodeID pfcpType.NodeID, msgType pfcp.MessageType) {
 		return
 	}
 
-	upf.UpfLock.Lock()
-	defer upf.UpfLock.Unlock()
 	upf.UPFStatus = smf_context.NotAssociated
 	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
 }
