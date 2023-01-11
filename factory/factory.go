@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*
- * AMF Configuration Factory
+ * SMF Configuration Factory
  */
 
 package factory
