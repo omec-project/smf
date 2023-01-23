@@ -86,6 +86,9 @@ type Configuration struct {
 	Mongodb              *Mongodb             `yaml:"mongodb,omitempty"`
 	KafkaInfo            KafkaInfo            `yaml:"kafkaInfo,omitempty"`
 	DebugProfilePort     int                  `yaml:"debugProfilePort,omitempty"`
+
+	EnableNrfCaching         bool `yaml:"enableNrfCaching"`
+	NrfCacheEvictionInterval int  `yaml:"nrfCacheEvictionInterval"`
 }
 
 type SnssaiInfoItem struct {

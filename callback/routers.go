@@ -81,4 +81,10 @@ var routes = Routes{
 		"/sm-n1n2failnotify/:smContextRef",
 		N1N2FailureNotification,
 	},
+	{
+		"NfStatusNotify",
+		"POST",
+		"/nf-status-notify",
+		HTTPNfSubscriptionStatusNotify,
+	},
 }

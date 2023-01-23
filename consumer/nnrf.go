@@ -19,6 +19,7 @@ import (
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 
+	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
@@ -171,15 +172,31 @@ func SendNFDeregistration() error {
 	return nil
 }
 
-func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
-	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
+func getSvcMsgType(nfType models.NfType) svcmsgtypes.SmfMsgType {
+	var svcMsgType svcmsgtypes.SmfMsgType
 
-	// Check data
+	switch nfType {
+	case models.NfType_AMF:
+		svcMsgType = svcmsgtypes.NnrfNFDiscoveryAmf
+	case models.NfType_PCF:
+		svcMsgType = svcmsgtypes.NnrfNFDiscoveryPcf
+	case models.NfType_UDM:
+		svcMsgType = svcmsgtypes.NnrfNFDiscoveryUdm
+	}
+	return svcMsgType
+}
+
+func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfType,
+	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (models.SearchResult, error) {
+
 	result, httpResp, localErr := smf_context.SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
-		SearchNFInstances(context.TODO(), models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
-	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "Out", "", "")
+		SearchNFInstances(context.TODO(), targetNfType, requestNfType, param)
+
+	svcMsgType := getSvcMsgType(targetNfType)
+
+	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "Out", "", "")
 
 	if localErr == nil {
 		if result.NfInstances == nil {
@@ -188,11 +205,64 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 			}
 
 			logger.ConsumerLog.Warnln("NfInstances is nil")
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
-			return nil, openapi.ReportError("NfInstances is nil")
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
+			return result, openapi.ReportError("NfInstances is nil")
 		}
 
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), "")
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "")
+	} else if httpResp != nil {
+		defer func() {
+			if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
+				logger.ConsumerLog.Errorf("SearchNFInstances response body cannot close: %+v", resCloseErr)
+			}
+		}()
+
+		logger.ConsumerLog.Warnln("handler returned wrong status code ", httpResp.Status)
+		if httpResp.Status != localErr.Error() {
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
+		} else {
+			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
+		}
+	} else {
+		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcMsgType), "In", "Failure", "NoResponse")
+		localErr = openapi.ReportError("server no response")
+	}
+
+	smfSelf := smf_context.SMF_Self()
+
+	for _, nfProfile := range result.NfInstances {
+		nrfSubscriptionData := models.NrfSubscriptionData{
+			NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/nf-status-notify",
+				smfSelf.URIScheme,
+				smfSelf.RegisterIPv4,
+				smfSelf.SBIPort),
+			SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
+			ReqNfType:  requestNfType,
+		}
+		nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData, targetNfType)
+		if problemDetails != nil {
+			logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
+		} else if err != nil {
+			logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
+		}
+		smfSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
+	}
+	return result, localErr
+}
+
+func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
+	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
+
+	var result models.SearchResult
+	var localErr error
+
+	if smf_context.SMF_Self().EnableNrfCaching {
+		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+	} else {
+		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+	}
+
+	if localErr == nil {
 		smf_context.SMF_Self().UDMProfile = result.NfInstances[0]
 
 		for _, service := range *smf_context.SMF_Self().UDMProfile.NfServices {
@@ -206,113 +276,75 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 		if smf_context.SMF_Self().SubscriberDataManagementClient == nil {
 			logger.ConsumerLog.Warnln("sdm client failed")
 		}
-	} else if httpResp != nil {
-		defer func() {
-			if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
-				logger.ConsumerLog.Errorf("SearchNFInstances response body cannot close: %+v", resCloseErr)
-			}
-		}()
-		logger.ConsumerLog.Warnln("handler returned wrong status code ", httpResp.Status)
-		if httpResp.Status != localErr.Error() {
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
-			return nil, localErr
-		}
-		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
-		return &problem, nil
 	} else {
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryUdm), "In", "Failure", "NoResponse")
-		return nil, openapi.ReportError("server no response")
+		apiError, ok := localErr.(openapi.GenericOpenAPIError)
+		if ok {
+			problem := apiError.Model().(models.ProblemDetails)
+			return &problem, nil
+		}
+
+		return nil, localErr
 	}
 	return nil, nil
 }
 
 func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
-	// Set targetNfType
-	targetNfType := models.NfType_PCF
-	// Set requestNfType
-	requesterNfType := models.NfType_SMF
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
 
-	// Check data
-	result, httpResp, localErr := smf_context.SMF_Self().
-		NFDiscoveryClient.
-		NFInstancesStoreApi.
-		SearchNFInstances(context.TODO(), targetNfType, requesterNfType, &localVarOptionals)
-	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "Out", "", "")
+	var result models.SearchResult
+	var localErr error
+
+	if smf_context.SMF_Self().EnableNrfCaching {
+		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+	} else {
+		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+	}
 
 	if localErr == nil {
 		logger.ConsumerLog.Traceln(result.NfInstances)
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", http.StatusText(httpResp.StatusCode), "")
-	} else if httpResp != nil {
-		defer func() {
-			if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
-				logger.ConsumerLog.Errorf("SearchNFInstances response body cannot close: %+v", resCloseErr)
-			}
-		}()
-		logger.ConsumerLog.Warnln("handler returned wrong status code ", httpResp.Status)
-		if httpResp.Status != localErr.Error() {
-			err = localErr
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
-			return
-		}
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
-		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		problemDetails = &problem
 	} else {
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", "NoResponse")
-		err = openapi.ReportError("server no response")
+		apiError, ok := localErr.(openapi.GenericOpenAPIError)
+		if ok {
+			problem := apiError.Model().(models.ProblemDetails)
+			return &problem, nil
+		}
+
+		return nil, localErr
 	}
 
 	return problemDetails, err
 }
 
 func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.ProblemDetails, error) {
-	targetNfType := models.NfType_AMF
-	requesterNfType := models.NfType_SMF
 
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
 
 	localVarOptionals.TargetNfInstanceId = optional.NewInterface(smContext.ServingNfId)
 
-	// Check data
-	result, httpResp, localErr := smf_context.SMF_Self().
-		NFDiscoveryClient.
-		NFInstancesStoreApi.
-		SearchNFInstances(context.TODO(), targetNfType, requesterNfType, &localVarOptionals)
-	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "Out", "", "")
+	var result models.SearchResult
+	var localErr error
+
+	if smf_context.SMF_Self().EnableNrfCaching {
+		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+	} else {
+		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+	}
 
 	if localErr == nil {
 		if result.NfInstances == nil {
-			if status := httpResp.StatusCode; status != http.StatusOK {
-				logger.ConsumerLog.Warnln("handler returned wrong status code", status)
-			}
-
-			logger.ConsumerLog.Warnln("NfInstances is nil")
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
 			return nil, openapi.ReportError("NfInstances is nil")
 		}
 		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
 		smContext.AMFProfile = deepcopy.Copy(result.NfInstances[0]).(models.NfProfile)
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "In", http.StatusText(httpResp.StatusCode), "")
-	} else if httpResp != nil {
-		defer func() {
-			if resCloseErr := httpResp; resCloseErr != nil {
-				logger.ConsumerLog.Errorf("SearchNFInstances response body cannot close: %+v", resCloseErr)
-			}
-		}()
-		if httpResp.Status != localErr.Error() {
-			metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
-			return nil, localErr
-		}
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
-		problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		return &problem, nil
 	} else {
-		metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryAmf), "In", "Failure", "NoResponse")
-		return nil, openapi.ReportError("server no response")
-	}
+		apiError, ok := localErr.(openapi.GenericOpenAPIError)
+		if ok {
+			problem := apiError.Model().(models.ProblemDetails)
+			return &problem, nil
+		}
 
+		return nil, localErr
+	}
 	return nil, nil
 }
 
@@ -347,4 +379,73 @@ func SendDeregisterNFInstance() (*models.ProblemDetails, error) {
 		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", "Failure", "NoResponse")
 		return nil, openapi.ReportError("server no response")
 	}
+}
+
+func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData, targetNfType models.NfType) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
+	logger.ConsumerLog.Debugf("Send Create Subscription for %v", targetNfType)
+
+	var res *http.Response
+	nrfSubData, res, err = smf_context.SMF_Self().NFManagementClient.SubscriptionsCollectionApi.CreateSubscription(context.TODO(), nrfSubscriptionData)
+	if err == nil {
+		return
+	} else if res != nil {
+		defer func() {
+			if resCloseErr := res.Body.Close(); resCloseErr != nil {
+				logger.ConsumerLog.Errorf("SendCreateSubscription response cannot close: %+v", resCloseErr)
+			}
+		}()
+		if res.Status != err.Error() {
+			logger.ConsumerLog.Errorf("SendCreateSubscription received error response: %v", res.Status)
+			return
+		}
+		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+		problemDetails = &problem
+	} else {
+		err = openapi.ReportError("server no response")
+	}
+	return
+}
+
+func SendRemoveSubscriptionProcedure(notificationData models.NotificationData) {
+	logger.ConsumerLog.Infof("[SMF] Send Remove Subscription Procedure")
+	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
+
+	if subscriptionId, ok := smf_context.SMF_Self().NfStatusSubscriptions.Load(nfInstanceId); ok {
+		logger.ConsumerLog.Debugf("SubscriptionId of nfInstance %v is %v", nfInstanceId, subscriptionId.(string))
+		problemDetails, err := SendRemoveSubscription(subscriptionId.(string))
+		if problemDetails != nil {
+			logger.ConsumerLog.Errorf("Remove NF Subscription Failed Problem[%+v]", problemDetails)
+		} else if err != nil {
+			logger.ConsumerLog.Errorf("Remove NF Subscription Error[%+v]", err)
+		} else {
+			logger.ConsumerLog.Infoln("[SMF] Remove NF Subscription successful")
+			smf_context.SMF_Self().NfStatusSubscriptions.Delete(nfInstanceId)
+		}
+	} else {
+		logger.ConsumerLog.Infof("nfinstance %v not found in map", nfInstanceId)
+	}
+}
+
+func SendRemoveSubscription(subscriptionId string) (problemDetails *models.ProblemDetails, err error) {
+	logger.ConsumerLog.Infof("[SMF] Send Remove Subscription for Subscription Id: %v", subscriptionId)
+
+	var res *http.Response
+	res, err = smf_context.SMF_Self().NFManagementClient.SubscriptionIDDocumentApi.RemoveSubscription(context.Background(), subscriptionId)
+	if err == nil {
+		return
+	} else if res != nil {
+		defer func() {
+			if bodyCloseErr := res.Body.Close(); bodyCloseErr != nil {
+				err = fmt.Errorf("RemoveSubscription' response body cannot close: %+w", bodyCloseErr)
+			}
+		}()
+		if res.Status != err.Error() {
+			return
+		}
+		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+		problemDetails = &problem
+	} else {
+		err = openapi.ReportError("server no response")
+	}
+	return
 }
