@@ -26,7 +26,7 @@ RUN cd $GOPATH/src/smf \
 # compile upf-adapter binary
 RUN cd $GOPATH/src/smf/upfadapter && CGO_ENABLED=0 go build
 
-FROM alpine:3.16 as smf
+FROM alpine:3.17 as smf
 
 LABEL description="ONF open source 5G Core Network" \
     version="Stage 3"
