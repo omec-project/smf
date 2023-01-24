@@ -231,21 +231,23 @@ func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfTy
 	smfSelf := smf_context.SMF_Self()
 
 	for _, nfProfile := range result.NfInstances {
-		nrfSubscriptionData := models.NrfSubscriptionData{
-			NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/nf-status-notify",
-				smfSelf.URIScheme,
-				smfSelf.RegisterIPv4,
-				smfSelf.SBIPort),
-			SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
-			ReqNfType:  requestNfType,
+		if _, ok := smfSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
+			nrfSubscriptionData := models.NrfSubscriptionData{
+				NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/nf-status-notify",
+					smfSelf.URIScheme,
+					smfSelf.RegisterIPv4,
+					smfSelf.SBIPort),
+				SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
+				ReqNfType:  requestNfType,
+			}
+			nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData, targetNfType)
+			if problemDetails != nil {
+				logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
+			} else if err != nil {
+				logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
+			}
+			smfSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
 		}
-		nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData, targetNfType)
-		if problemDetails != nil {
-			logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
-		} else if err != nil {
-			logger.ConsumerLog.Errorf("SendCreateSubscription Error[%+v]", err)
-		}
-		smfSelf.NfStatusSubscriptions.Store(nfProfile.NfInstanceId, nrfSubData.SubscriptionId)
 	}
 	return result, localErr
 }
