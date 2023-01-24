@@ -36,9 +36,9 @@ func init() {
 var smfContext SMFContext
 
 type DrsmCtxts struct {
-	TeidPool *drsm.Drsm
-	SeidPool *drsm.Drsm
-	UeIpPool *drsm.Drsm
+	TeidPool drsm.DrsmInterface
+	SeidPool drsm.DrsmInterface
+	UeIpPool drsm.DrsmInterface
 }
 
 type SMFContext struct {
@@ -221,7 +221,13 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.EnableNrfCaching = configuration.EnableNrfCaching
 
-	smfContext.NrfCacheEvictionInterval = time.Duration(configuration.NrfCacheEvictionInterval)
+	if configuration.EnableNrfCaching {
+		if configuration.NrfCacheEvictionInterval == 0 {
+			smfContext.NrfCacheEvictionInterval = time.Duration(900) // 15 mins
+		} else {
+			smfContext.NrfCacheEvictionInterval = time.Duration(configuration.NrfCacheEvictionInterval)
+		}
+	}
 
 	smfContext.PodIp = os.Getenv("POD_IP")
 	SetupNFProfile(config)
@@ -358,7 +364,7 @@ func ProcessConfigUpdate() bool {
 func (smfCtxt *SMFContext) InitDrsm() error {
 	podname := os.Getenv("HOSTNAME")
 	podip := os.Getenv("POD_IP")
-	podId := drsm.PodId{PodName: podname, PodIp: podip}
+	podId := drsm.PodId{PodName: podname, PodInstance: smfCtxt.NfInstanceID, PodIp: podip}
 	dbName := "sdcore_smf"
 	dbUrl := "mongodb://mongodb-arbiter-headless"
 

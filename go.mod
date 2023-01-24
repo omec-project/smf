@@ -25,7 +25,7 @@ require (
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
 	github.com/omec-project/pfcp v1.1.3
-	github.com/omec-project/util v1.0.6
+	github.com/omec-project/util v1.0.9
 	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.13.0
@@ -37,7 +37,7 @@ require (
 
 require (
 	github.com/omec-project/metricfunc v1.1.1
-	github.com/omec-project/nrf v0.0.0-20221206151640-2d619e2b04d8
+	github.com/omec-project/nrf v1.0.1
 	github.com/segmentio/kafka-go v0.4.38
 	go.mongodb.org/mongo-driver v1.10.1
 )
