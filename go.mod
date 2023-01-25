@@ -36,7 +36,7 @@ require (
 )
 
 require (
-	github.com/omec-project/metricfunc v1.1.1
+	github.com/omec-project/metricfunc v1.1.2
 	github.com/omec-project/nrf v1.0.1
 	github.com/segmentio/kafka-go v0.4.38
 	go.mongodb.org/mongo-driver v1.10.1
