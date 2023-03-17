@@ -61,6 +61,12 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 			dnnInfo.MTU = 1400
 		}
 
+		//block static IPs for this DNN if any
+		if staticIpsCfg := c.GetDnnStaticIpInfo(dnnInfoConfig.Dnn); staticIpsCfg != nil {
+			logger.InitLog.Infof("initialising slice [sst:%v, sd:%v], dnn [%s] with static IP info [%v]", snssaiInfo.Snssai.Sst, snssaiInfo.Snssai.Sd, dnnInfoConfig.Dnn, staticIpsCfg)
+			dnnInfo.UeIPAllocator.ReserveStaticIps(&staticIpsCfg.ImsiIpInfo)
+		}
+
 		snssaiInfo.DnnInfos[dnnInfoConfig.Dnn] = &dnnInfo
 	}
 	c.SnssaiInfos = append(c.SnssaiInfos, snssaiInfo)

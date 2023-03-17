@@ -21,7 +21,7 @@ func TestIPPoolAlloc(t *testing.T) {
 	var allocAddresses []string
 	//check if we can allocate 254 addresses
 	for i := 1; i <= 254; i++ {
-		ip, err := allocator.Allocate()
+		ip, err := allocator.Allocate("")
 		if err != nil {
 			t.Errorf("failed to allocate pool %v", err)
 		}
@@ -32,12 +32,12 @@ func TestIPPoolAlloc(t *testing.T) {
 	//Test what happens if we releae all addresses
 	for _, ips := range allocAddresses {
 		ip := net.ParseIP(ips)
-		allocator.Release(ip)
+		allocator.Release("", ip)
 	}
 
 	//Check what happens if we try to release unknown address
 	ip := net.ParseIP("192.168.2.1")
-	allocator.Release(ip)
+	allocator.Release("", ip)
 }
 
 func TestIPPoolAllocRelease(t *testing.T) {
@@ -49,7 +49,7 @@ func TestIPPoolAllocRelease(t *testing.T) {
 
 	ip1 := net.ParseIP("192.168.1.1")
 	for i := 1; i <= 255; i++ {
-		ip, err := allocator.Allocate()
+		ip, err := allocator.Allocate("")
 		if err != nil {
 			t.Errorf("failed to allocate pool %v", err)
 		}
@@ -58,7 +58,7 @@ func TestIPPoolAllocRelease(t *testing.T) {
 			if ip.Equal(ip1) == false {
 				t.Errorf("address not allocated in order ? allocated address %v", ip1)
 			}
-			allocator.Release(ip)
+			allocator.Release("", ip)
 		}
 		if i == 2 {
 			ip2 := net.ParseIP("192.168.1.2")
@@ -79,13 +79,13 @@ func TestIPPoolAllocLeastRecentlyUsed(t *testing.T) {
 		t.Errorf("failed to allocate pool %v", err)
 	}
 
-	ip1, err := allocator.Allocate()
+	ip1, err := allocator.Allocate("")
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)
 	}
 	fmt.Printf("Allocated address = %v\n", ip1)
-	allocator.Release(ip1)
-	ip2, err := allocator.Allocate()
+	allocator.Release("", ip1)
+	ip2, err := allocator.Allocate("")
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)
 	}

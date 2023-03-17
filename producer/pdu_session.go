@@ -131,7 +131,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	}
 
 	// IP Allocation
-	if ip, err := smContext.DNNInfo.UeIPAllocator.Allocate(); err != nil {
+	if ip, err := smContext.DNNInfo.UeIPAllocator.Allocate(smContext.Supi); err != nil {
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, failed allocate IP address: ", err)
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("IpAllocError")
 		return fmt.Errorf("IpAllocError")
