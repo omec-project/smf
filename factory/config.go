@@ -87,8 +87,14 @@ type Configuration struct {
 	KafkaInfo            KafkaInfo            `yaml:"kafkaInfo,omitempty"`
 	DebugProfilePort     int                  `yaml:"debugProfilePort,omitempty"`
 
-	EnableNrfCaching         bool `yaml:"enableNrfCaching"`
-	NrfCacheEvictionInterval int  `yaml:"nrfCacheEvictionInterval"`
+	EnableNrfCaching         bool           `yaml:"enableNrfCaching"`
+	NrfCacheEvictionInterval int            `yaml:"nrfCacheEvictionInterval"`
+	StaticIpInfo             []StaticIpInfo `yaml:"staticIpInfo"`
+}
+
+type StaticIpInfo struct {
+	Dnn        string            `yaml:"dnn"`
+	ImsiIpInfo map[string]string `yaml:"imsiIpInfo"`
 }
 
 type SnssaiInfoItem struct {

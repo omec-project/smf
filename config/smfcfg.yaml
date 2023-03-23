@@ -21,6 +21,19 @@ configuration:
     brokerUri: "sd-core-kafka-headless"
     brokerPort: 9092
     topicName: "sdcore-data-source-smf"
+  staticIpInfo:
+    - dnn: internet_1
+      imsiIpInfo:
+        supi-123456789012341: "1.1.1.1"
+        supi-123456789012342: "2.2.2.2"
+        supi-123456789012343: "3.3.3.3"
+        supi-123456789012344: "4.4.4.4"
+    - dnn: internet_2
+      imsiIpInfo:
+        supi-123456789012345: "5.5.5.5"
+        supi-123456789012346: "6.6.6.6"
+        supi-123456789012347: "7.7.7.7"
+        supi-123456789012348: "8.8.8.8"
   smfName: SMF # the name of this SMF
   sbi: # Service-based interface information
     scheme: http # the protocol for sbi (http or https)

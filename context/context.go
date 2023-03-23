@@ -83,6 +83,7 @@ type SMFContext struct {
 
 	EnableNrfCaching         bool
 	NrfCacheEvictionInterval time.Duration
+	StaticIpInfo             *[]factory.StaticIpInfo
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
@@ -131,6 +132,9 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	if configuration.SmfName != "" {
 		smfContext.Name = configuration.SmfName
 	}
+
+	//copy static UE IP Addr config
+	smfContext.StaticIpInfo = &configuration.StaticIpInfo
 
 	sbi := configuration.Sbi
 	localIp := GetLocalIP()
@@ -398,5 +402,16 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	//for IP-Addr
 	//TODO, use UPF based allocation for now
 
+	return nil
+}
+
+func (smfCtxt *SMFContext) GetDnnStaticIpInfo(dnn string) *factory.StaticIpInfo {
+
+	for _, info := range *smfCtxt.StaticIpInfo {
+		if info.Dnn == dnn {
+			logger.CfgLog.Debugf("get static ip info for dnn [%s] found [%v]", dnn, info)
+			return &info
+		}
+	}
 	return nil
 }

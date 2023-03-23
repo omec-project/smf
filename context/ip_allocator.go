@@ -81,7 +81,14 @@ func IPAddrOffset(in, base net.IP) int {
 }
 
 // Allocate will allocate the IP address and returns it
-func (a *IPAllocator) Allocate() (net.IP, error) {
+func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
+
+	//check if static IP already reserved for this IMSI
+	staticIps := *a.g.staticIps
+	if ipStr := staticIps[imsi]; ipStr != "" {
+		return net.ParseIP(ipStr).To4(), nil
+	}
+
 	if offset, err := a.g.allocate(); err != nil {
 		return nil, errors.New("ip allocation failed" + err.Error())
 	} else {
@@ -97,17 +104,39 @@ func (a *IPAllocator) Allocate() (net.IP, error) {
 	}
 }
 
-func (a *IPAllocator) Release(ip net.IP) {
+func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
+	a.g.staticIps = ips
+	for _, ipStr := range *ips {
+		if ip := net.ParseIP(ipStr).To4(); ip != nil {
+			//block static IPs in pool to avoid dynamic allocation
+			a.BlockIp(ip)
+		}
+	}
+}
+
+func (a *IPAllocator) BlockIp(ip net.IP) {
+	offset := IPAddrOffset(ip, a.ipNetwork.IP)
+	a.g.block(int64(offset))
+}
+
+func (a *IPAllocator) Release(imsi string, ip net.IP) {
+	//Don't release static IPs
+	staticIps := *a.g.staticIps
+	if ipStr := staticIps[imsi]; ipStr != "" {
+		return
+	}
+
 	offset := IPAddrOffset(ip, a.ipNetwork.IP)
 	a.g.release(int64(offset))
 }
 
 type _IDPool struct {
-	minValue int64
-	maxValue int64
-	isUsed   map[int64]bool
-	lock     sync.Mutex
-	index    int64
+	minValue  int64
+	maxValue  int64
+	isUsed    map[int64]bool
+	lock      sync.Mutex
+	index     int64
+	staticIps *map[string]string //map of [imsi]ip
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {
@@ -140,6 +169,12 @@ func (i *_IDPool) allocate() (id int64, err error) {
 	}
 
 	return 0, errors.New("no available value range to allocate id")
+}
+
+func (i *_IDPool) block(id int64) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	i.isUsed[id] = true
 }
 
 func (i *_IDPool) release(id int64) {

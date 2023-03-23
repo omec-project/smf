@@ -354,7 +354,7 @@ func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 func (smContext *SMContext) ReleaseUeIpAddr() error {
 	if ip := smContext.PDUAddress.Ip; ip != nil && !smContext.PDUAddress.UpfProvided {
 		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.Ip.String())
-		smContext.DNNInfo.UeIPAllocator.Release(ip)
+		smContext.DNNInfo.UeIPAllocator.Release(smContext.Supi, ip)
 		smContext.PDUAddress.Ip = net.IPv4(0, 0, 0, 0)
 	}
 	return nil
