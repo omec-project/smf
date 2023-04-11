@@ -291,7 +291,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	smContext.SMContextState = nextState
 }
 
-//*** add unit test ***//
+// *** add unit test ***//
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
@@ -307,7 +307,7 @@ func GetSMContext(ref string) (smContext *SMContext) {
 	return
 }
 
-//*** add unit test ***//
+// *** add unit test ***//
 func RemoveSMContext(ref string) {
 
 	var smContext *SMContext
@@ -339,7 +339,7 @@ func RemoveSMContext(ref string) {
 	}
 }
 
-//*** add unit test ***//
+// *** add unit test ***//
 func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 	if value, ok := seidSMContextMap.Load(SEID); ok {
 		smContext = value.(*SMContext)
@@ -360,7 +360,7 @@ func (smContext *SMContext) ReleaseUeIpAddr() error {
 	return nil
 }
 
-//*** add unit test ***//
+// *** add unit test ***//
 func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData) {
 	smContext.Gpsi = createData.Gpsi
 	smContext.Supi = createData.Supi
@@ -717,7 +717,7 @@ func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 	return upfName, upfIP
 }
 
-//Collect Ctxt info and publish on Kafka stream
+// Collect Ctxt info and publish on Kafka stream
 func (smContext *SMContext) PublishSmCtxtInfo() {
 	var op mi.SubscriberOp
 	kafkaSmCtxt := mi.CoreSubscriber{}

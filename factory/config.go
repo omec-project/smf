@@ -262,7 +262,7 @@ func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 	}
 }
 
-//Update level-1 Configuration(Not actual SMF config structure used by SMF)
+// Update level-1 Configuration(Not actual SMF config structure used by SMF)
 func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 
 	//Reset previous SNSSAI structure
@@ -493,7 +493,7 @@ func compareUpfDnn(c1, c2 interface{}) bool {
 	return c1.(models.DnnUpfInfoItem).Dnn == c2.(models.DnnUpfInfoItem).Dnn
 }
 
-//Returns false if there is mismatch
+// Returns false if there is mismatch
 func compareUPNode(u1, u2 UPNode) bool {
 
 	if u1.ANIP == u2.ANIP &&

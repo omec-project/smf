@@ -229,7 +229,7 @@ func GetPfId(ids string) uint8 {
 	}
 }
 
-//Get Packet Filter Directions
+// Get Packet Filter Directions
 func GetPfDirectionFromPccFlowInfo(flowDir models.FlowDirectionRm) uint8 {
 	switch flowDir {
 	case models.FlowDirectionRm_UPLINK:
@@ -245,8 +245,10 @@ func GetPfDirectionFromPccFlowInfo(flowDir models.FlowDirectionRm) uint8 {
 }
 
 // e.x. permit out ip-proto from x.x.x.x/maskbits port/port-range to assigned(x.x.x.x/maskbits) port/port-range
-//       0		1 	2		3	  4   				5   		   6 	7						8
-//See spec 29212-5.4.2 / 29512-5.6.3.2
+//
+//	0		1 	2		3	  4   				5   		   6 	7						8
+//
+// See spec 29212-5.4.2 / 29512-5.6.3.2
 func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 	//Tokenize flow desc and make PF components
 	pfcTags := strings.Fields(flowDesc)

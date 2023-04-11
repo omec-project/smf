@@ -274,7 +274,7 @@ func getPathBetween(cur *UPNode, dest *UPNode, visited map[*UPNode]bool,
 	return nil, false
 }
 
-//insert new UPF (only N3)
+// insert new UPF (only N3)
 func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *factory.UPNode) error {
 
 	logger.UPNodeLog.Infof("UPNode[%v] to insert, content[%v]\n", name, node)
@@ -354,7 +354,7 @@ func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *facto
 	return nil
 }
 
-//update UPF info
+// update UPF info
 func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, node *factory.UPNode) error {
 	//What all to update- nssai/dnn info
 	logger.UPNodeLog.Infof("UPNode[%v] to update, content[%v]\n", name, node)
@@ -364,7 +364,7 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, node *facto
 	return nil
 }
 
-//delete UPF
+// delete UPF
 func (upi *UserPlaneInformation) DeleteSmfUserPlaneNode(name string, node *factory.UPNode) error {
 
 	logger.UPNodeLog.Infof("UPNode[%v] to delete, content[%v]\n", name, node)
