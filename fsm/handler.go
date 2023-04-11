@@ -12,7 +12,7 @@ import (
 	"github.com/omec-project/smf/transaction"
 )
 
-//Define SM Context level Events
+// Define SM Context level Events
 type SmEvent uint
 
 const (
@@ -34,7 +34,7 @@ type SmEventData struct {
 	Txn interface{}
 }
 
-//Define FSM Func Point Struct here
+// Define FSM Func Point Struct here
 type fsmHandler [smf_context.SmStateMax][SmEventMax]func(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error)
 
 var SmfFsmHandler fsmHandler
@@ -51,7 +51,7 @@ func init() {
 	transaction.InitTxnFsm(SmfTxnFsmHandle)
 }
 
-//Override with specific handler
+// Override with specific handler
 func InitFsm() {
 
 	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessCreate] = HandleStateInitEventPduSessCreate

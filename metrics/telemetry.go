@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//SmfStats captures SMF level stats
+// SmfStats captures SMF level stats
 type SmfStats struct {
 	n11Msg      *prometheus.CounterVec
 	n4Msg       *prometheus.CounterVec
@@ -102,43 +102,43 @@ func init() {
 	}
 }
 
-//InitMetrics initialises SMF stats
+// InitMetrics initialises SMF stats
 func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(":9089", nil)
 }
 
-//IncrementN11MsgStats increments message level stats
+// IncrementN11MsgStats increments message level stats
 func IncrementN11MsgStats(smfID, msgType, direction, result, reason string) {
 	smfStats.n11Msg.WithLabelValues(smfID, msgType, direction, result, reason).Inc()
 }
 
-//IncrementN4MsgStats increments message level stats
+// IncrementN4MsgStats increments message level stats
 func IncrementN4MsgStats(smfID, msgType, direction, result, reason string) {
 	smfStats.n4Msg.WithLabelValues(smfID, msgType, direction, result, reason).Inc()
 }
 
-//IncrementSvcNrfMsgStats increments message level stats
+// IncrementSvcNrfMsgStats increments message level stats
 func IncrementSvcNrfMsgStats(smfID, msgType, direction, result, reason string) {
 	smfStats.svcNrfMsg.WithLabelValues(smfID, msgType, direction, result, reason).Inc()
 }
 
-//IncrementSvcPcfMsgStats increments message level stats
+// IncrementSvcPcfMsgStats increments message level stats
 func IncrementSvcPcfMsgStats(smfID, msgType, direction, result, reason string) {
 	smfStats.svcPcfMsg.WithLabelValues(smfID, msgType, direction, result, reason).Inc()
 }
 
-//IncrementSvcUdmMsgStats increments message level stats
+// IncrementSvcUdmMsgStats increments message level stats
 func IncrementSvcUdmMsgStats(smfID, msgType, direction, result, reason string) {
 	smfStats.svcUdmMsg.WithLabelValues(smfID, msgType, direction, result, reason).Inc()
 }
 
-//SetSessStats maintains Session level stats
+// SetSessStats maintains Session level stats
 func SetSessStats(nodeId string, count uint64) {
 	smfStats.sessions.WithLabelValues(nodeId).Set(float64(count))
 }
 
-//SetSessProfileStats maintains Session profile info
+// SetSessProfileStats maintains Session profile info
 func SetSessProfileStats(id, ip, state, upf, enterprise string, count uint64) {
 	smfStats.sessProfile.WithLabelValues(id, ip, state, upf, enterprise).Set(float64(count))
 }

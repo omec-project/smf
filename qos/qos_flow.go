@@ -69,7 +69,7 @@ type QoSFlowDescription struct {
 	QFDLen     uint8
 }
 
-//Qos Flow Description Parameter
+// Qos Flow Description Parameter
 type QosFlowParameter struct {
 	ParamId      uint8
 	ParamLen     uint8
@@ -89,7 +89,7 @@ func GetQosFlowIdFromQosId(qosId string) uint8 {
 	}
 }
 
-//Build Qos Flow Description to be sent to UE
+// Build Qos Flow Description to be sent to UE
 func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowDescriptionsAuthorized {
 
 	QFDescriptions := QosFlowDescriptionsAuthorized{
@@ -202,37 +202,37 @@ func GetBitRate(sBitRate string) (val uint16, unit uint8) {
 	return
 }
 
-//bits 6 to 1 of octet(00xxxxxx)
+// bits 6 to 1 of octet(00xxxxxx)
 func (f *QoSFlowDescription) SetQoSFlowDescQfi(val uint8) {
 	f.Qfi = QFDQfiBitmask & val
 }
 
-//Operation code -bits 8 to 6 of octet(xxx00000)
+// Operation code -bits 8 to 6 of octet(xxx00000)
 func (f *QoSFlowDescription) SetQoSFlowDescOpCode(val uint8) {
 	f.OpCode = QFDOpCodeBitmask & val
 }
 
-//E-Bit Encoding
-//For the "create new QoS flow description" operation,
-//1:	parameters list is included
+// E-Bit Encoding
+// For the "create new QoS flow description" operation,
+// 1:	parameters list is included
 func (f *QoSFlowDescription) SetQFDEBitCreateNewQFD() {
 	f.NumOfParam |= QFDEbit
 }
 
-//For the "Delete existing QoS flow description" operation
-//0:	parameters list is not included
+// For the "Delete existing QoS flow description" operation
+// 0:	parameters list is not included
 func (f *QoSFlowDescription) SetQFDEBitDeleteExistingQFD() {
 	f.NumOfParam &= ^QFDEbit
 }
 
-//For the "modify existing QoS flow description" operation
-//0:	extension of previously provided parameters
+// For the "modify existing QoS flow description" operation
+// 0:	extension of previously provided parameters
 func (f *QoSFlowDescription) SetQFDEBitModExtendParamQFD() {
 	f.NumOfParam &= ^QFDEbit
 }
 
-//For the "modify existing QoS flow description" operation
-//1:	replacement of all previously provided parameters
+// For the "modify existing QoS flow description" operation
+// 1:	replacement of all previously provided parameters
 func (f *QoSFlowDescription) SetQFDEBitModReplaceAllParamQFD() {
 	f.NumOfParam |= QFDEbit
 }
@@ -245,7 +245,7 @@ func (p *QosFlowParameter) SetQosFlowParamBitRate(rateType, rateUnit uint8, rate
 	p.ParamContent = append(p.ParamContent, byte(rateVal>>8), byte(rateVal&0xff))
 }
 
-//Encode QoSFlowDescriptions IE
+// Encode QoSFlowDescriptions IE
 func (d *QosFlowDescriptionsAuthorized) AddQFD(qfd *QoSFlowDescription) {
 
 	//Add QFI byte
@@ -350,7 +350,7 @@ func CommitQosFlowDescUpdate(smCtxtPolData *SmCtxtPolicyData, update *QosFlowsUp
 	}
 }
 
-//Compare if any change in QoS Data
+// Compare if any change in QoS Data
 func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 	//TODO
 	return false

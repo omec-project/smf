@@ -85,7 +85,7 @@ func (writer Writer) PublishPduSessEvent(ctxt mi.CoreSubscriber, op mi.Subscribe
 
 var nfInstanceId string
 
-//initialised by context package
+// initialised by context package
 func SetNfInstanceId(s string) {
 	nfInstanceId = s
 }
