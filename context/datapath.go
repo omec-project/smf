@@ -483,7 +483,7 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	return flowQER, nil
 }
 
-//ActivateUpLinkPdr
+// ActivateUpLinkPdr
 func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32) error {
 
 	ueIpAddr := pfcpType.UEIPAddress{}
@@ -668,7 +668,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 	return nil
 }
 
-//ActivateTunnelAndPDR
+// ActivateTunnelAndPDR
 func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) error {
 
 	//Check if UPF association is good

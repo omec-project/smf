@@ -403,7 +403,7 @@ func TestMakePccRules() map[string]*models.PccRule {
 	return map[string]*models.PccRule{"PccRule1": &pccRule1, "PccRule2": &pccRule2, "PccRuleDef": &pccRuleDef}
 }
 
-//TestMakeQosData - Locally generate Qos Flow data
+// TestMakeQosData - Locally generate Qos Flow data
 func TestMakeQosData() map[string]*models.QosData {
 	qosData1 := models.QosData{
 		QosId:                "1",
@@ -443,7 +443,7 @@ func TestMakeQosData() map[string]*models.QosData {
 	}
 }
 
-//TestMakeSessionRule - Locally generate Qos Flow data
+// TestMakeSessionRule - Locally generate Qos Flow data
 func TestMakeSessionRule() map[string]*models.SessionRule {
 	sessRule1 := models.SessionRule{
 		SessRuleId: "RuleId-1",
@@ -484,7 +484,7 @@ func TestMakeSessionRule() map[string]*models.SessionRule {
 	}
 }
 
-//TestMakeTrafficControlData - Locally generate Traffic Control data
+// TestMakeTrafficControlData - Locally generate Traffic Control data
 func TestMakeTrafficControlData() map[string]*models.TrafficControlData {
 
 	tc1 := models.TrafficControlData{

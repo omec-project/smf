@@ -16,7 +16,7 @@ import (
 	"github.com/omec-project/smf/pfcp/udp"
 )
 
-//BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
+// BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
 func BuildPfcpHeartbeatRequest() (pfcp.HeartbeatRequest, error) {
 	msg := pfcp.HeartbeatRequest{}
 

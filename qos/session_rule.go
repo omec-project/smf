@@ -8,14 +8,14 @@ import (
 	"github.com/omec-project/openapi/models"
 )
 
-//Handle Session Rule related info
+// Handle Session Rule related info
 type SessRulesUpdate struct {
 	add, mod, del  map[string]*models.SessionRule
 	ActiveSessRule *models.SessionRule
 	activeRuleName string
 }
 
-//Get Session rule changes delta
+// Get Session rule changes delta
 func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
 
 	if len(pcfSessRules) == 0 {

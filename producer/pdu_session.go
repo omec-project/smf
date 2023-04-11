@@ -475,26 +475,26 @@ func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *h
 }
 
 /*
-func HandleNwInitiatedPduSessionRelease(smContextRef string) {
-	smContext := smf_context.GetSMContext(smContextRef)
-	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
+	func HandleNwInitiatedPduSessionRelease(smContextRef string) {
+		smContext := smf_context.GetSMContext(smContextRef)
+		PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 
-	switch PFCPResponseStatus {
-	case smf_context.SessionReleaseSuccess:
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseSuccess")
-		smContext.ChangeState(smf_context.SmStateInActivePending)
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
-	//TODO: i will uncomment this in next PR SDCORE-209
-	//case smf_context.SessionReleaseTimeout:
-	//	fallthrough
-	case smf_context.SessionReleaseFailed:
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseFailed")
-		smContext.ChangeState(smf_context.SmStateInActivePending)
-		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease,  SMContextState Change State: ", smContext.SMContextState.String())
+		switch PFCPResponseStatus {
+		case smf_context.SessionReleaseSuccess:
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseSuccess")
+			smContext.ChangeState(smf_context.SmStateInActivePending)
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
+		//TODO: i will uncomment this in next PR SDCORE-209
+		//case smf_context.SessionReleaseTimeout:
+		//	fallthrough
+		case smf_context.SessionReleaseFailed:
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseFailed")
+			smContext.ChangeState(smf_context.SmStateInActivePending)
+			smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease,  SMContextState Change State: ", smContext.SMContextState.String())
+		}
+
+		smf_context.RemoveSMContext(smContext.Ref)
 	}
-
-	smf_context.RemoveSMContext(smContext.Ref)
-}
 */
 func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	txn := eventData.(*transaction.Transaction)
@@ -764,7 +764,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	return nil
 }
 
-//Handles PFCP response depending upon response cause recevied.
+// Handles PFCP response depending upon response cause recevied.
 func HandlePFCPResponse(smContext *smf_context.SMContext,
 	PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *http_wrapper.Response {
 

@@ -696,7 +696,7 @@ func GetLocalIP() string {
 	return ""
 }
 
-//SendPfcpMsgToAdapter send pfcp msg to upf-adapter in http/json encoded format
+// SendPfcpMsgToAdapter send pfcp msg to upf-adapter in http/json encoded format
 func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) (*http.Response, error) {
 
 	// get IP

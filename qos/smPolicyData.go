@@ -30,7 +30,7 @@ type SmCtxtPolicyData struct {
 	SmCtxtCondData     SmCtxtCondData
 }
 
-//maintain all session rule-info and current active sess rule
+// maintain all session rule-info and current active sess rule
 type SmCtxtSessionRulesInfo struct {
 	SessionRules   map[string]*models.SessionRule
 	ActiveRuleName string

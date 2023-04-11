@@ -39,9 +39,11 @@ func InsertPfcpTxn(seqNo uint32, upNodeID *pfcpType.NodeID) {
 	PfcpTxns[seqNo] = upNodeID
 }
 
-/* This function is called when smf runs with upfadapter and the communication between
-   them is sync. smf already holds the lock before calling to the below API, so not required
-   upfLock in handler functions
+/*
+This function is called when smf runs with upfadapter and the communication between
+
+	them is sync. smf already holds the lock before calling to the below API, so not required
+	upfLock in handler functions
 */
 func HandleAdapterPfcpRsp(pfcpMsg pfcp.Message, evtData *pfcpUdp.PfcpEventData) error {
 	pfcpBodyJson, _ := json.Marshal(pfcpMsg.Body)

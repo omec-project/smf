@@ -432,7 +432,7 @@ func StopKeepAliveTimer() {
 	}
 }
 
-//UpdateNF is the callback function, this is called when keepalivetimer elapsed
+// UpdateNF is the callback function, this is called when keepalivetimer elapsed
 func UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
@@ -494,7 +494,7 @@ func (smf *SMF) SendNrfRegistration() {
 	}
 }
 
-//Run only single instance of func f at a time
+// Run only single instance of func f at a time
 func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
 
 	//Instance already running ?

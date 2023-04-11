@@ -65,7 +65,7 @@ func CommitPccRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *PccRulesUpdat
 	}
 }
 
-//Get the difference between 2 pcc rules
+// Get the difference between 2 pcc rules
 func GetPccRuleChanges(s, d *models.PccRule) bool {
 	//TODO
 	return false
