@@ -34,6 +34,8 @@ SMF has configuration interface to handle slice configuration. Config service is
 12. UPF-Adapter for PFCP registration of multiple SMF instances with same node-id to any UPF.
 13. Keep-alive support with respect to NRF.
 14. Transaction queueing for the same PDU session.
+15. SMF metrics available via metric-func to 5g Grafana dashboard.
+16. Static IP-address provision via configuration.
 
 
 ## SMF supports wide range of error handling, 
@@ -48,8 +50,6 @@ This includes some of the handling as listed below
 ## Upcoming features in SMF
 
 1. Policy Notify from PCF for QoS update
-2. New Metric export architecture suitable for cloud native architecture
-3. Support Cloud Native AMF, PCF and UPF
 
 
 
