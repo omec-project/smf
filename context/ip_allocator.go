@@ -84,9 +84,11 @@ func IPAddrOffset(in, base net.IP) int {
 func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 
 	//check if static IP already reserved for this IMSI
-	staticIps := *a.g.staticIps
-	if ipStr := staticIps[imsi]; ipStr != "" {
-		return net.ParseIP(ipStr).To4(), nil
+	if a.g.staticIps != nil {
+		staticIps := *a.g.staticIps
+		if ipStr := staticIps[imsi]; ipStr != "" {
+			return net.ParseIP(ipStr).To4(), nil
+		}
 	}
 
 	if offset, err := a.g.allocate(); err != nil {
