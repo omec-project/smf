@@ -123,9 +123,11 @@ func (a *IPAllocator) BlockIp(ip net.IP) {
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
 	//Don't release static IPs
-	staticIps := *a.g.staticIps
-	if ipStr := staticIps[imsi]; ipStr != "" {
-		return
+	if a.g.staticIps != nil {
+		staticIps := *a.g.staticIps
+		if ipStr := staticIps[imsi]; ipStr != "" {
+			return
+		}
 	}
 
 	offset := IPAddrOffset(ip, a.ipNetwork.IP)
