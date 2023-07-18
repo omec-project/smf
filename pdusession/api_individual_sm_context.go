@@ -35,7 +35,7 @@ import (
 
 // HTTPReleaseSmContext - Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
-	logger.PduSessLog.Info("Recieve Release SM Context Request")
+	logger.PduSessLog.Info("Receive Release SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
 
@@ -87,7 +87,7 @@ func RetrieveSmContext(c *gin.Context) {
 
 // HTTPUpdateSmContext - Update SM Context
 func HTTPUpdateSmContext(c *gin.Context) {
-	logger.PduSessLog.Info("Recieve Update SM Context Request")
+	logger.PduSessLog.Info("Receive Update SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_req)
 
