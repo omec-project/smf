@@ -20,7 +20,7 @@ import (
 )
 
 type Writer struct {
-	kafkaWriter kafka.Writer
+	kafkaWriter *kafka.Writer
 }
 
 var StatWriter Writer
@@ -54,7 +54,7 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 	}
 
 	StatWriter = Writer{
-		kafkaWriter: producer,
+		kafkaWriter: &producer,
 	}
 	return nil
 }
