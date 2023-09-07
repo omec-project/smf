@@ -144,3 +144,10 @@ func TestCompareGenericSlices(t *testing.T) {
 		fmt.Println("Generic, The Links match")
 	}
 }
+
+func TestKafkaEnabledByDefault(t *testing.T) {
+	kafkaConfig := KafkaInfo{}
+	if kafkaConfig.DisableKafka != false {
+		t.Errorf("Expected Kafka to be enabled by default, was disabled")
+	}
+}
