@@ -65,10 +65,10 @@ type Mongodb struct {
 }
 
 type KafkaInfo struct {
-	BrokerUri    string `yaml:"brokerUri,omitempty"`
-	BrokerPort   int    `yaml:"brokerPort,omitempty"`
-	Topic        string `yaml:"topicName,omitempty"`
-	DisableKafka bool   `yaml:"disableKafka,omitempty"`
+	BrokerUri   string `yaml:"brokerUri,omitempty"`
+	BrokerPort  int    `yaml:"brokerPort,omitempty"`
+	Topic       string `yaml:"topicName,omitempty"`
+	EnableKafka *bool  `yaml:"enableKafka,omitempty"`
 }
 
 type Configuration struct {

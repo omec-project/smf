@@ -7,10 +7,12 @@ import (
 	"github.com/omec-project/smf/factory"
 )
 
+var my_false bool = false
+
 func TestInitializeKafkaStreamWithKafkaDisabled(t *testing.T) {
 	config := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
-			DisableKafka: true,
+			EnableKafka: &my_false,
 		},
 	}
 
@@ -27,7 +29,7 @@ func TestInitializeKafkaStreamWithKafkaDisabled(t *testing.T) {
 func TestSendMessageWithKafkaDisabled(t *testing.T) {
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
-			DisableKafka: true,
+			EnableKafka: &my_false,
 		},
 	}
 	config := factory.Config{
@@ -50,7 +52,7 @@ func TestSendMessageWithKafkaDisabled(t *testing.T) {
 func TestPublishPduSessEventWithKafkaDisabled(t *testing.T) {
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
-			DisableKafka: true,
+			EnableKafka: &my_false,
 		},
 	}
 	config := factory.Config{
@@ -73,7 +75,7 @@ func TestPublishPduSessEventWithKafkaDisabled(t *testing.T) {
 func TestPublishMsgEventWithKafkaDisabled(t *testing.T) {
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
-			DisableKafka: true,
+			EnableKafka: &my_false,
 		},
 	}
 	config := factory.Config{
@@ -94,7 +96,7 @@ func TestPublishMsgEventWithKafkaDisabled(t *testing.T) {
 func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
-			DisableKafka: true,
+			EnableKafka: &my_false,
 		},
 	}
 	config := factory.Config{

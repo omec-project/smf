@@ -39,6 +39,11 @@ func InitConfigFactory(f string) error {
 			return yamlErr
 		}
 
+		if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {
+			enableKafka := true
+			SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
+		}
+
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
 			gClient := client.ConnectToConfigServer("webui:9876")
