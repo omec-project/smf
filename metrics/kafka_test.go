@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023 Open Networking Foundation <info@opennetworking.org>
+// SPDX-License-Identifier: Apache-2.0
+
 package metrics
 
 import (
