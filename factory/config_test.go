@@ -144,3 +144,13 @@ func TestCompareGenericSlices(t *testing.T) {
 		fmt.Println("Generic, The Links match")
 	}
 }
+
+func TestKafkaEnabledByDefault(t *testing.T) {
+	err := InitConfigFactory("../config/smfcfg.yaml")
+	if err != nil {
+		t.Errorf("Could not load default configuration file: %v", err)
+	}
+	if *SmfConfig.Configuration.KafkaInfo.EnableKafka != true {
+		t.Errorf("Expected Kafka to be enabled by default, was disabled")
+	}
+}
