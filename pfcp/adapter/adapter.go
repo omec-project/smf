@@ -199,7 +199,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID ", SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
+	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse smContext %v\n", smContext)
 
 	//Get NodeId from Seq:NodeId Map
 	seq := msg.PfcpMessage.Header.SequenceNumber
@@ -235,13 +235,13 @@ func HandlePfcpSessionModificationResponse(msg *pfcpUdp.Message) {
 	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse")
 
 	pfcpRsp := msg.PfcpMessage.Body.(pfcp.PFCPSessionModificationResponse)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse pfcpRsp.Cause.CauseValue = [%v], accepted?? %v", pfcpRsp.Cause.CauseValue, pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse pfcpRsp.Cause.CauseValue = [%v], accepted?? %v\n", pfcpRsp.Cause.CauseValue, pfcpRsp.Cause.CauseValue == pfcpType.CauseRequestAccepted)
 
 	SEID := msg.PfcpMessage.Header.SEID
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse SEID %v", SEID)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse SEID %v\n", SEID)
 
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
+	logger.PfcpLog.Infof("In HandlePfcpSessionModificationResponse smContext found by SEID %v\n", smContext)
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(pfcpUdp.PfcpEventData); !ok {

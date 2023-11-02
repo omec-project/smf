@@ -5,6 +5,7 @@
 package qos
 
 import (
+	"github.com/omec-project/smf/logger"
 	"log"
 	"strconv"
 	"strings"
@@ -81,8 +82,9 @@ type QosFlowsUpdate struct {
 }
 
 func GetQosFlowIdFromQosId(qosId string) uint8 {
-	if id, err := strconv.Atoi(qosId); err != nil {
-		//TODO: Error Log
+	id, err := strconv.Atoi(qosId)
+	if err != nil {
+		logger.CtxLog.Errorf("String can not be converted to integer: %v", err)
 		return 0
 	} else {
 		return uint8(id)

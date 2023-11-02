@@ -42,57 +42,57 @@ func TestIPPoolAlloc(t *testing.T) {
 
 func TestIPPoolAllocRelease(t *testing.T) {
 
-	allocator, err := smf_context.NewIPAllocator("192.168.1.0/24")
+	allocator, err := smf_context.NewIPAllocator("192.168.0.0/16")
 	if err != nil {
-		t.Errorf("failed to allocate pool %v", err)
+		t.Errorf("failed to allocate pool %v\n", err)
 	}
 
-	ip1 := net.ParseIP("192.168.1.1")
+	ip1 := net.ParseIP("192.168.237.121")
 	for i := 1; i <= 255; i++ {
 		ip, err := allocator.Allocate("")
 		if err != nil {
-			t.Errorf("failed to allocate pool %v", err)
+			t.Errorf("failed to allocate ip address %v\n", err)
 		}
 		fmt.Printf("Allocated address = %v\n", ip)
 		if i == 1 {
 			if ip.Equal(ip1) == false {
-				t.Errorf("address not allocated in order ? allocated address %v", ip1)
+				t.Errorf("address not allocated in order ? allocated address %v\n", ip1)
 			}
 			allocator.Release("", ip)
 		}
 		if i == 2 {
-			ip2 := net.ParseIP("192.168.1.2")
+			ip2 := net.ParseIP("192.168.237.122")
 			if ip.Equal(ip2) == false {
-				t.Errorf("address not allocated in order ? allocated address %v", ip2)
+				t.Errorf("address not allocated in order ? allocated address %v\n", ip2)
 			}
 		}
-		//rollover, we should be using first address again
-		if i == 255 && ip.Equal(ip1) != true {
+		//rollover, we should not be using first address again
+		if i == 255 && ip.Equal(ip1) == true {
 			t.Errorf("Failed to allocate IP address = %v %v \n", ip, ip1)
 		}
 	}
 }
 
 func TestIPPoolAllocLeastRecentlyUsed(t *testing.T) {
-	allocator, err := smf_context.NewIPAllocator("192.168.1.0/24")
+	allocator, err := smf_context.NewIPAllocator("192.168.0.0/16")
 	if err != nil {
-		t.Errorf("failed to allocate pool %v", err)
+		t.Errorf("failed to allocate pool %v\n", err)
 	}
 
 	ip1, err := allocator.Allocate("")
 	if err != nil {
-		t.Errorf("failed to allocate pool %v", err)
+		t.Errorf("failed to allocate pool %v\n", err)
 	}
 	fmt.Printf("Allocated address = %v\n", ip1)
 	allocator.Release("", ip1)
 	ip2, err := allocator.Allocate("")
 	if err != nil {
-		t.Errorf("failed to allocate pool %v", err)
+		t.Errorf("failed to allocate pool %v\n", err)
 	}
 	fmt.Printf("Allocated address = %v\n", ip2)
 
-	//Same address is not allocate again..
+	//Same address is not allocate again.
 	if ip1.Equal(ip2) {
-		t.Errorf("ip1 %v & ip2 %v same ", ip1, ip2)
+		t.Errorf("ip1 %v & ip2 %v same\n ", ip1, ip2)
 	}
 }

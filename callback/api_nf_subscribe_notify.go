@@ -54,7 +54,7 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
-		logger.PduSessLog.Errorln("Error fetching response for HTTPNfSubscriptionStatusNotify : %+v", err)
+		logger.PduSessLog.Errorf("Error fetching response for HTTPNfSubscriptionStatusNotify : %+v\n", err)
 		problemDetails := models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "SYSTEM_FAILURE",

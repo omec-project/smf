@@ -92,7 +92,7 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 	}
 
 	if offset, err := a.g.allocate(); err != nil {
-		return nil, errors.New("ip allocation failed" + err.Error())
+		return nil, errors.New("ip allocation failed " + err.Error())
 	} else {
 		// smfCount := MongoDBLibrary.GetSmfCountFromDb()
 
