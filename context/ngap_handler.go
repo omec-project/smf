@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-
+	//nolint:gci
 	"github.com/omec-project/aper"
 	"github.com/omec-project/ngap/ngapType"
 	"github.com/omec-project/openapi/models"
@@ -30,7 +30,9 @@ func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (er
 
 	if QosFlowPerTNLInformation.UPTransportLayerInformation.Present !=
 		ngapType.UPTransportLayerInformationPresentGTPTunnel {
-		return errors.New("resourceSetupResponseTransfer.QosFlowPerTNLInformation.UPTransportLayerInformation.Present")
+		return errors.New(
+			"resourceSetupResponseTransfer.QosFlowPerTNLInformation.UPTransportLayerInformation.Present",
+		)
 	}
 
 	gtpTunnel := QosFlowPerTNLInformation.UPTransportLayerInformation.GTPTunnel
@@ -44,7 +46,9 @@ func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (er
 		if dataPath.Activated {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
+				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(
+					pfcpType.OuterHeaderCreation,
+				)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
 				dlOuterHeaderCreation.Teid = teid
@@ -114,10 +118,12 @@ func HandlePathSwitchRequestTransfer(b []byte, ctx *SMContext) error {
 		if dataPath.Activated {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
+				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(
+					pfcpType.OuterHeaderCreation,
+				)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
-				dlOuterHeaderCreation.Teid = uint32(teid)
+				dlOuterHeaderCreation.Teid = uint32(teid) //nolint:unconvert
 				dlOuterHeaderCreation.Ipv4Address = gtpTunnel.TransportLayerAddress.Value.Bytes
 				DLPDR.FAR.State = RULE_UPDATE
 				DLPDR.FAR.ForwardingParameters.PFCPSMReqFlags = new(pfcpType.PFCPSMReqFlags)
@@ -176,7 +182,9 @@ func HandleHandoverRequestAcknowledgeTransfer(b []byte, ctx *SMContext) (err err
 		if dataPath.Activated {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
+				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(
+					pfcpType.OuterHeaderCreation,
+				)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
 				dlOuterHeaderCreation.Teid = uint32(teid)

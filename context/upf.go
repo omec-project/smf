@@ -9,24 +9,21 @@ package context
 import (
 	"errors"
 	"fmt"
-	"math"
-	"net"
-	"reflect"
-	"strconv"
-	"sync"
+	"math"    //nolint:gci
+	"net"     //nolint:gci
+	"os"      //nolint:gci
+	"reflect" //nolint:gci
+	"strconv" //nolint:gci
+	"sync"    //nolint:gci
 
-	"github.com/google/uuid"
-
+	"github.com/google/uuid" //nolint:gci
 	"github.com/omec-project/idgenerator"
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/logger"
-
-	// "github.com/omec-project/MongoDBLibrary"
-	"os"
+	"github.com/omec-project/smf/logger" //nolint:gci
 )
 
 var upfPool sync.Map
@@ -134,11 +131,13 @@ func NewUPFInterfaceInfo(i *factory.InterfaceUpfInfoItem) *UPFInterfaceInfo {
 // *** add unit test ***//
 // IP returns the IP of the user plane IP information of the pduSessType
 func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
-	if (pduSessType == nasMessage.PDUSessionTypeIPv4 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv4EndPointAddresses) != 0 {
+	if (pduSessType == nasMessage.PDUSessionTypeIPv4 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) &&
+		len(i.IPv4EndPointAddresses) != 0 {
 		return i.IPv4EndPointAddresses[0].To4(), nil
 	}
 
-	if (pduSessType == nasMessage.PDUSessionTypeIPv6 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv6EndPointAddresses) != 0 {
+	if (pduSessType == nasMessage.PDUSessionTypeIPv6 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) &&
+		len(i.IPv6EndPointAddresses) != 0 {
 		return i.IPv6EndPointAddresses[0], nil
 	}
 
@@ -282,7 +281,7 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
 
 	smfCountStr := os.Getenv("SMF_COUNT")
-	smfCount, _ := strconv.Atoi(smfCountStr)
+	smfCount, _ := strconv.Atoi(smfCountStr) //nolint:errcheck
 
 	offset := (smfCount - 1) * 5000
 	uniqueId := id + uint32(offset)
@@ -306,7 +305,11 @@ func RetrieveUPFNodeByNodeID(nodeID pfcpType.NodeID) *UPF {
 			(curUPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn || nodeID.NodeIdType == pfcpType.NodeIdTypeFqdn) {
 			curUPFNodeIdIP := curUPF.NodeID.ResolveNodeIdToIp().To4()
 			nodeIdIP := nodeID.ResolveNodeIdToIp().To4()
-			logger.CtxLog.Tracef("RetrieveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]", curUPFNodeIdIP, nodeIdIP)
+			logger.CtxLog.Tracef(
+				"RetrieveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]",
+				curUPFNodeIdIP,
+				nodeIdIP,
+			)
 			if reflect.DeepEqual(curUPFNodeIdIP, nodeIdIP) {
 				targetUPF = curUPF
 				return false
@@ -331,7 +334,11 @@ func RemoveUPFNodeByNodeID(nodeID pfcpType.NodeID) bool {
 			(upf.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn || nodeID.NodeIdType == pfcpType.NodeIdTypeFqdn) {
 			upfNodeIdIP := upf.NodeID.ResolveNodeIdToIp().To4()
 			nodeIdIP := nodeID.ResolveNodeIdToIp().To4()
-			logger.CtxLog.Tracef("RemoveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]", upfNodeIdIP, nodeIdIP)
+			logger.CtxLog.Tracef(
+				"RemoveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]",
+				upfNodeIdIP,
+				nodeIdIP,
+			)
 			if reflect.DeepEqual(upfNodeIdIP, nodeIdIP) {
 				return false
 			}
@@ -438,22 +445,21 @@ func (upf *UPF) qerID() (uint32, error) {
 }
 
 func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
-
 	var pdr *PDR
 	var err error
 
-	//create empty PDR
+	// create empty PDR
 	if pdr, err = upf.AddPDR(); err != nil {
 		return nil, err
 	}
 
-	//SDF Filter
+	// SDF Filter
 	sdfFilter := pfcpType.SDFFilter{}
 
-	//First Flow
+	// First Flow
 	flow := rule.FlowInfos[0]
 
-	//Flow Description
+	// Flow Description
 	if flow.FlowDescription != "" {
 		sdfFilter.Fd = true
 		sdfFilter.FlowDescription = []byte(flow.FlowDescription)
@@ -465,19 +471,19 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 		}
 	}
 
-	//ToS Traffic Class
+	// ToS Traffic Class
 	if flow.TosTrafficClass != "" {
 		sdfFilter.Ttc = true
 		sdfFilter.TosTrafficClass = []byte(flow.TosTrafficClass)
 	}
 
-	//Flow Label
+	// Flow Label
 	if flow.FlowLabel != "" {
 		sdfFilter.Fl = true
 		sdfFilter.FlowLabel = []byte(flow.FlowLabel)
 	}
 
-	//Security Parameter Index
+	// Security Parameter Index
 	if flow.Spi != "" {
 		sdfFilter.Spi = true
 		sdfFilter.SecurityParameterIndex = []byte(flow.Spi)
@@ -523,7 +529,7 @@ func (upf *UPF) AddFAR() (*FAR, error) {
 	}
 
 	far := new(FAR)
-	//set default FAR action to drop
+	// set default FAR action to drop
 	far.ApplyAction.Drop = true
 	if FARID, err := upf.farID(); err != nil {
 		return nil, err
@@ -625,7 +631,7 @@ func (upf *UPF) isSupportSnssai(snssai *SNssai) bool {
 }
 
 func (upf *UPF) IsDnnConfigured(sDnn string) bool {
-	//iterate through slices and check if DNN is configured
+	// iterate through slices and check if DNN is configured
 
 	for _, slice := range upf.SNssaiInfos {
 		for _, dnn := range slice.DnnList {

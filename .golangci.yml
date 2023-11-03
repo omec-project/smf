@@ -210,7 +210,8 @@ linters-settings:
     multi-if: false   # Enforces newlines (or comments) after every multi-line if statement
     multi-func: false # Enforces newlines (or comments) after every multi-line function signature
   gci:
-    local-prefixes: "bitbucket.org"
+    sections:
+      - prefix(bitbucket.org/)
   misspell:
     #locale: US
     ignore-words:
@@ -225,10 +226,10 @@ linters:
     - staticcheck
     - unused
     - gosimple
-    - structcheck
-    - varcheck
+    # - structcheck
+    # - varcheck
     - ineffassign
-    - deadcode
+    # - deadcode
     - typecheck
     # Additional
     - lll

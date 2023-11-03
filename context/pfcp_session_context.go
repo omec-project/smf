@@ -7,8 +7,8 @@ package context
 
 import (
 	"fmt"
-
-	"github.com/omec-project/pfcp/pfcpType"
+	//nolint:all
+	"github.com/omec-project/pfcp/pfcpType" //nolint:gci
 )
 
 type PFCPSessionResponseStatus int

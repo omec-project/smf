@@ -19,7 +19,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
@@ -48,12 +47,16 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	smContextRef := reqWrapper.Params["smContextRef"]
 	log.Printf("HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
 
-	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
+	txn := transaction.NewTransaction(
+		reqWrapper.Body.(models.SmPolicyNotification),
+		nil,
+		svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification),
+	)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
-	<-txn.Status //wait for txn to complete at SMF
+	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
-	//HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
+	// HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
@@ -70,7 +73,13 @@ func SmPolicyControlTerminationRequestNotification(c *gin.Context) {
 
 func N1N2FailureNotification(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve N1N2 Failure Notification")
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "In", "", "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.N1N2MessageTransferFailureNotification),
+		"In",
+		"",
+		"",
+	)
 
 	var request models.N1N2MsgTxfrFailureNotification
 
@@ -79,11 +88,21 @@ func N1N2FailureNotification(c *gin.Context) {
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
-	txn := transaction.NewTransaction(req.Body.(models.N1N2MsgTxfrFailureNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransferFailureNotification))
+	txn := transaction.NewTransaction(
+		req.Body.(models.N1N2MsgTxfrFailureNotification),
+		nil,
+		svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransferFailureNotification),
+	)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "Out", http.StatusText(http.StatusNoContent), "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.N1N2MessageTransferFailureNotification),
+		"Out",
+		http.StatusText(http.StatusNoContent),
+		"",
+	)
 	c.Status(http.StatusNoContent)
 }

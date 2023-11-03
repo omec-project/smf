@@ -6,12 +6,12 @@ package consumer
 
 import (
 	"context"
-	"net/http"
+	"net/http" //nolint:gci
 
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/logger" //nolint:gci
 )
 
 func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error) {

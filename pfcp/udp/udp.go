@@ -6,15 +6,15 @@
 package udp
 
 import (
-	"net"
-	"time"
+	"net"  //nolint:gci
+	"time" //nolint:gci
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
+	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes" //nolint:gci
 )
 
 const MaxPfcpUdpDataSize = 1024
@@ -59,10 +59,22 @@ func SendPfcp(msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) error 
 	err := Server.WriteTo(msg, addr, eventData)
 	if err != nil {
 		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
-		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Failure", err.Error())
+		metrics.IncrementN4MsgStats(
+			context.SMF_Self().NfInstanceID,
+			pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType),
+			"Out",
+			"Failure",
+			err.Error(),
+		)
 		return err
 	}
 
-	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Success", "")
+	metrics.IncrementN4MsgStats(
+		context.SMF_Self().NfInstanceID,
+		pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType),
+		"Out",
+		"Success",
+		"",
+	)
 	return nil
 }

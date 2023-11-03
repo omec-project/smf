@@ -10,11 +10,11 @@
 package metrics
 
 import (
-	"log"
-	"net/http"
+	"log"      //nolint:gci
+	"net/http" //nolint:gci
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp" //nolint:gci
 )
 
 // SmfStats captures SMF level stats
@@ -105,7 +105,7 @@ func init() {
 // InitMetrics initialises SMF stats
 func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":9089", nil)
+	http.ListenAndServe(":9089", nil) //nolint:errcheck
 }
 
 // IncrementN11MsgStats increments message level stats

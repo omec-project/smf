@@ -19,24 +19,28 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/http_wrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
+	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
-
-	smf_context "github.com/omec-project/smf/context"
-	stats "github.com/omec-project/smf/metrics"
 )
 
 // HTTPReleaseSmContext - Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Release SM Context Request")
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.ReleaseSmContext),
+		"In",
+		"",
+		"",
+	)
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
 
 	var request models.ReleaseSmContextRequest
@@ -60,7 +64,13 @@ func HTTPReleaseSmContext(c *gin.Context) {
 		}
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
-		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusBadRequest), "Malformed")
+		stats.IncrementN11MsgStats(
+			smf_context.SMF_Self().NfInstanceID,
+			string(svcmsgtypes.ReleaseSmContext),
+			"Out",
+			http.StatusText(http.StatusBadRequest),
+			"Malformed",
+		)
 		return
 	}
 
@@ -68,15 +78,25 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
-	txn := transaction.NewTransaction(req.Body.(models.ReleaseSmContextRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.ReleaseSmContext))
+	txn := transaction.NewTransaction(
+		req.Body.(models.ReleaseSmContextRequest),
+		nil,
+		svcmsgtypes.SmfMsgType(svcmsgtypes.ReleaseSmContext),
+	)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 
-	//producer.HandlePDUSessionSMContextRelease(
+	// producer.HandlePDUSessionSMContextRelease(
 	//	smContextRef, req.Body.(models.ReleaseSmContextRequest))
 
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusNoContent), "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.ReleaseSmContext),
+		"Out",
+		http.StatusText(http.StatusNoContent),
+		"",
+	)
 	c.Status(http.StatusNoContent)
 }
 
@@ -88,7 +108,13 @@ func RetrieveSmContext(c *gin.Context) {
 // HTTPUpdateSmContext - Update SM Context
 func HTTPUpdateSmContext(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Update SM Context Request")
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.UpdateSmContext),
+		"In",
+		"",
+		"",
+	)
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_req)
 
 	var request models.UpdateSmContextRequest
@@ -112,7 +138,13 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 
-		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(http.StatusBadRequest), "Malformed")
+		stats.IncrementN11MsgStats(
+			smf_context.SMF_Self().NfInstanceID,
+			string(svcmsgtypes.UpdateSmContext),
+			"Out",
+			http.StatusText(http.StatusBadRequest),
+			"Malformed",
+		)
 		log.Print(err)
 		return
 	}
@@ -122,15 +154,25 @@ func HTTPUpdateSmContext(c *gin.Context) {
 
 	smContextRef := req.Params["smContextRef"]
 
-	txn := transaction.NewTransaction(req.Body.(models.UpdateSmContextRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.UpdateSmContext))
+	txn := transaction.NewTransaction(
+		req.Body.(models.UpdateSmContextRequest),
+		nil,
+		svcmsgtypes.SmfMsgType(svcmsgtypes.UpdateSmContext),
+	)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
-	//HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
+	// HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
 	//	smContextRef, req.Body.(models.UpdateSmContextRequest))
 
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.UpdateSmContext),
+		"Out",
+		http.StatusText(HTTPResponse.Status),
+		"",
+	)
 
 	if HTTPResponse.Status < 300 {
 		c.Render(HTTPResponse.Status, openapi.MultipartRelatedRender{Data: HTTPResponse.Body})

@@ -8,15 +8,12 @@ package context
 
 import (
 	"fmt"
-	"net"
-	"os"
-	"sync"
-	"time"
+	"net"  //nolint:gci
+	"os"   //nolint:gci
+	"sync" //nolint:gci
+	"time" //nolint:gci
 
-	"github.com/omec-project/smf/metrics"
-
-	"github.com/google/uuid"
-
+	"github.com/google/uuid" //nolint:gci
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
@@ -25,7 +22,8 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/util/drsm"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/util/drsm" //nolint:gci
 )
 
 func init() {
@@ -122,18 +120,22 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		return nil
 	}
 
-	//Acquire master SMF config lock, no one should update it in parallel,
-	//until SMF is done updating SMF context
+	// Acquire master SMF config lock, no one should update it in parallel,
+	// until SMF is done updating SMF context
 	factory.SmfConfigSyncLock.Lock()
 	defer factory.SmfConfigSyncLock.Unlock()
 
-	logger.CtxLog.Infof("smfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
+	logger.CtxLog.Infof(
+		"smfconfig Info: Version[%s] Description[%s]",
+		config.Info.Version,
+		config.Info.Description,
+	)
 	configuration := config.Configuration
 	if configuration.SmfName != "" {
 		smfContext.Name = configuration.SmfName
 	}
 
-	//copy static UE IP Addr config
+	// copy static UE IP Addr config
 	smfContext.StaticIpInfo = &configuration.StaticIpInfo
 
 	sbi := configuration.Sbi
@@ -191,7 +193,9 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 			pfcp.Addr = pfcpAddrEnv
 		}
 		if pfcp.Addr == "" {
-			logger.CtxLog.Warn("Error parsing PFCP IPv4 address as string. Using the 0.0.0.0 address as default.")
+			logger.CtxLog.Warn(
+				"Error parsing PFCP IPv4 address as string. Using the 0.0.0.0 address as default.",
+			)
 			pfcp.Addr = "0.0.0.0"
 		}
 		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", pfcp.Addr, pfcp.Port))
@@ -203,9 +207,9 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.CPNodeID.NodeIdValue = addr.IP.To4()
 	}
 
-	//Static config
+	// Static config
 	for _, snssaiInfoConfig := range configuration.SNssaiInfo {
-		smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
+		smfContext.insertSmfNssaiInfo(&snssaiInfoConfig) //nolint:errcheck
 	}
 
 	// Set client and set url
@@ -276,17 +280,16 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 }
 
 func ProcessConfigUpdate() bool {
-
 	logger.CtxLog.Infof("Dynamic config update received [%+v]", factory.UpdatedSmfConfig)
 
 	sendNrfRegistration := false
-	//Lets check updated config
+	// Lets check updated config
 	updatedCfg := factory.UpdatedSmfConfig
 
-	//Lets parse through network slice configs first
+	// Lets parse through network slice configs first
 	if updatedCfg.DelSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.DelSNssaiInfo {
-			SMF_Self().deleteSmfNssaiInfo(&slice)
+			SMF_Self().deleteSmfNssaiInfo(&slice) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.DelSNssaiInfo = nil
 		sendNrfRegistration = true
@@ -294,7 +297,7 @@ func ProcessConfigUpdate() bool {
 
 	if updatedCfg.AddSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.AddSNssaiInfo {
-			SMF_Self().insertSmfNssaiInfo(&slice)
+			SMF_Self().insertSmfNssaiInfo(&slice) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.AddSNssaiInfo = nil
 		sendNrfRegistration = true
@@ -302,62 +305,65 @@ func ProcessConfigUpdate() bool {
 
 	if updatedCfg.ModSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.ModSNssaiInfo {
-			SMF_Self().updateSmfNssaiInfo(&slice)
+			SMF_Self().updateSmfNssaiInfo(&slice) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.ModSNssaiInfo = nil
 		sendNrfRegistration = true
 	}
 
-	//UP Node Links should be deleted before underlying UPFs are deleted
+	// UP Node Links should be deleted before underlying UPFs are deleted
 	if updatedCfg.DelLinks != nil {
 		for _, link := range *updatedCfg.DelLinks {
-			GetUserPlaneInformation().DeleteUPNodeLinks(&link)
+			GetUserPlaneInformation().DeleteUPNodeLinks(&link) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.DelLinks = nil
 	}
 
-	//Iterate through UserPlane Info
+	// Iterate through UserPlane Info
 	if updatedCfg.DelUPNodes != nil {
 		for name, upf := range *updatedCfg.DelUPNodes {
-			GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf)
+			GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.DelUPNodes = nil
 	}
 
 	if updatedCfg.AddUPNodes != nil {
 		for name, upf := range *updatedCfg.AddUPNodes {
-			GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
+			GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.AddUPNodes = nil
 		AllocateUPFID()
-		//TODO: allocate UPF ID
+		// TODO: allocate UPF ID
 	}
 
 	if updatedCfg.ModUPNodes != nil {
 		for name, upf := range *updatedCfg.ModUPNodes {
-			GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
-
+			GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf) //nolint:errcheck
 		}
 		factory.UpdatedSmfConfig.ModUPNodes = nil
 	}
 
-	//Iterate through add UP Node Links info
-	//UP Links should be added only after underlying UPFs have been added
+	// Iterate through add UP Node Links info
+	// UP Links should be added only after underlying UPFs have been added
 	if updatedCfg.AddLinks != nil {
 		for _, link := range *updatedCfg.AddLinks {
-			GetUserPlaneInformation().InsertUPNodeLinks(&link)
+			err := GetUserPlaneInformation().InsertUPNodeLinks(&link)
+			if err != nil {
+				logger.CtxLog.Warnln(err)
+				continue
+			}
 		}
 		factory.UpdatedSmfConfig.AddLinks = nil
 	}
 
-	//Update Enterprise Info
+	// Update Enterprise Info
 	SMF_Self().EnterpriseList = updatedCfg.EnterpriseList
 	logger.CtxLog.Infof("Dynamic config update, enterprise info [%v] ", *updatedCfg.EnterpriseList)
 
-	//Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
+	// Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
 	GetUserPlaneInformation().ResetDefaultUserPlanePath()
 
-	//Send NRF Re-register if Slice info got updated
+	// Send NRF Re-register if Slice info got updated
 	if sendNrfRegistration {
 		SetupNFProfile(&factory.SmfConfig)
 	}
@@ -385,28 +391,27 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	opt := &drsm.Options{ResIdSize: 24, Mode: drsm.ResourceClient}
 	db := drsm.DbInfo{Url: dbUrl, Name: dbName}
 
-	//for local FSEID
+	// for local FSEID
 	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
 		smfCtxt.DrsmCtxts.SeidPool = drsmCtxt
 	} else {
 		return err
 	}
 
-	//for local FTEID
+	// for local FTEID
 	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt); err == nil {
 		smfCtxt.DrsmCtxts.TeidPool = drsmCtxt
 	} else {
 		return err
 	}
 
-	//for IP-Addr
-	//TODO, use UPF based allocation for now
+	// for IP-Addr
+	// TODO, use UPF based allocation for now
 
 	return nil
 }
 
 func (smfCtxt *SMFContext) GetDnnStaticIpInfo(dnn string) *factory.StaticIpInfo {
-
 	for _, info := range *smfCtxt.StaticIpInfo {
 		if info.Dnn == dnn {
 			logger.CfgLog.Debugf("get static ip info for dnn [%s] found [%v]", dnn, info)

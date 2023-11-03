@@ -5,10 +5,10 @@
 package smferrors
 
 import (
-	"net/http"
+	"net/http" //nolint:gci
 
 	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/models" //nolint:gci
 )
 
 var (

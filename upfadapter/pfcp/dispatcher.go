@@ -6,16 +6,14 @@
 package pfcp
 
 import (
-	"upf-adapter/logger"
-	"upf-adapter/pfcp/handler"
-
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpUdp"
+	"upf-adapter/logger"
+	"upf-adapter/pfcp/handler"
 )
 
 func Dispatch(msg *pfcpUdp.Message) {
-
-	//TODO: Add return status to all handlers
+	// TODO: Add return status to all handlers
 	switch msg.PfcpMessage.Header.MessageType {
 	/*
 		case pfcp.PFCP_HEARTBEAT_REQUEST:

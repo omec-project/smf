@@ -7,7 +7,7 @@ package context
 
 import (
 	"fmt"
-
+	//nolint:all
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/util_3gpp"
 )
@@ -90,17 +90,31 @@ type QER struct {
 }
 
 // Usage Report Rule
-type URR struct {
-}
+type URR struct{}
 
 func (pdr PDR) String() string {
-	return fmt.Sprintf("PDR:[PdrId:[%v], Precedence:[%v], PDI:[%v], OuterHeaderRem:[%v], Far:[%v], RuleState:[%v], QERS:[%v]]",
-		pdr.PDRID, pdr.Precedence, pdr.PDI, pdr.OuterHeaderRemoval, pdr.FAR, pdr.State, pdr.QER)
+	return fmt.Sprintf(
+		"PDR:[PdrId:[%v], Precedence:[%v], PDI:[%v], OuterHeaderRem:[%v], Far:[%v], RuleState:[%v], QERS:[%v]]",
+		pdr.PDRID,
+		pdr.Precedence,
+		pdr.PDI,
+		pdr.OuterHeaderRemoval,
+		pdr.FAR,
+		pdr.State,
+		pdr.QER,
+	)
 }
 
 func (pdi PDI) String() string {
-	return fmt.Sprintf("PDI:[SourceInterface:[%v], LocalFteid:[%v], NetworkInstance:[%v], UEIpAddr:[%v], SdfFilter:[%v], AppId:[%v]]",
-		pdi.SourceInterface, pdi.LocalFTeid, pdi.NetworkInstance, pdi.UEIPAddress, pdi.SDFFilter, pdi.ApplicationID)
+	return fmt.Sprintf(
+		"PDI:[SourceInterface:[%v], LocalFteid:[%v], NetworkInstance:[%v], UEIpAddr:[%v], SdfFilter:[%v], AppId:[%v]]",
+		pdi.SourceInterface,
+		pdi.LocalFTeid,
+		pdi.NetworkInstance,
+		pdi.UEIPAddress,
+		pdi.SDFFilter,
+		pdi.ApplicationID,
+	)
 }
 
 func (far FAR) String() string {
@@ -109,22 +123,49 @@ func (far FAR) String() string {
 }
 
 func ActionString(act pfcpType.ApplyAction) string {
-	return fmt.Sprintf("Action:[Dup:%v, Nocp:%v, Buff:%v, Forw:%v, Drop:%v]", act.Dupl, act.Nocp, act.Buff, act.Forw, act.Drop)
+	return fmt.Sprintf(
+		"Action:[Dup:%v, Nocp:%v, Buff:%v, Forw:%v, Drop:%v]",
+		act.Dupl,
+		act.Nocp,
+		act.Buff,
+		act.Forw,
+		act.Drop,
+	)
 }
 
 func (fp ForwardingParameters) String() string {
-	return fmt.Sprintf("FwdParam:[DestIntf:[%v], NetworkInstance:[%v], OuterHeaderCreation:[%v], PFCPSMReqFlags:[%v], ForwardingPolicyID:[%v]]",
-		fp.DestinationInterface, fp.NetworkInstance, fp.OuterHeaderCreation, fp.PFCPSMReqFlags, fp.ForwardingPolicyID)
+	return fmt.Sprintf(
+		"FwdParam:[DestIntf:[%v], NetworkInstance:[%v], OuterHeaderCreation:[%v], PFCPSMReqFlags:[%v], ForwardingPolicyID:[%v]]", //nolint:lll
+		fp.DestinationInterface,
+		fp.NetworkInstance,
+		fp.OuterHeaderCreation,
+		fp.PFCPSMReqFlags,
+		fp.ForwardingPolicyID,
+	)
 }
 
 func (bar BAR) String() string {
-	return fmt.Sprintf("\nBAR:[Id:[%v], DDNDelay:[%v], BuffPktCount:[%v], RuleState:[%v]]",
-		bar.BARID, bar.DownlinkDataNotificationDelay.DelayValue, bar.SuggestedBufferingPacketsCount.PacketCountValue, bar.State)
+	return fmt.Sprintf(
+		"\nBAR:[Id:[%v], DDNDelay:[%v], BuffPktCount:[%v], RuleState:[%v]]",
+		bar.BARID,
+		bar.DownlinkDataNotificationDelay.DelayValue,
+		bar.SuggestedBufferingPacketsCount.PacketCountValue,
+		bar.State,
+	)
 }
 
 func (qer QER) String() string {
-	return fmt.Sprintf("\nQER:[Id:[%v], QFI:[%v], MBR:[UL:[%v], DL:[%v]], Gate:[UL:[%v], DL:[%v]], RuleState:[%v]]",
-		qer.QERID, qer.QFI, qer.MBR.ULMBR, qer.MBR.DLMBR, qer.GateStatus.ULGate, qer.GateStatus.DLGate, qer.State)
-	//return fmt.Sprintf("\nQER:[Id:[%v], QFI:[%v], MBR:[UL:[%v], DL:[%v]], GBR:[UL:[%v], DL:[%v]], Gate:[UL:[%v], DL:[%v]], RuleState:[%v]] ",
+	return fmt.Sprintf(
+		"\nQER:[Id:[%v], QFI:[%v], MBR:[UL:[%v], DL:[%v]], Gate:[UL:[%v], DL:[%v]], RuleState:[%v]]",
+		qer.QERID,
+		qer.QFI,
+		qer.MBR.ULMBR,
+		qer.MBR.DLMBR,
+		qer.GateStatus.ULGate,
+		qer.GateStatus.DLGate,
+		qer.State,
+	)
+	//nolint:all
+	// return fmt.Sprintf("\nQER:[Id:[%v], QFI:[%v], MBR:[UL:[%v], DL:[%v]], GBR:[UL:[%v], DL:[%v]], Gate:[UL:[%v], DL:[%v]], RuleState:[%v]] ",
 	//	qer.QERID, qer.QFI, qer.MBR.ULMBR, qer.MBR.DLMBR, qer.GBR.ULGBR, qer.GBR.DLGBR, qer.GateStatus.ULGate, qer.GateStatus.DLGate, qer.State)
 }

@@ -7,19 +7,18 @@ package factory
 
 import (
 	"fmt"
-	"testing"
+	"testing" //nolint:gci
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/models" //nolint:gci
 )
 
 func TestUpdateSliceInfo(t *testing.T) {
-
 	cfg1 := Configuration{}
 	cfg2 := Configuration{}
 
-	cfg1.parseRocConfig(makeDummyConfig("1", "010203"))
-	cfg2.parseRocConfig(makeDummyConfig("2", "010203"))
+	cfg1.parseRocConfig(makeDummyConfig("1", "010203")) //nolint:errcheck
+	cfg2.parseRocConfig(makeDummyConfig("2", "010203")) //nolint:errcheck
 
 	compareAndProcessConfigs(&cfg1, &cfg2)
 }
@@ -40,7 +39,12 @@ func makeDummyConfig(sst, sd string) *protos.NetworkSliceResponse {
 	ns.Site = &site
 
 	ns.DeviceGroup = make([]*protos.DeviceGroup, 0)
-	ipDomain := protos.IpDomain{DnnName: "internet", UePool: "60.60.0.0/16", DnsPrimary: "8.8.8.8", Mtu: 1400}
+	ipDomain := protos.IpDomain{
+		DnnName:    "internet",
+		UePool:     "60.60.0.0/16",
+		DnsPrimary: "8.8.8.8",
+		Mtu:        1400,
+	}
 	devGrp := protos.DeviceGroup{IpDomainDetails: &ipDomain}
 	ns.DeviceGroup = append(ns.DeviceGroup, &devGrp)
 
@@ -52,10 +56,26 @@ func TestCompareSliceConfig(t *testing.T) {
 	sNssai1 := models.Snssai{Sst: 1, Sd: "010203"}
 	sNssai2 := models.Snssai{Sst: 1, Sd: "010203"}
 
-	dnnInfo1 := SnssaiDnnInfoItem{Dnn: "DNN1", UESubnet: "10.10.0.0/16", DNS: DNS{IPv4Addr: "1.1.1.1"}}
-	dnnInfo2 := SnssaiDnnInfoItem{Dnn: "DNN2", UESubnet: "10.10.0.0/16", DNS: DNS{IPv4Addr: "1.1.1.1"}}
-	dnnInfo3 := SnssaiDnnInfoItem{Dnn: "DNN1", UESubnet: "10.10.0.0/16", DNS: DNS{IPv4Addr: "1.1.1.1"}}
-	dnnInfo4 := SnssaiDnnInfoItem{Dnn: "DNN2", UESubnet: "10.10.0.0/16", DNS: DNS{IPv4Addr: "1.1.1.1"}}
+	dnnInfo1 := SnssaiDnnInfoItem{
+		Dnn:      "DNN1",
+		UESubnet: "10.10.0.0/16",
+		DNS:      DNS{IPv4Addr: "1.1.1.1"},
+	}
+	dnnInfo2 := SnssaiDnnInfoItem{
+		Dnn:      "DNN2",
+		UESubnet: "10.10.0.0/16",
+		DNS:      DNS{IPv4Addr: "1.1.1.1"},
+	}
+	dnnInfo3 := SnssaiDnnInfoItem{
+		Dnn:      "DNN1",
+		UESubnet: "10.10.0.0/16",
+		DNS:      DNS{IPv4Addr: "1.1.1.1"},
+	}
+	dnnInfo4 := SnssaiDnnInfoItem{
+		Dnn:      "DNN2",
+		UESubnet: "10.10.0.0/16",
+		DNS:      DNS{IPv4Addr: "1.1.1.1"},
+	}
 
 	sNssaiInfoItem1 := SnssaiInfoItem{SNssai: &sNssai1, DnnInfos: make([]SnssaiDnnInfoItem, 0)}
 	sNssaiInfoItem1.DnnInfos = append(sNssaiInfoItem1.DnnInfos, dnnInfo1, dnnInfo2)
@@ -76,17 +96,25 @@ func TestCompareSliceConfig(t *testing.T) {
 }
 
 func TestCompareUPNodesConfigs(t *testing.T) {
-
 	u1 := UPNode{
-		Type:                 "UPF",
-		NodeID:               "u1.abc.def.com",
-		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0), //[]models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
-		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),     //[]InterfaceUpfInfoItem,
+		Type:   "UPF",
+		NodeID: "u1.abc.def.com",
+		SNssaiInfos: make(
+			[]models.SnssaiUpfInfoItem,
+			0,
+		), //[]models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0), //[]InterfaceUpfInfoItem,
 	}
 	slice1 := models.Snssai{Sst: 1, Sd: "010203"}
 	slice2 := models.Snssai{Sst: 2, Sd: "020203"}
-	sn1 := models.SnssaiUpfInfoItem{SNssai: &slice1, DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
-	sn2 := models.SnssaiUpfInfoItem{SNssai: &slice2, DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
+	sn1 := models.SnssaiUpfInfoItem{
+		SNssai:         &slice1,
+		DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+	}
+	sn2 := models.SnssaiUpfInfoItem{
+		SNssai:         &slice2,
+		DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+	}
 	dnn1 := models.DnnUpfInfoItem{Dnn: "DNN1"}
 	dnn11 := models.DnnUpfInfoItem{Dnn: "DNN11"}
 	dnn2 := models.DnnUpfInfoItem{Dnn: "DNN2"}
@@ -97,15 +125,24 @@ func TestCompareUPNodesConfigs(t *testing.T) {
 	u1.SNssaiInfos = []models.SnssaiUpfInfoItem{sn1, sn2}
 
 	u2 := UPNode{
-		Type:                 "UPF",
-		NodeID:               "u2.abc.def.com",
-		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0), //[]models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
-		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),     //[]InterfaceUpfInfoItem,
+		Type:   "UPF",
+		NodeID: "u2.abc.def.com",
+		SNssaiInfos: make(
+			[]models.SnssaiUpfInfoItem,
+			0,
+		), //[]models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0), //[]InterfaceUpfInfoItem,
 	}
 	slice3 := models.Snssai{Sst: 1, Sd: "010203"}
 	slice4 := models.Snssai{Sst: 2, Sd: "020203"}
-	sn3 := models.SnssaiUpfInfoItem{SNssai: &slice3, DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
-	sn4 := models.SnssaiUpfInfoItem{SNssai: &slice4, DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
+	sn3 := models.SnssaiUpfInfoItem{
+		SNssai:         &slice3,
+		DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+	}
+	sn4 := models.SnssaiUpfInfoItem{
+		SNssai:         &slice4,
+		DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+	}
 	dnn3 := models.DnnUpfInfoItem{Dnn: "DNN1"}
 	dnn31 := models.DnnUpfInfoItem{Dnn: "DNN11"}
 	dnn4 := models.DnnUpfInfoItem{Dnn: "DNN2"}
@@ -131,15 +168,22 @@ func TestCompareUPNodesConfigs(t *testing.T) {
 }
 
 func TestCompareGenericSlices(t *testing.T) {
-
 	l1 := UPLink{A: "gnb", B: "upf1"}
 	l2 := UPLink{A: "gnb", B: "upf2"}
 	l3 := UPLink{A: "gnb", B: "upf3"}
 	l4 := UPLink{A: "gnb", B: "upf2"}
 
-	match, addLinks, delLinks := compareGenericSlices([]UPLink{l1, l2}, []UPLink{l3, l4}, compareUPLinks)
+	match, addLinks, delLinks := compareGenericSlices(
+		[]UPLink{l1, l2},
+		[]UPLink{l3, l4},
+		compareUPLinks,
+	)
 	if !match {
-		fmt.Printf("Generic, The Links mismatch, add[%v] and del[%v]\n", addLinks.([]UPLink), delLinks)
+		fmt.Printf(
+			"Generic, The Links mismatch, add[%v] and del[%v]\n",
+			addLinks.([]UPLink),
+			delLinks,
+		)
 	} else {
 		fmt.Println("Generic, The Links match")
 	}

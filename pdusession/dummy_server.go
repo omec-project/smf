@@ -5,15 +5,15 @@
 package pdusession
 
 import (
-	"log"
-	"net/http"
+	"log"      //nolint:gci
+	"net/http" //nolint:gci
 
 	"github.com/omec-project/http2_util"
 	"github.com/omec-project/logger_util"
 	"github.com/omec-project/path_util"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp"
-	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/pfcp/udp" //nolint:gci
 )
 
 func DummyServer() {

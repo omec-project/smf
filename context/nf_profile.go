@@ -7,12 +7,12 @@ package context
 
 import (
 	"fmt"
-	"strconv"
-	"time"
+	"strconv" //nolint:gci
+	"time"    //nolint:gci
 
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/logger" //nolint:gci
 )
 
 var NFServices *[]models.NfService
@@ -33,8 +33,12 @@ func SetupNFProfile(config *factory.Config) {
 	NfServiceVersion = &[]models.NfServiceVersion{
 		{
 			ApiVersionInUri: "v1",
-			ApiFullVersion:  fmt.Sprintf("https://%s:%d/nsmf-pdusession/v1", SMF_Self().RegisterIPv4, SMF_Self().SBIPort),
-			Expiry:          &nfSetupTime,
+			ApiFullVersion: fmt.Sprintf(
+				"https://%s:%d/nsmf-pdusession/v1",
+				SMF_Self().RegisterIPv4,
+				SMF_Self().SBIPort,
+			),
+			Expiry: &nfSetupTime,
 		},
 	}
 
@@ -52,8 +56,13 @@ func SetupNFProfile(config *factory.Config) {
 			Versions:          NfServiceVersion,
 			Scheme:            models.UriScheme_HTTPS,
 			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
-			ApiPrefix:         fmt.Sprintf("%s://%s:%d", SMF_Self().URIScheme, SMF_Self().RegisterIPv4, SMF_Self().SBIPort),
-			AllowedPlmns:      SmfPlmnConfig(),
+			ApiPrefix: fmt.Sprintf(
+				"%s://%s:%d",
+				SMF_Self().URIScheme,
+				SMF_Self().RegisterIPv4,
+				SMF_Self().SBIPort,
+			),
+			AllowedPlmns: SmfPlmnConfig(),
 		})
 	}
 }
@@ -81,7 +90,7 @@ func SNssaiSmfInfo() *[]models.SnssaiSmfInfoItem {
 			Sd:  snssai.Snssai.Sd,
 		}
 
-		//Plmn Info
+		// Plmn Info
 		if snssai.PlmnId.Mcc != "" && snssai.PlmnId.Mnc != "" {
 			SmfPlmnInfo[strconv.Itoa(int(snssai.Snssai.Sst))+snssai.Snssai.Sd] = snssai.PlmnId
 		}

@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/logger_util"
 	"github.com/omec-project/smf/logger"
 )

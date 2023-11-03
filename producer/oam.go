@@ -6,12 +6,12 @@
 package producer
 
 import (
-	"net/http"
-	"strconv"
+	"net/http" //nolint:gci
+	"strconv"  //nolint:gci
 
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/context" //nolint:gci
 )
 
 type PDUSessionInfo struct {

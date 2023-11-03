@@ -7,39 +7,47 @@
 package upf
 
 import (
-	"time"
+	"time" //nolint:gci
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
-	"github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/message" //nolint:gci
 )
 
 const (
-	maxHeartbeatRetry        = 3  //sec
-	maxHeartbeatInterval     = 10 //sec
-	maxUpfProbeRetryInterval = 10 //sec
+	maxHeartbeatRetry        = 3  // sec
+	maxHeartbeatInterval     = 10 // sec
+	maxUpfProbeRetryInterval = 10 // sec
 )
 
 func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
-	//Iterate through all UPFs and send heartbeat to active UPFs
+	// Iterate through all UPFs and send heartbeat to active UPFs
 	for {
 		time.Sleep(maxHeartbeatInterval * time.Second)
 		for _, upf := range userplane.UPFs {
 			upf.UPF.UpfLock.Lock()
-			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
-
-				err := message.SendHeartbeatRequest(upf.NodeID, upf.Port) //needs lock in sync rsp(adapter mode)
+			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) &&
+				upf.UPF.NHeartBeat < maxHeartbeatRetry {
+				err := message.SendHeartbeatRequest(
+					upf.NodeID,
+					upf.Port,
+				) // needs lock in sync rsp(adapter mode)
 				if err != nil {
-					logger.PfcpLog.Errorf("send pfcp heartbeat request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
+					logger.PfcpLog.Errorf(
+						"send pfcp heartbeat request failed: %v for UPF[%v, %v]: ",
+						err,
+						upf.NodeID,
+						upf.NodeID.ResolveNodeIdToIp(),
+					)
 				} else {
 					upf.UPF.NHeartBeat++
 				}
 			} else if upf.UPF.NHeartBeat == maxHeartbeatRetry {
 				logger.PfcpLog.Errorf("pfcp heartbeat failure for UPF: [%v]", upf.NodeID)
-				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(pfcp.PFCP_HEARTBEAT_REQUEST), "Out", "Failure", "Timeout")
+				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(pfcp.PFCP_HEARTBEAT_REQUEST), "Out", "Failure", "Timeout") //nolint:lll
 				upf.UPF.UPFStatus = context.NotAssociated
 			}
 
@@ -49,7 +57,7 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 }
 
 func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
-	//Iterate through all UPFs and send PFCP request to inactive UPFs
+	// Iterate through all UPFs and send PFCP request to inactive UPFs
 	for {
 		time.Sleep(maxUpfProbeRetryInterval * time.Second)
 		for _, upf := range upfs.UPFs {

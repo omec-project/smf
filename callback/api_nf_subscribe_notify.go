@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
@@ -54,7 +53,10 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 
 	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
 	if err != nil {
-		logger.PduSessLog.Errorln("Error fetching response for HTTPNfSubscriptionStatusNotify : %+v", err)
+		logger.PduSessLog.Errorln(
+			"Error fetching response for HTTPNfSubscriptionStatusNotify : %+v",
+			err,
+		)
 		problemDetails := models.ProblemDetails{
 			Status: http.StatusInternalServerError,
 			Cause:  "SYSTEM_FAILURE",

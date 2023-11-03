@@ -10,15 +10,13 @@
 package factory
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"sync"
-
-	"gopkg.in/yaml.v2"
+	"fmt"  //nolint:gci
+	"os"   //nolint:gci
+	"sync" //nolint:gci
 
 	"github.com/omec-project/config5g/proto/client"
-	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/logger" //nolint:gci
+	"gopkg.in/yaml.v2"                   //nolint:gci
 )
 
 var (
@@ -30,7 +28,7 @@ var (
 
 // TODO: Support configuration update from REST api
 func InitConfigFactory(f string) error {
-	if content, err := ioutil.ReadFile(f); err != nil {
+	if content, err := os.ReadFile(f); err != nil {
 		return err
 	} else {
 		SmfConfig = Config{}
@@ -56,7 +54,7 @@ func InitConfigFactory(f string) error {
 }
 
 func InitRoutingConfigFactory(f string) error {
-	if content, err := ioutil.ReadFile(f); err != nil {
+	if content, err := os.ReadFile(f); err != nil {
 		return err
 	} else {
 		UERoutingConfig = RoutingConfig{}

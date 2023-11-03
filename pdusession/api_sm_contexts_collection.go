@@ -18,25 +18,29 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/http_wrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/transaction"
-
-	smf_context "github.com/omec-project/smf/context"
 	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/transaction"
 )
 
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Info("Recieve Create SM Context Request")
 	var request models.PostSmContextsRequest
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.CreateSmContext),
+		"In",
+		"",
+		"",
+	)
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
 
 	request.JsonData = new(models.SmContextCreateData)
@@ -57,17 +61,27 @@ func HTTPPostSmContexts(c *gin.Context) {
 			Status: http.StatusBadRequest,
 			Detail: problemDetail,
 		}
-		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "Out", http.StatusText(http.StatusBadRequest), "Malformed")
+		stats.IncrementN11MsgStats(
+			smf_context.SMF_Self().NfInstanceID,
+			string(svcmsgtypes.CreateSmContext),
+			"Out",
+			http.StatusText(http.StatusBadRequest),
+			"Malformed",
+		)
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
 
 	req := http_wrapper.NewRequest(c.Request, request)
-	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext))
+	txn := transaction.NewTransaction(
+		req.Body.(models.PostSmContextsRequest),
+		nil,
+		svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext),
+	)
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
-	<-txn.Status //wait for txn to complete at SMF
+	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	errStr := ""
@@ -75,12 +89,18 @@ func HTTPPostSmContexts(c *gin.Context) {
 		errStr = txn.Err.Error()
 	}
 
-	//Http Response to AMF
+	// Http Response to AMF
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "Out", http.StatusText(HTTPResponse.Status), errStr)
+	stats.IncrementN11MsgStats(
+		smf_context.SMF_Self().NfInstanceID,
+		string(svcmsgtypes.CreateSmContext),
+		"Out",
+		http.StatusText(HTTPResponse.Status),
+		errStr,
+	)
 	switch HTTPResponse.Status {
 	case http.StatusCreated,
 		http.StatusBadRequest,
@@ -95,10 +115,13 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	go func(smContext *smf_context.SMContext) {
-
 		var txn *transaction.Transaction
 		if HTTPResponse.Status == http.StatusCreated {
-			txn = transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreate))
+			txn = transaction.NewTransaction(
+				nil,
+				nil,
+				svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreate),
+			)
 			txn.Ctxt = smContext
 			go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 			<-txn.Status

@@ -6,10 +6,10 @@
 package logger
 
 import (
-	"time"
+	"time" //nolint:gci
 
 	formatter "github.com/antonfisher/nested-logrus-formatter"
-	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus" //nolint:gci
 )
 
 var (

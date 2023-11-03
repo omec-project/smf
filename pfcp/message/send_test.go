@@ -5,13 +5,13 @@
 package message_test
 
 import (
-	"net"
-	"testing"
-	"time"
+	"net"     //nolint:gci
+	"testing" //nolint:gci
+	"time"    //nolint:gci
 
 	smf_pfcp "github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/message"
-	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/pfcp/udp" //nolint:gci
 )
 
 func TestSendPfcpAssociationSetupRequest(t *testing.T) {

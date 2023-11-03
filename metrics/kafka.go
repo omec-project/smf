@@ -2,21 +2,20 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//Kafka metric Producer
-
+// Kafka metric Producer
 package metrics
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"time" //nolint:gci
 
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
-
+	//nolint:gci
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo" //nolint:gci
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go" //nolint:gci
 )
 
 type Writer struct {
@@ -26,8 +25,7 @@ type Writer struct {
 var StatWriter Writer
 
 func InitialiseKafkaStream(config *factory.Configuration) error {
-
-	if *config.KafkaInfo.EnableKafka == false {
+	if !*config.KafkaInfo.EnableKafka {
 		return nil
 	}
 
@@ -60,12 +58,11 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 }
 
 func GetWriter() Writer {
-
 	return StatWriter
 }
 
 func (writer Writer) SendMessage(message []byte) error {
-	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
+	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
 		return nil
 	}
 	msg := kafka.Message{Value: message}
@@ -77,18 +74,19 @@ func (writer Writer) SendMessage(message []byte) error {
 }
 
 func (writer Writer) PublishPduSessEvent(ctxt mi.CoreSubscriber, op mi.SubscriberOp) error {
-
-	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
+	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
 		return nil
 	}
-	smKafkaEvt := mi.MetricEvent{EventType: mi.CSubscriberEvt,
-		SubscriberData: mi.CoreSubscriberData{Subscriber: ctxt, Operation: op}}
+	smKafkaEvt := mi.MetricEvent{
+		EventType:      mi.CSubscriberEvt,
+		SubscriberData: mi.CoreSubscriberData{Subscriber: ctxt, Operation: op},
+	}
 	if msg, err := json.Marshal(smKafkaEvt); err != nil {
 		logger.KafkaLog.Errorf("publishing pdu sess event marshal error [%v] ", err.Error())
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing pdu sess event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		StatWriter.SendMessage(msg) //nolint:errcheck
 	}
 	return nil
 }
@@ -101,24 +99,25 @@ func SetNfInstanceId(s string) {
 }
 
 func PublishMsgEvent(msgType mi.SmfMsgType) error {
-
-	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
+	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
 		return nil
 	}
-	smKafkaMsgEvt := mi.MetricEvent{EventType: mi.CMsgTypeEvt, MsgType: mi.CoreMsgType{MsgType: msgType.String(), SourceNfId: nfInstanceId}}
+	smKafkaMsgEvt := mi.MetricEvent{
+		EventType: mi.CMsgTypeEvt,
+		MsgType:   mi.CoreMsgType{MsgType: msgType.String(), SourceNfId: nfInstanceId},
+	}
 	if msg, err := json.Marshal(smKafkaMsgEvt); err != nil {
 		logger.KafkaLog.Errorf("publishing msg event marshal error [%v] ", err.Error())
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing msg event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		StatWriter.SendMessage(msg) //nolint:errcheck
 	}
 	return nil
 }
 
 func (writer Writer) PublishNfStatusEvent(msgEvent mi.MetricEvent) error {
-
-	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
+	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
 		return nil
 	}
 	if msg, err := json.Marshal(msgEvent); err != nil {
@@ -126,7 +125,7 @@ func (writer Writer) PublishNfStatusEvent(msgEvent mi.MetricEvent) error {
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing nf status event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		StatWriter.SendMessage(msg) //nolint:errcheck
 	}
 	return nil
 }

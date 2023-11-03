@@ -6,13 +6,12 @@
 package context_test
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
+	"testing" //nolint:gci
 
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/factory" //nolint:gci
+	"github.com/stretchr/testify/require" //nolint:gci
 )
 
 var configuration = &factory.UserPlaneInformation{
@@ -122,7 +121,11 @@ func TestNewUserPlaneInformation(t *testing.T) {
 	require.NotNil(t, userplaneInformation.UPFs["UPF4"])
 
 	// check links
-	require.Contains(t, userplaneInformation.AccessNetwork["GNodeB"].Links, userplaneInformation.UPFs["UPF1"])
+	require.Contains(
+		t,
+		userplaneInformation.AccessNetwork["GNodeB"].Links,
+		userplaneInformation.UPFs["UPF1"],
+	)
 	require.Contains(t, userplaneInformation.UPFs["UPF1"].Links, userplaneInformation.UPFs["UPF2"])
 	require.Contains(t, userplaneInformation.UPFs["UPF2"].Links, userplaneInformation.UPFs["UPF3"])
 	require.Contains(t, userplaneInformation.UPFs["UPF3"].Links, userplaneInformation.UPFs["UPF4"])
@@ -223,13 +226,10 @@ func TestGetDefaultUPFTopoByDNN(t *testing.T) {
 }
 
 func TestInsertSmfUserPlaneNode(t *testing.T) {
-
 }
 
 func TestUpdateSmfUserPlaneNode(t *testing.T) {
-
 }
 
 func TestDeleteSmfUserPlaneNode(t *testing.T) {
-
 }

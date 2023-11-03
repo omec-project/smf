@@ -50,7 +50,14 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 		sessionContext, exist := smContext.PFCPContext[curDataPathNode.GetNodeIP()]
 		if !exist || sessionContext.RemoteSEID == 0 {
 			pfcp_message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
+				curDataPathNode.UPF.NodeID,
+				smContext,
+				pdrList,
+				farList,
+				nil,
+				qerList,
+				curDataPathNode.UPF.Port,
+			)
 		} else {
 			pfcp_message.SendPfcpSessionModificationRequest(
 				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
@@ -78,7 +85,8 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 						}
 					}
 				}
-				if curDataPathNode.DownLinkTunnel != nil && curDataPathNode.DownLinkTunnel.PDR != nil {
+				if curDataPathNode.DownLinkTunnel != nil &&
+					curDataPathNode.DownLinkTunnel.PDR != nil {
 					for _, pdr := range curDataPathNode.DownLinkTunnel.PDR {
 						pdrList = append(pdrList, pdr)
 						farList = append(farList, pdr.FAR)
@@ -136,7 +144,10 @@ func removeDataPath(smContext *smf_context.SMContext, datapath *smf_context.Data
 }
 
 // UpdateDataPathToUPF update the datapath of the UPF
-func UpdateDataPathToUPF(smContext *smf_context.SMContext, oldDataPath, updateDataPath *smf_context.DataPath) {
+func UpdateDataPathToUPF(
+	smContext *smf_context.SMContext,
+	oldDataPath, updateDataPath *smf_context.DataPath,
+) {
 	if oldDataPath == nil {
 		SendPFCPRule(smContext, updateDataPath)
 		return

@@ -9,13 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
-
-	"sync"
-
-	// "github.com/omec-project/MongoDBLibrary"
-
 	"os"
 	"strconv"
+	"sync"
 )
 
 type IPAllocator struct {
@@ -82,8 +78,7 @@ func IPAddrOffset(in, base net.IP) int {
 
 // Allocate will allocate the IP address and returns it
 func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
-
-	//check if static IP already reserved for this IMSI
+	// check if static IP already reserved for this IMSI
 	if a.g.staticIps != nil {
 		staticIps := *a.g.staticIps
 		if ipStr := staticIps[imsi]; ipStr != "" {
@@ -97,8 +92,8 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 		// smfCount := MongoDBLibrary.GetSmfCountFromDb()
 
 		smfCountStr := os.Getenv("SMF_COUNT")
-		smfCount, _ := strconv.Atoi(smfCountStr)
-		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000)
+		smfCount, _ := strconv.Atoi(smfCountStr)                                   //nolint:errcheck
+		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000) //nolint:unconvert
 		fmt.Printf("unique id - ip %v \n", ip)
 		fmt.Printf("unique id - offset %v \n", offset)
 		fmt.Printf("unique id - smfCount %v \n", smfCount)
@@ -110,7 +105,7 @@ func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
 	a.g.staticIps = ips
 	for _, ipStr := range *ips {
 		if ip := net.ParseIP(ipStr).To4(); ip != nil {
-			//block static IPs in pool to avoid dynamic allocation
+			// block static IPs in pool to avoid dynamic allocation
 			a.BlockIp(ip)
 		}
 	}
@@ -122,7 +117,7 @@ func (a *IPAllocator) BlockIp(ip net.IP) {
 }
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
-	//Don't release static IPs
+	// Don't release static IPs
 	if a.g.staticIps != nil {
 		staticIps := *a.g.staticIps
 		if ipStr := staticIps[imsi]; ipStr != "" {
@@ -140,7 +135,7 @@ type _IDPool struct {
 	isUsed    map[int64]bool
 	lock      sync.Mutex
 	index     int64
-	staticIps *map[string]string //map of [imsi]ip
+	staticIps *map[string]string // map of [imsi]ip
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {

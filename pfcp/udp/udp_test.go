@@ -5,11 +5,9 @@
 package udp_test
 
 import (
-	"net"
-	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
+	"net"     //nolint:gci
+	"testing" //nolint:gci
+	"time"    //nolint:gci
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
@@ -17,6 +15,7 @@ import (
 	"github.com/omec-project/smf/context"
 	smf_pfcp "github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/stretchr/testify/require" //nolint:gci
 )
 
 const testPfcpClientPort = 12345

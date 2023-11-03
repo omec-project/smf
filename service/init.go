@@ -8,17 +8,14 @@ package service
 
 import (
 	"fmt"
-	"net/http"
-	_ "net/http/pprof" //Using package only for invoking initialization.
-	"os"
-	"os/signal"
-	"sync"
-	"sync/atomic"
-	"syscall"
-	"time"
-
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli"
+	"net/http"         //nolint:gci
+	_ "net/http/pprof" //nolint:gci // Using package only for invoking initialization.
+	"os"               //nolint:gci
+	"os/signal"        //nolint:gci
+	"sync"             //nolint:gci
+	"sync/atomic"      //nolint:gci
+	"syscall"          //nolint:gci
+	"time"             //nolint:gci
 
 	aperLogger "github.com/omec-project/aper/logger"
 	"github.com/omec-project/http2_util"
@@ -45,6 +42,8 @@ import (
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/util"
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli" //nolint:gci
 )
 
 type SMF struct{}
@@ -54,7 +53,7 @@ type (
 	Config struct {
 		smfcfg         string
 		uerouting      string
-		heartBeatTimer string
+		heartBeatTimer string //nolint:unused
 	}
 )
 
@@ -134,11 +133,11 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 		return err
 	}
 
-	//Initiating a server for profiling
+	// Initiating a server for profiling
 	if factory.SmfConfig.Configuration.DebugProfilePort != 0 {
 		addr := fmt.Sprintf(":%d", factory.SmfConfig.Configuration.DebugProfilePort)
 		go func() {
-			http.ListenAndServe(addr, nil)
+			http.ListenAndServe(addr, nil) //nolint:errcheck
 		}()
 	}
 
@@ -219,8 +218,10 @@ func (smf *SMF) setLogLevel() {
 	if factory.SmfConfig.Logger.PathUtil != nil {
 		if factory.SmfConfig.Logger.PathUtil.DebugLevel != "" {
 			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.PathUtil.DebugLevel); err != nil {
-				pathUtilLogger.PathLog.Warnf("PathUtil Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.PathUtil.DebugLevel)
+				pathUtilLogger.PathLog.Warnf(
+					"PathUtil Log level [%s] is invalid, set to [info] level",
+					factory.SmfConfig.Logger.PathUtil.DebugLevel,
+				)
 				pathUtilLogger.SetLogLevel(logrus.InfoLevel)
 			} else {
 				pathUtilLogger.SetLogLevel(level)
@@ -248,9 +249,8 @@ func (smf *SMF) setLogLevel() {
 		pfcpLogger.SetReportCaller(factory.SmfConfig.Logger.PFCP.ReportCaller)
 	}
 
-	//Initialise Statistics
+	// Initialise Statistics
 	go metrics.InitMetrics()
-
 }
 
 func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
@@ -269,7 +269,7 @@ func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
 func (smf *SMF) Start() {
 	initLog.Infoln("SMF app initialising...")
 
-	//Initialise channel to stop SMF
+	// Initialise channel to stop SMF
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -278,35 +278,35 @@ func (smf *SMF) Start() {
 		os.Exit(0)
 	}()
 
-	//Init SMF Service
+	// Init SMF Service
 	smfCtxt := context.InitSmfContext(&factory.SmfConfig)
 
 	// allocate id for each upf
 	context.AllocateUPFID()
 
-	//Init UE Specific Config
+	// Init UE Specific Config
 	context.InitSMFUERouting(&factory.UERoutingConfig)
 
-	//Wait for additional/updated config from config pod
+	// Wait for additional/updated config from config pod
 	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 	if roc == "true" {
 		initLog.Infof("Configuration is managed by Config Pod")
 		initLog.Infof("waiting for initial configuration from config pod")
 
-		//Main thread should be blocked for config update from ROC
-		//Future config update from ROC can be handled via background go-routine.
+		// Main thread should be blocked for config update from ROC
+		// Future config update from ROC can be handled via background go-routine.
 		if <-factory.ConfigPodTrigger {
 			initLog.Infof("minimum configuration from config pod available")
 			context.ProcessConfigUpdate()
 		}
 
-		//Trigger background goroutine to handle further config updates
+		// Trigger background goroutine to handle further config updates
 		go func() {
 			initLog.Infof("Dynamic config update task initialised")
 			for {
 				if <-factory.ConfigPodTrigger {
 					if context.ProcessConfigUpdate() {
-						//Let NRF registration happen in background
+						// Let NRF registration happen in background
 						go smf.SendNrfRegistration()
 					}
 				}
@@ -316,12 +316,15 @@ func (smf *SMF) Start() {
 		initLog.Infof("Configuration is managed by Helm")
 	}
 
-	//Send NRF Registration
+	// Send NRF Registration
 	smf.SendNrfRegistration()
 
 	if smfCtxt.EnableNrfCaching {
 		initLog.Infof("Enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
-		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
+		nrf_cache.InitNrfCaching(
+			smfCtxt.NrfCacheEvictionInterval*time.Second,
+			consumer.SendNrfForNfInstance,
+		)
 	}
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)
@@ -341,12 +344,12 @@ func (smf *SMF) Start() {
 		context.SetupSmfCollection()
 	}
 
-	//Init DRSM for unique FSEID/FTEID/IP-Addr
+	// Init DRSM for unique FSEID/FTEID/IP-Addr
 	if err := smfCtxt.InitDrsm(); err != nil {
 		initLog.Errorf("initialse drsm failed, %v ", err.Error())
 	}
 
-	//Init Kafka stream
+	// Init Kafka stream
 	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
 		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
@@ -355,18 +358,21 @@ func (smf *SMF) Start() {
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
 		if upf.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
-			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s](%s)\n", upf.NodeID.NodeIdValue,
-				upf.NodeID.ResolveNodeIdToIp().String())
+			logger.AppLog.Infof(
+				"Send PFCP Association Request to UPF[%s](%s)\n",
+				upf.NodeID.NodeIdValue,
+				upf.NodeID.ResolveNodeIdToIp().String(),
+			)
 		} else {
 			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
 		}
 		message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
 	}
 
-	//Trigger PFCP Heartbeat towards all connected UPFs
+	// Trigger PFCP Heartbeat towards all connected UPFs
 	go upf.InitPfcpHeartbeatRequest(context.SMF_Self().UserPlaneInformation)
 
-	//Trigger PFCP association towards not associated UPFs
+	// Trigger PFCP association towards not associated UPFs
 	go upf.ProbeInactiveUpfs(context.SMF_Self().UserPlaneInformation)
 
 	time.Sleep(1000 * time.Millisecond)
@@ -420,7 +426,7 @@ func StartKeepAliveTimer(nfProfile *models.NfProfile) {
 		nfProfile.HeartBeatTimer = 30
 	}
 	logger.InitLog.Infof("Started KeepAlive Timer: %v sec", nfProfile.HeartBeatTimer)
-	//AfterFunc starts timer and waits for KeepAliveTimer to elapse and then calls smf.UpdateNF function
+	// AfterFunc starts timer and waits for KeepAliveTimer to elapse and then calls smf.UpdateNF function
 	KeepAliveTimer = time.AfterFunc(time.Duration(nfProfile.HeartBeatTimer)*time.Second, UpdateNF)
 }
 
@@ -440,7 +446,7 @@ func UpdateNF() {
 		initLog.Warnf("KeepAlive timer has been stopped.")
 		return
 	}
-	//setting default value 30 sec
+	// setting default value 30 sec
 	var heartBeatTimer int32 = 30
 	pitem := models.PatchItem{
 		Op:    "replace",
@@ -452,15 +458,15 @@ func UpdateNF() {
 	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
 	if problemDetails != nil {
 		initLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
-		//5xx response from NRF, 404 Not Found, 400 Bad Request
+		// 5xx response from NRF, 404 Not Found, 400 Bad Request
 		if (problemDetails.Status/100) == 5 ||
 			problemDetails.Status == 404 || problemDetails.Status == 400 {
-			//register with NRF full profile
-			nfProfile, err = consumer.SendNFRegistration()
+			// register with NRF full profile
+			nfProfile, _ = consumer.SendNFRegistration() //nolint:errcheck
 		}
 	} else if err != nil {
 		initLog.Errorf("SMF update to NRF Error[%s]", err.Error())
-		nfProfile, err = consumer.SendNFRegistration()
+		nfProfile, _ = consumer.SendNFRegistration() //nolint:errcheck
 	}
 
 	if nfProfile.HeartBeatTimer != 0 {
@@ -468,21 +474,21 @@ func UpdateNF() {
 		heartBeatTimer = nfProfile.HeartBeatTimer
 	}
 	logger.InitLog.Debugf("Restarted KeepAlive Timer: %v sec", heartBeatTimer)
-	//restart timer with received HeartBeatTimer value
+	// restart timer with received HeartBeatTimer value
 	KeepAliveTimer = time.AfterFunc(time.Duration(heartBeatTimer)*time.Second, UpdateNF)
 }
-func (smf *SMF) SendNrfRegistration() {
 
-	//If NRF registration is ongoing then don't start another in parallel
-	//Just mark it so that once ongoing finishes then resend another
+func (smf *SMF) SendNrfRegistration() {
+	// If NRF registration is ongoing then don't start another in parallel
+	// Just mark it so that once ongoing finishes then resend another
 	if nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
 		logger.InitLog.Infof("NRF Registration already in progress...")
 		refreshNrfRegistration = true
 		return
 	}
 
-	//Once the first goroutine which was sending NRF registration returns,
-	//Check if another fresh NRF registration is required
+	// Once the first goroutine which was sending NRF registration returns,
+	// Check if another fresh NRF registration is required
 	if refreshNrfRegistration {
 		refreshNrfRegistration = false
 		if prof, err := consumer.SendNFRegistration(); err != nil {
@@ -496,8 +502,7 @@ func (smf *SMF) SendNrfRegistration() {
 
 // Run only single instance of func f at a time
 func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
-
-	//Instance already running ?
+	// Instance already running ?
 	if atomic.LoadUint32(&o.done) == 1 {
 		return true
 	}
@@ -510,7 +515,6 @@ func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
 		defer atomic.StoreUint32(&o.done, 0)
 		nfProfile := f()
 		StartKeepAliveTimer(nfProfile)
-
 	}
 	return false
 }

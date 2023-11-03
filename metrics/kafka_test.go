@@ -4,10 +4,10 @@
 package metrics
 
 import (
-	"testing"
+	"testing" //nolint:gci
 
 	"github.com/omec-project/metricfunc/pkg/metricinfo"
-	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/factory" //nolint:gci
 )
 
 var my_false bool = false
@@ -40,7 +40,7 @@ func TestSendMessageWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	InitialiseKafkaStream(&configuration) //nolint:errcheck
 
 	writer := GetWriter()
 
@@ -63,7 +63,7 @@ func TestPublishPduSessEventWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	InitialiseKafkaStream(&configuration) //nolint:errcheck
 
 	writer := GetWriter()
 
@@ -86,7 +86,7 @@ func TestPublishMsgEventWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	InitialiseKafkaStream(&configuration) //nolint:errcheck
 
 	// If the kafkaWriter is called, this will panic and fail the test
 	result := PublishMsgEvent(0)
@@ -107,7 +107,7 @@ func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	InitialiseKafkaStream(&configuration) //nolint:errcheck
 
 	writer := GetWriter()
 

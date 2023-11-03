@@ -6,12 +6,12 @@ package transaction
 
 import (
 	"fmt"
-	"sync/atomic"
+	"sync/atomic" //nolint:gci
 	"time"
 
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus" //nolint:gci
 )
 
 type Transaction struct {
@@ -30,8 +30,10 @@ type Transaction struct {
 }
 
 func (t *Transaction) initLogTags() {
-	subField := logrus.Fields{"txnid": t.TxnId,
-		"txntype": string(t.MsgType), "ctxtkey": t.CtxtKey}
+	subField := logrus.Fields{
+		"txnid":   t.TxnId,
+		"txntype": string(t.MsgType), "ctxtkey": t.CtxtKey,
+	}
 
 	t.TxnFsmLog = logger.TxnFsmLog.WithFields(subField)
 }
@@ -101,7 +103,6 @@ func getNewTxnId() uint32 {
 }
 
 func NewTransaction(req, rsp interface{}, msgType svcmsgtypes.SmfMsgType) *Transaction {
-
 	t := &Transaction{
 		Req:       req,
 		Rsp:       rsp,
@@ -124,7 +125,7 @@ func (t *Transaction) TransactionEnd() {
 type TxnBus []*Transaction
 
 func (txnBus TxnBus) AddTxn(t *Transaction) TxnBus {
-	//TODO: Keep Txn Bus Priority sorted
+	// TODO: Keep Txn Bus Priority sorted
 	txnBus = append(txnBus, t)
 	return txnBus
 }
@@ -184,16 +185,16 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 			t.TxnFsmLog.Errorf("TxnFsm Error, Stage[%s] Err[%v] ", currEvent.String(), err.Error())
 		}
 
-		//Current active txn is over, Schedule Next Txn if available
+		// Current active txn is over, Schedule Next Txn if available
 		if currEvent == TxnEventEnd && nextEvent == TxnEventRun {
 			if t.NextTxn != nil {
 				t = t.NextTxn
 			}
 		} else
 
-		//Finish FSM
-		//Note- Pipelined Txn will not get chance to run immediately,
-		//so they shall exit FSM and shall wait to run in TxnBus
+		// Finish FSM
+		// Note- Pipelined Txn will not get chance to run immediately,
+		// so they shall exit FSM and shall wait to run in TxnBus
 		if nextEvent == TxnEventExit || nextEvent == TxnEventQueue {
 			t.TxnFsmLog.Debugf("TxnFsm [%v] ", nextEvent.String())
 			return

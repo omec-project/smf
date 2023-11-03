@@ -6,9 +6,9 @@
 package context
 
 import (
-	"net"
+	"net" //nolint:gci
 
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/models" //nolint:gci
 )
 
 // SnssaiSmfInfo records the SMF S-NSSAI related information

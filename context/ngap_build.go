@@ -7,7 +7,7 @@ package context
 import (
 	"encoding/binary"
 	"fmt"
-
+	//nolint:gci
 	"github.com/omec-project/aper"
 	"github.com/omec-project/ngap/ngapConvert"
 	"github.com/omec-project/ngap/ngapType"
@@ -46,7 +46,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			},
 		},
 	}
-	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
+	resourceSetupRequestTransfer.ProtocolIEs.List = append(
+		resourceSetupRequestTransfer.ProtocolIEs.List,
+		ie,
+	)
 
 	// UL NG-U UP TNL Information
 	ie = ngapType.PDUSessionResourceSetupRequestTransferIEs{}
@@ -72,7 +75,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 		}
 	}
 
-	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
+	resourceSetupRequestTransfer.ProtocolIEs.List = append(
+		resourceSetupRequestTransfer.ProtocolIEs.List,
+		ie,
+	)
 
 	// PDU Session Type
 	ie = ngapType.PDUSessionResourceSetupRequestTransferIEs{}
@@ -84,20 +90,24 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			Value: ngapType.PDUSessionTypePresentIpv4,
 		},
 	}
-	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
+	resourceSetupRequestTransfer.ProtocolIEs.List = append(
+		resourceSetupRequestTransfer.ProtocolIEs.List,
+		ie,
+	)
 
-	//Get Qos Flows
+	// Get Qos Flows
 	var qosAddFlows map[string]*models.QosData
 
-	//Initialise QosFlows with existing Ctxt QosFlows, if any
+	// Initialise QosFlows with existing Ctxt QosFlows, if any
 	if len(ctx.SmPolicyData.SmCtxtQosData.QosData) > 0 {
 		qosAddFlows = ctx.SmPolicyData.SmCtxtQosData.QosData
 	}
 
-	//PCF has provided some update
+	// PCF has provided some update
 	if len(ctx.SmPolicyUpdates) > 0 {
 		smPolicyUpdates := ctx.SmPolicyUpdates[0]
-		if smPolicyUpdates.QosFlowUpdate != nil && smPolicyUpdates.QosFlowUpdate.GetAddQosFlowUpdate() != nil {
+		if smPolicyUpdates.QosFlowUpdate != nil &&
+			smPolicyUpdates.QosFlowUpdate.GetAddQosFlowUpdate() != nil {
 			qosAddFlows = smPolicyUpdates.QosFlowUpdate.GetAddQosFlowUpdate()
 		}
 	}
@@ -110,7 +120,6 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 
 		var qosFlowsList []ngapType.QosFlowSetupRequestItem
 		for _, qosFlow := range qosAddFlows {
-
 			arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
 			if qosFlow.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
 				arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
@@ -122,7 +131,9 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			}
 
 			qosFlowItem := ngapType.QosFlowSetupRequestItem{
-				QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.QosId))},
+				QosFlowIdentifier: ngapType.QosFlowIdentifier{
+					Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.QosId)),
+				},
 				QosFlowLevelQosParameters: ngapType.QosFlowLevelQosParameters{
 					QosCharacteristics: ngapType.QosCharacteristics{
 						Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
@@ -155,7 +166,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			},
 		}
 
-		resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
+		resourceSetupRequestTransfer.ProtocolIEs.List = append(
+			resourceSetupRequestTransfer.ProtocolIEs.List,
+			ie,
+		)
 	}
 	/*else {
 		//Do not Delete- Might have to enable default Session rule based flow later
@@ -244,7 +258,10 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			},
 		},
 	}
-	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+	resourceModifyRequestTransfer.ProtocolIEs.List = append(
+		resourceModifyRequestTransfer.ProtocolIEs.List,
+		ie,
+	)
 
 	// QoS Flow Modify Request List
 	// use Default 5qi, arp
@@ -268,26 +285,26 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			List: []ngapType.QosFlowAddOrModifyRequestItem{
 				{
 					QosFlowIdentifier: ngapType.QosFlowIdentifier{
-						Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+						Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
 					},
 					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
 							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
 								FiveQI: ngapType.FiveQI{
-									Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+									Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
 								},
 							},
 						},
 						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
 							PriorityLevelARP: ngapType.PriorityLevelARP{
-								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), //15,
+								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), // 15,
 							},
 							PreEmptionCapability: ngapType.PreEmptionCapability{
-								Value: arpPreemptCap, //ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
+								Value: arpPreemptCap, // ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
 							},
 							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
-								Value: arpPreemptVul, //ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
+								Value: arpPreemptVul, // ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
 							},
 						},
 					},
@@ -296,9 +313,12 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		},
 	}
 
-	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+	resourceModifyRequestTransfer.ProtocolIEs.List = append(
+		resourceModifyRequestTransfer.ProtocolIEs.List,
+		ie,
+	)
 
-	//Encode
+	// Encode
 	if buf, err := aper.MarshalWithParams(resourceModifyRequestTransfer, "valueExt"); err != nil {
 		return nil, fmt.Errorf("encode resourceModifyRequestTransfer failed: %s", err)
 	} else {
@@ -356,16 +376,16 @@ func BuildPathSwitchRequestAcknowledgeTransfer(ctx *SMContext) ([]byte, error) {
 	// TODO: use real value
 	securityIndication.IntegrityProtectionIndication.Value = ngapType.IntegrityProtectionIndicationPresentNotNeeded
 	// TODO: use real value
-	securityIndication.ConfidentialityProtectionIndication.Value =
-		ngapType.ConfidentialityProtectionIndicationPresentNotNeeded
+	securityIndication.ConfidentialityProtectionIndication.Value = ngapType.ConfidentialityProtectionIndicationPresentNotNeeded //nolint:lll
 
 	integrityProtectionInd := securityIndication.IntegrityProtectionIndication.Value
 	if integrityProtectionInd == ngapType.IntegrityProtectionIndicationPresentRequired ||
 		integrityProtectionInd == ngapType.IntegrityProtectionIndicationPresentPreferred {
-		securityIndication.MaximumIntegrityProtectedDataRateUL = new(ngapType.MaximumIntegrityProtectedDataRate)
+		securityIndication.MaximumIntegrityProtectedDataRateUL = new(
+			ngapType.MaximumIntegrityProtectedDataRate,
+		)
 		// TODO: use real value
-		securityIndication.MaximumIntegrityProtectedDataRateUL.Value =
-			ngapType.MaximumIntegrityProtectedDataRatePresentBitrate64kbs
+		securityIndication.MaximumIntegrityProtectedDataRateUL.Value = ngapType.MaximumIntegrityProtectedDataRatePresentBitrate64kbs //nolint:lll
 	}
 
 	if buf, err := aper.MarshalWithParams(pathSwitchRequestAcknowledgeTransfer, "valueExt"); err != nil {
@@ -375,7 +395,10 @@ func BuildPathSwitchRequestAcknowledgeTransfer(ctx *SMContext) ([]byte, error) {
 	}
 }
 
-func BuildPathSwitchRequestUnsuccessfulTransfer(causePresent int, causeValue aper.Enumerated) (buf []byte, err error) {
+func BuildPathSwitchRequestUnsuccessfulTransfer(
+	causePresent int,
+	causeValue aper.Enumerated,
+) (buf []byte, err error) {
 	pathSwitchRequestUnsuccessfulTransfer := ngapType.PathSwitchRequestUnsuccessfulTransfer{}
 
 	pathSwitchRequestUnsuccessfulTransfer.Cause.Present = causePresent
@@ -403,7 +426,7 @@ func BuildPathSwitchRequestUnsuccessfulTransfer(causePresent int, causeValue ape
 	if err != nil {
 		return nil, err
 	}
-	return
+	return //nolint:nakedret
 }
 
 func BuildHandoverCommandTransfer(ctx *SMContext) ([]byte, error) {

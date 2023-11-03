@@ -9,18 +9,19 @@ package consumer
 import (
 	"context"
 	"fmt"
-	"net/http"
-
-	"github.com/pkg/errors"
+	"net/http" //nolint:gci
 
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/logger" //nolint:gci
+	"github.com/pkg/errors"              //nolint:gci
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
-func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, int, error) {
+func SendSMPolicyAssociationCreate(
+	smContext *smf_context.SMContext,
+) (*models.SmPolicyDecision, int, error) {
 	httpRspStatusCode := http.StatusInternalServerError
 	if smContext.SMPolicyClient == nil {
 		return nil, httpRspStatusCode, errors.Errorf("smContext not selected PCF")
@@ -37,7 +38,9 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 		smContext.Ref,
 	)
 	smPolicyData.Dnn = smContext.Dnn
-	smPolicyData.PduSessionType = nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
+	smPolicyData.PduSessionType = nasConvert.PDUSessionTypeToModels(
+		smContext.SelectedPDUSessionType,
+	)
 	smPolicyData.AccessType = smContext.AnType
 	smPolicyData.RatType = smContext.RatType
 	smPolicyData.Ipv4Address = smContext.PDUAddress.Ip.To4().String()
@@ -52,69 +55,77 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 
 	var smPolicyDecision *models.SmPolicyDecision
 	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.
-		DefaultApi.SmPoliciesPost(context.Background(), smPolicyData); err != nil {
+		DefaultApi.SmPoliciesPost(context.Background(), smPolicyData); err != nil { //nolint:bodyclose
 		if httpRsp != nil {
 			httpRspStatusCode = httpRsp.StatusCode
 		}
-		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
+		return nil, httpRspStatusCode, fmt.Errorf(
+			"setup sm policy association failed: %s",
+			err.Error(),
+		)
 	} else {
 		httpRspStatusCode = http.StatusCreated
 		smPolicyDecision = &smPolicyDecisionFromPCF
 	}
 
 	if err := validateSmPolicyDecision(smPolicyDecision); err != nil {
-		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
+		return nil, httpRspStatusCode, fmt.Errorf(
+			"setup sm policy association failed: %s",
+			err.Error(),
+		)
 	}
 
 	return smPolicyDecision, httpRspStatusCode, nil
 }
 
 func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
-	//TODO
+	// TODO
 }
 
-func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
-
+func SendSMPolicyAssociationDelete(
+	smContext *smf_context.SMContext,
+	smDelReq *models.ReleaseSmContextRequest,
+) (int, error) {
 	smPolicyDelData := models.SmPolicyDeleteData{}
 
-	//Populate Policy delete data
-	//Network Id
+	// Populate Policy delete data
+	// Network Id
 	smPolicyDelData.ServingNetwork = &models.NetworkId{
 		Mcc: smContext.ServingNetwork.Mcc,
 		Mnc: smContext.ServingNetwork.Mnc,
 	}
 
-	//User location info
+	// User location info
 	if smDelReq.JsonData.UeLocation != nil {
 		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.UeLocation
 	} else if smDelReq.JsonData.AddUeLocation != nil {
 		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.AddUeLocation
 	}
 
-	//UE Time Zone
+	// UE Time Zone
 	if smDelReq.JsonData.UeTimeZone != "" {
 		smPolicyDelData.UeTimeZone = smDelReq.JsonData.UeTimeZone
 	}
 
-	//RAN/NAS Release Cause
+	// RAN/NAS Release Cause
 	ranNasRelCause := models.RanNasRelCause{}
 	if smDelReq.JsonData.NgApCause != nil {
 		ranNasRelCause.NgApCause = smDelReq.JsonData.NgApCause
 	}
-	//MM cause
+	// MM cause
 	ranNasRelCause.Var5gMmCause = smDelReq.JsonData.Var5gMmCauseValue
 
-	//SM Cause ?
-	//ranNasRelCause.Var5gSmCause =
+	// SM Cause ?
+	// ranNasRelCause.Var5gSmCause =
 
 	smPolicyDelData.RanNasRelCauses = []models.RanNasRelCause{ranNasRelCause}
 
-	//Policy Id (supi-pduSessId)
+	// Policy Id (supi-pduSessId)
 	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)
 
-	//Send to  PCF
+	// Send to  PCF
 	if httpRsp, err := smContext.SMPolicyClient.
-		DefaultApi.SmPoliciesSmPolicyIdDeletePost(context.Background(), smPolicyID, smPolicyDelData); err != nil {
+		DefaultApi.SmPoliciesSmPolicyIdDeletePost(context.Background(), smPolicyID, smPolicyDelData); err != nil { //nolint:bodyclose, lll
 		logger.ConsumerLog.Warnf("smf policy delete failed, [%v] ", err.Error())
 		return 0, err
 	} else {
@@ -123,18 +134,22 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 }
 
 func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
-
-	//Validate just presence of important IEs as of now
-	//Sess Rules
+	// Validate just presence of important IEs as of now
+	// Sess Rules
 	for name, rule := range smPolicy.SessRules {
-
 		if rule.AuthSessAmbr == nil {
-			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
+			logger.ConsumerLog.Errorf(
+				"SM policy decision rule [%s] validation failure, authorised session ambr missing",
+				name,
+			)
 			return fmt.Errorf("authorised session ambr missing")
 		}
 
 		if rule.AuthDefQos == nil {
-			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised default qos missing", name)
+			logger.ConsumerLog.Errorf(
+				"SM policy decision rule [%s] validation failure, authorised default qos missing",
+				name,
+			)
 			return fmt.Errorf("authorised default qos missing")
 		}
 	}

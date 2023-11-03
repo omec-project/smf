@@ -8,12 +8,12 @@ package message
 
 import (
 	"fmt"
-	"net"
+	"net" //nolint:gci
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/pfcp/udp" //nolint:gci
 )
 
 // BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
@@ -43,7 +43,9 @@ func BuildPfcpAssociationSetupRequest() (pfcp.PFCPAssociationSetupRequest, error
 	return msg, nil
 }
 
-func BuildPfcpAssociationSetupResponse(cause pfcpType.Cause) (pfcp.PFCPAssociationSetupResponse, error) {
+func BuildPfcpAssociationSetupResponse(
+	cause pfcpType.Cause,
+) (pfcp.PFCPAssociationSetupResponse, error) {
 	msg := pfcp.PFCPAssociationSetupResponse{}
 
 	msg.NodeID = &context.SMF_Self().CPNodeID
@@ -69,7 +71,9 @@ func BuildPfcpAssociationReleaseRequest() (pfcp.PFCPAssociationReleaseRequest, e
 	return msg, nil
 }
 
-func BuildPfcpAssociationReleaseResponse(cause pfcpType.Cause) (pfcp.PFCPAssociationReleaseResponse, error) {
+func BuildPfcpAssociationReleaseResponse(
+	cause pfcpType.Cause,
+) (pfcp.PFCPAssociationReleaseResponse, error) {
 	msg := pfcp.PFCPAssociationReleaseResponse{}
 
 	msg.NodeID = &context.SMF_Self().CPNodeID
@@ -147,10 +151,12 @@ func farToCreateFAR(far *context.FAR) *pfcp.CreateFAR {
 		createFAR.ForwardingParameters.OuterHeaderCreation = far.ForwardingParameters.OuterHeaderCreation
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			createFAR.ForwardingParameters.ForwardingPolicy = new(pfcpType.ForwardingPolicy)
-			createFAR.ForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifierLength =
-				uint8(len(far.ForwardingParameters.ForwardingPolicyID))
-			createFAR.ForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifier =
-				[]byte(far.ForwardingParameters.ForwardingPolicyID)
+			createFAR.ForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifierLength = uint8(
+				len(far.ForwardingParameters.ForwardingPolicyID),
+			)
+			createFAR.ForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifier = []byte(
+				far.ForwardingParameters.ForwardingPolicyID,
+			)
 		}
 	}
 
@@ -252,16 +258,18 @@ func farToUpdateFAR(far *context.FAR) *pfcp.UpdateFAR {
 		updateFAR.UpdateForwardingParameters.OuterHeaderCreation = far.ForwardingParameters.OuterHeaderCreation
 		if far.ForwardingParameters.PFCPSMReqFlags != nil {
 			updateFAR.UpdateForwardingParameters.PFCPSMReqFlags = far.ForwardingParameters.PFCPSMReqFlags
-			//reset original far sndem flag
+			// reset original far sndem flag
 			far.ForwardingParameters.PFCPSMReqFlags = nil
 		}
 
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			updateFAR.UpdateForwardingParameters.ForwardingPolicy = new(pfcpType.ForwardingPolicy)
-			updateFAR.UpdateForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifierLength =
-				uint8(len(far.ForwardingParameters.ForwardingPolicyID))
-			updateFAR.UpdateForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifier =
-				[]byte(far.ForwardingParameters.ForwardingPolicyID)
+			updateFAR.UpdateForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifierLength = uint8(
+				len(far.ForwardingParameters.ForwardingPolicyID),
+			)
+			updateFAR.UpdateForwardingParameters.ForwardingPolicy.ForwardingPolicyIdentifier = []byte(
+				far.ForwardingParameters.ForwardingPolicyID,
+			)
 		}
 	}
 
@@ -274,7 +282,8 @@ func BuildPfcpSessionEstablishmentRequest(
 	pdrList []*context.PDR,
 	farList []*context.FAR,
 	barList []*context.BAR,
-	qerList []*context.QER) (pfcp.PFCPSessionEstablishmentRequest, error) {
+	qerList []*context.QER,
+) (pfcp.PFCPSessionEstablishmentRequest, error) {
 	msg := pfcp.PFCPSessionEstablishmentRequest{}
 
 	msg.NodeID = &context.SMF_Self().CPNodeID
@@ -383,7 +392,8 @@ func BuildPfcpSessionModificationRequest(
 	pdrList []*context.PDR,
 	farList []*context.FAR,
 	barList []*context.BAR,
-	qerList []*context.QER) (pfcp.PFCPSessionModificationRequest, error) {
+	qerList []*context.QER,
+) (pfcp.PFCPSessionModificationRequest, error) {
 	msg := pfcp.PFCPSessionModificationRequest{}
 
 	msg.UpdatePDR = make([]*pfcp.UpdatePDR, 0, 2)
@@ -481,7 +491,8 @@ func BuildPfcpSessionModificationResponse() (pfcp.PFCPSessionModificationRespons
 
 func BuildPfcpSessionDeletionRequest(
 	upNodeID pfcpType.NodeID,
-	smContext *context.SMContext) (pfcp.PFCPSessionDeletionRequest, error) {
+	smContext *context.SMContext,
+) (pfcp.PFCPSessionDeletionRequest, error) {
 	msg := pfcp.PFCPSessionDeletionRequest{}
 
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
@@ -512,7 +523,10 @@ func BuildPfcpSessionDeletionResponse() (pfcp.PFCPSessionDeletionResponse, error
 	return msg, nil
 }
 
-func BuildPfcpSessionReportResponse(cause pfcpType.Cause, pfcpSRflag pfcpType.PFCPSRRspFlags) (pfcp.PFCPSessionReportResponse, error) {
+func BuildPfcpSessionReportResponse(
+	cause pfcpType.Cause,
+	pfcpSRflag pfcpType.PFCPSRRspFlags,
+) (pfcp.PFCPSessionReportResponse, error) {
 	msg := pfcp.PFCPSessionReportResponse{}
 
 	msg.Cause = &cause

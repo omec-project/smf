@@ -6,11 +6,11 @@ package context
 
 import (
 	"fmt"
-	"math"
+	"math" //nolint:gci
 
 	"github.com/omec-project/idgenerator"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/logger" //nolint:gci
 )
 
 type UEPreConfigPaths struct {

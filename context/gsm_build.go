@@ -8,7 +8,7 @@ package context
 
 import (
 	"encoding/hex"
-
+	//nolint:gci
 	"github.com/omec-project/nas"
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/nas/nasMessage"
@@ -28,18 +28,26 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 	pDUSessionEstablishmentAccept.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionEstablishmentAccept.SetMessageType(nas.MsgTypePDUSessionEstablishmentAccept)
-	pDUSessionEstablishmentAccept.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	pDUSessionEstablishmentAccept.SetExtendedProtocolDiscriminator(
+		nasMessage.Epd5GSSessionManagementMessage,
+	)
 	pDUSessionEstablishmentAccept.SetPTI(smContext.Pti)
 
 	if v := smContext.EstAcceptCause5gSMValue; v != 0 {
-		pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(nasMessage.PDUSessionEstablishmentAcceptCause5GSMType)
+		pDUSessionEstablishmentAccept.Cause5GSM = nasType.NewCause5GSM(
+			nasMessage.PDUSessionEstablishmentAcceptCause5GSMType,
+		)
 		pDUSessionEstablishmentAccept.Cause5GSM.SetCauseValue(v)
 	}
 	pDUSessionEstablishmentAccept.SetPDUSessionType(smContext.SelectedPDUSessionType)
 
 	pDUSessionEstablishmentAccept.SetSSCMode(1)
-	pDUSessionEstablishmentAccept.SessionAMBR = nasConvert.ModelsToSessionAMBR(sessRule.AuthSessAmbr)
-	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)))
+	pDUSessionEstablishmentAccept.SessionAMBR = nasConvert.ModelsToSessionAMBR(
+		sessRule.AuthSessAmbr,
+	)
+	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(
+		uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)),
+	)
 
 	qoSRules := qos.BuildQosRules(smContext.SmPolicyUpdates[0])
 
@@ -53,24 +61,29 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 	if smContext.PDUAddress.Ip != nil {
 		addr, addrLen := smContext.PDUAddressToNAS()
-		pDUSessionEstablishmentAccept.PDUAddress =
-			nasType.NewPDUAddress(nasMessage.PDUSessionEstablishmentAcceptPDUAddressType)
+		pDUSessionEstablishmentAccept.PDUAddress = nasType.NewPDUAddress(
+			nasMessage.PDUSessionEstablishmentAcceptPDUAddressType,
+		)
 		pDUSessionEstablishmentAccept.PDUAddress.SetLen(addrLen)
-		pDUSessionEstablishmentAccept.PDUAddress.SetPDUSessionTypeValue(smContext.SelectedPDUSessionType)
+		pDUSessionEstablishmentAccept.PDUAddress.SetPDUSessionTypeValue(
+			smContext.SelectedPDUSessionType,
+		)
 		pDUSessionEstablishmentAccept.PDUAddress.SetPDUAddressInformation(addr)
 	}
 
-	//Get Authorized QoS Flow Descriptions
+	// Get Authorized QoS Flow Descriptions
 	authQfd := qos.BuildAuthorizedQosFlowDescriptions(smContext.SmPolicyUpdates[0])
-	//Add Default Qos Flow
-	//authQfd.AddDefaultQosFlowDescription(smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule)
+	// Add Default Qos Flow
+	// authQfd.AddDefaultQosFlowDescription(smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule)
 
-	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions =
-		nasType.NewAuthorizedQosFlowDescriptions(nasMessage.PDUSessionEstablishmentAcceptAuthorizedQosFlowDescriptionsType)
+	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions = nasType.NewAuthorizedQosFlowDescriptions(
+		nasMessage.PDUSessionEstablishmentAcceptAuthorizedQosFlowDescriptionsType,
+	)
 	pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(authQfd.IeLen)
 	pDUSessionEstablishmentAccept.SetQoSFlowDescriptions(authQfd.Content)
-	//pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(6)
-	//pDUSessionEstablishmentAccept.SetQoSFlowDescriptions([]uint8{uint8(authDefQos.Var5qi), 0x20, 0x41, 0x01, 0x01, 0x09})
+	// pDUSessionEstablishmentAccept.AuthorizedQosFlowDescriptions.SetLen(6)
+	//nolint:all
+	// pDUSessionEstablishmentAccept.SetQoSFlowDescriptions([]uint8{uint8(authDefQos.Var5qi), 0x20, 0x41, 0x01, 0x01, 0x09})
 
 	var sd [3]uint8
 
@@ -90,16 +103,19 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.DNN.SetLen(uint8(len(dnn)))
 	pDUSessionEstablishmentAccept.DNN.SetDNN(dnn)
 
-	if smContext.ProtocolConfigurationOptions.DNSIPv4Request || smContext.ProtocolConfigurationOptions.DNSIPv6Request || smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
-		pDUSessionEstablishmentAccept.ExtendedProtocolConfigurationOptions =
-			nasType.NewExtendedProtocolConfigurationOptions(
-				nasMessage.PDUSessionEstablishmentAcceptExtendedProtocolConfigurationOptionsType,
-			)
+	if smContext.ProtocolConfigurationOptions.DNSIPv4Request ||
+		smContext.ProtocolConfigurationOptions.DNSIPv6Request ||
+		smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
+		pDUSessionEstablishmentAccept.ExtendedProtocolConfigurationOptions = nasType.NewExtendedProtocolConfigurationOptions(
+			nasMessage.PDUSessionEstablishmentAcceptExtendedProtocolConfigurationOptionsType,
+		)
 		protocolConfigurationOptions := nasConvert.NewProtocolConfigurationOptions()
 
 		// IPv4 DNS
 		if smContext.ProtocolConfigurationOptions.DNSIPv4Request {
-			err := protocolConfigurationOptions.AddDNSServerIPv4Address(smContext.DNNInfo.DNS.IPv4Addr)
+			err := protocolConfigurationOptions.AddDNSServerIPv4Address(
+				smContext.DNNInfo.DNS.IPv4Addr,
+			)
 			if err != nil {
 				smContext.SubGsmLog.Warnln("Error while adding DNS IPv4 Addr: ", err)
 			}
@@ -107,7 +123,9 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 		// IPv6 DNS
 		if smContext.ProtocolConfigurationOptions.DNSIPv6Request {
-			err := protocolConfigurationOptions.AddDNSServerIPv6Address(smContext.DNNInfo.DNS.IPv6Addr)
+			err := protocolConfigurationOptions.AddDNSServerIPv6Address(
+				smContext.DNNInfo.DNS.IPv6Addr,
+			)
 			if err != nil {
 				smContext.SubGsmLog.Warnln("Error while adding DNS IPv6 Addr: ", err)
 			}
@@ -142,7 +160,9 @@ func BuildGSMPDUSessionEstablishmentReject(smContext *SMContext, cause uint8) ([
 	pDUSessionEstablishmentReject := m.PDUSessionEstablishmentReject
 
 	pDUSessionEstablishmentReject.SetMessageType(nas.MsgTypePDUSessionEstablishmentReject)
-	pDUSessionEstablishmentReject.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	pDUSessionEstablishmentReject.SetExtendedProtocolDiscriminator(
+		nasMessage.Epd5GSSessionManagementMessage,
+	)
 	pDUSessionEstablishmentReject.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionEstablishmentReject.SetCauseValue(cause)
 	pDUSessionEstablishmentReject.SetPTI(smContext.Pti)
@@ -175,7 +195,9 @@ func BuildGSMPDUSessionReleaseCommand(smContext *SMContext) ([]byte, error) {
 	pDUSessionReleaseCommand := m.PDUSessionReleaseCommand
 
 	pDUSessionReleaseCommand.SetMessageType(nas.MsgTypePDUSessionReleaseCommand)
-	pDUSessionReleaseCommand.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	pDUSessionReleaseCommand.SetExtendedProtocolDiscriminator(
+		nasMessage.Epd5GSSessionManagementMessage,
+	)
 	pDUSessionReleaseCommand.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionReleaseCommand.SetPTI(smContext.Pti)
 	pDUSessionReleaseCommand.SetCauseValue(0x0)
@@ -191,7 +213,9 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 	m.PDUSessionModificationCommand = nasMessage.NewPDUSessionModificationCommand(0x0)
 	pDUSessionModificationCommand := m.PDUSessionModificationCommand
 
-	pDUSessionModificationCommand.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	pDUSessionModificationCommand.SetExtendedProtocolDiscriminator(
+		nasMessage.Epd5GSSessionManagementMessage,
+	)
 	pDUSessionModificationCommand.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionModificationCommand.SetPTI(smContext.Pti)
 	pDUSessionModificationCommand.SetMessageType(nas.MsgTypePDUSessionModificationCommand)
@@ -215,7 +239,9 @@ func BuildGSMPDUSessionReleaseReject(smContext *SMContext) ([]byte, error) {
 	pDUSessionReleaseReject := m.PDUSessionReleaseReject
 
 	pDUSessionReleaseReject.SetMessageType(nas.MsgTypePDUSessionReleaseReject)
-	pDUSessionReleaseReject.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	pDUSessionReleaseReject.SetExtendedProtocolDiscriminator(
+		nasMessage.Epd5GSSessionManagementMessage,
+	)
 
 	pDUSessionReleaseReject.SetPDUSessionID(uint8(smContext.PDUSessionID))
 
