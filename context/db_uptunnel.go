@@ -10,12 +10,10 @@ import (
 	"net"
 
 	"github.com/omec-project/MongoDBLibrary"
-	"go.mongodb.org/mongo-driver/bson"
-
 	"github.com/omec-project/idgenerator"
-	"github.com/omec-project/smf/logger"
-
 	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/logger"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // type DataPathPoolInDB map[int64]DataPathInDB
@@ -137,7 +135,6 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 	}
 	if nodeInDB.DLTunnelInfo != nilVal {
 		dataPathNode.DownLinkTunnel = RecoverTunnel(nodeInDB.DLTunnelInfo)
-
 	}
 	fmt.Println("RecoverFirstDPNode - dataPathNode", dataPathNode)
 	if nodeInDB.ULTunnelInfo != nilVal {
@@ -152,7 +149,6 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 }
 
 func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
-
 	// Marshal data into json format
 	tmp, err := json.Marshal(data)
 	if err != nil {
@@ -198,7 +194,6 @@ func RecoverDataPathNode(dataPathNodeInDB *DataPathNodeInDB) (dataPathNode *Data
 	var nilValDpn *DataPathNodeInDB = nil
 	var nilVarTunnelInfo *TunnelInfo = nil
 	if dataPathNodeInDB != nilValDpn {
-
 		dataPathNode := &DataPathNode{
 			UPF:              RetrieveUPFNodeByNodeID(GetNodeID(dataPathNodeInDB.DataPathNodeUPFNodeID)),
 			IsBranchingPoint: dataPathNodeInDB.IsBranchingPoint,
@@ -235,7 +230,6 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 	var nilValDpn *DataPathNode = nil
 	var nilValTunnel *GTPTunnel = nil
 	if dataPathNode != nilValDpn {
-
 		dataPathNodeInDB := &DataPathNodeInDB{
 			DataPathNodeUPFNodeID: GetNodeIDInDB(dataPathNode.UPF.NodeID),
 			IsBranchingPoint:      dataPathNode.IsBranchingPoint,
@@ -257,11 +251,9 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 				uLTunnelInfo.DataPathNodeUPFNodeID = GetNodeIDInDB(upLinkTunnelSEP.UPF.NodeID)
 			}
 			dataPathNodeInDB.ULTunnelInfo = uLTunnelInfo
-
 		}
 
 		if downLinkTunnel != nilValTunnel {
-
 			dLTunnelInfo.TEID = downLinkTunnel.TEID
 			dLTunnelInfo.PDR = downLinkTunnel.PDR
 
@@ -275,5 +267,4 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 		return dataPathNodeInDB
 	}
 	return nil
-
 }

@@ -19,7 +19,7 @@ func TestIPPoolAlloc(t *testing.T) {
 	}
 
 	var allocAddresses []string
-	//check if we can allocate 254 addresses
+	// check if we can allocate 254 addresses
 	for i := 1; i <= 254; i++ {
 		ip, err := allocator.Allocate("")
 		if err != nil {
@@ -29,19 +29,18 @@ func TestIPPoolAlloc(t *testing.T) {
 		allocAddresses = append(allocAddresses, ip.String())
 	}
 
-	//Test what happens if we releae all addresses
+	// Test what happens if we releae all addresses
 	for _, ips := range allocAddresses {
 		ip := net.ParseIP(ips)
 		allocator.Release("", ip)
 	}
 
-	//Check what happens if we try to release unknown address
+	// Check what happens if we try to release unknown address
 	ip := net.ParseIP("192.168.2.1")
 	allocator.Release("", ip)
 }
 
 func TestIPPoolAllocRelease(t *testing.T) {
-
 	allocator, err := smf_context.NewIPAllocator("192.168.1.0/24")
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)
@@ -66,7 +65,7 @@ func TestIPPoolAllocRelease(t *testing.T) {
 				t.Errorf("address not allocated in order ? allocated address %v", ip2)
 			}
 		}
-		//rollover, we should be using first address again
+		// rollover, we should be using first address again
 		if i == 255 && ip.Equal(ip1) != true {
 			t.Errorf("Failed to allocate IP address = %v %v \n", ip, ip1)
 		}
@@ -91,7 +90,7 @@ func TestIPPoolAllocLeastRecentlyUsed(t *testing.T) {
 	}
 	fmt.Printf("Allocated address = %v\n", ip2)
 
-	//Same address is not allocate again..
+	// Same address is not allocate again..
 	if ip1.Equal(ip2) {
 		t.Errorf("ip1 %v & ip2 %v same ", ip1, ip2)
 	}

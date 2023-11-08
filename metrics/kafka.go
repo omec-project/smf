@@ -2,8 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//Kafka metric Producer
-
+// Kafka metric Producer
 package metrics
 
 import (
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
-
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/segmentio/kafka-go"
@@ -26,7 +24,6 @@ type Writer struct {
 var StatWriter Writer
 
 func InitialiseKafkaStream(config *factory.Configuration) error {
-
 	if *config.KafkaInfo.EnableKafka == false {
 		return nil
 	}
@@ -60,7 +57,6 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 }
 
 func GetWriter() Writer {
-
 	return StatWriter
 }
 
@@ -77,12 +73,13 @@ func (writer Writer) SendMessage(message []byte) error {
 }
 
 func (writer Writer) PublishPduSessEvent(ctxt mi.CoreSubscriber, op mi.SubscriberOp) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}
-	smKafkaEvt := mi.MetricEvent{EventType: mi.CSubscriberEvt,
-		SubscriberData: mi.CoreSubscriberData{Subscriber: ctxt, Operation: op}}
+	smKafkaEvt := mi.MetricEvent{
+		EventType:      mi.CSubscriberEvt,
+		SubscriberData: mi.CoreSubscriberData{Subscriber: ctxt, Operation: op},
+	}
 	if msg, err := json.Marshal(smKafkaEvt); err != nil {
 		logger.KafkaLog.Errorf("publishing pdu sess event marshal error [%v] ", err.Error())
 		return err
@@ -101,7 +98,6 @@ func SetNfInstanceId(s string) {
 }
 
 func PublishMsgEvent(msgType mi.SmfMsgType) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}
@@ -117,7 +113,6 @@ func PublishMsgEvent(msgType mi.SmfMsgType) error {
 }
 
 func (writer Writer) PublishNfStatusEvent(msgEvent mi.MetricEvent) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}

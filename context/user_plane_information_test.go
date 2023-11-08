@@ -8,11 +8,10 @@ package context_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/stretchr/testify/require"
 )
 
 var configuration = &factory.UserPlaneInformation{
@@ -223,13 +222,10 @@ func TestGetDefaultUPFTopoByDNN(t *testing.T) {
 }
 
 func TestInsertSmfUserPlaneNode(t *testing.T) {
-
 }
 
 func TestUpdateSmfUserPlaneNode(t *testing.T) {
-
 }
 
 func TestDeleteSmfUserPlaneNode(t *testing.T) {
-
 }

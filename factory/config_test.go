@@ -14,7 +14,6 @@ import (
 )
 
 func TestUpdateSliceInfo(t *testing.T) {
-
 	cfg1 := Configuration{}
 	cfg2 := Configuration{}
 
@@ -76,7 +75,6 @@ func TestCompareSliceConfig(t *testing.T) {
 }
 
 func TestCompareUPNodesConfigs(t *testing.T) {
-
 	u1 := UPNode{
 		Type:                 "UPF",
 		NodeID:               "u1.abc.def.com",
@@ -131,7 +129,6 @@ func TestCompareUPNodesConfigs(t *testing.T) {
 }
 
 func TestCompareGenericSlices(t *testing.T) {
-
 	l1 := UPLink{A: "gnb", B: "upf1"}
 	l2 := UPLink{A: "gnb", B: "upf2"}
 	l3 := UPLink{A: "gnb", B: "upf3"}

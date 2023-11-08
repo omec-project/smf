@@ -11,21 +11,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/omec-project/MongoDBLibrary"
-	"go.mongodb.org/mongo-driver/bson"
-
+	"github.com/omec-project/idgenerator"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-
-	// "github.com/free5gc/openapi/models"
-
-	"strconv"
-
-	"github.com/omec-project/idgenerator"
-
-	"os"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const (
@@ -39,7 +33,6 @@ const (
 )
 
 func SetupSmfCollection() {
-
 	dbName := "sdcore_smf"
 	dbUrl := "mongodb://mongodb-arbiter-headless"
 
@@ -53,14 +46,14 @@ func SetupSmfCollection() {
 
 	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
 
-	//UUID table
+	// UUID table
 	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
 	_, err := MongoDBLibrary.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
 		logger.CtxLog.Errorf("Create index failed on ref field.")
 	}
 
-	//SEID Table
+	// SEID Table
 	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
 	_, err = MongoDBLibrary.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
@@ -72,7 +65,6 @@ func SetupSmfCollection() {
 
 	// set os env
 	os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
-
 }
 
 // print out sm context
@@ -95,7 +87,6 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 		if smContext.Tunnel.DataPathPool != nil {
 			for key, val := range smContext.Tunnel.DataPathPool {
-
 				dataPathInDBIf = val
 				dataPath := dataPathInDBIf.(*DataPath)
 
@@ -195,9 +186,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 			newDataPath.FirstDPNode = dataPathNodeVal
 
 			smContext.Tunnel.DataPathPool[key] = newDataPath
-
 		}
-
 	}
 	// recover logs
 	smContext.initLogTags()
@@ -208,7 +197,6 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 }
 
 func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
-
 	// Marshal data into json format
 	tmp, err := json.Marshal(data)
 	if err != nil {
@@ -225,7 +213,6 @@ func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
 }
 
 func ToBsonM(data *SMContext) (ret bson.M) {
-
 	// Marshal data into json format
 	fmt.Println("db - in ToBsonM before marshal")
 	tmp, err := json.Marshal(data)
@@ -251,7 +238,6 @@ func StoreSmContextInDB(smContext *SMContext) {
 	logger.CtxLog.Infof("filter: ", filter)
 
 	MongoDBLibrary.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
-
 }
 
 type SeidSmContextRef struct {
@@ -313,7 +299,6 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 
 	if result != nil {
 		err := json.Unmarshal(mapToByte(result), smContext)
-
 		if err != nil {
 			logger.CtxLog.Errorf("smContext unmarshall error: %v", err)
 			return nil
@@ -345,7 +330,6 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 
 // Delete SMContext By SEID from DB
 func DeleteSmContextInDBBySEID(seidUint uint64) {
-
 	seid := SeidConv(seidUint)
 	fmt.Println("db - delete SMContext In DB by seid")
 	filter := bson.M{"seid": seid}
@@ -360,7 +344,6 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	} else {
 		logger.CtxLog.Infof("DB entry doesn't exist with seid: ", seid)
 	}
-
 }
 
 // Delete SMContext By ref from DB
@@ -390,7 +373,6 @@ func ShowSmContextPool() {
 		fmt.Println("db - iterate:", k, v)
 		return true
 	})
-
 }
 
 func GetSmContextPool() sync.Map {

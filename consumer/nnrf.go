@@ -15,17 +15,16 @@ import (
 
 	"github.com/antihax/optional"
 	"github.com/mohae/deepcopy"
-	"github.com/omec-project/openapi/Nnrf_NFManagement"
-	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 )
 
 func SendNFRegistration() (*models.NfProfile, error) {
@@ -187,8 +186,8 @@ func getSvcMsgType(nfType models.NfType) svcmsgtypes.SmfMsgType {
 }
 
 func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfType,
-	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (models.SearchResult, error) {
-
+	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts,
+) (models.SearchResult, error) {
 	result, httpResp, localErr := smf_context.SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
@@ -318,7 +317,6 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 }
 
 func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.ProblemDetails, error) {
-
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
 
 	localVarOptionals.TargetNfInstanceId = optional.NewInterface(smContext.ServingNfId)

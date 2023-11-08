@@ -11,12 +11,13 @@ import (
 	"fmt"
 	"math"
 	"net"
+	// "github.com/omec-project/MongoDBLibrary"
+	"os"
 	"reflect"
 	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
-
 	"github.com/omec-project/idgenerator"
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
@@ -24,9 +25,6 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-
-	// "github.com/omec-project/MongoDBLibrary"
-	"os"
 )
 
 var upfPool sync.Map
@@ -438,22 +436,21 @@ func (upf *UPF) qerID() (uint32, error) {
 }
 
 func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
-
 	var pdr *PDR
 	var err error
 
-	//create empty PDR
+	// create empty PDR
 	if pdr, err = upf.AddPDR(); err != nil {
 		return nil, err
 	}
 
-	//SDF Filter
+	// SDF Filter
 	sdfFilter := pfcpType.SDFFilter{}
 
-	//First Flow
+	// First Flow
 	flow := rule.FlowInfos[0]
 
-	//Flow Description
+	// Flow Description
 	if flow.FlowDescription != "" {
 		sdfFilter.Fd = true
 		sdfFilter.FlowDescription = []byte(flow.FlowDescription)
@@ -465,19 +462,19 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 		}
 	}
 
-	//ToS Traffic Class
+	// ToS Traffic Class
 	if flow.TosTrafficClass != "" {
 		sdfFilter.Ttc = true
 		sdfFilter.TosTrafficClass = []byte(flow.TosTrafficClass)
 	}
 
-	//Flow Label
+	// Flow Label
 	if flow.FlowLabel != "" {
 		sdfFilter.Fl = true
 		sdfFilter.FlowLabel = []byte(flow.FlowLabel)
 	}
 
-	//Security Parameter Index
+	// Security Parameter Index
 	if flow.Spi != "" {
 		sdfFilter.Spi = true
 		sdfFilter.SecurityParameterIndex = []byte(flow.Spi)
@@ -523,7 +520,7 @@ func (upf *UPF) AddFAR() (*FAR, error) {
 	}
 
 	far := new(FAR)
-	//set default FAR action to drop
+	// set default FAR action to drop
 	far.ApplyAction.Drop = true
 	if FARID, err := upf.farID(); err != nil {
 		return nil, err
@@ -625,7 +622,7 @@ func (upf *UPF) isSupportSnssai(snssai *SNssai) bool {
 }
 
 func (upf *UPF) IsDnnConfigured(sDnn string) bool {
-	//iterate through slices and check if DNN is configured
+	// iterate through slices and check if DNN is configured
 
 	for _, slice := range upf.SNssaiInfos {
 		for _, dnn := range slice.DnnList {

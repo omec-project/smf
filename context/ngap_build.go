@@ -86,15 +86,15 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	}
 	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
 
-	//Get Qos Flows
+	// Get Qos Flows
 	var qosAddFlows map[string]*models.QosData
 
-	//Initialise QosFlows with existing Ctxt QosFlows, if any
+	// Initialise QosFlows with existing Ctxt QosFlows, if any
 	if len(ctx.SmPolicyData.SmCtxtQosData.QosData) > 0 {
 		qosAddFlows = ctx.SmPolicyData.SmCtxtQosData.QosData
 	}
 
-	//PCF has provided some update
+	// PCF has provided some update
 	if len(ctx.SmPolicyUpdates) > 0 {
 		smPolicyUpdates := ctx.SmPolicyUpdates[0]
 		if smPolicyUpdates.QosFlowUpdate != nil && smPolicyUpdates.QosFlowUpdate.GetAddQosFlowUpdate() != nil {
@@ -110,7 +110,6 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 
 		var qosFlowsList []ngapType.QosFlowSetupRequestItem
 		for _, qosFlow := range qosAddFlows {
-
 			arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
 			if qosFlow.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
 				arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
@@ -268,26 +267,26 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			List: []ngapType.QosFlowAddOrModifyRequestItem{
 				{
 					QosFlowIdentifier: ngapType.QosFlowIdentifier{
-						Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+						Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
 					},
 					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
 							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
 								FiveQI: ngapType.FiveQI{
-									Value: int64(sessRule.AuthDefQos.Var5qi), //DefaultNonGBR5QI,
+									Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
 								},
 							},
 						},
 						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
 							PriorityLevelARP: ngapType.PriorityLevelARP{
-								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), //15,
+								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), // 15,
 							},
 							PreEmptionCapability: ngapType.PreEmptionCapability{
-								Value: arpPreemptCap, //ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
+								Value: arpPreemptCap, // ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,
 							},
 							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
-								Value: arpPreemptVul, //ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
+								Value: arpPreemptVul, // ngapType.PreEmptionVulnerabilityPresentNotPreEmptable,
 							},
 						},
 					},
@@ -298,7 +297,7 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 
 	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
 
-	//Encode
+	// Encode
 	if buf, err := aper.MarshalWithParams(resourceModifyRequestTransfer, "valueExt"); err != nil {
 		return nil, fmt.Errorf("encode resourceModifyRequestTransfer failed: %s", err)
 	} else {
@@ -356,16 +355,14 @@ func BuildPathSwitchRequestAcknowledgeTransfer(ctx *SMContext) ([]byte, error) {
 	// TODO: use real value
 	securityIndication.IntegrityProtectionIndication.Value = ngapType.IntegrityProtectionIndicationPresentNotNeeded
 	// TODO: use real value
-	securityIndication.ConfidentialityProtectionIndication.Value =
-		ngapType.ConfidentialityProtectionIndicationPresentNotNeeded
+	securityIndication.ConfidentialityProtectionIndication.Value = ngapType.ConfidentialityProtectionIndicationPresentNotNeeded
 
 	integrityProtectionInd := securityIndication.IntegrityProtectionIndication.Value
 	if integrityProtectionInd == ngapType.IntegrityProtectionIndicationPresentRequired ||
 		integrityProtectionInd == ngapType.IntegrityProtectionIndicationPresentPreferred {
 		securityIndication.MaximumIntegrityProtectedDataRateUL = new(ngapType.MaximumIntegrityProtectedDataRate)
 		// TODO: use real value
-		securityIndication.MaximumIntegrityProtectedDataRateUL.Value =
-			ngapType.MaximumIntegrityProtectedDataRatePresentBitrate64kbs
+		securityIndication.MaximumIntegrityProtectedDataRateUL.Value = ngapType.MaximumIntegrityProtectedDataRatePresentBitrate64kbs
 	}
 
 	if buf, err := aper.MarshalWithParams(pathSwitchRequestAcknowledgeTransfer, "valueExt"); err != nil {

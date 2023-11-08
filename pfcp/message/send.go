@@ -14,11 +14,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	// "github.com/omec-project/MongoDBLibrary"
+	"os"
 	"strconv"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/nas/nasMessage"
@@ -33,9 +34,6 @@ import (
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
-
-	// "github.com/omec-project/MongoDBLibrary"
-	"os"
 )
 
 var seq uint32
@@ -133,7 +131,6 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 }
 
 func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
-
 	//Send Metric event
 	upfStatus := mi.MetricEvent{EventType: mi.CNfStatusEvt,
 		NfStatusData: mi.CNfStatus{NfType: mi.NfTypeUPF,
@@ -170,7 +167,6 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
-
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, message, addr, nil); err != nil {
 			logger.PfcpLog.Errorf("send pfcp association msg to upf-adapter error [%v] ", err.Error())
 			return
@@ -278,7 +274,8 @@ func SendPfcpAssociationReleaseResponse(upNodeID pfcpType.NodeID, cause pfcpType
 func SendPfcpSessionEstablishmentRequest(
 	upNodeID pfcpType.NodeID,
 	ctx *smf_context.SMContext,
-	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16) {
+	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16,
+) {
 	pfcpMsg, err := BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Establishment Request failed: %v", err)
@@ -328,7 +325,7 @@ func SendPfcpSessionEstablishmentRequest(
 				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
 			} else {
-				//http status !OK
+				// http status !OK
 				HandlePfcpSendError(&message, fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode))
 			}
 		}
@@ -366,7 +363,8 @@ func SendPfcpSessionEstablishmentResponse(addr *net.UDPAddr) {
 
 func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 	ctx *smf_context.SMContext,
-	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16) (seqNum uint32) {
+	pdrList []*smf_context.PDR, farList []*smf_context.FAR, barList []*smf_context.BAR, qerList []*smf_context.QER, upfPort uint16,
+) (seqNum uint32) {
 	pfcpMsg, err := BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
 	if err != nil {
 		ctx.SubPfcpLog.Errorf("Build PFCP Session Modification Request failed: %v", err)
@@ -479,7 +477,6 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 			logger.PfcpLog.Errorf("send pfcp session delete msg to upf-adapter error [%v] ", err.Error())
 			return 0
 		} else {
-
 			logger.PfcpLog.Debugf("send pfcp session delete response [%v] ", rsp)
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
@@ -575,13 +572,12 @@ func SendHeartbeatResponse(addr *net.UDPAddr, seq uint32) {
 }
 
 func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
-
 	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
 		pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), pfcpErr.Error())
 	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
 		pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Failure", pfcpErr.Error())
 
-	//Refresh SMF DNS Cache incase of any send failure(includes timeout)
+	// Refresh SMF DNS Cache incase of any send failure(includes timeout)
 	pfcpType.RefreshDnsHostIpCache()
 
 	switch msg.Header.MessageType {
@@ -598,22 +594,22 @@ func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {
 }
 
 func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
-	//Lets decode the PDU request
+	// Lets decode the PDU request
 	pfcpEstReq, _ := msg.Body.(pfcp.PFCPSessionEstablishmentRequest)
 
 	SEID := pfcpEstReq.CPFSEID.Seid
 	smContext := smf_context.GetSMContextBySEID(SEID)
 	smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", pfcpErr.Error())
-	//N1N2 Request towards AMF
+	// N1N2 Request towards AMF
 	n1n2Request := models.N1N2MessageTransferRequest{}
 
-	//N1 Container Info
+	// N1 Container Info
 	n1MsgContainer := models.N1MessageContainer{
 		N1MessageClass:   "SM",
 		N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
 	}
 
-	//N1N2 Json Data
+	// N1N2 Json Data
 	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
@@ -624,7 +620,7 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 	}
 
-	//Send N1N2 Reject request
+	// Send N1N2 Reject request
 	rspData, _, err := smContext.
 		CommunicationClient.
 		N1N2MessageCollectionDocumentApi.
@@ -639,25 +635,25 @@ func handleSendPfcpSessEstReqError(msg *pfcp.Message, pfcpErr error) {
 	}
 	smContext.SubPfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 
-	//clear subscriber
+	// clear subscriber
 	smf_context.RemoveSMContext(smContext.Ref)
 }
 
 func handleSendPfcpSessRelReqError(msg *pfcp.Message, pfcpErr error) {
-	//Lets decode the PDU request
+	// Lets decode the PDU request
 	pfcpRelReq, _ := msg.Body.(pfcp.PFCPSessionDeletionRequest)
 
 	SEID := pfcpRelReq.CPFSEID.Seid
 	smContext := smf_context.GetSMContextBySEID(SEID)
 	if smContext != nil {
 		smContext.SubPfcpLog.Errorf("PFCP Session Delete send failure, %v", pfcpErr.Error())
-		//Always send success
+		// Always send success
 		smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 	}
 }
 
 func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
-	//Lets decode the PDU request
+	// Lets decode the PDU request
 	pfcpModReq, _ := msg.Body.(pfcp.PFCPSessionModificationRequest)
 
 	SEID := pfcpModReq.CPFSEID.Seid
@@ -698,7 +694,6 @@ func GetLocalIP() string {
 
 // SendPfcpMsgToAdapter send pfcp msg to upf-adapter in http/json encoded format
 func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) (*http.Response, error) {
-
 	// get IP
 	ip_str := GetLocalIP()
 	udpPodMsg := &UdpPodPfcpMsg{

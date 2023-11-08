@@ -81,7 +81,7 @@ func SNssaiSmfInfo() *[]models.SnssaiSmfInfoItem {
 			Sd:  snssai.Snssai.Sd,
 		}
 
-		//Plmn Info
+		// Plmn Info
 		if snssai.PlmnId.Mcc != "" && snssai.PlmnId.Mnc != "" {
 			SmfPlmnInfo[strconv.Itoa(int(snssai.Snssai.Sst))+snssai.Snssai.Sd] = snssai.PlmnId
 		}

@@ -30,5 +30,5 @@ func (e SmEvent) String() string {
 }
 
 func (s SmEventData) String() string {
-	return "" //s.Txn.String()
+	return "" // s.Txn.String()
 }

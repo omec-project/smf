@@ -109,7 +109,7 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 			return
 		}
 
-		//validate if DNNs served by UPF matches with the one provided by UPF
+		// validate if DNNs served by UPF matches with the one provided by UPF
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upfProvidedDnn := string(rsp.UserPlaneIPResourceInformation.NetworkInstance)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
@@ -120,7 +120,7 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
-		upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
+		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
 		if rsp.UserPlaneIPResourceInformation != nil {
 			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation
@@ -131,10 +131,10 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 					upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.Ipv4Address,
 					string(upf.UPIPInfo.NetworkInstance), upf.UPIPInfo.TeidRange)
 
-				//reset the N3 interface of UPF
+				// reset the N3 interface of UPF
 				upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
 
-				//Insert N3 interface info from UPF
+				// Insert N3 interface info from UPF
 				n3Interface := smf_context.UPFInterfaceInfo{}
 				n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
 				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
@@ -152,13 +152,13 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	rsp := msg.PfcpMessage.Body.(pfcp.HeartbeatResponse)
 
-	//Get NodeId from Seq:NodeId Map
+	// Get NodeId from Seq:NodeId Map
 	seq := msg.PfcpMessage.Header.SequenceNumber
 	nodeID := FetchPfcpTxn(seq)
 
 	if nodeID == nil {
 		logger.PfcpLog.Errorf("No pending pfcp heartbeat response for sequence no: %v", seq)
-		//metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
+		// metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
 		return
 	}
 
@@ -167,21 +167,21 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 	if upf == nil {
 		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
-		//metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "unknown_upf")
+		// metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "unknown_upf")
 		return
 	}
 
 	if *rsp.RecoveryTimeStamp != upf.RecoveryTimeStamp {
-		//change UPF state to not associated so that
-		//PFCP Association can be initiated again
+		// change UPF state to not associated so that
+		// PFCP Association can be initiated again
 		upf.UPFStatus = smf_context.NotAssociated
 		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed", upf.NodeID)
 
-		//TODO: Session cleanup required and updated to AMF/PCF
-		//metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
+		// TODO: Session cleanup required and updated to AMF/PCF
+		// metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
 
-	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
+	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 }
 
 func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
@@ -201,7 +201,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse SEID ", SEID)
 	logger.PfcpLog.Infoln("In HandlePfcpSessionEstablishmentResponse smContext %v", smContext)
 
-	//Get NodeId from Seq:NodeId Map
+	// Get NodeId from Seq:NodeId Map
 	seq := msg.PfcpMessage.Header.SequenceNumber
 	nodeID := FetchPfcpTxn(seq)
 
@@ -212,7 +212,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rsp.UPFSEID.Seid)
 	}
 
-	//Get N3 interface UPF
+	// Get N3 interface UPF
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
@@ -324,12 +324,12 @@ func SetUpfInactive(nodeID pfcpType.NodeID, msgType pfcp.MessageType) {
 	upf := smf_context.RetrieveUPFNodeByNodeID(nodeID)
 	if upf == nil {
 		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
-		//metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
+		// metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
 		//	pfcpmsgtypes.PfcpMsgTypeString(msgType),
 		//	"In", "Failure", "unknown_upf")
 		return
 	}
 
 	upf.UPFStatus = smf_context.NotAssociated
-	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
+	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 }

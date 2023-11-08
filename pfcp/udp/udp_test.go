@@ -9,14 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
 	smf_pfcp "github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/stretchr/testify/require"
 )
 
 const testPfcpClientPort = 12345

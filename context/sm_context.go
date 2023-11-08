@@ -9,25 +9,18 @@ package context
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
-
-	"github.com/omec-project/http_wrapper"
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
-	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	"github.com/omec-project/smf/qos"
-	errors "github.com/omec-project/smf/smferrors"
-	"github.com/omec-project/smf/transaction"
-	"github.com/sirupsen/logrus"
-
 	"net"
 	"net/http"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/google/uuid"
-
+	"github.com/omec-project/http_wrapper"
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/nas/nasMessage"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
@@ -39,6 +32,12 @@ import (
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/qos"
+	errors "github.com/omec-project/smf/smferrors"
+	"github.com/omec-project/smf/transaction"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -156,7 +155,7 @@ type SMContext struct {
 	// SM Policy related
 	// Updates in policy from PCF
 	SmPolicyUpdates []*qos.PolicyUpdate `json:"smPolicyUpdates" yaml:"smPolicyUpdates" bson:"smPolicyUpdates"` // ignore
-	//Holds Session/PCC Rules and Qos/Cond/Charging Data
+	// Holds Session/PCC Rules and Qos/Cond/Charging Data
 	SmPolicyData qos.SmCtxtPolicyData `json:"smPolicyData" yaml:"smPolicyData" bson:"smPolicyData"`
 
 	// NAS
@@ -178,7 +177,7 @@ type SMContext struct {
 	SubFsmLog      *logrus.Entry `json:"-" yaml:"subFsmLog" bson:"-"`      // ignore
 	SubQosLog      *logrus.Entry `json:"-" yaml:"subQosLog" bson:"-"`      // ignore
 
-	//TxnBus per subscriber
+	// TxnBus per subscriber
 	TxnBus transaction.TxnBus `json:"-" yaml:"txnBus" bson:"-"` // ignore
 	// SMTxnBusLock sync.Mutex         `json:"smTxnBusLock,omitempty" yaml:"smTxnBusLock" bson:"smTxnBusLock,omitempty"` // ignore
 	SMTxnBusLock sync.Mutex `json:"-" yaml:"smTxnBusLock" bson:"-"` // ignore
@@ -225,19 +224,21 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv6Request: false,
 	}
 
-	//Sess Stats
+	// Sess Stats
 	smContextActive := incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 
-	//initialise log tags
+	// initialise log tags
 	smContext.initLogTags()
 
 	return smContext
 }
 
 func (smContext *SMContext) initLogTags() {
-	subField := logrus.Fields{"uuid": smContext.Ref,
-		"id": smContext.Identifier, "pduid": smContext.PDUSessionID}
+	subField := logrus.Fields{
+		"uuid": smContext.Ref,
+		"id":   smContext.Identifier, "pduid": smContext.PDUSessionID,
+	}
 
 	smContext.SubPfcpLog = logger.PfcpLog.WithFields(subField)
 	smContext.SubCtxLog = logger.CtxLog.WithFields(subField)
@@ -249,12 +250,11 @@ func (smContext *SMContext) initLogTags() {
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
-
 	//Update Subscriber profile Metrics
 	if nextState == SmStateActive || smContext.SMContextState == SmStateActive {
 		var upf string
 		if smContext.Tunnel != nil {
-			//Set UPF FQDN name if provided else IP-address
+			// Set UPF FQDN name if provided else IP-address
 			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
 				upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
 				upf = strings.Split(upf, ".")[0]
@@ -263,10 +263,9 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 			}
 		}
 
-		//enterprise name
+		// enterprise name
 		ent := "na"
 		if smfContext.EnterpriseList != nil {
-
 			entMap := *smfContext.EnterpriseList
 			smContext.SubCtxLog.Debugf("context state change, Enterprises configured = [%v], subscriber slice sst [%v], sd [%v]",
 				entMap, smContext.Snssai.Sst, smContext.Snssai.Sd)
@@ -309,7 +308,6 @@ func GetSMContext(ref string) (smContext *SMContext) {
 
 // *** add unit test ***//
 func RemoveSMContext(ref string) {
-
 	var smContext *SMContext
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
@@ -325,13 +323,13 @@ func RemoveSMContext(ref string) {
 		}
 	}
 
-	//Release UE IP-Address
+	// Release UE IP-Address
 	smContext.ReleaseUeIpAddr()
 
 	smContextPool.Delete(ref)
 
 	canonicalRef.Delete(canonicalName(smContext.Supi, smContext.PDUSessionID))
-	//Sess Stats
+	// Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
 	if factory.SmfConfig.Configuration.EnableDbStore {
@@ -507,7 +505,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 }
 
 func (smContext *SMContext) PutPDRtoPFCPSession(nodeID pfcpType.NodeID, pdrList map[string]*PDR) error {
-	//TODO: Iterate over PDRS
+	// TODO: Iterate over PDRS
 	NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 	if pfcpSessCtx, exist := smContext.PFCPContext[NodeIDtoIP]; exist {
 		for name, pdr := range pdrList {
@@ -611,7 +609,7 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 
 // SelectedSessionRule - return the SMF selected session rule for this SM Context
 func (smContext *SMContext) SelectedSessionRule() *models.SessionRule {
-	//Policy update in progress
+	// Policy update in progress
 	if len(smContext.SmPolicyUpdates) > 0 {
 		return smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
 	} else {
@@ -679,7 +677,6 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 }
 
 func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
-
 	//Lock SM context
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
@@ -688,22 +685,21 @@ func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
 		qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
 	}
 
-	//Release 0th index update
+	// Release 0th index update
 	if len(smContext.SmPolicyUpdates) >= 1 {
 		smContext.SmPolicyUpdates = smContext.SmPolicyUpdates[1:]
 	}
 
-	//Notify PCF of failure ?
-	//TODO
+	// Notify PCF of failure ?
+	// TODO
 	return nil
 }
 
 func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 	var upfName, upfIP string
 	if smContext.SMContextState == SmStateActive {
-
 		if smContext.Tunnel != nil {
-			//Set UPF FQDN name if provided else IP-address
+			// Set UPF FQDN name if provided else IP-address
 			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
 				upfName = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
 				upfName = strings.Split(upfName, ".")[0]
@@ -722,7 +718,7 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	var op mi.SubscriberOp
 	kafkaSmCtxt := mi.CoreSubscriber{}
 
-	//Populate kafka sm ctxt struct
+	// Populate kafka sm ctxt struct
 	kafkaSmCtxt.Imsi = smContext.Supi
 	kafkaSmCtxt.IPAddress = smContext.PDUAddress.Ip.String()
 	kafkaSmCtxt.SmfSubState, op = mapPduSessStateToMetricStateAndOp(smContext.SMContextState)
@@ -732,12 +728,11 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	kafkaSmCtxt.UpfName, kafkaSmCtxt.UpfAddr = smContext.getSmCtxtUpf()
 	kafkaSmCtxt.SmfIp = SMF_Self().PodIp
 
-	//Send to stream
+	// Send to stream
 	metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
 }
 
 func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {
-
 	switch state {
 	case SmStateInit:
 		return "Idle", mi.SubsOpAdd
