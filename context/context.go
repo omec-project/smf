@@ -380,7 +380,7 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 		dbName = factory.SmfConfig.Configuration.SmfDbName
 	}
 
-	logger.CfgLog.Infof("initialising drsm name [%v] url [%v] ", dbName, dbUrl)
+	logger.CfgLog.Infof("initialising drsm name [%v]", dbName)
 
 	opt := &drsm.Options{ResIdSize: 24, Mode: drsm.ResourceClient}
 	db := drsm.DbInfo{Url: dbUrl, Name: dbName}
