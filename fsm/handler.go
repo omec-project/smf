@@ -35,9 +35,9 @@ type SmEventData struct {
 }
 
 // Define FSM Func Point Struct here
-type fsmHandler [smf_context.SmStateMax][SmEventMax]func(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error)
+type eventHandler func(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error)
 
-var SmfFsmHandler fsmHandler
+var SmfFsmHandler [smf_context.SmStateMax][SmEventMax]eventHandler
 
 func init() {
 	// Initilise with default invalid handler
