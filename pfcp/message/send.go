@@ -114,7 +114,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %v\n", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %+v\n", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
@@ -182,7 +182,7 @@ func SendPfcpAssociationSetupRequest(upNodeID pfcpType.NodeID, upfPort uint16) {
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %v\n", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %+v\n", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
@@ -322,7 +322,7 @@ func SendPfcpSessionEstablishmentRequest(
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %v", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %+v", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -406,7 +406,7 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID,
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %v\n", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %+v\n", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -487,7 +487,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, ctx *smf_context.S
 					logger.PfcpLog.Fatalln(err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %v\n", pfcpMsgString)
+				logger.PfcpLog.Debugf("pfcp rsp status ok, %+v\n", pfcpMsgString)
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				eventData := pfcpUdp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}

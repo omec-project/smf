@@ -5,12 +5,12 @@
 package message_test
 
 import (
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/smf/context"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/smf/context"
 	smf_pfcp "github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
