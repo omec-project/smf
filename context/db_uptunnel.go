@@ -171,7 +171,7 @@ func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
 func StoreNodeInDB(nodeInDB *DataPathNodeInDB) {
 	itemBsonA := ToBsonMNodeInDB(nodeInDB)
 	filter := bson.M{"nodeIDInDB": nodeInDB.DataPathNodeUPFNodeID}
-	logger.CtxLog.Infof("filter : ", filter)
+	logger.CtxLog.Infof("filter : %+v\n", filter)
 
 	MongoDBLibrary.RestfulAPIPost(NodeInDBCol, filter, itemBsonA)
 }
