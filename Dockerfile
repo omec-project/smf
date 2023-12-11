@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM golang:1.21.4-bookworm AS builder
+FROM golang:1.21.5-bookworm AS builder
 
 LABEL maintainer="ONF <omec-dev@opennetworking.org>"
 
@@ -22,7 +22,7 @@ RUN cd $GOPATH/src/smf \
 # compile upf-adapter binary
 RUN cd $GOPATH/src/smf/upfadapter && CGO_ENABLED=0 go build
 
-FROM alpine:3.18 as smf
+FROM alpine:3.19 as smf
 
 LABEL description="ONF open source 5G Core Network" \
     version="Stage 3"
