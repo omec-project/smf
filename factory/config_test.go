@@ -6,7 +6,6 @@
 package factory
 
 import (
-	"fmt"
 	"testing"
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
@@ -48,7 +47,7 @@ func makeDummyConfig(sst, sd string) *protos.NetworkSliceResponse {
 	return &rsp
 }
 
-func TestCompareSliceConfig(t *testing.T) {
+func TestCompareSliceConfigIdentical(t *testing.T) {
 	sNssai1 := models.Snssai{Sst: 1, Sd: "010203"}
 	sNssai2 := models.Snssai{Sst: 1, Sd: "010203"}
 
@@ -65,13 +64,91 @@ func TestCompareSliceConfig(t *testing.T) {
 	sNssaiInfoItem2.DnnInfos = append(sNssaiInfoItem2.DnnInfos, dnnInfo4, dnnInfo3)
 	slice2 := []SnssaiInfoItem{sNssaiInfoItem2}
 
-	if match, add, mod, del := compareNetworkSlices(slice1, slice2); match {
-		fmt.Println("The Slices are Equal")
-	} else {
-		fmt.Println("The Slices are Unequal ")
-		fmt.Println("slices added", add)
-		fmt.Println("slices modified ", mod)
-		fmt.Println("slices deleted ", del)
+	match, add, mod, del := compareNetworkSlices(slice1, slice2)
+
+	if !match {
+		t.Errorf("Expected NetworkSlice configurations to be different, but they were identical")
+	}
+
+	if len(add) != 0 {
+		t.Errorf("Expected 0 NetworkSlices to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 0 {
+		t.Errorf("Expected 0 NetworkSlices to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 0 {
+		t.Errorf("Expected 0 NetworkSlices to be deleted, but got %d", len(del))
+	}
+
+}
+
+func TestCompareSliceConfigDifferent(t *testing.T) {
+	sNssai1 := models.Snssai{Sst: 1, Sd: "010203"}
+	sNssai2 := models.Snssai{Sst: 1, Sd: "010204"}
+
+	dnnInfo1 := SnssaiDnnInfoItem{Dnn: "DNN1", UESubnet: "11.11.0.0/16", DNS: DNS{IPv4Addr: "1.1.1.1"}}
+	dnnInfo2 := SnssaiDnnInfoItem{Dnn: "DNN2", UESubnet: "12.12.0.0/16", DNS: DNS{IPv4Addr: "2.2.2.2"}}
+	dnnInfo3 := SnssaiDnnInfoItem{Dnn: "DNN3", UESubnet: "13.13.0.0/16", DNS: DNS{IPv4Addr: "3.3.3.3"}}
+	dnnInfo4 := SnssaiDnnInfoItem{Dnn: "DNN4", UESubnet: "14.14.0.0/16", DNS: DNS{IPv4Addr: "4.4.4.4"}}
+
+	sNssaiInfoItem1 := SnssaiInfoItem{SNssai: &sNssai1, DnnInfos: make([]SnssaiDnnInfoItem, 0)}
+	sNssaiInfoItem1.DnnInfos = append(sNssaiInfoItem1.DnnInfos, dnnInfo1, dnnInfo2)
+	slice1 := []SnssaiInfoItem{sNssaiInfoItem1}
+
+	sNssaiInfoItem2 := SnssaiInfoItem{SNssai: &sNssai2, DnnInfos: make([]SnssaiDnnInfoItem, 0)}
+	sNssaiInfoItem2.DnnInfos = append(sNssaiInfoItem2.DnnInfos, dnnInfo4, dnnInfo3)
+	slice2 := []SnssaiInfoItem{sNssaiInfoItem2}
+
+	match, add, mod, del := compareNetworkSlices(slice1, slice2)
+
+	if match {
+		t.Errorf("Expected NetworkSlice configurations to be different, but they were identical")
+	}
+
+	if len(add) != 1 {
+		t.Errorf("Expected 1 NetworkSlice to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 0 {
+		t.Errorf("Expected 1 NetworkSlice to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 1 {
+		t.Errorf("Expected 1 NetworkSlice to be deleted, but got %d", len(del))
+	}
+}
+
+func TestCompareSliceConfigModified(t *testing.T) {
+	sNssai1 := models.Snssai{Sst: 1, Sd: "010203"}
+	sNssai2 := models.Snssai{Sst: 1, Sd: "010203"}
+
+	dnnInfo := SnssaiDnnInfoItem{Dnn: "DNN1", UESubnet: "11.11.0.0/16", DNS: DNS{IPv4Addr: "3.3.3.3"}}
+
+	sNssaiInfoItem1 := SnssaiInfoItem{SNssai: &sNssai1, DnnInfos: make([]SnssaiDnnInfoItem, 0)}
+	slice1 := []SnssaiInfoItem{sNssaiInfoItem1}
+
+	sNssaiInfoItem2 := SnssaiInfoItem{SNssai: &sNssai2, DnnInfos: make([]SnssaiDnnInfoItem, 0)}
+	sNssaiInfoItem2.DnnInfos = append(sNssaiInfoItem2.DnnInfos, dnnInfo)
+	slice2 := []SnssaiInfoItem{sNssaiInfoItem2}
+
+	match, add, mod, del := compareNetworkSlices(slice1, slice2)
+
+	if match {
+		t.Errorf("Expected NetworkSlice configurations to be different, but they were identical")
+	}
+
+	if len(add) != 0 {
+		t.Errorf("Expected 0 NetworkSlices to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 1 {
+		t.Errorf("Expected 1 NetworkSlice to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 0 {
+		t.Errorf("Expected 0 NetworkSlices to be deleted, but got %d", len(del))
 	}
 }
 
@@ -121,27 +198,229 @@ func TestCompareUPNodesConfigs(t *testing.T) {
 	up2["u2"] = u2
 	match, add, mod, del := compareUPNodesConfigs(up1, up2)
 
-	if !match {
-		fmt.Printf("UPF config mismatch, to be added [%+v]\n", add)
-		fmt.Printf("UPF config mismatch, to be modified [%+v]\n", mod)
-		fmt.Printf("UPF config mismatch, to be deleted [%+v]\n", del)
-	} else {
-		fmt.Println("UPF config match")
+	if match {
+		t.Errorf("Expected UPNode configurations to be different, but they were identical")
 	}
+
+	if len(add) != 1 {
+		t.Errorf("Expected 1 UPNode to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 0 {
+		t.Errorf("Expected 0 UPNodes to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 1 {
+		t.Errorf("Expected 1 UPNode to be deleted, but got %d", len(del))
+	}
+
 }
 
-func TestCompareGenericSlices(t *testing.T) {
+func TestCompareUPNodesConfigsIdentical(t *testing.T) {
+	u1 := UPNode{
+		Type:                 "UPF",
+		NodeID:               "u1.abc.def.com",
+		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+	}
+	u2 := UPNode{
+		Type:                 "UPF",
+		NodeID:               "u1.abc.def.com",
+		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+	}
 
+	snssai1 := models.Snssai{Sst: 1, Sd: "010203"}
+	dnn1 := models.DnnUpfInfoItem{Dnn: "DNN1"}
+	snssai2 := models.Snssai{Sst: 1, Sd: "010203"}
+	dnn2 := models.DnnUpfInfoItem{Dnn: "DNN1"}
+
+	snssaiInfoItem1 := models.SnssaiUpfInfoItem{SNssai: &snssai1, DnnUpfInfoList: []models.DnnUpfInfoItem{dnn1}}
+	snssaiInfoItem2 := models.SnssaiUpfInfoItem{SNssai: &snssai2, DnnUpfInfoList: []models.DnnUpfInfoItem{dnn2}}
+	u1.SNssaiInfos = append(u1.SNssaiInfos, snssaiInfoItem1)
+	u2.SNssaiInfos = append(u2.SNssaiInfos, snssaiInfoItem2)
+
+	up1, up2 := make(map[string]UPNode), make(map[string]UPNode)
+	up1["u1"] = u1
+	up2["u1"] = u2
+
+	match, add, mod, del := compareUPNodesConfigs(up1, up2)
+
+	if !match {
+		t.Errorf("Expected UPNode configurations to be identical, but they were not")
+	}
+
+	if len(add) != 0 {
+		t.Errorf("Expected 0 UPNodes to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 0 {
+		t.Errorf("Expected 0 UPNodes to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 0 {
+		t.Errorf("Expected 0 UPNodes to be deleted, but got %d", len(del))
+	}
+
+}
+
+func TestCompareUPNodesConfigsDifferentDNN(t *testing.T) {
+	u1 := UPNode{
+		Type:                 "UPF",
+		NodeID:               "u1.abc.def.com",
+		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+	}
+	u2 := UPNode{
+		Type:                 "UPF",
+		NodeID:               "u1.abc.def.com",
+		SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+		InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+	}
+
+	snssai1 := models.Snssai{Sst: 1, Sd: "010203"}
+	dnn1 := models.DnnUpfInfoItem{Dnn: "DNN1"}
+	snssai2 := models.Snssai{Sst: 1, Sd: "010203"}
+	dnn2 := models.DnnUpfInfoItem{Dnn: "DNN2"}
+
+	snssaiInfoItem1 := models.SnssaiUpfInfoItem{SNssai: &snssai1, DnnUpfInfoList: []models.DnnUpfInfoItem{dnn1}}
+	snssaiInfoItem2 := models.SnssaiUpfInfoItem{SNssai: &snssai2, DnnUpfInfoList: []models.DnnUpfInfoItem{dnn2}}
+	u1.SNssaiInfos = append(u1.SNssaiInfos, snssaiInfoItem1)
+	u2.SNssaiInfos = append(u2.SNssaiInfos, snssaiInfoItem2)
+
+	up1, up2 := make(map[string]UPNode), make(map[string]UPNode)
+	up1["u1"] = u1
+	up2["u1"] = u2
+
+	match, add, mod, del := compareUPNodesConfigs(up1, up2)
+
+	if match {
+		t.Errorf("Expected UPNode configurations to be different, but they were identical")
+	}
+
+	if len(add) != 0 {
+		t.Errorf("Expected 0 UPNodes to be added, but got %d", len(add))
+	}
+
+	if len(mod) != 1 {
+		t.Errorf("Expected 1 UPNode to be modified, but got %d", len(mod))
+	}
+
+	if len(del) != 0 {
+		t.Errorf("Expected 0 UPNodes to be deleted, but got %d", len(del))
+	}
+
+}
+
+func TestCompareGenericSlicesDifferent1(t *testing.T) {
 	l1 := UPLink{A: "gnb", B: "upf1"}
 	l2 := UPLink{A: "gnb", B: "upf2"}
 	l3 := UPLink{A: "gnb", B: "upf3"}
+	l4 := UPLink{A: "gnb", B: "upf4"}
+
+	match, addLinksInterface, delLinksInterface := compareGenericSlices([]UPLink{l1, l2}, []UPLink{l3, l4}, compareUPLinks)
+
+	if match {
+		t.Errorf("Expected GenericSlice configurations to be different, but they were identical")
+	}
+
+	addLinks, ok := addLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected addLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(addLinks) != 2 {
+		t.Errorf("Expected 2 GenericSlices to be added, but got %d", len(addLinks))
+	}
+	if addLinks[0].A != "gnb" || addLinks[0].B != "upf3" {
+		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[0])
+	}
+	if addLinks[1].A != "gnb" || addLinks[1].B != "upf4" {
+		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[1])
+	}
+
+	delLinks, ok := delLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected delLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(delLinks) != 2 {
+		t.Errorf("Expected 2 GenericSlices to be deleted, but got %d", len(delLinks))
+	}
+	if delLinks[0].A != "gnb" || delLinks[0].B != "upf1" {
+		t.Errorf("Expected GenericSlice to be deleted, but got %v", delLinks[0])
+	}
+	if delLinks[1].A != "gnb" || delLinks[1].B != "upf2" {
+		t.Errorf("Expected GenericSlice to be deleted, but got %v", delLinks[1])
+	}
+}
+
+func TestCompareGenericSlicesDifferent2(t *testing.T) {
+	l1 := UPLink{A: "gnb", B: "upf1"}
+
+	match, addLinksInterface, delLinksInterface := compareGenericSlices([]UPLink{}, []UPLink{l1}, compareUPLinks)
+
+	if match {
+		t.Errorf("Expected GenericSlice configurations to be different, but they were identical")
+	}
+
+	addLinks, ok := addLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected addLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(addLinks) != 1 {
+		t.Errorf("Expected 2 GenericSlices to be added, but got %d", len(addLinks))
+	}
+	if addLinks[0].A != "gnb" || addLinks[0].B != "upf1" {
+		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[0])
+	}
+
+	delLinks, ok := delLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected delLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(delLinks) != 0 {
+		t.Errorf("Expected 0 GenericSlices to be deleted, but got %d", len(delLinks))
+	}
+
+}
+
+func TestCompareGenericSlicesIdentical(t *testing.T) {
+	l1 := UPLink{A: "gnb", B: "upf1"}
+	l2 := UPLink{A: "gnb", B: "upf2"}
+	l3 := UPLink{A: "gnb", B: "upf1"}
 	l4 := UPLink{A: "gnb", B: "upf2"}
 
-	match, addLinks, delLinks := compareGenericSlices([]UPLink{l1, l2}, []UPLink{l3, l4}, compareUPLinks)
+	match, addLinksInterface, delLinksInterface := compareGenericSlices([]UPLink{l1, l2}, []UPLink{l3, l4}, compareUPLinks)
+
 	if !match {
-		fmt.Printf("Generic, The Links mismatch, add[%v] and del[%v]\n", addLinks.([]UPLink), delLinks)
-	} else {
-		fmt.Println("Generic, The Links match")
+		t.Errorf("Expected GenericSlice configurations to be identical, but they were not")
+	}
+
+	addLinks, ok := addLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected addLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(addLinks) != 0 {
+		t.Errorf("Expected 0 GenericSlices to be added, but got %d", len(addLinks))
+	}
+
+	delLinks, ok := delLinksInterface.([]UPLink)
+
+	if !ok {
+		t.Fatalf("Expected delLinks to be of type []UPLink, but it was not")
+	}
+
+	if len(delLinks) != 0 {
+		t.Errorf("Expected 0 GenericSlices to be deleted, but got %d", len(delLinks))
 	}
 }
 

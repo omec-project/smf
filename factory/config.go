@@ -512,41 +512,32 @@ func compareUPNode(u1, u2 UPNode) bool {
 	return false
 }
 
-func compareUPNodesConfigs(u1, u2 map[string]UPNode) (match bool, add, mod, del map[string]UPNode) {
-
+func compareUPNodesConfigs(existingUPNodes, newUPNodes map[string]UPNode) (match bool, add, mod, del map[string]UPNode) {
 	match = true
 	add, mod, del = make(map[string]UPNode), make(map[string]UPNode), make(map[string]UPNode)
 
-	// Loop two times, first to find slice1 strings not in slice2,
-	// second loop to find slice2 strings not in slice1
-	for i := 0; i < 2; i++ {
-		for name, node1 := range u1 {
-			found := false
-			if node2, ok := u2[name]; ok {
-				if !compareUPNode(node1, node2) {
-					mod[name] = node2
-				}
-				found = true
-			}
-
-			// String not found. We add it to return slice
-			if !found {
+	// Check for modifications and deletions in existingUPNodes
+	for existingUPNodename, existingUPNode := range existingUPNodes {
+		if newUPNode, ok := newUPNodes[existingUPNodename]; ok {
+			if !compareUPNode(existingUPNode, newUPNode) {
+				mod[existingUPNodename] = newUPNode
 				match = false
-				if i == 0 {
-					del[name] = node1
-
-				} else {
-					add[name] = node1
-				}
 			}
-		}
-		// Swap the slices, only if it was the first loop
-		if i == 0 {
-			u1, u2 = u2, u1
+		} else {
+			del[existingUPNodename] = existingUPNode
+			match = false
 		}
 	}
-	return
 
+	// Check for additions in newUPNodes
+	for newUPNodename, newUPNode := range newUPNodes {
+		if _, ok := existingUPNodes[newUPNodename]; !ok {
+			add[newUPNodename] = newUPNode
+			match = false
+		}
+	}
+
+	return match, add, mod, del
 }
 
 func compareNetworkSliceInstance(s1, s2 SnssaiInfoItem) (match bool) {
