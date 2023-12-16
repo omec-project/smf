@@ -115,6 +115,7 @@ func SendHeartbeatRequest(upNodeID pfcpType.NodeID, upfPort uint16) error {
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
+
 				pfcpRspMsg := pfcp.Message{}
 				json.Unmarshal(pfcpMsgBytes, &pfcpRspMsg)
 				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)

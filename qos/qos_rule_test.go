@@ -123,6 +123,7 @@ func makeSampleQosData() map[string]*models.QosData {
 			DefQosFlowIndication: false,
 		}
 	*/
+
 	return map[string]*models.QosData{
 		"QosData1": &qosData1,
 		//		"QosData2": &qosData2,

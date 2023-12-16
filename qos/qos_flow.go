@@ -11,6 +11,7 @@ import (
 
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/logger"
 )
 
 // TS 24.501 Table 9.11.4.12
@@ -81,8 +82,9 @@ type QosFlowsUpdate struct {
 }
 
 func GetQosFlowIdFromQosId(qosId string) uint8 {
-	if id, err := strconv.Atoi(qosId); err != nil {
-		//TODO: Error Log
+	id, err := strconv.Atoi(qosId)
+	if err != nil {
+		logger.CtxLog.Errorf("String can not be converted to integer: %+v", err)
 		return 0
 	} else {
 		return uint8(id)
