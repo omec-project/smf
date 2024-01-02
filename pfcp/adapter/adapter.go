@@ -198,7 +198,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *pfcpUdp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse SEID %+v", SEID)
+	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
 	logger.PfcpLog.Infof("In HandlePfcpSessionEstablishmentResponse smContext %+v", smContext)
 
 	//Get NodeId from Seq:NodeId Map
