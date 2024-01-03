@@ -52,9 +52,8 @@ type SMF struct{}
 type (
 	// Config information.
 	Config struct {
-		smfcfg         string
-		uerouting      string
-		heartBeatTimer string
+		smfcfg    string
+		uerouting string
 	}
 )
 
