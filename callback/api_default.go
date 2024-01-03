@@ -69,7 +69,7 @@ func SmPolicyControlTerminationRequestNotification(c *gin.Context) {
 }
 
 func N1N2FailureNotification(c *gin.Context) {
-	logger.PduSessLog.Info("Recieve N1N2 Failure Notification")
+	logger.PduSessLog.Info("Receive N1N2 Failure Notification")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "In", "", "")
 
 	var request models.N1N2MsgTxfrFailureNotification

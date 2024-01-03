@@ -34,7 +34,7 @@ import (
 
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
-	logger.PduSessLog.Info("Recieve Create SM Context Request")
+	logger.PduSessLog.Info("Receive Create SM Context Request")
 	var request models.PostSmContextsRequest
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)

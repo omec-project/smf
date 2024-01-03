@@ -724,7 +724,9 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 
 	//Populate kafka sm ctxt struct
 	kafkaSmCtxt.Imsi = smContext.Supi
-	kafkaSmCtxt.IPAddress = smContext.PDUAddress.Ip.String()
+	if smContext.PDUAddress != nil && smContext.PDUAddress.Ip != nil {
+		kafkaSmCtxt.IPAddress = smContext.PDUAddress.Ip.String()
+	}
 	kafkaSmCtxt.SmfSubState, op = mapPduSessStateToMetricStateAndOp(smContext.SMContextState)
 	kafkaSmCtxt.SmfId = smContext.Ref
 	kafkaSmCtxt.Slice = "sd:" + smContext.Snssai.Sd + " sst:" + strconv.Itoa(int(smContext.Snssai.Sst))
