@@ -28,7 +28,7 @@ func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.Sessio
 		del: make(map[string]*models.SessionRule),
 	}
 
-	//TODO: Iterate through all session rules from PCF and check agains ctxt session rules
+	//TODO: Iterate through all session rules from PCF and check against ctxt session rules
 	//Get only active session Rule for now
 	for name, sessRule := range pcfSessRules {
 		//Rules to be deleted
