@@ -223,25 +223,21 @@ linters:
     # - govet
     # - errcheck
     # - staticcheck
-    # - unused
+    - unused
     # - gosimple
-    # - structcheck
-    # - varcheck
     - ineffassign
-    # - deadcode
-    # - typecheck
+    - typecheck
     # Additional
     # - lll
     - godox
     # - gomnd
     # - goconst
     # - gocognit
-    # - maligned
     # - nestif
     # - gomodguard
     # - nakedret
     # - gci
-    # - misspell
+    - misspell
     # - gofumpt
     # - whitespace
     # - unconvert
