@@ -6,11 +6,13 @@
 package context_test
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )
@@ -219,17 +221,92 @@ func TestGenerateDefaultPath(t *testing.T) {
 	}
 }
 
-func TestGetDefaultUPFTopoByDNN(t *testing.T) {
-}
+func TestUpdateSmfUserPlaneNode_NodeIDChange(t *testing.T) {
+	upi := &context.UserPlaneInformation{
+		UPNodes:              make(map[string]*context.UPNode),
+		UPFs:                 make(map[string]*context.UPNode),
+		AccessNetwork:        make(map[string]*context.UPNode),
+		UPFIPToName:          make(map[string]string),
+		UPFsID:               make(map[string]string),
+		UPFsIPtoID:           make(map[string]string),
+		DefaultUserPlanePath: make(map[string][]*context.UPNode),
+	}
 
-func TestInsertSmfUserPlaneNode(t *testing.T) {
+	nodeID := pfcpType.NodeID{
+		NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
+		NodeIdValue: []byte(net.ParseIP("1.2.3.4").To4()),
+	}
 
-}
+	// Create an existing UPNode with a specific UPF instance
+	originalUPF := context.NewUPF(&nodeID, nil)
+	existingNode := &context.UPNode{
+		Type:   "UPF",
+		NodeID: nodeID,
+		Port:   1234,
+		UPF:    originalUPF,
+		Links: []*context.UPNode{
+			{
+				Type: context.UPNODE_AN,
+				NodeID: pfcpType.NodeID{
+					NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
+					NodeIdValue: []byte(net.ParseIP("5.6.7.8").To4()),
+				},
+				Port: 0,
+			},
+		},
+	}
 
-func TestUpdateSmfUserPlaneNode(t *testing.T) {
+	upi.UPNodes["testNode"] = existingNode
 
-}
+	// Create a new UPNode with the same NodeID
+	newNode := &factory.UPNode{
+		Type:   "UPF",
+		NodeID: "1.2.3.4",
+		Port:   4321,
+		SNssaiInfos: []models.SnssaiUpfInfoItem{
+			{
+				SNssai: &models.Snssai{
+					Sst: 1,
+					Sd:  "112235",
+				},
+				DnnUpfInfoList: []models.DnnUpfInfoItem{
+					{Dnn: "internet2"},
+				},
+			},
+		},
+	}
 
-func TestDeleteSmfUserPlaneNode(t *testing.T) {
+	err := upi.UpdateSmfUserPlaneNode("testNode", newNode)
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	updatedUPF := upi.UPNodes["testNode"].UPF
+	if updatedUPF != originalUPF {
+		t.Errorf("Expected UPF instance to remain unchanged, but it was recreated")
+	}
+
+	_, upfExists := upi.UPFs["testNode"]
+	require.True(t, upfExists)
+	if upi.UPFs["testNode"].UPF.SNssaiInfos[0].DnnList[0].Dnn != "internet2" {
+		t.Errorf("Expected UPF DNN to be updated")
+	}
+
+	updatedUPNode, exists := upi.UPNodes["testNode"]
+	if !exists {
+		t.Errorf("Expected UPNode to exist")
+	}
+
+	if updatedUPNode.Port != 4321 {
+		t.Errorf("Expected UPNode port to be updated")
+	}
+
+	if updatedUPNode.NodeID.ResolveNodeIdToIp().String() != "1.2.3.4" {
+		t.Errorf("Expected UPNode NodeID to be updated")
+	}
+
+	if updatedUPNode.Links[0].NodeID.ResolveNodeIdToIp().String() != "5.6.7.8" {
+		t.Errorf("Expected UPNode NodeID to be updated")
+	}
 
 }
