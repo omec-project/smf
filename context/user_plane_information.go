@@ -425,7 +425,7 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 	ipStr := existingNode.NodeID.ResolveNodeIdToIp().String()
 	upi.UPFIPToName[ipStr] = name
 
-	logger.CtxLog.Infof("UPNode [%v] updated successfully", name)
+	logger.CtxLog.Infof("UPNode [%s] updated successfully", name)
 	return nil
 }
 
