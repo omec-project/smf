@@ -363,7 +363,7 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 
 	existingNode, exists := upi.UPNodes[name]
 	if !exists {
-		return fmt.Errorf("UPNode [%v] does not exist", name)
+		return fmt.Errorf("UPNode [%s] does not exist", name)
 	}
 
 	existingNode.Port = newNode.Port
