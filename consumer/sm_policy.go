@@ -74,7 +74,6 @@ func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
 }
 
 func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
-
 	smPolicyDelData := models.SmPolicyDeleteData{}
 
 	//Populate Policy delete data
@@ -123,11 +122,9 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 }
 
 func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
-
 	//Validate just presence of important IEs as of now
 	//Sess Rules
 	for name, rule := range smPolicy.SessRules {
-
 		if rule.AuthSessAmbr == nil {
 			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
 			return fmt.Errorf("authorised session ambr missing")

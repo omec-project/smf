@@ -308,5 +308,4 @@ func TestUpdateSmfUserPlaneNode_NodeIDChange(t *testing.T) {
 	if updatedUPNode.Links[0].NodeID.ResolveNodeIdToIp().String() != "5.6.7.8" {
 		t.Errorf("Expected UPNode NodeID to be updated")
 	}
-
 }

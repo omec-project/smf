@@ -11,7 +11,6 @@ type CondDataUpdate struct {
 }
 
 func GetConditionDataUpdate(condData, ctxtCondData map[string]*models.ConditionData) *CondDataUpdate {
-
 	change := CondDataUpdate{
 		add: make(map[string]*models.ConditionData),
 		mod: make(map[string]*models.ConditionData),

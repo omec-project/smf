@@ -39,7 +39,6 @@ const (
 )
 
 func SetupSmfCollection() {
-
 	dbName := "sdcore_smf"
 	dbUrl := "mongodb://mongodb-arbiter-headless"
 
@@ -72,7 +71,6 @@ func SetupSmfCollection() {
 
 	// set os env
 	os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
-
 }
 
 // print out sm context
@@ -95,7 +93,6 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 		if smContext.Tunnel.DataPathPool != nil {
 			for key, val := range smContext.Tunnel.DataPathPool {
-
 				dataPathInDBIf = val
 				dataPath := dataPathInDBIf.(*DataPath)
 
@@ -195,9 +192,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 			newDataPath.FirstDPNode = dataPathNodeVal
 
 			smContext.Tunnel.DataPathPool[key] = newDataPath
-
 		}
-
 	}
 	// recover logs
 	smContext.initLogTags()
@@ -208,7 +203,6 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 }
 
 func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
-
 	// Marshal data into json format
 	tmp, err := json.Marshal(data)
 	if err != nil {
@@ -225,7 +219,6 @@ func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
 }
 
 func ToBsonM(data *SMContext) (ret bson.M) {
-
 	// Marshal data into json format
 	fmt.Println("db - in ToBsonM before marshal")
 	tmp, err := json.Marshal(data)
@@ -251,7 +244,6 @@ func StoreSmContextInDB(smContext *SMContext) {
 	logger.CtxLog.Infof("filter: %+v", filter)
 
 	MongoDBLibrary.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
-
 }
 
 type SeidSmContextRef struct {
@@ -345,7 +337,6 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 
 // Delete SMContext By SEID from DB
 func DeleteSmContextInDBBySEID(seidUint uint64) {
-
 	seid := SeidConv(seidUint)
 	fmt.Println("db - delete SMContext In DB by seid")
 	filter := bson.M{"seid": seid}
@@ -360,7 +351,6 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	} else {
 		logger.CtxLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
 	}
-
 }
 
 // Delete SMContext By ref from DB
@@ -391,7 +381,6 @@ func ShowSmContextPool() {
 		fmt.Println("db - iterate:", k, v)
 		return true
 	})
-
 }
 
 func GetSmContextPool() sync.Map {

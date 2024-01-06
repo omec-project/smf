@@ -188,7 +188,6 @@ func getSvcMsgType(nfType models.NfType) svcmsgtypes.SmfMsgType {
 
 func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfType,
 	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts) (models.SearchResult, error) {
-
 	result, httpResp, localErr := smf_context.SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
@@ -318,7 +317,6 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 }
 
 func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.ProblemDetails, error) {
-
 	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
 
 	localVarOptionals.TargetNfInstanceId = optional.NewInterface(smContext.ServingNfId)

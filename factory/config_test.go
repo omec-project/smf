@@ -13,7 +13,6 @@ import (
 )
 
 func TestUpdateSliceInfo(t *testing.T) {
-
 	cfg1 := Configuration{}
 	cfg2 := Configuration{}
 
@@ -81,7 +80,6 @@ func TestCompareSliceConfigIdentical(t *testing.T) {
 	if len(del) != 0 {
 		t.Errorf("Expected 0 NetworkSlices to be deleted, but got %d", len(del))
 	}
-
 }
 
 func TestCompareSliceConfigDifferent(t *testing.T) {
@@ -153,7 +151,6 @@ func TestCompareSliceConfigModified(t *testing.T) {
 }
 
 func TestCompareUPNodesConfigs(t *testing.T) {
-
 	u1 := UPNode{
 		Type:                 "UPF",
 		NodeID:               "u1.abc.def.com",
@@ -213,7 +210,6 @@ func TestCompareUPNodesConfigs(t *testing.T) {
 	if len(del) != 1 {
 		t.Errorf("Expected 1 UPNode to be deleted, but got %d", len(del))
 	}
-
 }
 
 func TestCompareUPNodesConfigsIdentical(t *testing.T) {
@@ -261,7 +257,6 @@ func TestCompareUPNodesConfigsIdentical(t *testing.T) {
 	if len(del) != 0 {
 		t.Errorf("Expected 0 UPNodes to be deleted, but got %d", len(del))
 	}
-
 }
 
 func TestCompareUPNodesConfigsDifferentDNN(t *testing.T) {
@@ -309,7 +304,6 @@ func TestCompareUPNodesConfigsDifferentDNN(t *testing.T) {
 	if len(del) != 0 {
 		t.Errorf("Expected 0 UPNodes to be deleted, but got %d", len(del))
 	}
-
 }
 
 func TestCompareGenericSlicesDifferent1(t *testing.T) {
@@ -388,7 +382,6 @@ func TestCompareGenericSlicesDifferent2(t *testing.T) {
 	if len(delLinks) != 0 {
 		t.Errorf("Expected 0 GenericSlices to be deleted, but got %d", len(delLinks))
 	}
-
 }
 
 func TestCompareGenericSlicesIdentical(t *testing.T) {

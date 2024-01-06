@@ -26,7 +26,6 @@ type Writer struct {
 var StatWriter Writer
 
 func InitialiseKafkaStream(config *factory.Configuration) error {
-
 	if *config.KafkaInfo.EnableKafka == false {
 		return nil
 	}
@@ -60,7 +59,6 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 }
 
 func GetWriter() Writer {
-
 	return StatWriter
 }
 
@@ -77,7 +75,6 @@ func (writer Writer) SendMessage(message []byte) error {
 }
 
 func (writer Writer) PublishPduSessEvent(ctxt mi.CoreSubscriber, op mi.SubscriberOp) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}
@@ -101,7 +98,6 @@ func SetNfInstanceId(s string) {
 }
 
 func PublishMsgEvent(msgType mi.SmfMsgType) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}
@@ -117,7 +113,6 @@ func PublishMsgEvent(msgType mi.SmfMsgType) error {
 }
 
 func (writer Writer) PublishNfStatusEvent(msgEvent mi.MetricEvent) error {
-
 	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka == false {
 		return nil
 	}

@@ -41,7 +41,6 @@ func TestIPPoolAlloc(t *testing.T) {
 }
 
 func TestIPPoolAllocRelease(t *testing.T) {
-
 	allocator, err := smf_context.NewIPAllocator("192.168.1.0/24")
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)

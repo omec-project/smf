@@ -265,7 +265,6 @@ func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 
 // Update level-1 Configuration(Not actual SMF config structure used by SMF)
 func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
-
 	//Reset previous SNSSAI structure
 	if c.SNssaiInfo != nil {
 		c.SNssaiInfo = nil
@@ -368,7 +367,6 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 
 		//Popoulate DNN names per UPF slice Info
 		for _, devGrp := range ns.DeviceGroup {
-
 			//DNN Info in UPF per Slice
 			var dnnUpfInfo models.DnnUpfInfoItem
 			dnnUpfInfo.Dnn = devGrp.IpDomainDetails.DnnName
@@ -400,12 +398,10 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 }
 
 func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
-
 	//compare Network slices
 	match, addSlices, modSlices, delSlices := compareNetworkSlices(smfCfg.SNssaiInfo, newCfg.SNssaiInfo)
 
 	if !match {
-
 		logger.CfgLog.Infof("changes in network slice config")
 
 		if len(delSlices) > 0 {
@@ -433,7 +429,6 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 	match, addUPNodes, modUPNodes, delUPNodes := compareUPNodesConfigs(smfCfg.UserPlaneInformation.UPNodes, newCfg.UserPlaneInformation.UPNodes)
 
 	if !match {
-
 		logger.CfgLog.Infof("changes in user plane config")
 
 		if len(delUPNodes) > 0 {
@@ -461,7 +456,6 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 	match, addLinks, delLinks := compareGenericSlices(smfCfg.UserPlaneInformation.Links,
 		newCfg.UserPlaneInformation.Links, compareUPLinks)
 	if !match {
-
 		logger.CfgLog.Infof("changes in UP nodes links config")
 
 		if s := addLinks.([]UPLink); len(s) > 0 {
@@ -473,7 +467,6 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 			logger.CfgLog.Infof("UP nodes links to be deleted : %+v", s)
 			UpdatedSmfConfig.DelLinks = &s
 		}
-
 	} else {
 		logger.CfgLog.Infoln("no change in UP nodes links config")
 	}
@@ -496,12 +489,10 @@ func compareUpfDnn(c1, c2 interface{}) bool {
 
 // Returns false if there is mismatch
 func compareUPNode(u1, u2 UPNode) bool {
-
 	if u1.ANIP == u2.ANIP &&
 		u1.Dnn == u2.Dnn &&
 		u1.NodeID == u2.NodeID &&
 		u1.Type == u2.Type {
-
 		if match, _, _, _ := compareUPNetworkSlices(u1.SNssaiInfos, u2.SNssaiInfos); !match {
 			return false
 		}
@@ -541,7 +532,6 @@ func compareUPNodesConfigs(existingUPNodes, newUPNodes map[string]UPNode) (match
 }
 
 func compareNetworkSliceInstance(s1, s2 SnssaiInfoItem) (match bool) {
-
 	if matching, _, _ := compareGenericSlices(s1.DnnInfos, s2.DnnInfos, compareNsDnn); !matching {
 		return false
 	}
@@ -554,7 +544,6 @@ func compareNetworkSliceInstance(s1, s2 SnssaiInfoItem) (match bool) {
 }
 
 func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod, del []SnssaiInfoItem) {
-
 	match = true
 	// Loop two times, first to find slice1 strings not in slice2,
 	// second loop to find slice2 strings not in slice1
@@ -579,7 +568,6 @@ func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod
 				match = false
 				if i == 0 {
 					del = append(del, s1)
-
 				} else {
 					add = append(add, s1)
 				}
@@ -594,7 +582,6 @@ func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod
 }
 
 func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bool, add, mod, del []models.SnssaiUpfInfoItem) {
-
 	match = true
 	// Loop two times, first to find slice1 strings not in slice2,
 	// second loop to find slice2 strings not in slice1
@@ -619,7 +606,6 @@ func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bo
 				match = false
 				if i == 0 {
 					del = append(del, s1)
-
 				} else {
 					add = append(add, s1)
 				}
@@ -634,7 +620,6 @@ func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bo
 }
 
 func compareGenericSlices(t1, t2 interface{}, compare func(i, j interface{}) bool) (match bool, add, remove interface{}) {
-
 	contentType := reflect.TypeOf(t1)
 	logger.CfgLog.Infoln("Comparing slices of type: ", contentType)
 
@@ -676,7 +661,6 @@ func compareGenericSlices(t1, t2 interface{}, compare func(i, j interface{}) boo
 }
 
 func PrettyPrintUPNodes(u map[string]UPNode) (s string) {
-
 	for name, node := range u {
 		s += fmt.Sprintf("\n UPNode Name[%v], Type[%v], NodeId[%v], Port[%v], ", name, node.Type, node.NodeID, node.Port)
 		s += PrettyPrintUPSlices(node.SNssaiInfos)
@@ -701,7 +685,6 @@ func PrettyPrintUpfDnnSlices(dnnSlice []models.DnnUpfInfoItem) (s string) {
 }
 
 func PrettyPrintUPInterfaces(intfUpf []InterfaceUpfInfoItem) (s string) {
-
 	for _, intf := range intfUpf {
 		s += fmt.Sprintf("\n UP interface type[%v], network instance[%v], endpoints[%v], ",
 			intf.InterfaceType, intf.NetworkInstance, intf.Endpoints)
@@ -710,7 +693,6 @@ func PrettyPrintUPInterfaces(intfUpf []InterfaceUpfInfoItem) (s string) {
 }
 
 func PrettyPrintNetworkSlices(networkSlice []SnssaiInfoItem) (s string) {
-
 	for _, slice := range networkSlice {
 		s += fmt.Sprintf("\n Slice SST[%v] SD[%v] ", slice.SNssai.Sst, slice.SNssai.Sd)
 		s += PrettyPrintNetworkDnnSlices(slice.DnnInfos)

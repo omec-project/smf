@@ -438,7 +438,6 @@ func (upf *UPF) qerID() (uint32, error) {
 }
 
 func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
-
 	var pdr *PDR
 	var err error
 

@@ -17,7 +17,6 @@ type SessRulesUpdate struct {
 
 // Get Session rule changes delta
 func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
-
 	if len(pcfSessRules) == 0 {
 		return nil
 	}
@@ -44,7 +43,6 @@ func GetSessionRulesUpdate(pcfSessRules, ctxtSessRules map[string]*models.Sessio
 			//Activate last rule
 			change.activeRuleName = name
 			change.ActiveSessRule = sessRule
-
 		} else {
 			change.mod[name] = sessRule
 			//Rules to be modified

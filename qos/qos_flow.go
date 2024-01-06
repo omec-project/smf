@@ -93,7 +93,6 @@ func GetQosFlowIdFromQosId(qosId string) uint8 {
 
 // Build Qos Flow Description to be sent to UE
 func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowDescriptionsAuthorized {
-
 	QFDescriptions := QosFlowDescriptionsAuthorized{
 		IeType:  nasMessage.PDUSessionEstablishmentAcceptAuthorizedQosFlowDescriptionsType,
 		Content: make([]byte, 0),
@@ -119,7 +118,6 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 }
 
 func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *models.QosData) {
-
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	//Set QFI
@@ -164,7 +162,6 @@ func BuildModQosFlowDescFromQoSDesc(qosData *models.QosData) {
 }
 
 func BuildDelQosFlowDescFromQoSDesc(qosData *models.QosData) {
-
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	//Set QFI
@@ -240,7 +237,6 @@ func (f *QoSFlowDescription) SetQFDEBitModReplaceAllParamQFD() {
 }
 
 func (p *QosFlowParameter) SetQosFlowParamBitRate(rateType, rateUnit uint8, rateVal uint16) {
-
 	p.ParamId = rateType //(i.e. QosFlowDescriptionParameterIdGfbrUl)
 	p.ParamLen = 0x03    //(Length is rate unit(1 byte) + rate value(2 bytes))
 	p.ParamContent = []byte{rateUnit}
@@ -249,7 +245,6 @@ func (p *QosFlowParameter) SetQosFlowParamBitRate(rateType, rateUnit uint8, rate
 
 // Encode QoSFlowDescriptions IE
 func (d *QosFlowDescriptionsAuthorized) AddQFD(qfd *QoSFlowDescription) {
-
 	//Add QFI byte
 	d.Content = append(d.Content, qfd.Qfi)
 
@@ -261,7 +256,6 @@ func (d *QosFlowDescriptionsAuthorized) AddQFD(qfd *QoSFlowDescription) {
 
 	//Iterate through Qos Flow Description's parameters
 	for _, param := range qfd.ParamList {
-
 		//Add Param Id
 		d.Content = append(d.Content, param.ParamId)
 
@@ -301,7 +295,6 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 }
 
 func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
-
 	if len(pcfQosData) == 0 {
 		return nil
 	}
@@ -387,7 +380,6 @@ func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
 
 func GetDefaultQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision) *models.QosData {
 	for _, qosData := range smPolicyDecision.QosDecs {
-
 		if qosData.DefQosFlowIndication {
 			return qosData
 		}

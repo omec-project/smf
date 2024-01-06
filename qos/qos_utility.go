@@ -12,7 +12,6 @@ import (
 )
 
 func (obj *IPFilterRule) String() string {
-
 	return fmt.Sprintf("IPFilter content: ProtocolId:[%v], Source:[Ip:[%v], Mask:[%v], Port:[%v] Port-range [%v-%v]],Destination [Ip [%v], Mask [%v], Port [%v], Port-range [%v-%v]]",
 		obj.protoId, obj.sAddrv4.addr, obj.sAddrv4.mask, obj.sPort, obj.sPortRange.lowLimit, obj.sPortRange.highLimit, obj.dAddrv4.addr, obj.sAddrv4.mask, obj.dPort, obj.dPortRange.lowLimit, obj.dPortRange.highLimit)
 }
@@ -41,7 +40,6 @@ func (obj PacketFilterComponent) String() string {
 	default:
 		return fmt.Sprintf("PFComponent content: type:[%v] value:[%v]\n", PfcString(obj.ComponentType), obj.ComponentValue)
 	}
-
 }
 
 func RuleOperation(op uint8) string {
@@ -127,28 +125,24 @@ func SmPolicyDecisionString(smPolicy *models.SmPolicyDecision) string {
 	//PCC Rules
 	str := "\nPCC Rules: "
 	for name, rule := range smPolicy.PccRules {
-
 		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(rule))
 	}
 
 	//Session Rules
 	str = str + "\nSession Rules: "
 	for name, rule := range smPolicy.SessRules {
-
 		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(rule))
 	}
 
 	//Qos Data
 	str = str + "\nQosData: "
 	for name, qosData := range smPolicy.QosDecs {
-
 		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(qosData))
 	}
 
 	//TC Data
 	str = str + "\nTCData: "
 	for name, tcData := range smPolicy.TraffContDecs {
-
 		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(tcData))
 	}
 	return str
@@ -184,7 +178,6 @@ func TCDataString(tcData *models.TrafficControlData) string {
 }
 
 func PccFlowInfosString(flows []models.FlowInformation) []string {
-
 	var flowStrs []string
 	for _, flow := range flows {
 		str := fmt.Sprintf("\nFlowInfo:[flowDesc:[%v], PFId:[%v], direction:[%v]]",
@@ -330,7 +323,6 @@ func TestMakeSamplePolicyDecision() *models.SmPolicyDecision {
 
 // TestMakePccRules - Locally generate PCC Rule data
 func TestMakePccRules() map[string]*models.PccRule {
-
 	pccRuleDef := models.PccRule{
 		PccRuleId:  "255",
 		Precedence: 255,
@@ -486,7 +478,6 @@ func TestMakeSessionRule() map[string]*models.SessionRule {
 
 // TestMakeTrafficControlData - Locally generate Traffic Control data
 func TestMakeTrafficControlData() map[string]*models.TrafficControlData {
-
 	tc1 := models.TrafficControlData{
 		TcId:       "TC1",
 		FlowStatus: models.FlowStatus_ENABLED,

@@ -67,11 +67,9 @@ func TestBuildQosRules(t *testing.T) {
 			0xff, 0xff, 0x40, 0xf, 0xa0, 0xc8, 0x5}
 		require.Equal(t, expectedBytes, bytes)
 	}
-
 }
 
 func makeSamplePccRules() map[string]*models.PccRule {
-
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
 		Precedence: 200,

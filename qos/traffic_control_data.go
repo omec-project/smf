@@ -11,7 +11,6 @@ type TrafficControlUpdate struct {
 }
 
 func GetTrafficControlUpdate(tcData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
-
 	if len(tcData) == 0 {
 		return nil
 	}
@@ -23,7 +22,6 @@ func GetTrafficControlUpdate(tcData, ctxtTcData map[string]*models.TrafficContro
 
 	//Compare against Ctxt rules to get added or modified rules
 	for name, pcfTc := range tcData {
-
 		//if pcfRule is nil then it need to be deleted
 		if pcfTc == nil {
 			change.del[name] = pcfTc //nil

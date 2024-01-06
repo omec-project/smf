@@ -99,7 +99,6 @@ type QosRule struct {
 }
 
 func BuildAddDefaultQosRule(defQFI uint8) *QosRule {
-
 	defQosRule := &QosRule{
 		Identifier:    255,
 		DQR:           0x01,
@@ -157,7 +156,6 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 }
 
 func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
-
 	qRule := QosRule{
 		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.PccRuleId),
 		DQR:           btou(qosData.DefQosFlowIndication),
@@ -196,7 +194,6 @@ func GetQosRuleIdFromPccRuleId(pccRuleId string) uint8 {
 }
 
 func (q *QosRule) BuildPacketFilterListFromPccRule(pccRule *models.PccRule) {
-
 	pfList := []PacketFilter{}
 
 	//Iterate through
@@ -208,7 +205,6 @@ func (q *QosRule) BuildPacketFilterListFromPccRule(pccRule *models.PccRule) {
 }
 
 func GetPacketFilterFromFlowInfo(flowInfo *models.FlowInformation) PacketFilter {
-
 	pf := &PacketFilter{
 		Identifier: GetPfId(flowInfo.PackFiltId),
 		Direction:  GetPfDirectionFromPccFlowInfo(flowInfo.FlowDirection),
@@ -264,7 +260,6 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 
 	//decode source port/port-range (optional)
 	if pfcTags[6] == "to" {
-
 		//decode source port/port-range
 		ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
 
@@ -296,7 +291,6 @@ func (ipf *IPFilterRule) IsMatchAllIPFilter() bool {
 }
 
 func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) error {
-
 	//check if it is single port or range
 	ports := strings.Split(tag, "-")
 
@@ -319,7 +313,6 @@ func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) err
 }
 
 func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) error {
-
 	ipAndMask := strings.Split(tag, "/")
 	if source {
 		ipfRule.sAddrv4.addr = ipAndMask[0] // can be x.x.x.x or "any"
@@ -339,7 +332,6 @@ func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) error
 }
 
 func (pf *PacketFilter) GetPfContent(flowDesc string) {
-
 	pfcList := []PacketFilterComponent{}
 
 	ipf := DecodeFlowDescToIPFilters(flowDesc)
@@ -404,7 +396,6 @@ func (pf *PacketFilter) GetPfContent(flowDesc string) {
 }
 
 func buildPFCompAddr(local bool, val IPFilterRuleIpAddrV4) (*PacketFilterComponent, uint8) {
-
 	component := PFComponentTypeIPv4RemoteAddress
 
 	if local {
@@ -452,7 +443,6 @@ func buildPFCompAddr(local bool, val IPFilterRuleIpAddrV4) (*PacketFilterCompone
 }
 
 func buildPFCompPort(local bool, val string) (*PacketFilterComponent, uint8) {
-
 	if val == "" {
 		return nil, 0
 	}
@@ -475,7 +465,6 @@ func buildPFCompPort(local bool, val string) (*PacketFilterComponent, uint8) {
 }
 
 func buildPFCompPortRange(local bool, val IPFilterRulePortRange) (*PacketFilterComponent, uint8) {
-
 	if val.lowLimit == "" || val.highLimit == "" {
 		return nil, 0
 	}

@@ -63,7 +63,6 @@ func AllocateUPFID() {
 
 // NewUserPlaneInformation process the configuration then returns a new instance of UserPlaneInformation
 func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlaneInformation {
-
 	userplaneInformation := &UserPlaneInformation{
 		UPNodes:              make(map[string]*UPNode),
 		UPFs:                 make(map[string]*UPNode),
@@ -277,7 +276,6 @@ func getPathBetween(cur *UPNode, dest *UPNode, visited map[*UPNode]bool,
 
 // insert new UPF (only N3)
 func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *factory.UPNode) error {
-
 	logger.UPNodeLog.Infof("UPNode[%v] to insert, content[%v]\n", name, node)
 	logger.UPNodeLog.Debugf("content of map[UPNodes] %v \n", upi.UPNodes)
 
@@ -431,7 +429,6 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 
 // delete UPF
 func (upi *UserPlaneInformation) DeleteSmfUserPlaneNode(name string, node *factory.UPNode) error {
-
 	logger.UPNodeLog.Infof("UPNode[%v] to delete, content[%v]\n", name, node)
 	logger.UPNodeLog.Debugf("content of map[UPNodes] %v \n", upi.UPNodes)
 	//Find UPF node
@@ -481,7 +478,6 @@ func (upi *UserPlaneInformation) DeleteSmfUserPlaneNode(name string, node *facto
 				logger.UPNodeLog.Infof("UPNode[%v] deleted from table[UPFIPToName]", name)
 			}
 		}
-
 	}
 
 	//also clean up default paths to UPFs
@@ -505,7 +501,6 @@ func (upi *UserPlaneInformation) InsertUPNodeLinks(link *factory.UPLink) error {
 }
 
 func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
-
 	logger.UPNodeLog.Infof("deleting UP Node link[%v] ", link)
 	logger.UPNodeLog.Debugf("current UP Nodes [%+v]", upi.UPNodes)
 
@@ -515,7 +510,6 @@ func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
 	//Iterate through node-A links and remove Node-B
 	if nodeA != nil {
 		for index, upNode := range nodeA.Links {
-
 			if bytes.Equal(upNode.NodeID.NodeIdValue, nodeB.NodeID.NodeIdValue) {
 				//skip nodeB from Links
 				nodeA.Links = append(nodeA.Links[:index], nodeA.Links[index+1:]...)
@@ -527,7 +521,6 @@ func (upi *UserPlaneInformation) DeleteUPNodeLinks(link *factory.UPLink) error {
 	//Iterate through node-B links and remove Node-A
 	if nodeB != nil {
 		for index, upNode := range nodeB.Links {
-
 			if bytes.Equal(upNode.NodeID.NodeIdValue, nodeA.NodeID.NodeIdValue) {
 				//skip nodeA from Links
 				nodeB.Links = append(nodeB.Links[:index], nodeB.Links[index+1:]...)
