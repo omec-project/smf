@@ -276,7 +276,6 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 }
 
 func ProcessConfigUpdate() bool {
-
 	logger.CtxLog.Infof("Dynamic config update received [%+v]", factory.UpdatedSmfConfig)
 
 	sendNrfRegistration := false
@@ -336,7 +335,6 @@ func ProcessConfigUpdate() bool {
 	if updatedCfg.ModUPNodes != nil {
 		for name, upf := range *updatedCfg.ModUPNodes {
 			GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
-
 		}
 		factory.UpdatedSmfConfig.ModUPNodes = nil
 	}
@@ -406,7 +404,6 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 }
 
 func (smfCtxt *SMFContext) GetDnnStaticIpInfo(dnn string) *factory.StaticIpInfo {
-
 	for _, info := range *smfCtxt.StaticIpInfo {
 		if info.Dnn == dnn {
 			logger.CfgLog.Debugf("get static ip info for dnn [%s] found [%v]", dnn, info)

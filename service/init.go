@@ -249,7 +249,6 @@ func (smf *SMF) setLogLevel() {
 
 	//Initialise Statistics
 	go metrics.InitMetrics()
-
 }
 
 func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
@@ -471,7 +470,6 @@ func UpdateNF() {
 	KeepAliveTimer = time.AfterFunc(time.Duration(heartBeatTimer)*time.Second, UpdateNF)
 }
 func (smf *SMF) SendNrfRegistration() {
-
 	//If NRF registration is ongoing then don't start another in parallel
 	//Just mark it so that once ongoing finishes then resend another
 	if nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
@@ -495,7 +493,6 @@ func (smf *SMF) SendNrfRegistration() {
 
 // Run only single instance of func f at a time
 func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
-
 	//Instance already running ?
 	if atomic.LoadUint32(&o.done) == 1 {
 		return true
@@ -509,7 +506,6 @@ func (o *OneInstance) intanceRun(f func() *models.NfProfile) bool {
 		defer atomic.StoreUint32(&o.done, 0)
 		nfProfile := f()
 		StartKeepAliveTimer(nfProfile)
-
 	}
 	return false
 }

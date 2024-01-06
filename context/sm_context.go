@@ -249,7 +249,6 @@ func (smContext *SMContext) initLogTags() {
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
-
 	//Update Subscriber profile Metrics
 	if nextState == SmStateActive || smContext.SMContextState == SmStateActive {
 		var upf string
@@ -266,7 +265,6 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		//enterprise name
 		ent := "na"
 		if smfContext.EnterpriseList != nil {
-
 			entMap := *smfContext.EnterpriseList
 			smContext.SubCtxLog.Debugf("context state change, Enterprises configured = [%v], subscriber slice sst [%v], sd [%v]",
 				entMap, smContext.Snssai.Sst, smContext.Snssai.Sd)
@@ -309,7 +307,6 @@ func GetSMContext(ref string) (smContext *SMContext) {
 
 // *** add unit test ***//
 func RemoveSMContext(ref string) {
-
 	var smContext *SMContext
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
@@ -679,7 +676,6 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 }
 
 func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
-
 	//Lock SM context
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
@@ -701,7 +697,6 @@ func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
 func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 	var upfName, upfIP string
 	if smContext.SMContextState == SmStateActive {
-
 		if smContext.Tunnel != nil {
 			//Set UPF FQDN name if provided else IP-address
 			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
@@ -739,7 +734,6 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 }
 
 func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {
-
 	switch state {
 	case SmStateInit:
 		return "Idle", mi.SubsOpAdd

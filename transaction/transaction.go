@@ -101,7 +101,6 @@ func getNewTxnId() uint32 {
 }
 
 func NewTransaction(req, rsp interface{}, msgType svcmsgtypes.SmfMsgType) *Transaction {
-
 	t := &Transaction{
 		Req:       req,
 		Rsp:       rsp,

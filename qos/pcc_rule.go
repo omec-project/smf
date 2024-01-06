@@ -14,7 +14,6 @@ type PccRulesUpdate struct {
 }
 
 func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *PccRulesUpdate {
-
 	if len(pcfPccRules) == 0 {
 		return nil
 	}
@@ -26,7 +25,6 @@ func GetPccRulesUpdate(pcfPccRules, ctxtPccRules map[string]*models.PccRule) *Pc
 
 	//Compare against Ctxt rules to get added or modified rules
 	for name, pcfRule := range pcfPccRules {
-
 		//if pcfRule is nil then it need to be deleted
 		if pcfRule == nil {
 			change.del[name] = pcfRule //nil

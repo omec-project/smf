@@ -70,7 +70,6 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 	metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 
 	upf.NHeartBeat = 0 //reset Heartbeat attempt to 0
-
 }
 
 func SetUpfInactive(nodeID pfcpType.NodeID, msgType pfcp.MessageType) {
@@ -511,7 +510,6 @@ func HandlePfcpSessionReportRequest(msg *pfcpUdp.Message) {
 
 				pfcpSRflag.Drobu = false
 				cause.CauseValue = pfcpType.CauseRequestAccepted
-
 			}
 			if rspData.Cause == models.N1N2MessageTransferCause_UE_NOT_RESPONDING {
 				smContext.SubPfcpLog.Infof("Receive %v, UE is not responding to N1N2 transfer message", rspData.Cause)

@@ -110,7 +110,6 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 
 		var qosFlowsList []ngapType.QosFlowSetupRequestItem
 		for _, qosFlow := range qosAddFlows {
-
 			arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
 			if qosFlow.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
 				arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption

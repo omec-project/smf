@@ -43,11 +43,9 @@ func formContextCreateErrRsp(httpStatus int, problemBody *models.ProblemDetails,
 			},
 		},
 	}
-
 }
 
 func HandlePduSessionContextReplacement(smCtxtRef string) error {
-
 	smCtxt := smf_context.GetSMContext(smCtxtRef)
 
 	if smCtxt != nil {
@@ -75,7 +73,6 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 }
 
 func HandlePDUSessionSMContextCreate(eventData interface{}) error {
-
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.PostSmContextsRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
@@ -303,7 +300,6 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 }
 
 func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
-
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
@@ -375,7 +371,6 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				Status: http.StatusOK,
 				Body:   response,
 			}
-
 		} else if pfcpAction.sendPfcpModify {
 			smContext.ChangeState(smf_context.SmStatePfcpModify)
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
@@ -399,7 +394,6 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 						smContext.ChangeState(smf_context.SmStateInActivePending)
 						smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 				*/
-
 			} else {
 				//Modify Success
 				httpResponse = &http_wrapper.Response{
@@ -439,7 +433,6 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 }
 
 func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *http_wrapper.Response {
-
 	problemDetail := models.ProblemDetails{
 		Title:  errStr,
 		Status: http.StatusInternalServerError,
@@ -644,7 +637,6 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {
-
 	//N1N2 Request towards AMF
 	n1n2Request := models.N1N2MessageTransferRequest{}
 
@@ -718,7 +710,6 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 }
 
 func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
-
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
@@ -736,7 +727,6 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		for _, dataPath := range smContext.Tunnel.DataPathPool {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-
 				if DLPDR == nil {
 					smContext.SubPduSessLog.Errorf("AN Release Error")
 					return fmt.Errorf("AN Release Error")
@@ -767,7 +757,6 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 // Handles PFCP response depending upon response cause recevied.
 func HandlePFCPResponse(smContext *smf_context.SMContext,
 	PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *http_wrapper.Response {
-
 	smContext.SubPfcpLog.Traceln("In HandlePFCPResponse")
 	var httpResponse *http_wrapper.Response
 

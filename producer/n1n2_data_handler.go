@@ -30,7 +30,6 @@ type pfcpParam struct {
 }
 
 func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmContextResponse, pfcpAction *pfcpAction) error {
-
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
@@ -123,7 +122,6 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 }
 
 func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmContextResponse, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
-
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	smContextUpdateData := body.JsonData
@@ -314,7 +312,6 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 }
 
 func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmContextResponse, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
-
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	smContextUpdateData := body.JsonData
@@ -340,7 +337,6 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
 				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-
 					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
 					DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
 						DestinationInterface: pfcpType.DestinationInterface{
@@ -456,7 +452,6 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
 				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-
 					pdrList = append(pdrList, DLPDR)
 					farList = append(farList, DLPDR.FAR)
 

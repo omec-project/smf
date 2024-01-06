@@ -55,7 +55,6 @@ func init() {
 
 // Override with specific handler
 func InitFsm() {
-
 	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessCreate] = HandleStateInitEventPduSessCreate
 	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreate] = HandleStatePfcpCreatePendingEventPfcpSessCreate
 	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreateFailure] = HandleStatePfcpCreatePendingEventPfcpSessCreateFailure
@@ -67,7 +66,6 @@ func InitFsm() {
 }
 
 func HandleEvent(smContext *smf_context.SMContext, event SmEvent, eventData SmEventData) error {
-
 	ctxtState := smContext.SMContextState
 	smContext.SubFsmLog.Debugf("handle fsm event[%v], state[%v] ", event.String(), ctxtState.String())
 	if nextState, err := SmfFsmHandler[smContext.SMContextState][event](event, &eventData); err != nil {
@@ -86,7 +84,6 @@ type SmfTxnFsm struct{}
 var SmfTxnFsmHandle SmfTxnFsm
 
 func EmptyEventHandler(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 	smCtxt.SubFsmLog.Errorf("unhandled event[%s] ", event.String())
@@ -94,7 +91,6 @@ func EmptyEventHandler(event SmEvent, eventData *SmEventData) (smf_context.SMCon
 }
 
 func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	if err := producer.HandlePDUSessionSMContextCreate(eventData.Txn); err != nil {
 		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req_failure)
 		txn := eventData.Txn.(*transaction.Transaction)
@@ -107,7 +103,6 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 }
 
 func HandleStatePfcpCreatePendingEventPfcpSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -126,7 +121,6 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreate(event SmEvent, eventData *S
 }
 
 func HandleStateN1N2TransferPendingEventN1N2Transfer(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -140,7 +134,6 @@ func HandleStateN1N2TransferPendingEventN1N2Transfer(event SmEvent, eventData *S
 }
 
 func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -153,13 +146,11 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 }
 
 func HandleStateActiveEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	//Context Replacement
 	return smf_context.SmStateActive, nil
 }
 
 func HandleStateActiveEventPduSessModify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -171,7 +162,6 @@ func HandleStateActiveEventPduSessModify(event SmEvent, eventData *SmEventData) 
 }
 
 func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -185,7 +175,6 @@ func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData)
 }
 
 func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
@@ -206,5 +195,4 @@ func HandleStateActiveEventPolicyUpdateNotify(event SmEvent, eventData *SmEventD
 	}
 
 	return smf_context.SmStateActive, nil
-
 }

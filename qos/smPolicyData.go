@@ -68,7 +68,6 @@ func (obj *SmCtxtPolicyData) Initialize() {
 }
 
 func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *models.SmPolicyDecision) *PolicyUpdate {
-
 	update := &PolicyUpdate{}
 
 	//Keep copy of SmPolicyDecision received from PCF
@@ -93,7 +92,6 @@ func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *mode
 }
 
 func CommitSmPolicyDecision(smCtxtPolData *SmCtxtPolicyData, smPolicyUpdate *PolicyUpdate) error {
-
 	//Update Qos Flows
 	if smPolicyUpdate.QosFlowUpdate != nil {
 		CommitQosFlowDescUpdate(smCtxtPolData, smPolicyUpdate.QosFlowUpdate)

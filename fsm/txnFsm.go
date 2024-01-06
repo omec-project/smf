@@ -26,12 +26,10 @@ func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, er
 }
 
 func (SmfTxnFsm) TxnDecode(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	return transaction.TxnEventLoadCtxt, nil
 }
 
 func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	switch txn.MsgType {
 	case svcmsgtypes.CreateSmContext:
 		req := txn.Req.(models.PostSmContextsRequest)
@@ -74,7 +72,6 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 }
 
 func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
 	//Lock the bus before modifying
@@ -83,7 +80,6 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 
 	//If already Active Txn running then post it to SMF Txn Bus
 	if smContext.ActiveTxn != nil {
-
 		smContext.TxnBus = smContext.TxnBus.AddTxn(txn)
 
 		//Txn has been posted and shall be scheduled later
@@ -97,7 +93,6 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 }
 
 func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
 	//There shouldn't be any active Txn if current Txn has reached to Run state
@@ -115,7 +110,6 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	if smContext == nil {
 		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid ", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
@@ -154,7 +148,6 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		event = SmEventPolicyUpdateNotify
 	default:
 		event = SmEventInvalid
-
 	}
 
 	eventData := SmEventData{Txn: txn}
@@ -167,7 +160,6 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
 
@@ -191,7 +183,6 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 }
 
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	//Put Failure Rsp
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
@@ -276,7 +267,6 @@ func (SmfTxnFsm) TxnCollision(txn *transaction.Transaction) (transaction.TxnEven
 }
 
 func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-
 	txn.TransactionEnd()
 
 	smContext := txn.Ctxt.(*smf_context.SMContext)
@@ -294,7 +284,6 @@ func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, err
 	var nextTxn *transaction.Transaction
 	//Active Txn is over, now Pull out head Txn and Run it
 	if len(smContext.TxnBus) > 0 {
-
 		nextTxn, smContext.TxnBus = smContext.TxnBus.PopTxn()
 		txn.NextTxn = nextTxn
 		return transaction.TxnEventRun, nil
