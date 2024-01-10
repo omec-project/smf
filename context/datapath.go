@@ -114,6 +114,8 @@ func (node *DataPathNode) Prev() *DataPathNode {
 
 func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 	var err error
+	var pdr *PDR
+	var flowQer *QER
 	logger.CtxLog.Traceln("In ActivateUpLinkTunnel")
 	node.UpLinkTunnel.SrcEndPoint = node.Prev()
 	node.UpLinkTunnel.DestEndPoint = node
@@ -127,9 +129,9 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 
 		for name, rule := range addRules {
-			if pdr, err := destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
 				//Add PCC Rule Qos Data QER
-				if flowQer, err := node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
 					pdr.QER = append(pdr.QER, flowQer)
 				}
 				//Set PDR in Tunnel
@@ -138,7 +140,7 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		}
 	} else {
 		//Default PDR
-		if pdr, err := destUPF.AddPDR(); err != nil {
+		if pdr, err = destUPF.AddPDR(); err != nil {
 			logger.CtxLog.Errorln("In ActivateUpLinkTunnel UPF IP: ", node.UPF.NodeID.ResolveNodeIdToIp().String())
 			logger.CtxLog.Errorln("Allocate PDR Error: ", err)
 			return fmt.Errorf("add PDR failed: %s", err)
@@ -164,6 +166,8 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 
 func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	var err error
+	var pdr *PDR
+	var flowQer *QER
 	node.DownLinkTunnel.SrcEndPoint = node.Next()
 	node.DownLinkTunnel.DestEndPoint = node
 
@@ -173,9 +177,9 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 		for name, rule := range addRules {
-			if pdr, err := destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
 				//Add PCC Rule Qos Data QER
-				if flowQer, err := node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
 					pdr.QER = append(pdr.QER, flowQer)
 				}
 				//Set PDR in Tunnel
@@ -184,7 +188,7 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 		}
 	} else {
 		//Default PDR
-		if pdr, err := destUPF.AddPDR(); err != nil {
+		if pdr, err = destUPF.AddPDR(); err != nil {
 			logger.CtxLog.Errorln("In ActivateDownLinkTunnel UPF IP: ", node.UPF.NodeID.ResolveNodeIdToIp().String())
 			logger.CtxLog.Errorln("Allocate PDR Error: ", err)
 			return fmt.Errorf("add PDR failed: %s", err)
@@ -648,8 +652,8 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 		} else {
 			if anIP := smContext.Tunnel.ANInformation.IPAddress; anIP != nil {
 				ANUPF := dataPath.FirstDPNode
-				DLPDR := ANUPF.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
-				DLFAR := DLPDR.FAR
+				DefaultDLPDR := ANUPF.DownLinkTunnel.PDR["default"] //TODO: Iterate over all PDRs
+				DLFAR := DefaultDLPDR.FAR
 				DLFAR.ForwardingParameters = new(ForwardingParameters)
 				DLFAR.ForwardingParameters.DestinationInterface.InterfaceValue = pfcpType.DestinationInterfaceAccess
 				DLFAR.ForwardingParameters.NetworkInstance = []byte(smContext.Dnn)
