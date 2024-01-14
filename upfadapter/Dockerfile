@@ -3,26 +3,25 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM golang:alpine AS builder
-
-LABEL maintainer="ankur.upadhyaya@intel.com"
+FROM golang:1.21.6-bookworm AS builder
 
 WORKDIR /app
 
-COPY go.mod .
-
-COPY go.sum .
-
-RUN go mod download
-
 COPY . .
 
-RUN go build
+RUN CGO_ENABLED=0 go build
 
-FROM alpine
+FROM alpine:3.19 as upf-adapter
+
+ARG DEBUG_TOOLS
+
+# Install debug tools ~ 50MB (if DEBUG_TOOLS is set to true)
+RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
+        apk update && apk add -U vim strace net-tools curl netcat-openbsd bind-tools bash; \
+        fi
 
 WORKDIR /bin
 
-COPY --from=builder /app/upf-adapter /bin/
+COPY --from=builder /app/upf-adapter .
 
 CMD ["./upf-adapter"]
