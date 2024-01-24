@@ -31,7 +31,6 @@ import (
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/nas/nasMessage"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
-	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Namf_Communication"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
@@ -421,12 +420,8 @@ func (smContext *SMContext) PCFSelection() error {
 
 		if res != nil {
 			if status := res.StatusCode; status != http.StatusOK {
-				metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", err.Error())
-				apiError := err.(openapi.GenericOpenAPIError)
-				problemDetails := apiError.Model().(models.ProblemDetails)
-
+				metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", "")
 				logger.CtxLog.Warningf("NFDiscovery PCF return status: %d\n", status)
-				logger.CtxLog.Warningf("Detail: %v\n", problemDetails.Title)
 			}
 		}
 

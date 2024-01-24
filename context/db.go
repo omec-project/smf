@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"reflect"
 	"sync"
 
 	"github.com/omec-project/MongoDBLibrary"
@@ -167,9 +168,8 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 
 	var dataPathInDBIf interface{}
 	var FirstDPNodeIf interface{}
-	var nilVal *UPTunnelInDB = nil
 	smContext.Tunnel = &UPTunnel{}
-	if &aux.Tunnel != nilVal {
+	if !reflect.DeepEqual(aux.Tunnel, UPTunnelInDB{}) {
 		smContext.Tunnel.ANInformation = aux.Tunnel.ANInformation
 		smContext.Tunnel.PathIDGenerator = idgenerator.NewGenerator(1, 2147483647)
 		smContext.Tunnel.DataPathPool = NewDataPathPool()
@@ -383,8 +383,8 @@ func ShowSmContextPool() {
 	})
 }
 
-func GetSmContextPool() sync.Map {
-	return smContextPool
+func GetSmContextPool() *sync.Map {
+	return &smContextPool
 }
 
 func StoreSmContextPool(smContext *SMContext) {

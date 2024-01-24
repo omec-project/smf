@@ -102,15 +102,14 @@ func testEq(a, b []byte) bool {
 }
 
 func RecoverTunnel(tunnelInfo *TunnelInfo) (tunnel *GTPTunnel) {
-	tunnel = &GTPTunnel{
-		TEID: tunnelInfo.TEID,
-		PDR:  tunnelInfo.PDR,
-	}
-	var nilVal *NodeIDInDB = nil
-	var nilValNode *DataPathNode = nil
-	empty_nodeID := &NodeIDInDB{}
-	if &tunnelInfo.DataPathNodeUPFNodeID != nilVal {
-		// fmt.Println("In RecoverTunnel &tunnelInfo.DataPathNodeUPFNodeID != nilVal")
+	if tunnelInfo != nil {
+		tunnel = &GTPTunnel{
+			TEID: tunnelInfo.TEID,
+			PDR:  tunnelInfo.PDR,
+		}
+		var nilValNode *DataPathNode = nil
+		empty_nodeID := &NodeIDInDB{}
+
 		if (tunnelInfo.DataPathNodeUPFNodeID.NodeIdType == empty_nodeID.NodeIdType) && (testEq(tunnelInfo.DataPathNodeUPFNodeID.NodeIdValue, empty_nodeID.NodeIdValue)) {
 			endPoint := nilValNode
 			tunnel.SrcEndPoint = endPoint
