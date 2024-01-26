@@ -151,64 +151,64 @@ func TestGenerateDefaultPath(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name     string
 		param    *context.UPFSelectionParams
+		name     string
 		expected bool
 	}{
 		{
-			"S-NSSAI 01112232 and DNN internet ok",
-			&context.UPFSelectionParams{
+			name: "S-NSSAI 01112232 and DNN internet ok",
+			param: &context.UPFSelectionParams{
 				SNssai: &context.SNssai{
 					Sst: 1,
 					Sd:  "112232",
 				},
 				Dnn: "internet",
 			},
-			true,
+			expected: true,
 		},
 		{
-			"S-NSSAI 02112233 and DNN internet ok",
-			&context.UPFSelectionParams{
+			name: "S-NSSAI 02112233 and DNN internet ok",
+			param: &context.UPFSelectionParams{
 				SNssai: &context.SNssai{
 					Sst: 2,
 					Sd:  "112233",
 				},
 				Dnn: "internet",
 			},
-			true,
+			expected: true,
 		},
 		{
-			"S-NSSAI 03112234 and DNN internet ok",
-			&context.UPFSelectionParams{
+			name: "S-NSSAI 03112234 and DNN internet ok",
+			param: &context.UPFSelectionParams{
 				SNssai: &context.SNssai{
 					Sst: 3,
 					Sd:  "112234",
 				},
 				Dnn: "internet",
 			},
-			true,
+			expected: true,
 		},
 		{
-			"S-NSSAI 01112235 and DNN internet ok",
-			&context.UPFSelectionParams{
+			name: "S-NSSAI 01112235 and DNN internet ok",
+			param: &context.UPFSelectionParams{
 				SNssai: &context.SNssai{
 					Sst: 1,
 					Sd:  "112235",
 				},
 				Dnn: "internet",
 			},
-			true,
+			expected: true,
 		},
 		{
-			"S-NSSAI 01010203 and DNN internet fail",
-			&context.UPFSelectionParams{
+			name: "S-NSSAI 01010203 and DNN internet fail",
+			param: &context.UPFSelectionParams{
 				SNssai: &context.SNssai{
 					Sst: 1,
 					Sd:  "010203",
 				},
 				Dnn: "internet",
 			},
-			false,
+			expected: false,
 		},
 	}
 

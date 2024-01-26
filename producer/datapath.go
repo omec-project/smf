@@ -13,10 +13,10 @@ import (
 
 type PFCPState struct {
 	nodeID  pfcpType.NodeID
-	port    uint16
 	pdrList []*smf_context.PDR
 	farList []*smf_context.FAR
 	qerList []*smf_context.QER
+	port    uint16
 }
 
 // SendPFCPRule send one datapath to UPF

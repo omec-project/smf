@@ -11,16 +11,15 @@ import (
 // TrafficControlData - Traffic control data defines how traffic data flows
 // associated with a rule are treated (e.g. blocked, redirected).
 type TrafficControlData struct {
-	// shall include attribute
-	TrafficControlID string
-
 	// maybe include attribute
-	FlowStatus     models.FlowStatus
-	RouteToLocs    []models.RouteToLocation
 	UpPathChgEvent *models.UpPathChgEvent
+	FlowStatus     models.FlowStatus
 
 	// referenced dataType
 	refedPCCRule map[string]string
+
+	TrafficControlID string                   // mandatory attribute
+	RouteToLocs      []models.RouteToLocation // not mandatory attribute
 }
 
 // NewTrafficControlDataFromModel - create the traffic control data from OpenAPI model

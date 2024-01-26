@@ -76,23 +76,23 @@ type IPFilterRule struct {
 }
 
 type PacketFilterComponent struct {
-	ComponentType  uint8
 	ComponentValue []byte
+	ComponentType  uint8
 }
 
 type PacketFilter struct {
+	Content       []PacketFilterComponent
 	Direction     uint8
 	Identifier    uint8 //only 0-15
 	ContentLength uint8
-	Content       []PacketFilterComponent
 }
 
 type QosRule struct {
+	PacketFilterList []PacketFilter
 	Identifier       uint8 //0 0 0 0 0 0 0 1	QRI 1 to 1 1 1 1 1 1 1 1	QRI 255
 	OperationCode    uint8
 	DQR              uint8
 	Segregation      uint8
-	PacketFilterList []PacketFilter
 	Precedence       uint8
 	QFI              uint8
 	Length           uint8

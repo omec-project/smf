@@ -9,16 +9,16 @@ import (
 )
 
 type BPManager struct {
-	BPStatus       BPStatus
-	AddingPSAState AddingPSAState
 	// Need these variable conducting Add additional PSA (TS23.502 4.3.5.4)
 	// There value will change from time to time
-
-	PendingUPF            PendingUPF
-	ActivatedPaths        []*DataPath
+	ULCL                  *UPF
 	ActivatingPath        *DataPath
 	UpdatedBranchingPoint map[*UPF]int
-	ULCL                  *UPF
+	PendingUPF            PendingUPF
+	ActivatedPaths        []*DataPath
+
+	BPStatus       BPStatus
+	AddingPSAState AddingPSAState
 }
 type BPStatus int
 

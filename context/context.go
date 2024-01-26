@@ -48,10 +48,6 @@ type SMFContext struct {
 	URIScheme    models.UriScheme
 	BindingIPv4  string
 	RegisterIPv4 string
-	SBIPort      int
-	CPNodeID     pfcpType.NodeID
-
-	UDMProfile models.NfProfile
 
 	UPNodeIDs []pfcpType.NodeID
 	Key       string
@@ -71,19 +67,22 @@ type SMFContext struct {
 	// TODO: support "IPv6", "IPv4v6", "Ethernet"
 	SupportedPDUSessionType string
 
-	//*** For ULCL ** //
-	ULCLSupport         bool
 	UEPreConfigPathPool map[string]*UEPreConfigPaths
-	LocalSEIDCount      uint64
 	DrsmCtxts           DrsmCtxts
 	EnterpriseList      *map[string]string // map to contain slice-name:enterprise-name
 
 	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
 	PodIp                 string
 
-	EnableNrfCaching         bool
-	NrfCacheEvictionInterval time.Duration
 	StaticIpInfo             *[]factory.StaticIpInfo
+	CPNodeID                 pfcpType.NodeID
+	UDMProfile               models.NfProfile
+	NrfCacheEvictionInterval time.Duration
+	SBIPort                  int
+	LocalSEIDCount           uint64
+	EnableNrfCaching         bool
+	//*** For ULCL ** //
+	ULCLSupport bool
 }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN

@@ -7,8 +7,8 @@ package context
 import "github.com/omec-project/openapi/models"
 
 type SNssai struct {
-	Sst int32
 	Sd  string
+	Sst int32
 }
 
 // Equal return true if two S-NSSAI is equal

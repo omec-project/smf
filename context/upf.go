@@ -62,11 +62,6 @@ func (s UPFStatus) String() string {
 }
 
 type UPF struct {
-	uuid               uuid.UUID
-	NodeID             pfcpType.NodeID
-	Port               uint16
-	UPIPInfo           pfcpType.UserPlaneIPResourceInformation
-	UPFStatus          UPFStatus
 	SNssaiInfos        []SnssaiUPFInfo
 	N3Interfaces       []UPFInterfaceInfo
 	N9Interfaces       []UPFInterfaceInfo
@@ -84,8 +79,13 @@ type UPF struct {
 	qerIDGenerator *idgenerator.IDGenerator
 	teidGenerator  *idgenerator.IDGenerator
 
-	NHeartBeat        uint8
 	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
+	NodeID            pfcpType.NodeID
+	UPIPInfo          pfcpType.UserPlaneIPResourceInformation
+	UPFStatus         UPFStatus
+	uuid              uuid.UUID
+	Port              uint16
+	NHeartBeat        uint8
 
 	// lock
 	UpfLock sync.RWMutex
@@ -101,9 +101,9 @@ type UPFSelectionParams struct {
 // UPFInterfaceInfo store the UPF interface information
 type UPFInterfaceInfo struct {
 	NetworkInstance       string
+	EndpointFQDN          string
 	IPv4EndPointAddresses []net.IP
 	IPv6EndPointAddresses []net.IP
-	EndpointFQDN          string
 }
 
 // NewUPFInterfaceInfo parse the InterfaceUpfInfoItem to generate UPFInterfaceInfo
