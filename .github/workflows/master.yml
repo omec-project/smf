@@ -26,16 +26,17 @@ jobs:
 
   build-upfadapter:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./upfadapter
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
-        working-directory: ./upfadapter
         with:
           go-version-file: 'go.mod'
 
       - name: Build
-        working-directory: ./upfadapter
         run: go build
 
   docker-build:
