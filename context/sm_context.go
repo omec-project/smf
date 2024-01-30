@@ -98,57 +98,43 @@ type SMContext struct {
 	Ref string `json:"ref" yaml:"ref" bson:"ref"`
 
 	// SUPI or PEI
-	Supi           string         `json:"supi,omitempty" yaml:"supi" bson:"supi,omitempty"`
-	Pei            string         `json:"pei,omitempty" yaml:"pei" bson:"pei,omitempty"`
-	Identifier     string         `json:"identifier" yaml:"identifier" bson:"identifier"`
-	Gpsi           string         `json:"gpsi,omitempty" yaml:"gpsi" bson:"gpsi,omitempty"`
-	Dnn            string         `json:"dnn" yaml:"dnn" bson:"dnn"`
-	Snssai         *models.Snssai `json:"snssai" yaml:"snssai" bson:"snssai"`
-	HplmnSnssai    *models.Snssai `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
-	ServingNetwork *models.PlmnId `json:"servingNetwork,omitempty" yaml:"servingNetwork" bson:"servingNetwork,omitempty"`
-	ServingNfId    string         `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
+	Supi              string `json:"supi,omitempty" yaml:"supi" bson:"supi,omitempty"`
+	Pei               string `json:"pei,omitempty" yaml:"pei" bson:"pei,omitempty"`
+	Identifier        string `json:"identifier" yaml:"identifier" bson:"identifier"`
+	Gpsi              string `json:"gpsi,omitempty" yaml:"gpsi" bson:"gpsi,omitempty"`
+	Dnn               string `json:"dnn" yaml:"dnn" bson:"dnn"`
+	UeTimeZone        string `json:"ueTimeZone,omitempty" yaml:"ueTimeZone" bson:"ueTimeZone,omitempty"` // ignore
+	ServingNfId       string `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
+	SmStatusNotifyUri string `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
 
-	UpCnxState models.UpCnxState `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
+	UpCnxState         models.UpCnxState       `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
+	AMFProfile         models.NfProfile        `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
+	SelectedPCFProfile models.NfProfile        `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
+	AnType             models.AccessType       `json:"anType" yaml:"anType" bson:"anType"`
+	RatType            models.RatType          `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
+	PresenceInLadn     models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	HoState            models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
+	DnnConfiguration   models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
-	AnType         models.AccessType    `json:"anType" yaml:"anType" bson:"anType"`
-	RatType        models.RatType       `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
-	PresenceInLadn models.PresenceState `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	Snssai         *models.Snssai       `json:"snssai" yaml:"snssai" bson:"snssai"`
+	HplmnSnssai    *models.Snssai       `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
+	ServingNetwork *models.PlmnId       `json:"servingNetwork,omitempty" yaml:"servingNetwork" bson:"servingNetwork,omitempty"`
 	UeLocation     *models.UserLocation `json:"ueLocation,omitempty" yaml:"ueLocation" bson:"ueLocation,omitempty"`
-	UeTimeZone     string               `json:"ueTimeZone,omitempty" yaml:"ueTimeZone" bson:"ueTimeZone,omitempty"`          // ignore
 	AddUeLocation  *models.UserLocation `json:"addUeLocation,omitempty" yaml:"addUeLocation" bson:"addUeLocation,omitempty"` // ignore
-	HoState        models.HoState       `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
 
 	// PDUAddress             net.IP `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
 	PDUAddress *UeIpAddr `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
-
-	DnnConfiguration models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
 	// Client
 	SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty" yaml:"smPolicyClient" bson:"smPolicyClient,omitempty"`                // ?
 	CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty" yaml:"communicationClient" bson:"communicationClient,omitempty"` // ?
 
-	AMFProfile         models.NfProfile `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
-	SelectedPCFProfile models.NfProfile `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
-	SmStatusNotifyUri  string           `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
-
 	// encountered a cycle via *context.GTPTunnel
 	Tunnel *UPTunnel `json:"-" yaml:"tunnel" bson:"-"`
 
 	BPManager *BPManager `json:"bpManager,omitempty" yaml:"bpManager" bson:"bpManager,omitempty"` // ignore
-	// NodeID(string form) to PFCP Session Context
-	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
-	// unsupported structure - madatory!
-	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
-
-	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
 
 	DNNInfo *SnssaiSmfDnnInfo `json:"dnnInfo,omitempty" yaml:"dnnInfo" bson:"dnnInfo,omitempty"`
-
-	// SM Policy related
-	// Updates in policy from PCF
-	SmPolicyUpdates []*qos.PolicyUpdate `json:"smPolicyUpdates" yaml:"smPolicyUpdates" bson:"smPolicyUpdates"` // ignore
-	//Holds Session/PCC Rules and Qos/Cond/Charging Data
-	SmPolicyData qos.SmCtxtPolicyData `json:"smPolicyData" yaml:"smPolicyData" bson:"smPolicyData"`
 
 	// PCO Related
 	ProtocolConfigurationOptions *ProtocolConfigurationOptions `json:"protocolConfigurationOptions" yaml:"protocolConfigurationOptions" bson:"protocolConfigurationOptions"` // ignore
@@ -163,6 +149,17 @@ type SMContext struct {
 
 	// encountered a cycle via *context.SMContext
 	ActiveTxn *transaction.Transaction `json:"-" yaml:"activeTxn" bson:"-,"` // ignore
+	// SM Policy related
+	// Updates in policy from PCF
+	SmPolicyUpdates []*qos.PolicyUpdate `json:"smPolicyUpdates" yaml:"smPolicyUpdates" bson:"smPolicyUpdates"` // ignore
+	//Holds Session/PCC Rules and Qos/Cond/Charging Data
+	SmPolicyData qos.SmCtxtPolicyData `json:"smPolicyData" yaml:"smPolicyData" bson:"smPolicyData"`
+	// unsupported structure - madatory!
+	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
+
+	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
+	// NodeID(string form) to PFCP Session Context
+	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	//TxnBus per subscriber
 	TxnBus transaction.TxnBus `json:"-" yaml:"txnBus" bson:"-"` // ignore
 	// SMTxnBusLock sync.Mutex         `json:"smTxnBusLock,omitempty" yaml:"smTxnBusLock" bson:"smTxnBusLock,omitempty"` // ignore

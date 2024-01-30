@@ -81,7 +81,8 @@ type SMFContext struct {
 	SBIPort                  int
 	LocalSEIDCount           uint64
 	EnableNrfCaching         bool
-	//*** For ULCL ** //
+
+	//For ULCL
 	ULCLSupport bool
 }
 
