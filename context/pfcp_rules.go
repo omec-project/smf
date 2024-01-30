@@ -23,47 +23,46 @@ type RuleState uint8
 
 // Packet Detection Rule. Table 7.5.2.2-1
 type PDR struct {
-	PDRID uint16
-
-	Precedence         uint32
-	PDI                PDI
 	OuterHeaderRemoval *pfcpType.OuterHeaderRemoval
 
 	FAR *FAR
 	URR *URR
 	QER []*QER
 
-	State RuleState
+	PDI        PDI
+	State      RuleState
+	PDRID      uint16
+	Precedence uint32
 }
 
 // Packet Detection. 7.5.2.2-2
 type PDI struct {
-	SourceInterface pfcpType.SourceInterface
 	LocalFTeid      *pfcpType.FTEID
-	NetworkInstance util_3gpp.Dnn
 	UEIPAddress     *pfcpType.UEIPAddress
 	SDFFilter       *pfcpType.SDFFilter
 	ApplicationID   string
+	NetworkInstance util_3gpp.Dnn
+	SourceInterface pfcpType.SourceInterface
 }
 
 // Forwarding Action Rule. 7.5.2.3-1
 type FAR struct {
-	FARID uint32
-
-	ApplyAction          pfcpType.ApplyAction
 	ForwardingParameters *ForwardingParameters
 
 	BAR   *BAR
 	State RuleState
+	FARID uint32
+
+	ApplyAction pfcpType.ApplyAction
 }
 
 // Forwarding Parameters. 7.5.2.3-2
 type ForwardingParameters struct {
-	DestinationInterface pfcpType.DestinationInterface
-	NetworkInstance      util_3gpp.Dnn
 	OuterHeaderCreation  *pfcpType.OuterHeaderCreation
 	PFCPSMReqFlags       *pfcpType.PFCPSMReqFlags
 	ForwardingPolicyID   string
+	NetworkInstance      util_3gpp.Dnn
+	DestinationInterface pfcpType.DestinationInterface
 }
 
 // Buffering Action Rule 7.5.2.6-1
@@ -78,15 +77,13 @@ type BAR struct {
 
 // QoS Enhancement Rule
 type QER struct {
-	QERID uint32
-
-	QFI pfcpType.QFI
-
 	GateStatus *pfcpType.GateStatus
 	MBR        *pfcpType.MBR
 	GBR        *pfcpType.GBR
 
 	State RuleState
+	QFI   pfcpType.QFI
+	QERID uint32
 }
 
 // Usage Report Rule

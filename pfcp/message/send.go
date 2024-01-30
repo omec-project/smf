@@ -665,11 +665,11 @@ func handleSendPfcpSessModReqError(msg *pfcp.Message, pfcpErr error) {
 }
 
 type UdpPodPfcpMsg struct {
+	// message type contains in Msg.Header
+	Msg      pfcp.Message    `json:"pfcpMsg"`
+	Addr     *net.UDPAddr    `json:"addr"`
 	SmfIp    string          `json:"smfIp"`
 	UpNodeID pfcpType.NodeID `json:"upNodeID"`
-	// message type contains in Msg.Header
-	Msg  pfcp.Message `json:"pfcpMsg"`
-	Addr *net.UDPAddr `json:"addr"`
 }
 
 type UdpPodPfcpRspMsg struct {

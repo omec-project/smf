@@ -20,21 +20,20 @@ type PolicyUpdate struct {
 }
 
 type SmCtxtPolicyData struct {
-
 	//maintain all session rule-info and current active sess rule
-	SmCtxtSessionRules SmCtxtSessionRulesInfo
 	SmCtxtPccRules     SmCtxtPccRulesInfo
 	SmCtxtQosData      SmCtxtQosData
 	SmCtxtTCData       SmCtxtTrafficControlData
 	SmCtxtChargingData SmCtxtChargingData
 	SmCtxtCondData     SmCtxtCondData
+	SmCtxtSessionRules SmCtxtSessionRulesInfo
 }
 
 // maintain all session rule-info and current active sess rule
 type SmCtxtSessionRulesInfo struct {
+	ActiveRule     *models.SessionRule
 	SessionRules   map[string]*models.SessionRule
 	ActiveRuleName string
-	ActiveRule     *models.SessionRule
 }
 
 type SmCtxtPccRulesInfo struct {

@@ -172,8 +172,6 @@ linters-settings:
           - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
     # enable all analyzers
     enable-all: true
-    disable:
-      - fieldalignment
   depguard:
     list-type: blacklist
     include-go-root: false

@@ -129,13 +129,13 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(&struct {
-		Tunnel      UPTunnelInDB    `json:"tunnel"`
-		PFCPContext PFCPContextInDB `json:"pfcpContext"`
 		*Alias
+		PFCPContext PFCPContextInDB `json:"pfcpContext"`
+		Tunnel      UPTunnelInDB    `json:"tunnel"`
 	}{
-		Tunnel:      upTunnelVal,
-		PFCPContext: PFCPContextVal,
 		Alias:       (*Alias)(smContext),
+		PFCPContext: PFCPContextVal,
+		Tunnel:      upTunnelVal,
 	})
 }
 
@@ -144,9 +144,9 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 	fmt.Println("db - in UnmarshalJSON")
 	type Alias SMContext
 	aux := &struct {
-		Tunnel         UPTunnelInDB    `json:"tunnel"`
-		PFCPContextVal PFCPContextInDB `json:"pfcpContext"`
 		*Alias
+		PFCPContextVal PFCPContextInDB `json:"pfcpContext"`
+		Tunnel         UPTunnelInDB    `json:"tunnel"`
 	}{
 		Alias: (*Alias)(smContext),
 	}

@@ -137,12 +137,12 @@ func (a *IPAllocator) Release(imsi string, ip net.IP) {
 }
 
 type _IDPool struct {
+	staticIps *map[string]string //map of [imsi]ip
+	isUsed    map[int64]bool
 	minValue  int64
 	maxValue  int64
-	isUsed    map[int64]bool
-	lock      sync.Mutex
 	index     int64
-	staticIps *map[string]string //map of [imsi]ip
+	lock      sync.Mutex
 }
 
 func newIDPool(minValue int64, maxValue int64) (idPool *_IDPool) {

@@ -65,43 +65,42 @@ type Mongodb struct {
 }
 
 type KafkaInfo struct {
-	BrokerUri   string `yaml:"brokerUri,omitempty"`
-	BrokerPort  int    `yaml:"brokerPort,omitempty"`
-	Topic       string `yaml:"topicName,omitempty"`
 	EnableKafka *bool  `yaml:"enableKafka,omitempty"`
+	BrokerUri   string `yaml:"brokerUri,omitempty"`
+	Topic       string `yaml:"topicName,omitempty"`
+	BrokerPort  int    `yaml:"brokerPort,omitempty"`
 }
 
 type Configuration struct {
-	SmfName              string               `yaml:"smfName,omitempty"`
-	Sbi                  *Sbi                 `yaml:"sbi,omitempty"`
-	PFCP                 *PFCP                `yaml:"pfcp,omitempty"`
-	NrfUri               string               `yaml:"nrfUri,omitempty"`
-	UserPlaneInformation UserPlaneInformation `yaml:"userplane_information"`
-	ServiceNameList      []string             `yaml:"serviceNameList,omitempty"`
-	SNssaiInfo           []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
-	ULCL                 bool                 `yaml:"ulcl,omitempty"`
-	EnterpriseList       map[string]string    `yaml:"enterpriseList,omitempty"`
-	EnableDbStore        bool                 `yaml:"enableDBStore,omitempty"`
-	EnableUpfAdapter     bool                 `yaml:"enableUPFAdapter,omitempty"`
-	SmfDbName            string               `yaml:"smfDBName,omitempty"`
-	Mongodb              *Mongodb             `yaml:"mongodb,omitempty"`
-	KafkaInfo            KafkaInfo            `yaml:"kafkaInfo,omitempty"`
-	DebugProfilePort     int                  `yaml:"debugProfilePort,omitempty"`
-
-	EnableNrfCaching         bool           `yaml:"enableNrfCaching"`
-	NrfCacheEvictionInterval int            `yaml:"nrfCacheEvictionInterval"`
-	StaticIpInfo             []StaticIpInfo `yaml:"staticIpInfo"`
+	Mongodb                  *Mongodb             `yaml:"mongodb,omitempty"`
+	PFCP                     *PFCP                `yaml:"pfcp,omitempty"`
+	Sbi                      *Sbi                 `yaml:"sbi,omitempty"`
+	NrfUri                   string               `yaml:"nrfUri,omitempty"`
+	SmfName                  string               `yaml:"smfName,omitempty"`
+	SmfDbName                string               `yaml:"smfDBName,omitempty"`
+	SNssaiInfo               []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
+	StaticIpInfo             []StaticIpInfo       `yaml:"staticIpInfo"`
+	ServiceNameList          []string             `yaml:"serviceNameList,omitempty"`
+	EnterpriseList           map[string]string    `yaml:"enterpriseList,omitempty"`
+	KafkaInfo                KafkaInfo            `yaml:"kafkaInfo,omitempty"`
+	UserPlaneInformation     UserPlaneInformation `yaml:"userplane_information"`
+	NrfCacheEvictionInterval int                  `yaml:"nrfCacheEvictionInterval"`
+	DebugProfilePort         int                  `yaml:"debugProfilePort,omitempty"`
+	EnableNrfCaching         bool                 `yaml:"enableNrfCaching"`
+	EnableDbStore            bool                 `yaml:"enableDBStore,omitempty"`
+	EnableUpfAdapter         bool                 `yaml:"enableUPFAdapter,omitempty"`
+	ULCL                     bool                 `yaml:"ulcl,omitempty"`
 }
 
 type StaticIpInfo struct {
-	Dnn        string            `yaml:"dnn"`
 	ImsiIpInfo map[string]string `yaml:"imsiIpInfo"`
+	Dnn        string            `yaml:"dnn"`
 }
 
 type SnssaiInfoItem struct {
 	SNssai   *models.Snssai      `yaml:"sNssai"`
-	DnnInfos []SnssaiDnnInfoItem `yaml:"dnnInfos"`
 	PlmnId   models.PlmnId       `yaml:"plmnId"`
+	DnnInfos []SnssaiDnnInfoItem `yaml:"dnnInfos"`
 }
 
 type SnssaiDnnInfoItem struct {
@@ -173,12 +172,12 @@ type PfdContent struct {
 
 // PfdDataForApp represents the PFDs for an application identifier
 type PfdDataForApp struct {
+	// Caching time for an application identifier.
+	CachingTime *time.Time `yaml:"cachingTime,omitempty"`
 	// Identifier of an application.
 	AppID string `yaml:"applicationId"`
 	// PFDs for the application identifier.
 	Pfds []PfdContent `yaml:"pfds"`
-	// Caching time for an application identifier.
-	CachingTime *time.Time `yaml:"cachingTime,omitempty"`
 }
 
 type RoutingConfig struct {
@@ -198,17 +197,17 @@ type UserPlaneInformation struct {
 type UPNode struct {
 	Type                 string                     `yaml:"type"`
 	NodeID               string                     `yaml:"node_id"`
-	Port                 uint16                     `yaml:"port"`
 	ANIP                 string                     `yaml:"an_ip"`
 	Dnn                  string                     `yaml:"dnn"`
 	SNssaiInfos          []models.SnssaiUpfInfoItem `yaml:"sNssaiUpfInfos,omitempty"`
 	InterfaceUpfInfoList []InterfaceUpfInfoItem     `yaml:"interfaces,omitempty"`
+	Port                 uint16                     `yaml:"port"`
 }
 
 type InterfaceUpfInfoItem struct {
+	NetworkInstance string                 `yaml:"networkInstance"`
 	InterfaceType   models.UpInterfaceType `yaml:"interfaceType"`
 	Endpoints       []string               `yaml:"endpoints"`
-	NetworkInstance string                 `yaml:"networkInstance"`
 }
 
 type UPLink struct {

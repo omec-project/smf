@@ -16,17 +16,17 @@ import (
 
 type Transaction struct {
 	startTime, endTime time.Time
-	TxnId              uint32
-	Priority           uint32
 	Req                interface{}
 	Rsp                interface{}
 	Ctxt               interface{}
-	MsgType            svcmsgtypes.SmfMsgType
 	CtxtKey            string
 	Err                error
 	Status             chan bool
 	NextTxn            *Transaction
 	TxnFsmLog          *logrus.Entry
+	MsgType            svcmsgtypes.SmfMsgType
+	TxnId              uint32
+	Priority           uint32
 }
 
 func (t *Transaction) initLogTags() {

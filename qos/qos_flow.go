@@ -57,24 +57,24 @@ const (
 )
 
 type QosFlowDescriptionsAuthorized struct {
+	Content []byte
 	IeType  uint8
 	IeLen   uint16
-	Content []byte
 }
 
 type QoSFlowDescription struct {
+	ParamList  []QosFlowParameter
 	Qfi        uint8
 	OpCode     uint8
 	NumOfParam uint8
-	ParamList  []QosFlowParameter
 	QFDLen     uint8
 }
 
 // Qos Flow Description Parameter
 type QosFlowParameter struct {
+	ParamContent []byte
 	ParamId      uint8
 	ParamLen     uint8
-	ParamContent []byte
 }
 
 type QosFlowsUpdate struct {

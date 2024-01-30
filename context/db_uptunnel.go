@@ -32,40 +32,40 @@ type UPTunnelInDB struct {
 }
 
 type DataPathInDB struct {
-	// meta data
-	Activated         bool
-	IsDefaultPath     bool
-	Destination       Destination
-	HasBranchingPoint bool
 	// Data Path Double Link List
 	FirstDPNode *DataPathNodeInDB
+	// meta data
+	Destination       Destination
+	Activated         bool
+	IsDefaultPath     bool
+	HasBranchingPoint bool
 }
 
 type DataPathNodeInDB struct {
 	// UPF *UPF
-	DataPathNodeUPFNodeID NodeIDInDB
 
 	ULTunnelInfo *TunnelInfo
 	DLTunnelInfo *TunnelInfo
 
-	IsBranchingPoint bool
+	DataPathNodeUPFNodeID NodeIDInDB
+	IsBranchingPoint      bool
 }
 type TunnelInfo struct {
+	PDR                   map[string]*PDR
 	DataPathNodeUPFNodeID NodeIDInDB
 	TEID                  uint32
-	PDR                   map[string]*PDR
 }
 
 type NodeIDInDB struct {
-	NodeIdType  uint8 // 0x00001111
 	NodeIdValue []byte
+	NodeIdType  uint8 // 0x00001111
 }
 
 type PFCPSessionContextInDB struct {
 	PDRs       map[uint16]*PDR
-	NodeID     pfcpType.NodeID
 	LocalSEID  string
 	RemoteSEID string
+	NodeID     pfcpType.NodeID
 }
 
 type PFCPContextInDB map[string]PFCPSessionContextInDB
