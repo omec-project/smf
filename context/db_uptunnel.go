@@ -12,8 +12,8 @@ import (
 	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/omec-project/idgenerator"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/util/idgenerator"
 
 	"github.com/omec-project/pfcp/pfcpType"
 )
