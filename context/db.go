@@ -24,7 +24,7 @@ import (
 
 	"strconv"
 
-	"github.com/omec-project/idgenerator"
+	"github.com/omec-project/util/idgenerator"
 
 	"os"
 )
