@@ -9,12 +9,12 @@ import (
 	"net"
 	"reflect"
 
-	"github.com/omec-project/flowdesc"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/util/flowdesc"
 )
 
 func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID pfcpType.NodeID) {

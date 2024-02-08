@@ -355,8 +355,6 @@ github.com/omec-project/aper v1.1.0 h1:4FkTkDNGBWnTtEgCDuEitFjww1CJWVQhGqMs91tri
 github.com/omec-project/aper v1.1.0/go.mod h1:oOkKRI2BIo8SHpCsEzNbo9qiowEtEy3q+wmO7TuDrx4=
 github.com/omec-project/config5g v1.2.0 h1:fyIg+1LZ9jn8DTkVUbD4jyxA4FgMICdIBwZVnzCyMd4=
 github.com/omec-project/config5g v1.2.0/go.mod h1:AWFzCbbgCBx/iJwt+zWbpDGLHRpFzg24OYHqIkdcMVA=
-github.com/omec-project/flowdesc v1.1.0 h1:F2uBq+zYm7dfy1SSEiCdqmev9yWPCSChoSoQL1boBGk=
-github.com/omec-project/flowdesc v1.1.0/go.mod h1:yZo/8WStxay3J6xjA3sCto7xo4S94sHULTLn/7J5rJs=
 github.com/omec-project/http2_util v1.1.0 h1:8H2NME/V8iONth8TlyK/3w4pguAzaeUnEv9pmeAocwQ=
 github.com/omec-project/http2_util v1.1.0/go.mod h1:QwoZRaUyhEp/kTEqXvf0gCYtfQrNHBdkVw939vsMjZY=
 github.com/omec-project/http_wrapper v1.1.0 h1:2hD8RUaR/VVg3tUUfuxsuo1/JNpZLiAE8IvATGqDME4=
