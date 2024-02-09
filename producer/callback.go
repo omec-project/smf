@@ -12,12 +12,12 @@ import (
 
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -47,7 +47,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	//Update UPF
 	//TODO
 
-	httpResponse := http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+	httpResponse := httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	txn.Rsp = httpResponse
 
 	//Form N1/N2 Msg based on QoS Change and Trigger N1/N2 Msg
@@ -130,16 +130,16 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 	return nil
 }
 
-func HandleNfSubscriptionStatusNotify(request *http_wrapper.Request) *http_wrapper.Response {
+func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper.Response {
 	logger.PduSessLog.Traceln("[SMF] Handle NF Status Notify")
 
 	notificationData := request.Body.(models.NotificationData)
 
 	problemDetails := NfSubscriptionStatusNotifyProcedure(notificationData)
 	if problemDetails != nil {
-		return http_wrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
 	} else {
-		return http_wrapper.NewResponse(http.StatusNoContent, nil, nil)
+		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
 }
 

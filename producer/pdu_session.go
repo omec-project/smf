@@ -18,7 +18,6 @@ import (
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/nas"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Namf_Communication"
@@ -30,10 +29,11 @@ import (
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/util/httpwrapper"
 )
 
-func formContextCreateErrRsp(httpStatus int, problemBody *models.ProblemDetails, n1SmMsg *models.RefToBinaryData) *http_wrapper.Response {
-	return &http_wrapper.Response{
+func formContextCreateErrRsp(httpStatus int, problemBody *models.ProblemDetails, n1SmMsg *models.RefToBinaryData) *httpwrapper.Response {
+	return &httpwrapper.Response{
 		Header: nil,
 		Status: httpStatus,
 		Body: models.PostSmContextsErrorResponse{
@@ -285,7 +285,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	}
 
 	response.JsonData = smContext.BuildCreatedData()
-	txn.Rsp = &http_wrapper.Response{
+	txn.Rsp = &httpwrapper.Response{
 		Header: http.Header{
 			"Location": {smContext.Ref},
 		},
@@ -343,7 +343,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		return err
 	}
 
-	var httpResponse *http_wrapper.Response
+	var httpResponse *httpwrapper.Response
 	// Check FSM and take corresponding action
 	switch smContext.SMContextState {
 	case smf_context.SmStatePfcpModify:
@@ -367,7 +367,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 
 			//Update response to success
-			httpResponse = &http_wrapper.Response{
+			httpResponse = &httpwrapper.Response{
 				Status: http.StatusOK,
 				Body:   response,
 			}
@@ -396,7 +396,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				*/
 			} else {
 				//Modify Success
-				httpResponse = &http_wrapper.Response{
+				httpResponse = &httpwrapper.Response{
 					Status: http.StatusOK,
 					Body:   response,
 				}
@@ -410,19 +410,19 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, ctxt in Modification Pending")
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusOK,
 			Body:   response,
 		}
 	case smf_context.SmStateInit, smf_context.SmStateInActivePending:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, ctxt in SmStateInit, SmStateInActivePending")
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusOK,
 			Body:   response,
 		}
 	default:
 		smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, SM Context State [%s] shouldn't be here\n", smContext.SMContextState)
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusOK,
 			Body:   response,
 		}
@@ -432,7 +432,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	return nil
 }
 
-func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *http_wrapper.Response {
+func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *httpwrapper.Response {
 	problemDetail := models.ProblemDetails{
 		Title:  errStr,
 		Status: http.StatusInternalServerError,
@@ -450,7 +450,7 @@ func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *h
 	}
 
 	// It is just a template
-	httpResponse := &http_wrapper.Response{
+	httpResponse := &httpwrapper.Response{
 		Status: http.StatusServiceUnavailable,
 		Body: models.UpdateSmContextErrorResponse{
 			JsonData: &models.SmContextUpdateError{
@@ -516,12 +516,12 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	smContext.ChangeState(smf_context.SmStatePfcpRelease)
 	smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
 
-	var httpResponse *http_wrapper.Response
+	var httpResponse *httpwrapper.Response
 
 	//Release User-plane
 	if ok := releaseTunnel(smContext); !ok {
 		//already released
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusNoContent,
 			Body:   nil,
 		}
@@ -538,7 +538,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseSuccess")
 		smContext.ChangeState(smf_context.SmStatePfcpRelease)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, SMContextState Change State: ", smContext.SMContextState.String())
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusNoContent,
 			Body:   nil,
 		}
@@ -546,7 +546,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	case smf_context.SessionReleaseTimeout:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextRelease, PFCP SessionReleaseTimeout")
 		smContext.ChangeState(smf_context.SmStateActive)
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: int(http.StatusInternalServerError),
 		}
 
@@ -558,7 +558,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 			Status: http.StatusInternalServerError,
 			Cause:  "SYSTEM_FAILULE",
 		}
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.Status),
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
@@ -584,7 +584,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 			Status: http.StatusInternalServerError,
 			Cause:  "SYSTEM_FAILULE",
 		}
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.Status),
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
@@ -715,7 +715,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 
 	smContext.SubPduSessLog.Infof("In HandlePduSessN1N2TransFailInd, N1N2 Transfer Failure Notification received")
 
-	var httpResponse *http_wrapper.Response
+	var httpResponse *httpwrapper.Response
 
 	pdrList := []*smf_context.PDR{}
 	farList := []*smf_context.FAR{}
@@ -756,16 +756,16 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 
 // Handles PFCP response depending upon response cause recevied.
 func HandlePFCPResponse(smContext *smf_context.SMContext,
-	PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *http_wrapper.Response {
+	PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *httpwrapper.Response {
 	smContext.SubPfcpLog.Traceln("In HandlePFCPResponse")
-	var httpResponse *http_wrapper.Response
+	var httpResponse *httpwrapper.Response
 
 	switch PFCPResponseStatus {
 	case smf_context.SessionUpdateSuccess:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Success")
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Traceln("SMContextState Change State: ", smContext.SMContextState.String())
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusNoContent,
 			Body:   nil,
 		}
@@ -774,7 +774,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 		// It is just a template
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusForbidden,
 			Body: models.UpdateSmContextErrorResponse{
 				JsonData: &models.SmContextUpdateError{
@@ -808,7 +808,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 
 		// It is just a template
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusServiceUnavailable,
 			Body: models.UpdateSmContextErrorResponse{
 				JsonData: &models.SmContextUpdateError{
@@ -826,7 +826,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 
 	default:
 		smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, SM Context State [%s] shouldn't be here\n", smContext.SMContextState)
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Status: http.StatusNoContent,
 			Body:   nil,
 		}

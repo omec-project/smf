@@ -20,7 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -42,7 +42,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 		logger.PduSessLog.Errorln("Deserialize request failed")
 	}
 
-	reqWrapper := http_wrapper.NewRequest(c.Request, request)
+	reqWrapper := httpwrapper.NewRequest(c.Request, request)
 	reqWrapper.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := reqWrapper.Params["smContextRef"]
@@ -52,7 +52,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status //wait for txn to complete at SMF
-	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
+	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
 	//HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
 
 	for key, val := range HTTPResponse.Header {
@@ -74,7 +74,7 @@ func N1N2FailureNotification(c *gin.Context) {
 
 	var request models.N1N2MsgTxfrFailureNotification
 
-	req := http_wrapper.NewRequest(c.Request, request)
+	req := httpwrapper.NewRequest(c.Request, request)
 
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
