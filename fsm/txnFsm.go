@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/context"
 	smf_context "github.com/omec-project/smf/context"
@@ -18,6 +17,7 @@ import (
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, error) {
@@ -205,7 +205,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
-			httpResponse := &http_wrapper.Response{
+			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
 				Body: models.UpdateSmContextErrorResponse{
@@ -228,7 +228,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 
 			//4xx/5xx Error not defined in spec 29502 for Release SM ctxt error
 			//Send Not Found
-			httpResponse := &http_wrapper.Response{
+			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
 

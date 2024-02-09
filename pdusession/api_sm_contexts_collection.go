@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
@@ -63,12 +63,12 @@ func HTTPPostSmContexts(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, request)
+	req := httpwrapper.NewRequest(c.Request, request)
 	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext))
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status //wait for txn to complete at SMF
-	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
+	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	errStr := ""
 	if txn.Err != nil {

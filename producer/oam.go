@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 type PDUSessionInfo struct {
@@ -27,10 +27,10 @@ type PDUSessionInfo struct {
 	Tunnel       context.UPTunnel
 }
 
-func HandleOAMGetUEPDUSessionInfo(smContextRef string) *http_wrapper.Response {
+func HandleOAMGetUEPDUSessionInfo(smContextRef string) *httpwrapper.Response {
 	smContext := context.GetSMContext(smContextRef)
 	if smContext == nil {
-		httpResponse := &http_wrapper.Response{
+		httpResponse := &httpwrapper.Response{
 			Header: nil,
 			Status: http.StatusNotFound,
 			Body:   nil,
@@ -39,7 +39,7 @@ func HandleOAMGetUEPDUSessionInfo(smContextRef string) *http_wrapper.Response {
 		return httpResponse
 	}
 
-	httpResponse := &http_wrapper.Response{
+	httpResponse := &httpwrapper.Response{
 		Header: nil,
 		Status: http.StatusOK,
 		Body: PDUSessionInfo{

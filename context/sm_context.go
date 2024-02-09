@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/omec-project/http_wrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 	"github.com/sirupsen/logrus"
 
 	"net"
@@ -631,13 +631,13 @@ func (smContextState SMContextState) String() string {
 	}
 }
 
-func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *http_wrapper.Response {
-	var httpResponse *http_wrapper.Response
+func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
+	var httpResponse *httpwrapper.Response
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
 		smContext,
 		errors.ErrorCause[cause]); err != nil {
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Header: nil,
 			Status: int(errors.ErrorType[cause].Status),
 			Body: models.PostSmContextsErrorResponse{
@@ -648,7 +648,7 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 			},
 		}
 	} else {
-		httpResponse = &http_wrapper.Response{
+		httpResponse = &httpwrapper.Response{
 			Header: nil,
 			Status: int(errors.ErrorType[cause].Status),
 			Body: models.PostSmContextsErrorResponse{

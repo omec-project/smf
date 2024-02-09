@@ -8,7 +8,6 @@ package producer
 import (
 	"net/http"
 
-	"github.com/omec-project/http_wrapper"
 	"github.com/omec-project/nas"
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
 	"github.com/omec-project/openapi/models"
@@ -16,6 +15,7 @@ import (
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 type pfcpAction struct {
@@ -40,7 +40,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.SubPduSessLog.Traceln("PDUSessionSMContextUpdate, Update SM Context Request N1SmMessage: ", m)
 		if err != nil {
 			smContext.SubPduSessLog.Error(err)
-			txn.Rsp = &http_wrapper.Response{
+			txn.Rsp = &httpwrapper.Response{
 				Status: http.StatusForbidden,
 				Body: models.UpdateSmContextErrorResponse{
 					JsonData: &models.SmContextUpdateError{

@@ -16,10 +16,10 @@ require (
 	github.com/omec-project/aper v1.1.0
 	github.com/omec-project/config5g v1.2.0
 	github.com/omec-project/http2_util v1.1.0
-	github.com/omec-project/http_wrapper v1.1.0
 	github.com/omec-project/logger_util v1.1.0
 	github.com/omec-project/nas v1.1.4
 	github.com/omec-project/ngap v1.1.0
+	github.com/omec-project/nrf v1.0.2-0.20240209194459-21f8e64ba367
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/path_util v1.1.0
 	github.com/omec-project/pfcp v1.1.3
@@ -51,7 +51,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt v3.2.1+incompatible // indirect
+	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
@@ -61,7 +61,7 @@ require (
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/montanaflynn/stats v0.6.6 // indirect
@@ -104,7 +104,6 @@ require (
 
 require (
 	github.com/omec-project/metricfunc v1.1.1
-	github.com/omec-project/nrf v1.0.1
 	github.com/segmentio/kafka-go v0.4.47
 	go.mongodb.org/mongo-driver v1.10.1
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect

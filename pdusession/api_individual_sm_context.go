@@ -20,7 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/http_wrapper"
+	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
@@ -64,7 +64,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, request)
+	req := httpwrapper.NewRequest(c.Request, request)
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
@@ -117,7 +117,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		return
 	}
 
-	req := http_wrapper.NewRequest(c.Request, request)
+	req := httpwrapper.NewRequest(c.Request, request)
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
@@ -126,7 +126,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
-	HTTPResponse := txn.Rsp.(*http_wrapper.Response)
+	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
 	//HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
 	//	smContextRef, req.Body.(models.UpdateSmContextRequest))
 
