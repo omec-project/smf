@@ -27,8 +27,6 @@ import (
 	ngapLogger "github.com/omec-project/ngap/logger"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/path_util"
-	pathUtilLogger "github.com/omec-project/path_util/logger"
 	pfcpLogger "github.com/omec-project/pfcp/logger"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/callback"
@@ -45,6 +43,8 @@ import (
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/util"
+	"github.com/omec-project/util/path_util"
+	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 )
 
 type SMF struct{}
