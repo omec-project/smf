@@ -18,7 +18,7 @@ require (
 	github.com/omec-project/http2_util v1.1.0
 	github.com/omec-project/logger_util v1.1.0
 	github.com/omec-project/metricfunc v1.1.1
-	github.com/omec-project/nas v1.1.5-0.20240221024819-a789458a382c
+	github.com/omec-project/nas v1.1.5-0.20240222043255-fc6f03e0e27f
 	github.com/omec-project/ngap v1.1.1-0.20240127060744-31784065bc81
 	github.com/omec-project/nrf v1.0.2-0.20240220224623-4d4c57f4fb15
 	github.com/omec-project/openapi v1.1.0

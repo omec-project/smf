@@ -322,8 +322,8 @@ github.com/omec-project/logger_util v1.1.0 h1:R7tT80+ML1HlK4OoTrNv/UK+2H/u2GdIFN
 github.com/omec-project/logger_util v1.1.0/go.mod h1:UkD09amIhlh8P0k82A6Uz/atiZGeFS3C2wd334CKpuY=
 github.com/omec-project/metricfunc v1.1.1 h1:vlbKT5SJViVgH4pHRrDETiZ2UWp0lO+xp0yxMbRjh7k=
 github.com/omec-project/metricfunc v1.1.1/go.mod h1:OmdlWD+gW+/61W/5yT8gqEqfSQ7kNqBp1h8KJ8LEmBE=
-github.com/omec-project/nas v1.1.5-0.20240221024819-a789458a382c h1:3/ZfgDGBAa8B917CbAIvWetdXjrn/OqsbTvOua4ZEgU=
-github.com/omec-project/nas v1.1.5-0.20240221024819-a789458a382c/go.mod h1:sFuJgtBca4nIwlA0IfnCq+5MzZFpC1id8lEKw5ge8Dc=
+github.com/omec-project/nas v1.1.5-0.20240222043255-fc6f03e0e27f h1:0/kvm2y5Kgl/nlZh+MJl6pzLgEAGxCC+hIRKBUM1sa4=
+github.com/omec-project/nas v1.1.5-0.20240222043255-fc6f03e0e27f/go.mod h1:skcGUFYFPAKO3WEKq4BbwvlZeY53Qj1C2zign9thmJ8=
 github.com/omec-project/ngap v1.1.1-0.20240127060744-31784065bc81 h1:1Gj05GTRYSB8+poJLrVxYyh5OTc8WcF6bPeIw5fl888=
 github.com/omec-project/ngap v1.1.1-0.20240127060744-31784065bc81/go.mod h1:bw4g/ZVZphcdFKOm9+iOfuC3/JGDV8R+3etSEw6SSbQ=
 github.com/omec-project/nrf v1.0.2-0.20240220224623-4d4c57f4fb15 h1:aYfRF5AFnlqBw7yY8AR9fz2UJg+CIoqxzSjW2CSAFP0=
