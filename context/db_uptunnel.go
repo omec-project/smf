@@ -9,19 +9,19 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
+	"github.com/omec-project/util/mongoapi"
 
 	"github.com/omec-project/pfcp/pfcpType"
 )
 
-// type DataPathPoolInDB map[int64]DataPathInDB
+// DataPathPoolInDB type DataPathPoolInDB map[int64]DataPathInDB
 type DataPathPoolInDB map[int64]*DataPathInDB
 
-// UPTunnel
+// UPTunnelInDB UPTunnel
 type UPTunnelInDB struct {
 	PathIDGenerator *idgenerator.IDGenerator
 	DataPathPool    DataPathPoolInDB
@@ -153,13 +153,13 @@ func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
 	// Marshal data into json format
 	tmp, err := json.Marshal(data)
 	if err != nil {
-		logger.CtxLog.Errorf("ToBsonMNodeInDB marshall error: %v", err)
+		logger.DataRepoLog.Errorf("ToBsonMNodeInDB marshall error: %v", err)
 	}
 
 	// unmarshal data into bson format
 	err = json.Unmarshal(tmp, &ret)
 	if err != nil {
-		logger.CtxLog.Errorf("ToBsonMNodeInDB unmarshall error: %v", err)
+		logger.DataRepoLog.Errorf("ToBsonMNodeInDB unmarshall error: %v", err)
 	}
 
 	return
@@ -168,16 +168,22 @@ func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
 func StoreNodeInDB(nodeInDB *DataPathNodeInDB) {
 	itemBsonA := ToBsonMNodeInDB(nodeInDB)
 	filter := bson.M{"nodeIDInDB": nodeInDB.DataPathNodeUPFNodeID}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	MongoDBLibrary.RestfulAPIPost(NodeInDBCol, filter, itemBsonA)
+	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(NodeInDBCol, filter, itemBsonA)
+	if postErr != nil {
+		logger.DataRepoLog.Warnln(postErr)
+	}
 }
 
 func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInDB) {
 	filter := bson.M{}
 	filter["nodeIDInDB"] = nodeIDInDB
 
-	result := MongoDBLibrary.RestfulAPIGetOne(NodeInDBCol, filter)
+	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(NodeInDBCol, filter)
+	if getOneErr != nil {
+		logger.DataRepoLog.Warnln(getOneErr)
+	}
 
 	dataPathNodeInDB = new(DataPathNodeInDB)
 	fmt.Println("GetNodeInDBFromDB, smf state json : ", result)
@@ -185,7 +191,7 @@ func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInD
 
 	err := json.Unmarshal(mapToByte(result), dataPathNodeInDB)
 	if err != nil {
-		logger.CtxLog.Errorf("GetNodeInDBFromDB unmarshall error: %v", err)
+		logger.DataRepoLog.Errorf("GetNodeInDBFromDB unmarshall error: %v", err)
 		return nil
 	}
 	return dataPathNodeInDB

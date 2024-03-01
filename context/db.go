@@ -14,17 +14,15 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/omec-project/MongoDBLibrary"
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 
-	// "github.com/free5gc/openapi/models"
-
 	"strconv"
 
 	"github.com/omec-project/util/idgenerator"
+	"github.com/omec-project/util/mongoapi"
 
 	"os"
 )
@@ -54,24 +52,26 @@ func SetupSmfCollection() {
 	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
 
 	//UUID table
-	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
-	_, err := MongoDBLibrary.CreateIndex(SmContextDataColl, "ref")
+	mongoapi.ConnectMongo(dbUrl, dbName)
+	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
-		logger.CtxLog.Errorf("Create index failed on ref field.")
+		logger.DataRepoLog.Errorf("Create index failed on ref field.")
 	}
 
 	//SEID Table
-	MongoDBLibrary.SetMongoDB(dbName, dbUrl)
-	_, err = MongoDBLibrary.CreateIndex(SeidSmContextCol, "seid")
+	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
-		logger.CtxLog.Errorf("Create index failed on TxnId field.")
+		logger.DataRepoLog.Errorf("Create index failed on TxnId field.")
 	}
 
-	smfCount := MongoDBLibrary.GetUniqueIdentity("smfCount")
-	logger.CtxLog.Infof("unique id - init smfCount %d", smfCount)
+	smfCount := mongoapi.CommonDBClient.GetUniqueIdentity("smfCount")
+	logger.DataRepoLog.Infof("unique id - init smfCount %d", smfCount)
 
 	// set os env
-	os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
+	setEnvErr := os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
+	if setEnvErr != nil {
+		logger.DataRepoLog.Errorf("Setting SMF_COUNT env variable is failed.")
+	}
 }
 
 // print out sm context
@@ -79,7 +79,7 @@ func (smContext *SMContext) String() string {
 	return fmt.Sprintf("smContext content: Ref:[%v],\nSupi: [%v],\nPei:[%v],\nGpsi:[%v],\nPDUSessionID:[%v],\nDnn:[%v],Snssai: [%v],\nHplmnSnssai: [%v],\nServingNetwork: [%v],\nServingNfId: [%v],\nUpCnxState: [%v],\nAnType: [%v],\nRatType: [%v],\nPDUAddress: [%v],\nSelectedPDUSessionType: [%v],\nSmStatusNotifyUri: [%v],\nSelectedPCFProfile: [%v],\nSMContextState: [%v],\nTunnel: [%v],\nPFCPContext: [%v],\nIdentifier: [%v],\nDNNInfo: [%v],\nSmPolicyData: [%v],\nEstAcceptCause5gSMValue: [%v]\n", smContext.Ref, smContext.Supi, smContext.Pei, smContext.Gpsi, smContext.PDUSessionID, smContext.Dnn, smContext.Snssai, smContext.HplmnSnssai, smContext.ServingNetwork, smContext.ServingNfId, smContext.UpCnxState, smContext.AnType, smContext.RatType, smContext.PDUAddress, smContext.SelectedPDUSessionType, smContext.SmStatusNotifyUri, smContext.SelectedPCFProfile, smContext.SMContextState, smContext.Tunnel, smContext.PFCPContext, smContext.Identifier, smContext.DNNInfo, smContext.SmPolicyData, smContext.EstAcceptCause5gSMValue)
 }
 
-// customized mashaller for sm context
+// MarshalJSON customized marshaller for sm context
 func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 	type Alias SMContext
 
@@ -139,7 +139,7 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// customized unmashaller for sm context
+// UnmarshalJSON customized unmarshaller for sm context
 func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 	fmt.Println("db - in UnmarshalJSON")
 	type Alias SMContext
@@ -206,13 +206,13 @@ func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
 	// Marshal data into json format
 	tmp, err := json.Marshal(data)
 	if err != nil {
-		logger.CtxLog.Errorf("SMContext marshall error: %v", err)
+		logger.DataRepoLog.Errorf("SMContext marshall error: %v", err)
 	}
 
 	// unmarshal data into bson format
 	err = json.Unmarshal(tmp, &ret)
 	if err != nil {
-		logger.CtxLog.Errorf("SMContext unmarshall error: %v", err)
+		logger.DataRepoLog.Errorf("SMContext unmarshall error: %v", err)
 	}
 
 	return
@@ -223,27 +223,30 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 	fmt.Println("db - in ToBsonM before marshal")
 	tmp, err := json.Marshal(data)
 	if err != nil {
-		logger.CtxLog.Errorf("SMContext marshall error: %v", err)
+		logger.DataRepoLog.Errorf("SMContext marshall error: %v", err)
 	}
 	// unmarshal data into bson format
 	err = json.Unmarshal(tmp, &ret)
 	if err != nil {
-		logger.CtxLog.Errorf("SMContext unmarshall error: %v", err)
+		logger.DataRepoLog.Errorf("SMContext unmarshall error: %v", err)
 	}
 
 	return
 }
 
-// Store SmContext In DB
+// StoreSmContextInDB Store SmContext In DB
 func StoreSmContextInDB(smContext *SMContext) {
 	fmt.Println("db - Store SMContext In DB w ref")
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 	smContextBsonA := ToBsonM(smContext)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	MongoDBLibrary.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
+	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
+	if postErr != nil {
+		logger.DataRepoLog.Warnln(postErr)
+	}
 }
 
 type SeidSmContextRef struct {
@@ -256,7 +259,7 @@ func SeidConv(seid uint64) (seidStr string) {
 	return seidStr
 }
 
-// Store Context by SEID In DB
+// StoreSeidContextInDB Store Context by SEID In DB
 func StoreSeidContextInDB(seidUint uint64, smContext *SMContext) {
 	seid := SeidConv(seidUint)
 	item := SeidSmContextRef{
@@ -265,12 +268,15 @@ func StoreSeidContextInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"seid": seid}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	MongoDBLibrary.RestfulAPIPost(SeidSmContextCol, filter, itemBsonA)
+	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SeidSmContextCol, filter, itemBsonA)
+	if postErr != nil {
+		logger.DataRepoLog.Warnln(postErr)
+	}
 }
 
-// store mapping ref to seid in db
+// StoreRefToSeidInDB store mapping ref to seid in db
 func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	seid := SeidConv(seidUint)
 	item := SeidSmContextRef{
@@ -279,90 +285,111 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	MongoDBLibrary.RestfulAPIPost(RefSeidCol, filter, itemBsonA)
+	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(RefSeidCol, filter, itemBsonA)
+	if postErr != nil {
+		logger.DataRepoLog.Warnln(postErr)
+	}
 }
 
 func GetSeidByRefInDB(ref string) (seid uint64) {
 	filter := bson.M{}
 	filter["ref"] = ref
 
-	result := MongoDBLibrary.RestfulAPIGetOne(RefSeidCol, filter)
+	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(RefSeidCol, filter)
+	if getOneErr != nil {
+		logger.DataRepoLog.Warnln(getOneErr)
+	}
 	seidStr := result["seid"].(string)
 	seid, _ = strconv.ParseUint(seidStr, 16, 64)
 	return
 }
 
-// GetSMContext By Ref from DB
+// GetSMContextByRefInDB GetSMContext By Ref from DB
 func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
-	logger.CtxLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
+	logger.DataRepoLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
 	smContext = &SMContext{}
 	filter := bson.M{}
 	filter["ref"] = ref
 
-	result := MongoDBLibrary.RestfulAPIGetOne(SmContextDataColl, filter)
+	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SmContextDataColl, filter)
+	if getOneErr != nil {
+		logger.DataRepoLog.Warnln(getOneErr)
+	}
 
 	if result != nil {
 		err := json.Unmarshal(mapToByte(result), smContext)
 
 		if err != nil {
-			logger.CtxLog.Errorf("smContext unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
 			return nil
 		}
 	} else {
-		logger.CtxLog.Warningf("SmContext doesn't exist with ref: %v", ref)
+		logger.DataRepoLog.Warningf("SmContext doesn't exist with ref: %v", ref)
 		return nil
 	}
 
 	return smContext
 }
 
-// GetSMContext By SEID from DB
+// GetSMContextBySEIDInDB GetSMContext By SEID from DB
 func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	seid := SeidConv(seidUint)
 	filter := bson.M{}
 	filter["seid"] = seid
 
-	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
+	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
+	if getOneErr != nil {
+		logger.DataRepoLog.Warnln(getOneErr)
+	}
 	if result != nil {
 		ref := result["ref"].(string)
-		logger.CtxLog.Debugln("StoreSeidContextInDB, result string : ", ref)
+		logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string : ", ref)
 		return GetSMContext(ref)
 	} else {
-		logger.CtxLog.Warningf("SmContext doesn't exist with seid: %v", seid)
+		logger.DataRepoLog.Warningf("SmContext doesn't exist with seid: %v", seid)
 		return nil
 	}
 }
 
-// Delete SMContext By SEID from DB
+// DeleteSmContextInDBBySEID Delete SMContext By SEID from DB
 func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
 	fmt.Println("db - delete SMContext In DB by seid")
 	filter := bson.M{"seid": seid}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	result := MongoDBLibrary.RestfulAPIGetOne(SeidSmContextCol, filter)
+	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
+	if getOneErr != nil {
+		logger.DataRepoLog.Warnln(getOneErr)
+	}
 	if result != nil {
 		ref := result["ref"].(string)
 
-		MongoDBLibrary.RestfulAPIDeleteOne(SeidSmContextCol, filter)
+		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
+		if delOneErr != nil {
+			logger.DataRepoLog.Warnln(delOneErr)
+		}
 		DeleteSmContextInDBByRef(ref)
 	} else {
-		logger.CtxLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
+		logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
 	}
 }
 
-// Delete SMContext By ref from DB
+// DeleteSmContextInDBByRef Delete SMContext By ref from DB
 func DeleteSmContextInDBByRef(ref string) {
 	fmt.Println("db - delete SMContext In DB w ref")
 	filter := bson.M{"ref": ref}
-	logger.CtxLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	MongoDBLibrary.RestfulAPIDeleteOne(SmContextDataColl, filter)
+	delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)
+	if delOneErr != nil {
+		logger.DataRepoLog.Warnln(delOneErr)
+	}
 }
 
-// Delete SMContext in smContextPool and seidSMContextMap, for test
+// ClearSMContextInMem Delete SMContext in smContextPool and seidSMContextMap, for test
 func ClearSMContextInMem(ref string) {
 	smContext := GetSMContext(ref)
 	smContextPool.Delete(ref)

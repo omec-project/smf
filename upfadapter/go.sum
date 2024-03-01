@@ -178,6 +178,7 @@ github.com/omec-project/logger_util v1.1.0/go.mod h1:UkD09amIhlh8P0k82A6Uz/atiZG
 github.com/omec-project/openapi v1.0.100-dev/go.mod h1:Fv9ajWROYypcNER+ZwWXPhLCdV4pBz75KqFp/R/2gCw=
 github.com/omec-project/openapi v1.1.0 h1:N3v59+FM2V/eCv2Au10kbyeTf1DsScJkEdkDEcCdKE8=
 github.com/omec-project/openapi v1.1.0/go.mod h1:Fv9ajWROYypcNER+ZwWXPhLCdV4pBz75KqFp/R/2gCw=
+github.com/omec-project/path_util v1.0.100-dev/go.mod h1:O1ch35al6+FXKmg6+5vOpKusl4fiB0u36oYjxwI4QK4=
 github.com/omec-project/pfcp v1.1.4-0.20240222043319-a4829c0f5e21 h1:fhcghUyESIZgNBgy00NClD74mRolvN/MEaA9oES40/k=
 github.com/omec-project/pfcp v1.1.4-0.20240222043319-a4829c0f5e21/go.mod h1:MqS71S86aXFMvJ8hgPq8euzdBb0gP0x9tc6J6DK4zj8=
 github.com/omec-project/tlv v1.1.0 h1:djelZMkZKd+3ZvFbvzu6Uxfp4rnUGfoKjnx0R8ZS1Ss=

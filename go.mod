@@ -12,7 +12,6 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/omec-project/MongoDBLibrary v1.1.4-0.20240220013953-4b2cb54754fb
 	github.com/omec-project/aper v1.1.1-0.20240118192736-0ebf8cbff796
 	github.com/omec-project/config5g v1.2.1-0.20240216144508-a6c2195300d4
 	github.com/omec-project/http2_util v1.1.0
@@ -23,7 +22,7 @@ require (
 	github.com/omec-project/nrf v1.0.2-0.20240220224623-4d4c57f4fb15
 	github.com/omec-project/openapi v1.1.0
 	github.com/omec-project/pfcp v1.1.4-0.20240221225110-730de2c5fed8
-	github.com/omec-project/util v1.0.13-0.20240207024358-eb30f7e970e8
+	github.com/omec-project/util v1.0.13
 	github.com/omec-project/util_3gpp v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.18.0
@@ -111,10 +110,12 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/omec-project/logger_conf v1.1.1-0.20240213150911-6ea2670f1fc0 // indirect
 	github.com/omec-project/tlv v1.1.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
+	go.uber.org/goleak v1.1.12 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect

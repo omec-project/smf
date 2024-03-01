@@ -17,6 +17,7 @@ var (
 	AppLog      *logrus.Entry
 	InitLog     *logrus.Entry
 	CfgLog      *logrus.Entry
+	DataRepoLog *logrus.Entry
 	GsmLog      *logrus.Entry
 	PfcpLog     *logrus.Entry
 	PduSessLog  *logrus.Entry
@@ -46,6 +47,7 @@ func init() {
 	AppLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "App"})
 	InitLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "Init"})
 	CfgLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "CFG"})
+	DataRepoLog = log.WithFields(logrus.Fields{"component": "AMF", "category": "DRepo"})
 	PfcpLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "PFCP"})
 	PduSessLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "PduSess"})
 	GsmLog = log.WithFields(logrus.Fields{"component": "SMF", "category": "GSM"})
