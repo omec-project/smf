@@ -25,3 +25,5 @@ cscope.*
 vendor*
 *.patch
 
+# coverage
+./.coverage

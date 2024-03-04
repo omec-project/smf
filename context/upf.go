@@ -24,8 +24,6 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
-
-	// "github.com/omec-project/MongoDBLibrary"
 	"os"
 )
 

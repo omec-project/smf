@@ -33,16 +33,12 @@ import (
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
-
-	// "github.com/omec-project/MongoDBLibrary"
 	"os"
 )
 
 var seq uint32
 
 func getSeqNumber() uint32 {
-	// smfCount := MongoDBLibrary.GetSmfCountFromDb()
-
 	smfCount := 1
 	if smfCountStr, ok := os.LookupEnv("SMF_COUNT"); ok {
 		smfCount, _ = strconv.Atoi(smfCountStr)
