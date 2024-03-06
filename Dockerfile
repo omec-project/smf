@@ -6,7 +6,7 @@
 
 FROM golang:1.22.0-bookworm AS builder
 
-LABEL maintainer="ONF <omec-dev@opennetworking.org>"
+LABEL maintainer="Aether SD-Core <dev@lists.aetherproject.org>"
 
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
@@ -43,11 +43,13 @@ RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
         fi
 
 # Set working dir
+WORKDIR /free5gc/bin
+
+# copy upf-adapter image
+COPY --from=builder /go/src/smf/upfadapter/upf-adapter .
+
+# Set working dir
 WORKDIR /free5gc/smf
-RUN mkdir -p bin
 
 # Copy executable and default certs
 COPY --from=builder /go/src/smf/bin/* .
-
-# copy upf-adapter image
-COPY --from=builder /go/src/smf/upfadapter/upf-adapter ./bin
