@@ -89,7 +89,7 @@ func RetrieveSmContext(c *gin.Context) {
 func HTTPUpdateSmContext(c *gin.Context) {
 	logger.PduSessLog.Info("Receive Update SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
-	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_req)
+	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
 
 	var request models.UpdateSmContextRequest
 	request.JsonData = new(models.SmContextUpdateData)

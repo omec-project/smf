@@ -92,7 +92,7 @@ func EmptyEventHandler(event SmEvent, eventData *SmEventData) (smf_context.SMCon
 
 func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
 	if err := producer.HandlePDUSessionSMContextCreate(eventData.Txn); err != nil {
-		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req_failure)
+		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_failure)
 		txn := eventData.Txn.(*transaction.Transaction)
 		txn.Err = err
 		return smf_context.SmStateInit, fmt.Errorf("pdu session create error, %v ", err.Error())
@@ -125,11 +125,11 @@ func HandleStateN1N2TransferPendingEventN1N2Transfer(event SmEvent, eventData *S
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.SendPduSessN1N2Transfer(smCtxt, true); err != nil {
-		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_req_failure)
+		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_rsp_failure)
 		smCtxt.SubFsmLog.Errorf("N1N2 transfer failure error, %v ", err.Error())
 		return smf_context.SmStateN1N2TransferPending, fmt.Errorf("N1N2 Transfer failure error, %v ", err.Error())
 	}
-	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_update_rsp_success)
+	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_rsp_success)
 	return smf_context.SmStateActive, nil
 }
 
@@ -166,7 +166,7 @@ func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.HandlePDUSessionSMContextRelease(eventData.Txn); err != nil {
-		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req_failure)
+		stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_rsp_failure)
 		smCtxt.SubFsmLog.Errorf("sm context release error, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
