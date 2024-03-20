@@ -39,6 +39,10 @@ func InitConfigFactory(f string) error {
 			return yamlErr
 		}
 
+		if SmfConfig.Configuration.WebuiUri == "" {
+			SmfConfig.Configuration.WebuiUri = "webui:9876"
+		}
+
 		if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {
 			enableKafka := true
 			SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
@@ -46,7 +50,7 @@ func InitConfigFactory(f string) error {
 
 		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 		if roc == "true" {
-			gClient := client.ConnectToConfigServer("webui:9876")
+			gClient := client.ConnectToConfigServer(SmfConfig.Configuration.WebuiUri)
 			commChannel := gClient.PublishOnConfigChange(false)
 			go SmfConfig.updateConfig(commChannel)
 		}

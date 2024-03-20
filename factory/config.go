@@ -76,6 +76,7 @@ type Configuration struct {
 	PFCP                     *PFCP                `yaml:"pfcp,omitempty"`
 	Sbi                      *Sbi                 `yaml:"sbi,omitempty"`
 	NrfUri                   string               `yaml:"nrfUri,omitempty"`
+	WebuiUri                 string               `yaml:"webuiUri"`
 	SmfName                  string               `yaml:"smfName,omitempty"`
 	SmfDbName                string               `yaml:"smfDBName,omitempty"`
 	SNssaiInfo               []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
