@@ -99,7 +99,6 @@ configuration:
       - A: gNB
         B: UPF1
   nrfUri: http://nrf:29510 # a valid URI of NRF
-  webuiUri: webui:9876 # a valid URI of Webui
 
 # the kind of log output
   # debugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic

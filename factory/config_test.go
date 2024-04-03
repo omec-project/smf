@@ -6,6 +6,8 @@
 package factory
 
 import (
+	"fmt"
+	"github.com/stretchr/testify/assert"
 	"testing"
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
@@ -425,4 +427,24 @@ func TestKafkaEnabledByDefault(t *testing.T) {
 	if *SmfConfig.Configuration.KafkaInfo.EnableKafka != true {
 		t.Errorf("Expected Kafka to be enabled by default, was disabled")
 	}
+}
+
+// Webui URL is not set then default Webui URL value is returned
+func TestGetDefaultWebuiUrl(t *testing.T) {
+	if err := InitConfigFactory("../config/smfcfg.yaml"); err != nil {
+		fmt.Printf("Error in InitConfigFactory: %v\n", err)
+	}
+	got := SmfConfig.Configuration.WebuiUri
+	want := "webui:9876"
+	assert.Equal(t, got, want, "The webui URL is not correct.")
+}
+
+// Webui URL is set to a custom value then custom Webui URL is returned
+func TestGetCustomWebuiUrl(t *testing.T) {
+	if err := InitConfigFactory("../config/smfcfg_with_custom_webui_url.yaml"); err != nil {
+		fmt.Printf("Error in InitConfigFactory: %v\n", err)
+	}
+	got := SmfConfig.Configuration.WebuiUri
+	want := "myspecialwebui:9872"
+	assert.Equal(t, got, want, "The webui URL is not correct.")
 }
