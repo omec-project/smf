@@ -34,7 +34,7 @@ require (
 	github.com/omec-project/openapi v1.2.0 // indirect
 	github.com/omec-project/tlv v1.2.0 // indirect
 	github.com/omec-project/util v1.0.13 // indirect
-	github.com/omec-project/util_3gpp v1.2.0 // indirect
+	github.com/omec-project/util_3gpp v1.2.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect

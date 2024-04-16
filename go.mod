@@ -8,18 +8,18 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/omec-project/aper v1.1.1
+	github.com/omec-project/aper v1.1.2
 	github.com/omec-project/config5g v1.3.1
 	github.com/omec-project/http2_util v1.2.0
 	github.com/omec-project/logger_util v1.2.0
 	github.com/omec-project/metricfunc v1.4.0
-	github.com/omec-project/nas v1.2.0
+	github.com/omec-project/nas v1.2.2
 	github.com/omec-project/ngap v1.2.0
 	github.com/omec-project/nrf v1.4.0
 	github.com/omec-project/openapi v1.2.0
 	github.com/omec-project/pfcp v1.2.0
 	github.com/omec-project/util v1.0.13
-	github.com/omec-project/util_3gpp v1.2.0
+	github.com/omec-project/util_3gpp v1.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.0
 	github.com/sirupsen/logrus v1.9.3

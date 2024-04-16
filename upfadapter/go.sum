@@ -62,8 +62,8 @@ github.com/omec-project/tlv v1.2.0 h1:rHMVnMNP+aDQAffgmO0Tut1gxhfeZOpDpXLbhLU736
 github.com/omec-project/tlv v1.2.0/go.mod h1:gES/RcOSgXJp3/RaPL2dJiZ7aFfBQkueEmiJ40lbI00=
 github.com/omec-project/util v1.0.13 h1:50ghFbWo7aqhqIknC6KDPWmkht0tP1v2wjpIdcWVXKg=
 github.com/omec-project/util v1.0.13/go.mod h1:Cn9P57qYFiEu0ZXti8imODsJIXVGqnqhP40MwbVbo3g=
-github.com/omec-project/util_3gpp v1.2.0 h1:u2c1QeBGMnH6Ps5HSbPloTeeGjsAAMFuyl8Nsw+HqsM=
-github.com/omec-project/util_3gpp v1.2.0/go.mod h1:53qng9MRMW1tgc2Cg0w+LaBNbskdQQqGZt/fcjPQSy4=
+github.com/omec-project/util_3gpp v1.2.1 h1:OE8dckynwEqCpqLkRdMVuKPTQ8Afdq/I3nlROa4fQVo=
+github.com/omec-project/util_3gpp v1.2.1/go.mod h1:q2fd2dniyDlCDO/2WwEnU9+fTAO7OYrzRnPqaBxZFyc=
 github.com/pelletier/go-toml/v2 v2.0.8 h1:0ctb6s9mE31h0/lhu+J6OPmVeDxJn+kYnJc2jZR9tGQ=
 github.com/pelletier/go-toml/v2 v2.0.8/go.mod h1:vuYfssBdrU2XDZ9bYydBu6t+6a6PYNcZljzZR9VXg+4=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
