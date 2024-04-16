@@ -223,8 +223,8 @@ github.com/nbio/st v0.0.0-20140626010706-e9e8d9816f32 h1:W6apQkHrMkS0Muv8G/TipAy
 github.com/nbio/st v0.0.0-20140626010706-e9e8d9816f32/go.mod h1:9wM+0iRr9ahx58uYLpLIr5fm8diHn0JbqRycJi6w0Ms=
 github.com/nxadm/tail v1.4.8 h1:nPr65rt6Y5JFSKQO7qToXr7pePgD6Gwiw05lkbyAQTE=
 github.com/nxadm/tail v1.4.8/go.mod h1:+ncqLTQzXmGhMZNUePPaPqPvBxHAIsmXswZKocGu+AU=
-github.com/omec-project/aper v1.1.1 h1:5Kr7QBheYWb/0723Xqi2/4kTiQS3WiqrxjWlOHOv5/Q=
-github.com/omec-project/aper v1.1.1/go.mod h1:oOkKRI2BIo8SHpCsEzNbo9qiowEtEy3q+wmO7TuDrx4=
+github.com/omec-project/aper v1.1.2 h1:oRtfloQJQV5HXhOkPpOXbRW9Ay8TAe5kTcbMMkInmOQ=
+github.com/omec-project/aper v1.1.2/go.mod h1:jDWasZ2XLFL2uSEWhgGlT/ELyrpwCJd/2kE/VEGG8Ew=
 github.com/omec-project/config5g v1.3.1 h1:hSvFHXh/J0mslsWR82PPnmpF0WzkmLa6AOdvEPve9e8=
 github.com/omec-project/config5g v1.3.1/go.mod h1:lN/Jc2BZkE/smOGPCXxeo1dJ7s+s9Wgp34crNLH4YeE=
 github.com/omec-project/http2_util v1.2.0 h1:ggQ1GjY2x6VRpKuRhZj0t9dh6eISY6LRBv4rlMD++8s=
@@ -235,8 +235,8 @@ github.com/omec-project/logger_util v1.2.0 h1:Wtx6skInAPqSic0b97QtJcs+xHDh5798MY
 github.com/omec-project/logger_util v1.2.0/go.mod h1:LRHlDJdCqVjOxYvYslRryj0DFUNtxQkgxEiQ7fSCoPk=
 github.com/omec-project/metricfunc v1.4.0 h1:gOc8K6BIFw/NYBKeagb3MucNSDDqTgEt2mrdvXI/B60=
 github.com/omec-project/metricfunc v1.4.0/go.mod h1:S7+R12DJtKD8s4iTEjgJUb3jXlUklFj+9t8wTIeNx4A=
-github.com/omec-project/nas v1.2.0 h1:fSMhieEKv7cJljkullFDh4TGee9Dc3+aYzpQpUN4w1s=
-github.com/omec-project/nas v1.2.0/go.mod h1:o9JEUliCawXiPx7f5J9MaAfB3xptBNrfYI9QSu3W0oU=
+github.com/omec-project/nas v1.2.2 h1:5qvKH6Eew0IwivRMC6eWueRPgXwYSLfRUPcH5sbsv44=
+github.com/omec-project/nas v1.2.2/go.mod h1:QdRwa7KjgzWpuDnIdezNZgtCwhHH7RcFDdQTSCB5afM=
 github.com/omec-project/ngap v1.2.0 h1:BeH8xiQQUnBog0eQiipjgcV7Ua02MEnpS4O5hwVMpDo=
 github.com/omec-project/ngap v1.2.0/go.mod h1:fbX1GqunoSS2B7GDTEccIutmgNdUIxSy5BKVnvX7SM0=
 github.com/omec-project/nrf v1.4.0 h1:/JhSPHkUpWbx674Uo9BBL1hIO1Yx1Cl4YMse7CqMgeI=
@@ -249,8 +249,8 @@ github.com/omec-project/tlv v1.2.0 h1:rHMVnMNP+aDQAffgmO0Tut1gxhfeZOpDpXLbhLU736
 github.com/omec-project/tlv v1.2.0/go.mod h1:gES/RcOSgXJp3/RaPL2dJiZ7aFfBQkueEmiJ40lbI00=
 github.com/omec-project/util v1.0.13 h1:50ghFbWo7aqhqIknC6KDPWmkht0tP1v2wjpIdcWVXKg=
 github.com/omec-project/util v1.0.13/go.mod h1:Cn9P57qYFiEu0ZXti8imODsJIXVGqnqhP40MwbVbo3g=
-github.com/omec-project/util_3gpp v1.2.0 h1:u2c1QeBGMnH6Ps5HSbPloTeeGjsAAMFuyl8Nsw+HqsM=
-github.com/omec-project/util_3gpp v1.2.0/go.mod h1:53qng9MRMW1tgc2Cg0w+LaBNbskdQQqGZt/fcjPQSy4=
+github.com/omec-project/util_3gpp v1.2.1 h1:OE8dckynwEqCpqLkRdMVuKPTQ8Afdq/I3nlROa4fQVo=
+github.com/omec-project/util_3gpp v1.2.1/go.mod h1:q2fd2dniyDlCDO/2WwEnU9+fTAO7OYrzRnPqaBxZFyc=
 github.com/onsi/ginkgo v1.16.5 h1:8xi0RTUf59SOSfEtZMvwTvXYMzG4gV23XVHOZiXNtnE=
 github.com/onsi/ginkgo v1.16.5/go.mod h1:+E8gABHa3K6zRBolWtd+ROzc/U5bkGt0FwiG042wbpU=
 github.com/onsi/gomega v1.18.1 h1:M1GfJqGRrBrrGGsbxzV5dqM2U2ApXefZCQpkukxYRLE=
@@ -306,7 +306,6 @@ github.com/segmentio/kafka-go v0.4.47/go.mod h1:HjF6XbOKh0Pjlkr5GVZxt6CsjjwnmhVO
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/sirupsen/logrus v1.6.0/go.mod h1:7uNnSEd1DgxDLC74fIahvMZmmYsHGZGEOFrfsX/uA88=
-github.com/sirupsen/logrus v1.8.1/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/smarty/assertions v1.15.0 h1:cR//PqUBUiQRakZWqBiFFQ9wb8emQGDb0HeGdqGByCY=
@@ -458,7 +457,6 @@ golang.org/x/sys v0.0.0-20181116152217-5ac8a444bdc5/go.mod h1:STP8DvDyc/dI5b8T5h
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20190422165155-953cdadca894/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
-golang.org/x/sys v0.0.0-20191026070338-33540a1f6037/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200106162015-b016eb3dc98e/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20200615200032-f1bc736245b1/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
