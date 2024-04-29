@@ -7,7 +7,7 @@ go 1.21
 
 require (
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
-	github.com/omec-project/pfcp v1.2.0
+	github.com/omec-project/pfcp v1.2.1
 	github.com/sirupsen/logrus v1.9.3
 )
 
