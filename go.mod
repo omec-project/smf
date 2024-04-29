@@ -14,7 +14,7 @@ require (
 	github.com/omec-project/logger_util v1.2.0
 	github.com/omec-project/metricfunc v1.4.0
 	github.com/omec-project/nas v1.2.2
-	github.com/omec-project/ngap v1.2.0
+	github.com/omec-project/ngap v1.2.1
 	github.com/omec-project/nrf v1.4.0
 	github.com/omec-project/openapi v1.2.0
 	github.com/omec-project/pfcp v1.2.0
