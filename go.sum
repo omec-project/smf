@@ -243,8 +243,8 @@ github.com/omec-project/nrf v1.4.0 h1:/JhSPHkUpWbx674Uo9BBL1hIO1Yx1Cl4YMse7CqMge
 github.com/omec-project/nrf v1.4.0/go.mod h1:1vnIqQvUcAx6ugh0ZjdEqYP0MKdb1uHrURwy0z4GuQ8=
 github.com/omec-project/openapi v1.2.0 h1:7Wvi0HLvhvxMyQtqGcqtMCPC/0QCGAFP5htrXCfWxRc=
 github.com/omec-project/openapi v1.2.0/go.mod h1:hjU13MB1m9MHTko87JfsUNCdeD6/m6VkNZDD8Vq5U9M=
-github.com/omec-project/pfcp v1.2.0 h1:aLg6qgfFCimemNOpGgiRXr4T1/mzS5eP6LkE8frJKtw=
-github.com/omec-project/pfcp v1.2.0/go.mod h1:7Ui6ukVPgJ4t1KmP+bHqwUm0bmaO291kta78jW+ZPQY=
+github.com/omec-project/pfcp v1.2.1 h1:TUfPlD3g2IKR5zY46VLeFLXKj2bA4CYaCNh6LlHkFVw=
+github.com/omec-project/pfcp v1.2.1/go.mod h1:TfrvYm1AYnkMi4a03NxHRdavV6s2cFKwzw6+g7jmbU4=
 github.com/omec-project/tlv v1.2.0 h1:rHMVnMNP+aDQAffgmO0Tut1gxhfeZOpDpXLbhLU7364=
 github.com/omec-project/tlv v1.2.0/go.mod h1:gES/RcOSgXJp3/RaPL2dJiZ7aFfBQkueEmiJ40lbI00=
 github.com/omec-project/util v1.0.13 h1:50ghFbWo7aqhqIknC6KDPWmkht0tP1v2wjpIdcWVXKg=
