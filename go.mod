@@ -17,7 +17,7 @@ require (
 	github.com/omec-project/ngap v1.2.1
 	github.com/omec-project/nrf v1.4.0
 	github.com/omec-project/openapi v1.2.0
-	github.com/omec-project/pfcp v1.2.0
+	github.com/omec-project/pfcp v1.2.1
 	github.com/omec-project/util v1.0.13
 	github.com/omec-project/util_3gpp v1.2.1
 	github.com/pkg/errors v0.9.1
