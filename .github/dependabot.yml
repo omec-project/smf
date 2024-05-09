@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2022 Intel Corporation
 
-# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
 version: 2
 updates:
 
@@ -9,18 +8,30 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "21:00"
+      timezone: "America/Los_Angeles"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "21:00"
+      timezone: "America/Los_Angeles"
 
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "21:00"
+      timezone: "America/Los_Angeles"
 
   - package-ecosystem: "gomod"
     directory: "/upfadapter/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "21:00"
+      timezone: "America/Los_Angeles"
