@@ -9,17 +9,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.1.2
-	github.com/omec-project/config5g v1.3.5
-	github.com/omec-project/http2_util v1.2.0
-	github.com/omec-project/logger_util v1.2.0
-	github.com/omec-project/metricfunc v1.4.0
-	github.com/omec-project/nas v1.2.2
-	github.com/omec-project/ngap v1.2.1
-	github.com/omec-project/nrf v1.4.0
+	github.com/omec-project/config5g v1.4.0
+	github.com/omec-project/metricfunc v1.4.1
+	github.com/omec-project/nas v1.3.0
+	github.com/omec-project/ngap v1.2.2
+	github.com/omec-project/nrf v1.4.1
 	github.com/omec-project/openapi v1.2.0
-	github.com/omec-project/pfcp v1.2.1
-	github.com/omec-project/util v1.0.13
-	github.com/omec-project/util_3gpp v1.2.1
+	github.com/omec-project/pfcp v1.2.2
+	github.com/omec-project/util v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/sirupsen/logrus v1.9.3
@@ -107,7 +104,6 @@ require (
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
-	github.com/omec-project/logger_conf v1.1.1 // indirect
 	github.com/omec-project/tlv v1.2.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.uber.org/goleak v1.1.12 // indirect

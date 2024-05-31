@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/logger_util"
+	logger_util "github.com/omec-project/util/logger"
 	"github.com/omec-project/smf/logger"
 )
 
