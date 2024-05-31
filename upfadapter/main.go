@@ -11,11 +11,9 @@ import (
 	"net/http"
 
 	"upf-adapter/config"
-	"upf-adapter/pfcp/udp"
-
-	"upf-adapter/pfcp"
-
 	"upf-adapter/logger"
+	"upf-adapter/pfcp"
+	"upf-adapter/pfcp/udp"
 )
 
 // Hnadler for SMF initiated msgs

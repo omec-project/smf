@@ -19,18 +19,16 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
+	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
-
-	smf_context "github.com/omec-project/smf/context"
-	stats "github.com/omec-project/smf/metrics"
 )
 
 // HTTPReleaseSmContext - Release SM Context

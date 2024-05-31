@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"reflect"
 	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
-
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpType"
@@ -24,7 +24,6 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
-	"os"
 )
 
 var upfPool sync.Map

@@ -9,13 +9,11 @@ import (
 	"fmt"
 	"net"
 
-	"go.mongodb.org/mongo-driver/bson"
-
+	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
-
-	"github.com/omec-project/pfcp/pfcpType"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // DataPathPoolInDB type DataPathPoolInDB map[int64]DataPathInDB

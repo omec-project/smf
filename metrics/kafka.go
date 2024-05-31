@@ -13,7 +13,6 @@ import (
 	"time"
 
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
-
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/segmentio/kafka-go"

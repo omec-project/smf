@@ -16,7 +16,6 @@ package callback
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/smf/logger"
 	logger_util "github.com/omec-project/util/logger"
 )

@@ -11,12 +11,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/pkg/errors"
-
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/pkg/errors"
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF

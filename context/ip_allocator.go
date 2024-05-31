@@ -9,11 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
-
-	"sync"
-
 	"os"
 	"strconv"
+	"sync"
 )
 
 type IPAllocator struct {

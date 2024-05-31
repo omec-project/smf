@@ -11,20 +11,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
+	"strconv"
 	"sync"
-
-	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-
-	"strconv"
-
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
-
-	"os"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const (

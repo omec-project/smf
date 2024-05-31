@@ -18,11 +18,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli"
-
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/service"
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli"
 )
 
 var SMF = &service.SMF{}

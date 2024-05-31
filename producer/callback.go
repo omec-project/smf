@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
-
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"

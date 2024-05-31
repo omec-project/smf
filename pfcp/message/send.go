@@ -14,11 +14,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
-	"time"
-
 	"sync/atomic"
+	"time"
 
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/nas/nasMessage"
@@ -33,7 +33,6 @@ import (
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
-	"os"
 )
 
 var seq uint32

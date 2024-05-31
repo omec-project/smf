@@ -9,25 +9,15 @@ package context
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
-
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
-	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	"github.com/omec-project/smf/qos"
-	errors "github.com/omec-project/smf/smferrors"
-	"github.com/omec-project/smf/transaction"
-	"github.com/omec-project/util/httpwrapper"
-	"github.com/sirupsen/logrus"
-
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/google/uuid"
-
+	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/nas/nasMessage"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
@@ -38,6 +28,13 @@ import (
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/qos"
+	errors "github.com/omec-project/smf/smferrors"
+	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
+	"github.com/sirupsen/logrus"
 )
 
 const (

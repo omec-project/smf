@@ -15,10 +15,9 @@ import (
 	"os"
 	"sync"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/omec-project/config5g/proto/client"
 	"github.com/omec-project/smf/logger"
+	"gopkg.in/yaml.v2"
 )
 
 var (

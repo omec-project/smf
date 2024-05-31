@@ -12,13 +12,8 @@ import (
 	"net/http"
 
 	"github.com/antihax/optional"
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	"github.com/omec-project/smf/qos"
-	"github.com/omec-project/smf/transaction"
-
 	"github.com/omec-project/nas"
+	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Namf_Communication"
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
@@ -28,7 +23,11 @@ import (
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
 )
 

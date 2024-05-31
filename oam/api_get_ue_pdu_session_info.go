@@ -6,7 +6,6 @@ package oam
 
 import (
 	"github.com/gin-gonic/gin"
-
 	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/util/httpwrapper"
 )

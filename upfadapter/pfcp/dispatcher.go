@@ -6,11 +6,10 @@
 package pfcp
 
 import (
-	"upf-adapter/logger"
-	"upf-adapter/pfcp/handler"
-
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpUdp"
+	"upf-adapter/logger"
+	"upf-adapter/pfcp/handler"
 )
 
 func Dispatch(msg *pfcpUdp.Message) {

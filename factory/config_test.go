@@ -7,11 +7,11 @@ package factory
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/openapi/models"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUpdateSliceInfo(t *testing.T) {

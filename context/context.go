@@ -13,10 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/omec-project/smf/metrics"
-
 	"github.com/google/uuid"
-
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
@@ -25,6 +22,7 @@ import (
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/util/drsm"
 )
 

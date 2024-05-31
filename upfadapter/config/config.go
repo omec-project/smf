@@ -9,10 +9,10 @@ import (
 	"os"
 	"sync"
 	"time"
-	"upf-adapter/logger"
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
+	"upf-adapter/logger"
 )
 
 type UPFStatus int
