@@ -18,17 +18,18 @@ func GetTrafficControlUpdate(tcData, ctxtTcData map[string]*models.TrafficContro
 	change := TrafficControlUpdate{
 		add: make(map[string]*models.TrafficControlData),
 		mod: make(map[string]*models.TrafficControlData),
-		del: make(map[string]*models.TrafficControlData)}
+		del: make(map[string]*models.TrafficControlData),
+	}
 
-	//Compare against Ctxt rules to get added or modified rules
+	// Compare against Ctxt rules to get added or modified rules
 	for name, pcfTc := range tcData {
-		//if pcfRule is nil then it need to be deleted
+		// if pcfRule is nil then it need to be deleted
 		if pcfTc == nil {
-			change.del[name] = pcfTc //nil
+			change.del[name] = pcfTc // nil
 			continue
 		}
 
-		//match against SM ctxt Rules for add/mod
+		// match against SM ctxt Rules for add/mod
 		if ctxtTc := ctxtTcData[name]; ctxtTc == nil {
 			change.add[name] = pcfTc
 		} else if GetTCDataChanges(pcfTc, ctxtTc) {
@@ -40,19 +41,19 @@ func GetTrafficControlUpdate(tcData, ctxtTcData map[string]*models.TrafficContro
 }
 
 func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *TrafficControlUpdate) {
-	//Iterate through Add/Mod/Del TC
+	// Iterate through Add/Mod/Del TC
 
-	//Add new tc
+	// Add new tc
 	if len(update.add) > 0 {
 		for name, tc := range update.add {
 			smCtxtPolData.SmCtxtTCData.TrafficControlData[name] = tc
 		}
 	}
 
-	//Mod rules
-	//TODO
+	// Mod rules
+	// TODO
 
-	//Del Rules
+	// Del Rules
 	if len(update.del) > 0 {
 		for name := range update.del {
 			delete(smCtxtPolData.SmCtxtTCData.TrafficControlData, name)
@@ -61,7 +62,7 @@ func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *Traffic
 }
 
 func GetTCDataChanges(pcfTc, ctxtTc *models.TrafficControlData) bool {
-	//TODO
+	// TODO
 	return false
 }
 

@@ -51,8 +51,8 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		smContext.SubGsmLog.Infoln("Protocol Configuration Options")
 		smContext.SubGsmLog.Infoln(protocolConfigurationOptions)
 
-		//Send MTU to UE always even if UE does not request it.
-		//Preconfiguring MTU request flag.
+		// Send MTU to UE always even if UE does not request it.
+		// Preconfiguring MTU request flag.
 		smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest = true
 
 		for _, container := range protocolConfigurationOptions.ProtocolOrContainerList {
@@ -142,6 +142,6 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()
 
-	//Release UE IP Addr
+	// Release UE IP Addr
 	smContext.ReleaseUeIpAddr()
 }

@@ -18,18 +18,16 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/transaction"
-
-	smf_context "github.com/omec-project/smf/context"
 	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 // HTTPPostSmContexts - Create SM Context
@@ -67,7 +65,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext))
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
-	<-txn.Status //wait for txn to complete at SMF
+	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	errStr := ""
@@ -75,7 +73,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 		errStr = txn.Err.Error()
 	}
 
-	//Http Response to AMF
+	// Http Response to AMF
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
@@ -95,7 +93,6 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	go func(smContext *smf_context.SMContext) {
-
 		var txn *transaction.Transaction
 		if HTTPResponse.Status == http.StatusCreated {
 			txn = transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreate))

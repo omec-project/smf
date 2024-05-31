@@ -38,7 +38,7 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 }
 
 func SendPfcpSessionReleaseReq(smContext *smf_context.SMContext) error {
-	//release UPF data tunnel
+	// release UPF data tunnel
 	releaseTunnel(smContext)
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan

@@ -19,18 +19,16 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
+	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
-
-	smf_context "github.com/omec-project/smf/context"
-	stats "github.com/omec-project/smf/metrics"
+	"github.com/omec-project/util/httpwrapper"
 )
 
 // HTTPReleaseSmContext - Release SM Context
@@ -73,7 +71,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 
-	//producer.HandlePDUSessionSMContextRelease(
+	// producer.HandlePDUSessionSMContextRelease(
 	//	smContextRef, req.Body.(models.ReleaseSmContextRequest))
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusNoContent), "")
@@ -127,7 +125,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
-	//HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
+	// HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
 	//	smContextRef, req.Body.(models.UpdateSmContextRequest))
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")

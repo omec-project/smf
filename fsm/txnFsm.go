@@ -35,10 +35,10 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		req := txn.Req.(models.PostSmContextsRequest)
 		createData := req.JsonData
 		if smCtxtRef, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId); err == nil {
-			//Previous context exist
+			// Previous context exist
 			producer.HandlePduSessionContextReplacement(smCtxtRef)
 		}
-		//Create fresh context
+		// Create fresh context
 		txn.Ctxt = smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
 		txn.CtxtKey, _ = smf_context.ResolveRef(createData.Supi, createData.PduSessionId)
 	case svcmsgtypes.UpdateSmContext:
@@ -50,11 +50,11 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 
 	case svcmsgtypes.PfcpSessCreate:
 		fallthrough
-		//txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
+		// txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	case svcmsgtypes.N1N2MessageTransfer:
-		//Pre-loaded- No action
+		// Pre-loaded- No action
 	case svcmsgtypes.PfcpSessCreateFailure:
-		//Pre-loaded- No action
+		// Pre-loaded- No action
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	default:
@@ -74,20 +74,20 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
-	//Lock the bus before modifying
+	// Lock the bus before modifying
 	smContext.SMTxnBusLock.Lock()
 	defer smContext.SMTxnBusLock.Unlock()
 
-	//If already Active Txn running then post it to SMF Txn Bus
+	// If already Active Txn running then post it to SMF Txn Bus
 	if smContext.ActiveTxn != nil {
 		smContext.TxnBus = smContext.TxnBus.AddTxn(txn)
 
-		//Txn has been posted and shall be scheduled later
+		// Txn has been posted and shall be scheduled later
 		txn.TxnFsmLog.Debugf("event[%v], next-event[%v], txn queued ", transaction.TxnEventCtxtPost.String(), transaction.TxnEventExit.String())
 		return transaction.TxnEventQueue, nil
 	}
 
-	//No other Txn running, lets proceed with current Txn
+	// No other Txn running, lets proceed with current Txn
 
 	return transaction.TxnEventRun, nil
 }
@@ -95,8 +95,8 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
-	//There shouldn't be any active Txn if current Txn has reached to Run state
-	//Probably, abort it
+	// There shouldn't be any active Txn if current Txn has reached to Run state
+	// Probably, abort it
 	smContext.SMTxnBusLock.Lock()
 	defer smContext.SMTxnBusLock.Unlock()
 
@@ -104,7 +104,7 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 		logger.TxnFsmLog.Errorf("active transaction [%v] not completed", smContext.ActiveTxn)
 	}
 
-	//make current txn as Active now, move it to processing
+	// make current txn as Active now, move it to processing
 	smContext.ActiveTxn = txn
 	return transaction.TxnEventProcess, nil
 }
@@ -133,7 +133,7 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		event = SmEventPduSessCreate
 	case svcmsgtypes.UpdateSmContext:
 		event = SmEventPduSessModify
-		//req := txn.Req.(models.UpdateSmContextRequest)
+		// req := txn.Req.(models.UpdateSmContextRequest)
 	case svcmsgtypes.ReleaseSmContext:
 		event = SmEventPduSessRelease
 	case svcmsgtypes.PfcpSessCreate:
@@ -163,40 +163,40 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
 
-		nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransfer))
+		nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.N1N2MessageTransfer)
 		nextTxn.Ctxt = txn.Ctxt
 		smContext := txn.Ctxt.(*smf_context.SMContext)
 		smContext.SMTxnBusLock.Lock()
 		smContext.TxnBus = smContext.TxnBus.AddTxn(nextTxn)
 		smContext.SMTxnBusLock.Unlock()
 		go func(nextTxn *transaction.Transaction) {
-			//Initiate N1N2 Transfer
+			// Initiate N1N2 Transfer
 
-			//nextTxn.StartTxnLifeCycle(SmfTxnFsmHandle)
+			// nextTxn.StartTxnLifeCycle(SmfTxnFsmHandle)
 			<-nextTxn.Status
 		}(nextTxn)
 	}
 
-	//put Success Rsp
+	// put Success Rsp
 	txn.Status <- true
 	return transaction.TxnEventSave, nil
 }
 
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	//Put Failure Rsp
+	// Put Failure Rsp
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
 		if txn.Ctxt != nil && txn.Ctxt.(*smf_context.SMContext).SMContextState == context.SmStatePfcpCreatePending {
-			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreateFailure))
+			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.PfcpSessCreateFailure)
 			nextTxn.Ctxt = txn.Ctxt
 			smContext := txn.Ctxt.(*smf_context.SMContext)
 			smContext.SMTxnBusLock.Lock()
 			smContext.TxnBus = smContext.TxnBus.AddTxn(nextTxn)
 			smContext.SMTxnBusLock.Unlock()
 			go func(nextTxn *transaction.Transaction) {
-				//Initiate N1N2 Transfer
+				// Initiate N1N2 Transfer
 
-				//nextTxn.StartTxnLifeCycle(SmfTxnFsmHandle)
+				// nextTxn.StartTxnLifeCycle(SmfTxnFsmHandle)
 				<-nextTxn.Status
 			}(nextTxn)
 		}
@@ -226,8 +226,8 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextRelease [%s] is not found", txn.CtxtKey)
 
-			//4xx/5xx Error not defined in spec 29502 for Release SM ctxt error
-			//Send Not Found
+			// 4xx/5xx Error not defined in spec 29502 for Release SM ctxt error
+			// Send Not Found
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
@@ -274,15 +274,15 @@ func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, err
 		return transaction.TxnEventExit, nil
 	}
 
-	//Lock txnbus to access
+	// Lock txnbus to access
 	smContext.SMTxnBusLock.Lock()
 	defer smContext.SMTxnBusLock.Unlock()
 
-	//Reset Active Txn
+	// Reset Active Txn
 	smContext.ActiveTxn = nil
 
 	var nextTxn *transaction.Transaction
-	//Active Txn is over, now Pull out head Txn and Run it
+	// Active Txn is over, now Pull out head Txn and Run it
 	if len(smContext.TxnBus) > 0 {
 		nextTxn, smContext.TxnBus = smContext.TxnBus.PopTxn()
 		txn.NextTxn = nextTxn

@@ -228,16 +228,16 @@ linters:
     # - lll
     - godox
     # - gomnd
-    # - goconst
+    - goconst
     # - gocognit
     # - nestif
     # - gomodguard
     # - nakedret
-    # - gci
+    - gci
     - misspell
-    # - gofumpt
+    - gofumpt
     - whitespace
-    # - unconvert
+    - unconvert
     # - predeclared
     # - noctx
     - dogsled

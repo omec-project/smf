@@ -80,8 +80,8 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if smContext.Tunnel != nil {
 				smContext.ChangeState(smf_context.SmStatePfcpModify)
 				smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-				//Send release to UPF
-				//releaseTunnel(smContext)
+				// Send release to UPF
+				// releaseTunnel(smContext)
 				pfcpAction.sendPfcpDelete = true
 			} else {
 				smContext.ChangeState(smf_context.SmStateModify)
@@ -174,7 +174,7 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 						DLPDR.FAR.ApplyAction.Forw = false
 						DLPDR.FAR.ApplyAction.Buff = true
 						DLPDR.FAR.ApplyAction.Nocp = true
-						//Set DL Tunnel info to nil
+						// Set DL Tunnel info to nil
 						if DLPDR.FAR.ForwardingParameters != nil {
 							DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
 						}
@@ -240,8 +240,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 		smContext.HoState = models.HoState_PREPARED
 		response.JsonData.HoState = models.HoState_PREPARED
-		if err :=
-			smf_context.HandleHandoverRequestAcknowledgeTransfer(body.BinaryDataN2SmInformation, smContext); err != nil {
+		if err := smf_context.HandleHandoverRequestAcknowledgeTransfer(body.BinaryDataN2SmInformation, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle HandoverRequestAcknowledgeTransfer failed: %+v", err)
 		}
 
@@ -304,7 +303,7 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.ChangeState(smf_context.SmStatePfcpModify)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
 
-		//releaseTunnel(smContext)
+		// releaseTunnel(smContext)
 		pfcpAction.sendPfcpDelete = true
 	}
 
@@ -479,8 +478,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 		smContext.ChangeState(smf_context.SmStateModify)
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, SMContextState Change State: ", smContext.SMContextState.String())
-		if err :=
-			smf_context.HandlePathSwitchRequestSetupFailedTransfer(body.BinaryDataN2SmInformation, smContext); err != nil {
+		if err := smf_context.HandlePathSwitchRequestSetupFailedTransfer(body.BinaryDataN2SmInformation, smContext); err != nil {
 			smContext.SubPduSessLog.Error()
 		}
 	case models.N2SmInfoType_HANDOVER_REQUIRED:

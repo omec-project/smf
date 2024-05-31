@@ -11,20 +11,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
+	"strconv"
 	"sync"
-
-	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-
-	"strconv"
-
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
-
-	"os"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const (
@@ -51,14 +47,14 @@ func SetupSmfCollection() {
 
 	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
 
-	//UUID table
+	// UUID table
 	mongoapi.ConnectMongo(dbUrl, dbName)
 	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
 		logger.DataRepoLog.Errorf("Create index failed on ref field.")
 	}
 
-	//SEID Table
+	// SEID Table
 	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
 		logger.DataRepoLog.Errorf("Create index failed on TxnId field.")
@@ -162,8 +158,8 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key] = &PFCPSessionContext{}
 		smContext.PFCPContext[key].NodeID = pfcpCtxInDB.NodeID
 		smContext.PFCPContext[key].PDRs = pfcpCtxInDB.PDRs
-		smContext.PFCPContext[key].LocalSEID, _ = strconv.ParseUint(string(pfcpCtxInDB.LocalSEID), 16, 64)
-		smContext.PFCPContext[key].RemoteSEID, _ = strconv.ParseUint(string(pfcpCtxInDB.RemoteSEID), 16, 64)
+		smContext.PFCPContext[key].LocalSEID, _ = strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
+		smContext.PFCPContext[key].RemoteSEID, _ = strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
 	}
 
 	var dataPathInDBIf interface{}
@@ -320,7 +316,6 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 
 	if result != nil {
 		err := json.Unmarshal(mapToByte(result), smContext)
-
 		if err != nil {
 			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
 			return nil

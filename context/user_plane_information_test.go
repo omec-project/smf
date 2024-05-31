@@ -9,12 +9,11 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/stretchr/testify/require"
 )
 
 var configuration = &factory.UserPlaneInformation{

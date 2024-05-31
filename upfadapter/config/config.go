@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2022-present Intel Corporation
 //
 // SPDX-License-Identifier: Apache-2.0
-//
 package config
 
 import (
@@ -10,15 +9,15 @@ import (
 	"os"
 	"sync"
 	"time"
-	"upf-adapter/logger"
 
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
+	"upf-adapter/logger"
 )
 
 type UPFStatus int
 
-const MaxUpfProbeRetryInterval time.Duration = 5 //Seconds
+const MaxUpfProbeRetryInterval time.Duration = 5 // Seconds
 
 var UpfCfg Config
 
@@ -28,7 +27,7 @@ const (
 	AssociatedSetUpSuccess UPFStatus = 2
 )
 
-//UPF structure
+// UPF structure
 type UPNode struct {
 	UpfName     string
 	NodeID      pfcpType.NodeID
@@ -39,7 +38,7 @@ type UPNode struct {
 	UpfLock     sync.RWMutex
 }
 
-//All UPF nodes
+// All UPF nodes
 type Config struct {
 	UpfListLock sync.RWMutex
 	UPFs        map[string]*UPNode
@@ -62,14 +61,17 @@ type PfcpHttpRsp struct {
 
 type PfcpTxnChan chan PfcpHttpRsp
 
-var UpfTxns map[uint32]PfcpTxnChan
-var UpfTxnsMutex = sync.RWMutex{}
+var (
+	UpfTxns      map[uint32]PfcpTxnChan
+	UpfTxnsMutex = sync.RWMutex{}
+)
 
-var UpfAdapterIp net.IP
-var UpfServerStartTime time.Time
+var (
+	UpfAdapterIp       net.IP
+	UpfServerStartTime time.Time
+)
 
 func init() {
-
 	podIpStr := os.Getenv("POD_IP")
 	podIp := net.ParseIP(podIpStr)
 	UpfAdapterIp = podIp.To4()
@@ -79,10 +81,9 @@ func init() {
 	}
 
 	UpfTxns = make(map[uint32]PfcpTxnChan)
-
 }
 
-//BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
+// BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
 func BuildPfcpHeartbeatRequest() (pfcp.HeartbeatRequest, error) {
 	msg := pfcp.HeartbeatRequest{}
 
@@ -141,7 +142,7 @@ func InsertUpfNode(nodeId pfcpType.NodeID) {
 	UpfCfg.UpfListLock.Lock()
 	defer UpfCfg.UpfListLock.Unlock()
 
-	//if UPF is already not added
+	// if UPF is already not added
 	if _, ok := UpfCfg.UPFs[string(nodeId.NodeIdValue)]; !ok {
 
 		upf := UPNode{
@@ -156,7 +157,6 @@ func InsertUpfNode(nodeId pfcpType.NodeID) {
 }
 
 func ActivateUpfNode(nodeId *pfcpType.NodeID) *UPNode {
-
 	logger.CfgLog.Infof("activating upf node [%v]", nodeId)
 	if upf := GetUpfFromNodeId(nodeId); upf != nil {
 		UpfCfg.UpfListLock.Lock()
@@ -200,7 +200,7 @@ func GetUpfPfcpTxn(seq uint32) PfcpTxnChan {
 }
 
 func (upf *UPNode) PreservePfcpAssociationRsp(pfcpRspBody pfcp.PFCPAssociationSetupResponse) {
-	//find the UPF
+	// find the UPF
 	logger.CfgLog.Debugf("storing pfcp association response for upf [%v] ", upf)
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
@@ -208,7 +208,7 @@ func (upf *UPNode) PreservePfcpAssociationRsp(pfcpRspBody pfcp.PFCPAssociationSe
 }
 
 func (upf *UPNode) PreservePfcpHeartBeatRsp(pfcpRspBody pfcp.HeartbeatResponse) {
-	//find the UPF
+	// find the UPF
 	logger.CfgLog.Debugf("storing pfcp heartbeat response for upf [%v] ", upf)
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()

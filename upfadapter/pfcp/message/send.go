@@ -1,22 +1,19 @@
 // SPDX-FileCopyrightText: 2022-present Intel Corporation
 //
 // SPDX-License-Identifier: Apache-2.0
-//
 package message
 
 import (
 	"net"
 	"time"
 
-	"upf-adapter/config"
-	"upf-adapter/logger"
-	"upf-adapter/pfcp/udp"
-
-	"upf-adapter/pfcp/handler"
-
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
+	"upf-adapter/config"
+	"upf-adapter/logger"
+	"upf-adapter/pfcp/handler"
+	"upf-adapter/pfcp/udp"
 )
 
 const MaxPfcpUdpDataSize = 1024
@@ -160,9 +157,8 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, pMsg pfcp.Message)
 	return nil
 }
 
-//Go routine to send hearbeat towards UPFs
+// Go routine to send hearbeat towards UPFs
 func ProbeUpfHearbeatReq() {
-
 	for {
 		time.Sleep(5 * time.Second)
 		for nodeId, upf := range config.UpfCfg.UPFs {
