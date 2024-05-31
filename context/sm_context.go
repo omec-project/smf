@@ -38,6 +38,9 @@ import (
 )
 
 const (
+	CONNECTED               = "Connected"
+	DISCONNECTED            = "Disconnected"
+	IDLE                    = "Idle"
 	PDU_SESS_REL_CMD string = "PDUSessionReleaseCommand"
 )
 
@@ -724,25 +727,25 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {
 	switch state {
 	case SmStateInit:
-		return "Idle", mi.SubsOpAdd
+		return IDLE, mi.SubsOpAdd
 	case SmStateActivePending:
-		return "Idle", mi.SubsOpMod
+		return IDLE, mi.SubsOpMod
 	case SmStateActive:
-		return "Connected", mi.SubsOpMod
+		return CONNECTED, mi.SubsOpMod
 	case SmStateInActivePending:
-		return "Idle", mi.SubsOpMod
+		return IDLE, mi.SubsOpMod
 	case SmStateModify:
-		return "Connected", mi.SubsOpMod
+		return CONNECTED, mi.SubsOpMod
 	case SmStatePfcpCreatePending:
-		return "Idle", mi.SubsOpMod
+		return IDLE, mi.SubsOpMod
 	case SmStatePfcpModify:
-		return "Connected", mi.SubsOpMod
+		return CONNECTED, mi.SubsOpMod
 	case SmStatePfcpRelease:
-		return "Disconnected", mi.SubsOpDel
+		return DISCONNECTED, mi.SubsOpDel
 	case SmStateRelease:
-		return "Disconnected", mi.SubsOpDel
+		return DISCONNECTED, mi.SubsOpDel
 	case SmStateN1N2TransferPending:
-		return "Idle", mi.SubsOpMod
+		return IDLE, mi.SubsOpMod
 	default:
 		return "unknown", mi.SubsOpDel
 	}

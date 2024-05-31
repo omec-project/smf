@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	GNB = "gnb"
+)
+
 func TestUpdateSliceInfo(t *testing.T) {
 	cfg1 := Configuration{}
 	cfg2 := Configuration{}
@@ -329,10 +333,10 @@ func TestCompareGenericSlicesDifferent1(t *testing.T) {
 	if len(addLinks) != 2 {
 		t.Errorf("Expected 2 GenericSlices to be added, but got %d", len(addLinks))
 	}
-	if addLinks[0].A != "gnb" || addLinks[0].B != "upf3" {
+	if addLinks[0].A != GNB || addLinks[0].B != "upf3" {
 		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[0])
 	}
-	if addLinks[1].A != "gnb" || addLinks[1].B != "upf4" {
+	if addLinks[1].A != GNB || addLinks[1].B != "upf4" {
 		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[1])
 	}
 
@@ -345,10 +349,10 @@ func TestCompareGenericSlicesDifferent1(t *testing.T) {
 	if len(delLinks) != 2 {
 		t.Errorf("Expected 2 GenericSlices to be deleted, but got %d", len(delLinks))
 	}
-	if delLinks[0].A != "gnb" || delLinks[0].B != "upf1" {
+	if delLinks[0].A != GNB || delLinks[0].B != "upf1" {
 		t.Errorf("Expected GenericSlice to be deleted, but got %v", delLinks[0])
 	}
-	if delLinks[1].A != "gnb" || delLinks[1].B != "upf2" {
+	if delLinks[1].A != GNB || delLinks[1].B != "upf2" {
 		t.Errorf("Expected GenericSlice to be deleted, but got %v", delLinks[1])
 	}
 }
@@ -371,7 +375,7 @@ func TestCompareGenericSlicesDifferent2(t *testing.T) {
 	if len(addLinks) != 1 {
 		t.Errorf("Expected 2 GenericSlices to be added, but got %d", len(addLinks))
 	}
-	if addLinks[0].A != "gnb" || addLinks[0].B != "upf1" {
+	if addLinks[0].A != GNB || addLinks[0].B != "upf1" {
 		t.Errorf("Expected GenericSlice to be added, but got %v", addLinks[0])
 	}
 

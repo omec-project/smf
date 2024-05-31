@@ -31,6 +31,10 @@ func init() {
 	metrics.SetNfInstanceId(smfContext.NfInstanceID)
 }
 
+const (
+	IPV4 = "IPv4"
+)
+
 var smfContext SMFContext
 
 type DrsmCtxts struct {
@@ -217,7 +221,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.ULCLSupport = configuration.ULCL
 
-	smfContext.SupportedPDUSessionType = "IPv4"
+	smfContext.SupportedPDUSessionType = IPV4
 
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
 
