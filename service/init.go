@@ -21,8 +21,6 @@ import (
 	"github.com/urfave/cli"
 
 	aperLogger "github.com/omec-project/aper/logger"
-	"github.com/omec-project/http2_util"
-	"github.com/omec-project/logger_util"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
@@ -43,6 +41,8 @@ import (
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/util"
+	"github.com/omec-project/util/http2_util"
+	logger_util "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 )

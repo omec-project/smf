@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/util_3gpp"
+	"github.com/omec-project/util/util_3gpp"
 )
 
 const (

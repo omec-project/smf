@@ -19,10 +19,10 @@ import (
 	"time"
 
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
-	"github.com/omec-project/logger_util"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/logger"
+	logger_util "github.com/omec-project/util/logger"
 )
 
 const (
