@@ -42,7 +42,7 @@ type eventHandler func(event SmEvent, eventData *SmEventData) (smf_context.SMCon
 var SmfFsmHandler [smf_context.SmStateMax][SmEventMax]eventHandler
 
 func init() {
-	//Initilise with default invalid handler
+	// Initilise with default invalid handler
 	for state := smf_context.SmStateInit; state < smf_context.SmStateMax; state++ {
 		for event := SmEventInvalid; event < SmEventMax; event++ {
 			SmfFsmHandler[state][event] = EmptyEventHandler
@@ -146,7 +146,7 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 }
 
 func HandleStateActiveEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
-	//Context Replacement
+	// Context Replacement
 	return smf_context.SmStateActive, nil
 }
 
@@ -184,6 +184,7 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	}
 	return smf_context.SmStateInit, nil
 }
+
 func HandleStateActiveEventPolicyUpdateNotify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)

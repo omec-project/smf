@@ -18,7 +18,8 @@ var flowDesc = []string{
 	"permit out ip from 1.1.1.1/24 1000 to 2.2.2.2/24 2000",
 	"permit out ip from any 1000 to 2.2.2.2/24 2000",
 	"permit out ip from any 1000 to assigned 2000",
-	"permit out 17 from 1.1.1.1/24 1000-1200 to 2.2.2.2/24 2000-2500"}
+	"permit out 17 from 1.1.1.1/24 1000-1200 to 2.2.2.2/24 2000-2500",
+}
 
 func TestDecodeFlowDescToIPFilters(t *testing.T) {
 	for i, flow := range flowDesc {
@@ -39,10 +40,10 @@ func TestGetPfContent(t *testing.T) {
 }
 
 func TestBuildQosRules(t *testing.T) {
-	//make SM Policy Decision
+	// make SM Policy Decision
 	smPolicyDecision := &models.SmPolicyDecision{}
 
-	//make Sm ctxt Policy Data
+	// make Sm ctxt Policy Data
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 
 	smPolicyDecision.PccRules = makeSamplePccRules()
@@ -59,12 +60,14 @@ func TestBuildQosRules(t *testing.T) {
 		fmt.Printf("Marshal Error : %v", err.Error())
 	} else {
 		fmt.Printf("Encoded Bytes: %v", bytes)
-		expectedBytes := []byte{0x1, 0x0, 0x37, 0x32, 0x31, 0x18, 0x10,
+		expectedBytes := []byte{
+			0x1, 0x0, 0x37, 0x32, 0x31, 0x18, 0x10,
 			0x1, 0x1, 0x1, 0x1, 0xff, 0xff, 0xff, 0xff, 0x50, 0x3, 0xe8,
 			0x11, 0x2, 0x2, 0x2, 0x2, 0xff, 0xff, 0xff, 0xff, 0x40, 0x7,
 			0xd0, 0x32, 0x18, 0x10, 0x3, 0x3, 0x3, 0x3, 0xff, 0xff, 0xff,
 			0xff, 0x50, 0xb, 0xb8, 0x11, 0x4, 0x4, 0x4, 0x4, 0xff, 0xff,
-			0xff, 0xff, 0x40, 0xf, 0xa0, 0xc8, 0x5}
+			0xff, 0xff, 0x40, 0xf, 0xa0, 0xc8, 0x5,
+		}
 		require.Equal(t, expectedBytes, bytes)
 	}
 }

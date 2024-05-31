@@ -50,9 +50,9 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
-	<-txn.Status //wait for txn to complete at SMF
+	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
-	//HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
+	// HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])

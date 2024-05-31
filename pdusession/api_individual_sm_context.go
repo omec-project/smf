@@ -71,7 +71,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 
-	//producer.HandlePDUSessionSMContextRelease(
+	// producer.HandlePDUSessionSMContextRelease(
 	//	smContextRef, req.Body.(models.ReleaseSmContextRequest))
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusNoContent), "")
@@ -125,7 +125,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
-	//HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
+	// HTTPResponse := producer.HandlePDUSessionSMContextUpdate(
 	//	smContextRef, req.Body.(models.UpdateSmContextRequest))
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")

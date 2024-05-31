@@ -13,8 +13,7 @@ import (
 )
 
 func Dispatch(msg *pfcpUdp.Message) {
-
-	//TODO: Add return status to all handlers
+	// TODO: Add return status to all handlers
 	switch msg.PfcpMessage.Header.MessageType {
 	/*
 		case pfcp.PFCP_HEARTBEAT_REQUEST:

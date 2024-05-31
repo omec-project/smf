@@ -36,7 +36,7 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "smf"
 	fmt.Print(app.Name, "\n")
-	//appLog.Infoln("SMF version: ", version.GetVersion())
+	// appLog.Infoln("SMF version: ", version.GetVersion())
 	app.Usage = "-cfg common configuration file -smfcfg smf_configuration_file"
 	app.Action = action
 	app.Flags = SMF.GetCliCmd()

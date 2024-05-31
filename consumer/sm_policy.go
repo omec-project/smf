@@ -69,48 +69,48 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 }
 
 func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
-	//TODO
+	// TODO
 }
 
 func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
 	smPolicyDelData := models.SmPolicyDeleteData{}
 
-	//Populate Policy delete data
-	//Network Id
+	// Populate Policy delete data
+	// Network Id
 	smPolicyDelData.ServingNetwork = &models.NetworkId{
 		Mcc: smContext.ServingNetwork.Mcc,
 		Mnc: smContext.ServingNetwork.Mnc,
 	}
 
-	//User location info
+	// User location info
 	if smDelReq.JsonData.UeLocation != nil {
 		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.UeLocation
 	} else if smDelReq.JsonData.AddUeLocation != nil {
 		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.AddUeLocation
 	}
 
-	//UE Time Zone
+	// UE Time Zone
 	if smDelReq.JsonData.UeTimeZone != "" {
 		smPolicyDelData.UeTimeZone = smDelReq.JsonData.UeTimeZone
 	}
 
-	//RAN/NAS Release Cause
+	// RAN/NAS Release Cause
 	ranNasRelCause := models.RanNasRelCause{}
 	if smDelReq.JsonData.NgApCause != nil {
 		ranNasRelCause.NgApCause = smDelReq.JsonData.NgApCause
 	}
-	//MM cause
+	// MM cause
 	ranNasRelCause.Var5gMmCause = smDelReq.JsonData.Var5gMmCauseValue
 
-	//SM Cause ?
-	//ranNasRelCause.Var5gSmCause =
+	// SM Cause ?
+	// ranNasRelCause.Var5gSmCause =
 
 	smPolicyDelData.RanNasRelCauses = []models.RanNasRelCause{ranNasRelCause}
 
-	//Policy Id (supi-pduSessId)
+	// Policy Id (supi-pduSessId)
 	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)
 
-	//Send to  PCF
+	// Send to  PCF
 	if httpRsp, err := smContext.SMPolicyClient.
 		DefaultApi.SmPoliciesSmPolicyIdDeletePost(context.Background(), smPolicyID, smPolicyDelData); err != nil {
 		logger.ConsumerLog.Warnf("smf policy delete failed, [%v] ", err.Error())
@@ -121,8 +121,8 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 }
 
 func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
-	//Validate just presence of important IEs as of now
-	//Sess Rules
+	// Validate just presence of important IEs as of now
+	// Sess Rules
 	for name, rule := range smPolicy.SessRules {
 		if rule.AuthSessAmbr == nil {
 			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)

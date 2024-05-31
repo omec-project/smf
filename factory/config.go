@@ -241,37 +241,37 @@ func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 		rsp := <-commChannel
 		logger.GrpcLog.Infof("received updateConfig in the smf app: %+v \n", rsp)
 
-		//update slice info
+		// update slice info
 		cfgNew := Configuration{}
 		if err := cfgNew.parseRocConfig(rsp); err != nil {
 			logger.GrpcLog.Errorf("config update error: %v \n", err.Error())
 			continue
 		}
 
-		//updates UpdatedSmfConfig struct to be consumed by SMF config update routine.
+		// updates UpdatedSmfConfig struct to be consumed by SMF config update routine.
 		compareAndProcessConfigs(c.Configuration, &cfgNew)
 
-		//Update SMF's config copy for future compare
-		//Acquire Lock before update as SMF main go-routine might be
-		//still processing initial config and we don't want to update it in middle
+		// Update SMF's config copy for future compare
+		// Acquire Lock before update as SMF main go-routine might be
+		// still processing initial config and we don't want to update it in middle
 		SmfConfigSyncLock.Lock()
 		c.Configuration.SNssaiInfo = cfgNew.SNssaiInfo
 		c.Configuration.UserPlaneInformation = cfgNew.UserPlaneInformation
 		SmfConfigSyncLock.Unlock()
-		//Send trigger to update SMF Context
+		// Send trigger to update SMF Context
 		ConfigPodTrigger <- true
 	}
 }
 
 // Update level-1 Configuration(Not actual SMF config structure used by SMF)
 func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
-	//Reset previous SNSSAI structure
+	// Reset previous SNSSAI structure
 	if c.SNssaiInfo != nil {
 		c.SNssaiInfo = nil
 	}
 	c.SNssaiInfo = make([]SnssaiInfoItem, 0)
 
-	//Reset existing UP nodes and Links
+	// Reset existing UP nodes and Links
 	if c.UserPlaneInformation.UPNodes != nil {
 		c.UserPlaneInformation.UPNodes = nil
 	}
@@ -284,8 +284,8 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 
 	c.EnterpriseList = make(map[string]string)
 
-	//should be updated to be received from webui.
-	//currently adding port info in webui causes crash.
+	// should be updated to be received from webui.
+	// currently adding port info in webui causes crash.
 	pfcpPortStr := os.Getenv("PFCP_PORT_UPF")
 	pfcpPortVal := pfcpUdp.PFCP_PORT
 	if pfcpPortStr != "" {
@@ -296,28 +296,28 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		}
 	}
 
-	//Iterate through all NS received
+	// Iterate through all NS received
 	for _, ns := range rsp.NetworkSlice {
-		//make new SNSSAI Info structure
+		// make new SNSSAI Info structure
 		var sNssaiInfoItem SnssaiInfoItem
 
-		//make SNSSAI
+		// make SNSSAI
 		var sNssai models.Snssai
 		sNssai.Sd = ns.Nssai.Sd
 		numSst, _ := strconv.Atoi(ns.Nssai.Sst)
 		sNssai.Sst = int32(numSst)
 		sNssaiInfoItem.SNssai = &sNssai
 
-		//Add PLMN Id Info
+		// Add PLMN Id Info
 		if ns.Site.Plmn != nil {
 			sNssaiInfoItem.PlmnId.Mcc = ns.Site.Plmn.Mcc
 			sNssaiInfoItem.PlmnId.Mnc = ns.Site.Plmn.Mnc
 		}
 
-		//Populate enterprise name
+		// Populate enterprise name
 		c.EnterpriseList[ns.Nssai.Sst+ns.Nssai.Sd] = ns.Name
 
-		//make DNN Info structure
+		// make DNN Info structure
 		sNssaiInfoItem.DnnInfos = make([]SnssaiDnnInfoItem, 0)
 		for _, devGrp := range ns.DeviceGroup {
 			var dnnInfo SnssaiDnnInfoItem
@@ -326,17 +326,17 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 			dnnInfo.UESubnet = devGrp.IpDomainDetails.UePool
 			dnnInfo.MTU = uint16(devGrp.IpDomainDetails.Mtu)
 
-			//update to Slice structure
+			// update to Slice structure
 			sNssaiInfoItem.DnnInfos = append(sNssaiInfoItem.DnnInfos, dnnInfo)
 		}
 
-		//Update to SMF config structure
+		// Update to SMF config structure
 		c.SNssaiInfo = append(c.SNssaiInfo, sNssaiInfoItem)
 
-		//Check if port number is received as part of UpfName.
-		//If yes, then use it as port number. else use common port number
-		//from environment variable or if that also isn't available
-		//then use default PFCP port 8805.
+		// Check if port number is received as part of UpfName.
+		// If yes, then use it as port number. else use common port number
+		// from environment variable or if that also isn't available
+		// then use default PFCP port 8805.
 		portVal := uint16(pfcpPortVal)
 		portStr := ""
 		nodeStr := ns.Site.Upf.UpfName
@@ -355,40 +355,46 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		}
 
 		ns.Site.Upf.UpfName = nodeStr
-		//iterate through UPFs config received
-		upf := UPNode{Type: "UPF",
+		// iterate through UPFs config received
+		upf := UPNode{
+			Type:                 "UPF",
 			NodeID:               ns.Site.Upf.UpfName,
 			Port:                 portVal,
 			SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
-			InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0)}
+			InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+		}
 
-		snsUpfInfoItem := models.SnssaiUpfInfoItem{SNssai: &sNssai,
-			DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0)}
+		snsUpfInfoItem := models.SnssaiUpfInfoItem{
+			SNssai:         &sNssai,
+			DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+		}
 
-		//Popoulate DNN names per UPF slice Info
+		// Popoulate DNN names per UPF slice Info
 		for _, devGrp := range ns.DeviceGroup {
-			//DNN Info in UPF per Slice
+			// DNN Info in UPF per Slice
 			var dnnUpfInfo models.DnnUpfInfoItem
 			dnnUpfInfo.Dnn = devGrp.IpDomainDetails.DnnName
 			snsUpfInfoItem.DnnUpfInfoList = append(snsUpfInfoItem.DnnUpfInfoList, dnnUpfInfo)
 
-			//Populate UPF Interface Info and DNN info in UPF per Interface
-			intfUpfInfoItem := InterfaceUpfInfoItem{InterfaceType: models.UpInterfaceType_N3,
-				Endpoints: make([]string, 0), NetworkInstance: devGrp.IpDomainDetails.DnnName}
+			// Populate UPF Interface Info and DNN info in UPF per Interface
+			intfUpfInfoItem := InterfaceUpfInfoItem{
+				InterfaceType: models.UpInterfaceType_N3,
+				Endpoints:     make([]string, 0), NetworkInstance: devGrp.IpDomainDetails.DnnName,
+			}
 			intfUpfInfoItem.Endpoints = append(intfUpfInfoItem.Endpoints, ns.Site.Upf.UpfName)
 			upf.InterfaceUpfInfoList = append(upf.InterfaceUpfInfoList, intfUpfInfoItem)
 		}
 		upf.SNssaiInfos = append(upf.SNssaiInfos, snsUpfInfoItem)
 
-		//Update UPF to SMF Config Structure
+		// Update UPF to SMF Config Structure
 		c.UserPlaneInformation.UPNodes[ns.Site.Upf.UpfName] = upf
 
-		//Update gNB links to UPF(gNB <-> N3_UPF)
+		// Update gNB links to UPF(gNB <-> N3_UPF)
 		for _, gNb := range ns.Site.Gnb {
 			upLink := UPLink{A: gNb.Name, B: ns.Site.Upf.UpfName}
 			c.UserPlaneInformation.Links = append(c.UserPlaneInformation.Links, upLink)
 
-			//insert gNb to SMF Config Structure
+			// insert gNb to SMF Config Structure
 			gNbNode := UPNode{Type: "AN", NodeID: gNb.Name}
 			c.UserPlaneInformation.UPNodes[gNb.Name] = gNbNode
 		}
@@ -398,26 +404,26 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 }
 
 func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
-	//compare Network slices
+	// compare Network slices
 	match, addSlices, modSlices, delSlices := compareNetworkSlices(smfCfg.SNssaiInfo, newCfg.SNssaiInfo)
 
 	if !match {
 		logger.CfgLog.Infof("changes in network slice config")
 
 		if len(delSlices) > 0 {
-			//delete slices from SMF config
+			// delete slices from SMF config
 			logger.CfgLog.Infof("network slices to be deleted : %+v", PrettyPrintNetworkSlices(delSlices))
 			UpdatedSmfConfig.DelSNssaiInfo = &delSlices
 		}
 
 		if len(addSlices) > 0 {
-			//insert slices to SMF config
+			// insert slices to SMF config
 			logger.CfgLog.Infof("network slices to be added : %+v", PrettyPrintNetworkSlices(addSlices))
 			UpdatedSmfConfig.AddSNssaiInfo = &addSlices
 		}
 
 		if len(modSlices) > 0 {
-			//Modify slices to SMF config
+			// Modify slices to SMF config
 			logger.CfgLog.Infof("network slices to be modified : %+v", PrettyPrintNetworkSlices(modSlices))
 			UpdatedSmfConfig.ModSNssaiInfo = &modSlices
 		}
@@ -425,26 +431,26 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 		logger.CfgLog.Infoln("no changes in network slice config")
 	}
 
-	//compare Userplane
+	// compare Userplane
 	match, addUPNodes, modUPNodes, delUPNodes := compareUPNodesConfigs(smfCfg.UserPlaneInformation.UPNodes, newCfg.UserPlaneInformation.UPNodes)
 
 	if !match {
 		logger.CfgLog.Infof("changes in user plane config")
 
 		if len(delUPNodes) > 0 {
-			//delete slices from SMF config
+			// delete slices from SMF config
 			logger.CfgLog.Infof("UP nodes to be deleted : %+v", PrettyPrintUPNodes(delUPNodes))
 			UpdatedSmfConfig.DelUPNodes = &delUPNodes
 		}
 
 		if len(addUPNodes) > 0 {
-			//insert slices to SMF config
+			// insert slices to SMF config
 			logger.CfgLog.Infof("UP nodes to be added : %+v", PrettyPrintUPNodes(addUPNodes))
 			UpdatedSmfConfig.AddUPNodes = &addUPNodes
 		}
 
 		if len(modUPNodes) > 0 {
-			//Modify slices to SMF config
+			// Modify slices to SMF config
 			logger.CfgLog.Infof("UP nodes to be modified : %+v", PrettyPrintUPNodes(modUPNodes))
 			UpdatedSmfConfig.ModUPNodes = &modUPNodes
 		}
@@ -452,7 +458,7 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 		logger.CfgLog.Infoln("no change in user plane config")
 	}
 
-	//compare Links
+	// compare Links
 	match, addLinks, delLinks := compareGenericSlices(smfCfg.UserPlaneInformation.Links,
 		newCfg.UserPlaneInformation.Links, compareUPLinks)
 	if !match {
@@ -471,7 +477,7 @@ func compareAndProcessConfigs(smfCfg, newCfg *Configuration) {
 		logger.CfgLog.Infoln("no change in UP nodes links config")
 	}
 
-	//Enterprise Name
+	// Enterprise Name
 	UpdatedSmfConfig.EnterpriseList = &newCfg.EnterpriseList
 }
 
@@ -496,7 +502,7 @@ func compareUPNode(u1, u2 UPNode) bool {
 		if match, _, _, _ := compareUPNetworkSlices(u1.SNssaiInfos, u2.SNssaiInfos); !match {
 			return false
 		}
-		//Todo: match InterfaceUpfInfoList
+		// Todo: match InterfaceUpfInfoList
 		return true
 	}
 
@@ -554,7 +560,7 @@ func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod
 				logger.CfgLog.Debugf("comparing slices [existing sd/sst:%+v/%+v][received sd/sst:%+v/%+v]", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
 				if s1.SNssai.Sd == s2.SNssai.Sd && s1.SNssai.Sst == s2.SNssai.Sst {
 					if matching := compareNetworkSliceInstance(s1, s2); !matching && i == 0 {
-						//only keep updated slice
+						// only keep updated slice
 						mod = append(mod, s2)
 						match = false
 					}
@@ -592,7 +598,7 @@ func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bo
 				logger.CfgLog.Debugf("comparing up slices[existing sd/sst: %+v/%+v][received sd/sst: %+v/%+v]", s1.SNssai.Sd, s1.SNssai.Sst, s2.SNssai.Sd, s2.SNssai.Sst)
 				if s1.SNssai.Sd == s2.SNssai.Sd && s1.SNssai.Sst == s2.SNssai.Sst {
 					if matching, _, _ := compareGenericSlices(s1.DnnUpfInfoList, s2.DnnUpfInfoList, compareUpfDnn); !matching && i == 0 {
-						//only keep updated slice
+						// only keep updated slice
 						mod = append(mod, s2)
 						match = false
 					}

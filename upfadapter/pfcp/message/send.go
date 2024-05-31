@@ -159,7 +159,6 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, pMsg pfcp.Message)
 
 // Go routine to send hearbeat towards UPFs
 func ProbeUpfHearbeatReq() {
-
 	for {
 		time.Sleep(5 * time.Second)
 		for nodeId, upf := range config.UpfCfg.UPFs {

@@ -19,8 +19,10 @@ import (
 
 var Server *pfcpUdp.PfcpServer
 
-var ServerStartTime time.Time
-var CPNodeID *pfcpType.NodeID
+var (
+	ServerStartTime time.Time
+	CPNodeID        *pfcpType.NodeID
+)
 
 func init() {
 	CPNodeID = &pfcpType.NodeID{NodeIdType: uint8(0), NodeIdValue: []byte(config.UpfAdapterIp)}
@@ -38,7 +40,6 @@ func SendPfcp(msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) error 
 }
 
 func Run(Dispatch func(*pfcpUdp.Message)) {
-
 	Server = pfcpUdp.NewPfcpServer(CPNodeID.ResolveNodeIdToIp().String())
 
 	err := Server.Listen()

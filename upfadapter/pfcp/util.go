@@ -16,7 +16,6 @@ import (
 )
 
 func JsonBodyToPfcpAssocReq(body interface{}) pfcp.PFCPAssociationSetupRequest {
-
 	jsonString, _ := json.Marshal(body)
 
 	s := pfcp.PFCPAssociationSetupRequest{}
@@ -26,7 +25,6 @@ func JsonBodyToPfcpAssocReq(body interface{}) pfcp.PFCPAssociationSetupRequest {
 }
 
 func JsonBodyToPfcpHeartbeatReq(body interface{}) pfcp.HeartbeatRequest {
-
 	jsonString, _ := json.Marshal(body)
 
 	s := pfcp.HeartbeatRequest{}
@@ -36,7 +34,6 @@ func JsonBodyToPfcpHeartbeatReq(body interface{}) pfcp.HeartbeatRequest {
 }
 
 func JsonBodyToPfcpSessEstReq(body interface{}) pfcp.PFCPSessionEstablishmentRequest {
-
 	jsonString, _ := json.Marshal(body)
 
 	s := pfcp.PFCPSessionEstablishmentRequest{}
@@ -46,7 +43,6 @@ func JsonBodyToPfcpSessEstReq(body interface{}) pfcp.PFCPSessionEstablishmentReq
 }
 
 func JsonBodyToPfcpSessModReq(body interface{}) pfcp.PFCPSessionModificationRequest {
-
 	jsonString, _ := json.Marshal(body)
 
 	s := pfcp.PFCPSessionModificationRequest{}
@@ -56,7 +52,6 @@ func JsonBodyToPfcpSessModReq(body interface{}) pfcp.PFCPSessionModificationRequ
 }
 
 func JsonBodyToPfcpSessDelReq(body interface{}) pfcp.PFCPSessionDeletionRequest {
-
 	jsonString, _ := json.Marshal(body)
 
 	s := pfcp.PFCPSessionDeletionRequest{}
@@ -66,20 +61,19 @@ func JsonBodyToPfcpSessDelReq(body interface{}) pfcp.PFCPSessionDeletionRequest 
 }
 
 func ForwardPfcpMsgToUpf(udpPodMsg config.UdpPodPfcpMsg) ([]byte, error) {
-
 	pMsg := udpPodMsg.Msg
 	nodeId := udpPodMsg.UpNodeID
 	pfcpTxnChan := make(config.PfcpTxnChan)
 	var err error
 
-	//identify msg type
+	// identify msg type
 	switch pMsg.Header.MessageType {
 	case pfcp.PFCP_ASSOCIATION_SETUP_REQUEST:
-		//if UPF is already associated then send Asso rsp
+		// if UPF is already associated then send Asso rsp
 
 		if config.IsUpfAssociated(udpPodMsg.UpNodeID) {
 			logger.AppLog.Debug("upf[%v] already associated", udpPodMsg.UpNodeID)
-			//form and send Assoc rsp
+			// form and send Assoc rsp
 			pfcpRsp, _ := handler.BuildPfcpAssociationResponse(&udpPodMsg.UpNodeID, pMsg.Header.SequenceNumber)
 			pRspJson, _ := json.Marshal(pfcpRsp)
 
@@ -88,15 +82,15 @@ func ForwardPfcpMsgToUpf(udpPodMsg config.UdpPodPfcpMsg) ([]byte, error) {
 
 		config.InsertUpfNode(udpPodMsg.UpNodeID)
 
-		//store txn in seq:chan map
+		// store txn in seq:chan map
 		s := JsonBodyToPfcpAssocReq(pMsg.Body)
 
-		//replace smf time-stamp with UPF-Adapters timestamp
+		// replace smf time-stamp with UPF-Adapters timestamp
 		s.RecoveryTimeStamp.RecoveryTimeStamp = config.UpfServerStartTime
 
 		logger.AppLog.Debugf("association request, existing node id[%v], replaced by [%v]", s.NodeID, config.UpfAdapterIp)
 
-		//replace SMF NodeId with of upf-adapter's one
+		// replace SMF NodeId with of upf-adapter's one
 		s.NodeID = &pfcpType.NodeID{NodeIdType: pfcpType.NodeIdTypeIpv4Address, NodeIdValue: config.UpfAdapterIp}
 
 		pMsg.Body = s
@@ -117,35 +111,35 @@ func ForwardPfcpMsgToUpf(udpPodMsg config.UdpPodPfcpMsg) ([]byte, error) {
 		*/
 		s := JsonBodyToPfcpHeartbeatReq(pMsg.Body)
 
-		//replace smf time-stamp with UPF-Adapters timestamp
+		// replace smf time-stamp with UPF-Adapters timestamp
 		s.RecoveryTimeStamp.RecoveryTimeStamp = config.UpfServerStartTime
 
-		//store txn in seq:chan map
+		// store txn in seq:chan map
 		config.InsertUpfPfcpTxn(pMsg.Header.SequenceNumber, pfcpTxnChan)
 		pMsg.Body = s
 		err = message.SendHeartbeatRequest(nodeId, pMsg)
 	case pfcp.PFCP_SESSION_ESTABLISHMENT_REQUEST:
 		s := JsonBodyToPfcpSessEstReq(pMsg.Body)
-		//replace SMF NodeId with of upf-adapter's one
+		// replace SMF NodeId with of upf-adapter's one
 		s.NodeID = &pfcpType.NodeID{NodeIdType: pfcpType.NodeIdTypeIpv4Address, NodeIdValue: config.UpfAdapterIp}
-		//Replace SMF FSEID v4 Addr with UPF Adapter's IP
+		// Replace SMF FSEID v4 Addr with UPF Adapter's IP
 		s.CPFSEID.Ipv4Address = config.UpfAdapterIp
 		pMsg.Body = s
-		//store txn in seq:chan map
+		// store txn in seq:chan map
 		config.InsertUpfPfcpTxn(pMsg.Header.SequenceNumber, pfcpTxnChan)
 
 		err = message.SendPfcpSessionEstablishmentRequest(nodeId, pMsg)
 	case pfcp.PFCP_SESSION_MODIFICATION_REQUEST:
 		s := JsonBodyToPfcpSessModReq(pMsg.Body)
 
-		//store txn in seq:chan map
+		// store txn in seq:chan map
 		config.InsertUpfPfcpTxn(pMsg.Header.SequenceNumber, pfcpTxnChan)
 		pMsg.Body = s
 		err = message.SendPfcpSessionModificationRequest(nodeId, pMsg)
 	case pfcp.PFCP_SESSION_DELETION_REQUEST:
 		s := JsonBodyToPfcpSessDelReq(pMsg.Body)
 
-		//store txn in seq:chan map
+		// store txn in seq:chan map
 		config.InsertUpfPfcpTxn(pMsg.Header.SequenceNumber, pfcpTxnChan)
 		pMsg.Body = s
 		message.SendPfcpSessionDeletionRequest(nodeId, pMsg)
@@ -157,7 +151,7 @@ func ForwardPfcpMsgToUpf(udpPodMsg config.UdpPodPfcpMsg) ([]byte, error) {
 		return nil, err
 	}
 
-	//wait for response from UPF
+	// wait for response from UPF
 	pfcpRsp := <-pfcpTxnChan
 
 	return pfcpRsp.Rsp, pfcpRsp.Err

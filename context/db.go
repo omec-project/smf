@@ -47,14 +47,14 @@ func SetupSmfCollection() {
 
 	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
 
-	//UUID table
+	// UUID table
 	mongoapi.ConnectMongo(dbUrl, dbName)
 	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
 		logger.DataRepoLog.Errorf("Create index failed on ref field.")
 	}
 
-	//SEID Table
+	// SEID Table
 	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
 		logger.DataRepoLog.Errorf("Create index failed on TxnId field.")
@@ -316,7 +316,6 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 
 	if result != nil {
 		err := json.Unmarshal(mapToByte(result), smContext)
-
 		if err != nil {
 			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
 			return nil

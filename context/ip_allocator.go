@@ -78,7 +78,7 @@ func IPAddrOffset(in, base net.IP) int {
 
 // Allocate will allocate the IP address and returns it
 func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
-	//check if static IP already reserved for this IMSI
+	// check if static IP already reserved for this IMSI
 	if a.g.staticIps != nil {
 		staticIps := *a.g.staticIps
 		if ipStr := staticIps[imsi]; ipStr != "" {
@@ -106,7 +106,7 @@ func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
 	a.g.staticIps = ips
 	for _, ipStr := range *ips {
 		if ip := net.ParseIP(ipStr).To4(); ip != nil {
-			//block static IPs in pool to avoid dynamic allocation
+			// block static IPs in pool to avoid dynamic allocation
 			a.BlockIp(ip)
 		}
 	}
@@ -118,7 +118,7 @@ func (a *IPAllocator) BlockIp(ip net.IP) {
 }
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
-	//Don't release static IPs
+	// Don't release static IPs
 	if a.g.staticIps != nil {
 		staticIps := *a.g.staticIps
 		if ipStr := staticIps[imsi]; ipStr != "" {
@@ -131,7 +131,7 @@ func (a *IPAllocator) Release(imsi string, ip net.IP) {
 }
 
 type _IDPool struct {
-	staticIps *map[string]string //map of [imsi]ip
+	staticIps *map[string]string // map of [imsi]ip
 	isUsed    map[int64]bool
 	minValue  int64
 	maxValue  int64

@@ -17,7 +17,7 @@ import (
 
 type UPFStatus int
 
-const MaxUpfProbeRetryInterval time.Duration = 5 //Seconds
+const MaxUpfProbeRetryInterval time.Duration = 5 // Seconds
 
 var UpfCfg Config
 
@@ -61,14 +61,17 @@ type PfcpHttpRsp struct {
 
 type PfcpTxnChan chan PfcpHttpRsp
 
-var UpfTxns map[uint32]PfcpTxnChan
-var UpfTxnsMutex = sync.RWMutex{}
+var (
+	UpfTxns      map[uint32]PfcpTxnChan
+	UpfTxnsMutex = sync.RWMutex{}
+)
 
-var UpfAdapterIp net.IP
-var UpfServerStartTime time.Time
+var (
+	UpfAdapterIp       net.IP
+	UpfServerStartTime time.Time
+)
 
 func init() {
-
 	podIpStr := os.Getenv("POD_IP")
 	podIp := net.ParseIP(podIpStr)
 	UpfAdapterIp = podIp.To4()
@@ -78,7 +81,6 @@ func init() {
 	}
 
 	UpfTxns = make(map[uint32]PfcpTxnChan)
-
 }
 
 // BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
@@ -140,7 +142,7 @@ func InsertUpfNode(nodeId pfcpType.NodeID) {
 	UpfCfg.UpfListLock.Lock()
 	defer UpfCfg.UpfListLock.Unlock()
 
-	//if UPF is already not added
+	// if UPF is already not added
 	if _, ok := UpfCfg.UPFs[string(nodeId.NodeIdValue)]; !ok {
 
 		upf := UPNode{
@@ -155,7 +157,6 @@ func InsertUpfNode(nodeId pfcpType.NodeID) {
 }
 
 func ActivateUpfNode(nodeId *pfcpType.NodeID) *UPNode {
-
 	logger.CfgLog.Infof("activating upf node [%v]", nodeId)
 	if upf := GetUpfFromNodeId(nodeId); upf != nil {
 		UpfCfg.UpfListLock.Lock()
@@ -199,7 +200,7 @@ func GetUpfPfcpTxn(seq uint32) PfcpTxnChan {
 }
 
 func (upf *UPNode) PreservePfcpAssociationRsp(pfcpRspBody pfcp.PFCPAssociationSetupResponse) {
-	//find the UPF
+	// find the UPF
 	logger.CfgLog.Debugf("storing pfcp association response for upf [%v] ", upf)
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
@@ -207,7 +208,7 @@ func (upf *UPNode) PreservePfcpAssociationRsp(pfcpRspBody pfcp.PFCPAssociationSe
 }
 
 func (upf *UPNode) PreservePfcpHeartBeatRsp(pfcpRspBody pfcp.HeartbeatResponse) {
-	//find the UPF
+	// find the UPF
 	logger.CfgLog.Debugf("storing pfcp heartbeat response for upf [%v] ", upf)
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()

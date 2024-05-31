@@ -18,7 +18,6 @@ import (
 
 // Hnadler for SMF initiated msgs
 func handler(w http.ResponseWriter, req *http.Request) {
-
 	reqBody, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		logger.AppLog.Errorf("server: could not read request body: %s\n", err)
@@ -52,5 +51,4 @@ func init() {
 func main() {
 	http.HandleFunc("/", handler)
 	http.ListenAndServe(":8090", nil)
-
 }
