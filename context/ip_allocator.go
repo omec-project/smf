@@ -94,7 +94,7 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 			smfCountStr = "1"
 		}
 		smfCount, _ := strconv.Atoi(smfCountStr)
-		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(int(smfCount)-1)*5000)
+		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(smfCount-1)*5000)
 		fmt.Printf("unique id - ip %v \n", ip)
 		fmt.Printf("unique id - offset %v \n", offset)
 		fmt.Printf("unique id - smfCount %v \n", smfCount)

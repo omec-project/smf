@@ -713,7 +713,7 @@ func SendPfcpMsgToAdapter(upNodeID pfcpType.NodeID, msg pfcp.Message, addr *net.
 	// change the IP here
 	logger.PfcpLog.Debugf("send to http://upf-adapter:%d\n", upfAdpPort)
 	requestURL := fmt.Sprintf("http://upf-adapter:%d", upfAdpPort)
-	jsonBody := []byte(udpPodMsgJson)
+	jsonBody := udpPodMsgJson
 
 	bodyReader := bytes.NewReader(jsonBody)
 	req, err := http.NewRequest(http.MethodPost, requestURL, bodyReader)

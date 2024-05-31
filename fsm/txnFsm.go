@@ -163,7 +163,7 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
 
-		nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransfer))
+		nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.N1N2MessageTransfer)
 		nextTxn.Ctxt = txn.Ctxt
 		smContext := txn.Ctxt.(*smf_context.SMContext)
 		smContext.SMTxnBusLock.Lock()
@@ -187,7 +187,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
 		if txn.Ctxt != nil && txn.Ctxt.(*smf_context.SMContext).SMContextState == context.SmStatePfcpCreatePending {
-			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreateFailure))
+			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.PfcpSessCreateFailure)
 			nextTxn.Ctxt = txn.Ctxt
 			smContext := txn.Ctxt.(*smf_context.SMContext)
 			smContext.SMTxnBusLock.Lock()

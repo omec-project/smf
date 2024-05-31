@@ -158,8 +158,8 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key] = &PFCPSessionContext{}
 		smContext.PFCPContext[key].NodeID = pfcpCtxInDB.NodeID
 		smContext.PFCPContext[key].PDRs = pfcpCtxInDB.PDRs
-		smContext.PFCPContext[key].LocalSEID, _ = strconv.ParseUint(string(pfcpCtxInDB.LocalSEID), 16, 64)
-		smContext.PFCPContext[key].RemoteSEID, _ = strconv.ParseUint(string(pfcpCtxInDB.RemoteSEID), 16, 64)
+		smContext.PFCPContext[key].LocalSEID, _ = strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
+		smContext.PFCPContext[key].RemoteSEID, _ = strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
 	}
 
 	var dataPathInDBIf interface{}

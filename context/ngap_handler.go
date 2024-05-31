@@ -115,7 +115,7 @@ func HandlePathSwitchRequestTransfer(b []byte, ctx *SMContext) error {
 				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
-				dlOuterHeaderCreation.Teid = uint32(teid)
+				dlOuterHeaderCreation.Teid = teid
 				dlOuterHeaderCreation.Ipv4Address = gtpTunnel.TransportLayerAddress.Value.Bytes
 				DLPDR.FAR.State = RULE_UPDATE
 				DLPDR.FAR.ForwardingParameters.PFCPSMReqFlags = new(pfcpType.PFCPSMReqFlags)

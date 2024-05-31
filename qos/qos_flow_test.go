@@ -28,7 +28,7 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 	authorizedQosFlow := qos.BuildAuthorizedQosFlowDescriptions(smPolicyUpdates)
 
 	fmt.Printf("Authorized QosFlow: %v\n", authorizedQosFlow.Content)
-	firstQosDataId := byte(authorizedQosFlow.Content[0])
+	firstQosDataId := authorizedQosFlow.Content[0]
 	if firstQosDataId == 1 {
 		expectedBytes := []byte{
 			0x1, 0x20, 0x45, 0x1, 0x1, 0x5, 0x4, 0x3, 0x6, 0x0,
