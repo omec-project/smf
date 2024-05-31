@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2022-present Intel Corporation
 //
 // SPDX-License-Identifier: Apache-2.0
-//
 package config
 
 import (
@@ -28,7 +27,7 @@ const (
 	AssociatedSetUpSuccess UPFStatus = 2
 )
 
-//UPF structure
+// UPF structure
 type UPNode struct {
 	UpfName     string
 	NodeID      pfcpType.NodeID
@@ -39,7 +38,7 @@ type UPNode struct {
 	UpfLock     sync.RWMutex
 }
 
-//All UPF nodes
+// All UPF nodes
 type Config struct {
 	UpfListLock sync.RWMutex
 	UPFs        map[string]*UPNode
@@ -82,7 +81,7 @@ func init() {
 
 }
 
-//BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
+// BuildPfcpHeartbeatRequest shall trigger hearbeat request to all Attached UPFs
 func BuildPfcpHeartbeatRequest() (pfcp.HeartbeatRequest, error) {
 	msg := pfcp.HeartbeatRequest{}
 

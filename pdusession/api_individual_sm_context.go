@@ -20,7 +20,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
@@ -28,6 +27,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
 
 	smf_context "github.com/omec-project/smf/context"
 	stats "github.com/omec-project/smf/metrics"

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2022-present Intel Corporation
 //
 // SPDX-License-Identifier: Apache-2.0
-//
 package message
 
 import (
@@ -160,7 +159,7 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, pMsg pfcp.Message)
 	return nil
 }
 
-//Go routine to send hearbeat towards UPFs
+// Go routine to send hearbeat towards UPFs
 func ProbeUpfHearbeatReq() {
 
 	for {
