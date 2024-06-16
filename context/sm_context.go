@@ -705,6 +705,9 @@ func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 
 // Collect Ctxt info and publish on Kafka stream
 func (smContext *SMContext) PublishSmCtxtInfo() {
+	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
+		return
+	}
 	var op mi.SubscriberOp
 	kafkaSmCtxt := mi.CoreSubscriber{}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
@@ -63,15 +64,17 @@ func HandlePfcpHeartbeatResponse(msg *pfcpUdp.Message) {
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
 
-	// Send Metric event
-	upfStatus := mi.MetricEvent{
-		EventType: mi.CNfStatusEvt,
-		NfStatusData: mi.CNfStatus{
-			NfType:   mi.NfTypeUPF,
-			NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
-		},
+	if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
+		// Send Metric event
+		upfStatus := mi.MetricEvent{
+			EventType: mi.CNfStatusEvt,
+			NfStatusData: mi.CNfStatus{
+				NfType:   mi.NfTypeUPF,
+				NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
+			},
+		}
+		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 	}
-	metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 }
@@ -171,15 +174,17 @@ func HandlePfcpAssociationSetupResponse(msg *pfcpUdp.Message) {
 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
 		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
-		// Send Metric event
-		upfStatus := mi.MetricEvent{
-			EventType: mi.CNfStatusEvt,
-			NfStatusData: mi.CNfStatus{
-				NfType:   mi.NfTypeUPF,
-				NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
-			},
+		if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
+			// Send Metric event
+			upfStatus := mi.MetricEvent{
+				EventType: mi.CNfStatusEvt,
+				NfStatusData: mi.CNfStatus{
+					NfType:   mi.NfTypeUPF,
+					NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
+				},
+			}
+			metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 		}
-		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 
 		// Supported Features of UPF
 		if rsp.UPFunctionFeatures != nil {
