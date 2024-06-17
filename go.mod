@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.1.2
-	github.com/omec-project/config5g v1.4.0
+	github.com/omec-project/config5g v1.4.1
 	github.com/omec-project/metricfunc v1.4.1
 	github.com/omec-project/nas v1.3.0
 	github.com/omec-project/ngap v1.2.2
@@ -85,7 +85,7 @@ require (
 	golang.org/x/text v0.15.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/grpc v1.64.0 // indirect
-	google.golang.org/protobuf v1.34.1 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/h2non/gock.v1 v1.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	inet.af/netaddr v0.0.0-20220811202034-502d2d690317 // indirect
