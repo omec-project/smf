@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/smf/context"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -186,7 +185,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 	// Put Failure Rsp
 	switch txn.MsgType {
 	case svcmsgtypes.PfcpSessCreate:
-		if txn.Ctxt != nil && txn.Ctxt.(*smf_context.SMContext).SMContextState == context.SmStatePfcpCreatePending {
+		if txn.Ctxt != nil && txn.Ctxt.(*smf_context.SMContext).SMContextState == smf_context.SmStatePfcpCreatePending {
 			nextTxn := transaction.NewTransaction(nil, nil, svcmsgtypes.PfcpSessCreateFailure)
 			nextTxn.Ctxt = txn.Ctxt
 			smContext := txn.Ctxt.(*smf_context.SMContext)
