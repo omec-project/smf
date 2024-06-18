@@ -2,7 +2,7 @@
 # Copyright 2019 free5GC.org
 #
 # SPDX-License-Identifier: Apache-2.0
-
+#
 
 # This file contains all available configuration options
 # with their default values.
@@ -174,6 +174,7 @@ linters-settings:
     enable-all: true
     disable:
       - fieldalignment
+    disable-all: false
   depguard:
     list-type: blacklist
     include-go-root: false
@@ -211,6 +212,25 @@ linters-settings:
   misspell:
     #locale: US
     ignore-words:
+  wsl:
+    # If true append is only allowed to be cuddled if appending value is
+    # matching variables, fields or types on line above. Default is true.
+    strict-append: true
+    # Allow calls and assignments to be cuddled as long as the lines have any
+    # matching variables, fields or types. Default is true.
+    allow-assign-and-call: true
+    # Allow multiline assignments to be cuddled. Default is true.
+    allow-multiline-assign: true
+    # Allow declarations (var) to be cuddled.
+    allow-cuddle-declarations: false
+    # Allow trailing comments in ending of blocks
+    allow-trailing-comment: true
+    # Force newlines in end of case at this limit (0 = never).
+    force-case-trailing-whitespace: 0
+    # Force cuddling of err checks with err var assignment
+    force-err-cuddling: false
+    # Allow leading comments to be separated with empty liens
+    allow-separated-leading-comment: false
   custom:
     # Each custom linter should have a unique name.
 
@@ -221,13 +241,13 @@ linters:
     # - errcheck
     # - staticcheck
     - unused
-    # - gosimple
+    - gosimple
     - ineffassign
     - typecheck
     # Additional
     # - lll
     - godox
-    # - gomnd
+    #- gomnd
     - goconst
     # - gocognit
     # - nestif
@@ -245,7 +265,7 @@ linters:
     - asciicheck
       #- stylecheck
       # - unparam
-      #- wsl
+      # - wsl
 
   #disable-all: false
   fast: true
