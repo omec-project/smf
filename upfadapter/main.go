@@ -7,7 +7,7 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"upf-adapter/config"
@@ -18,7 +18,7 @@ import (
 
 // Hnadler for SMF initiated msgs
 func handler(w http.ResponseWriter, req *http.Request) {
-	reqBody, err := ioutil.ReadAll(req.Body)
+	reqBody, err := io.ReadAll(req.Body)
 	if err != nil {
 		logger.AppLog.Errorf("server: could not read request body: %s\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

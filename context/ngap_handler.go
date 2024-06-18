@@ -164,7 +164,7 @@ func HandleHandoverRequestAcknowledgeTransfer(b []byte, ctx *SMContext) (err err
 
 	teid, err := binary.ReadUvarint(TEIDReader)
 	if err != nil {
-		return fmt.Errorf("Parse TEID error %s", err.Error())
+		return fmt.Errorf("parse TEID error %s", err.Error())
 	}
 
 	for _, dataPath := range ctx.Tunnel.DataPathPool {
