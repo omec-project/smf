@@ -9,15 +9,13 @@ import (
 	"net"
 	"reflect"
 
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/util/flowdesc"
 )
 
-func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID pfcpType.NodeID) {
+func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID context.NodeID) {
 	bpMGR := smContext.BPManager
 	pendingUPF := bpMGR.PendingUPF
 
@@ -121,8 +119,8 @@ func EstablishPSA2(smContext *context.SMContext) {
 	for curDataPathNode := activatingPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		if nodeAfterULCL {
 			addr := net.UDPAddr{
-				IP:   curDataPathNode.UPF.NodeID.NodeIdValue,
-				Port: pfcpUdp.PFCP_PORT,
+				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+				Port: int(curDataPathNode.UPF.Port),
 			}
 
 			logger.PduSessLog.Traceln("Send to upf addr: ", addr.String())
@@ -144,8 +142,19 @@ func EstablishPSA2(smContext *context.SMContext) {
 
 			curDPNodeIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
+			remoteAddress := &net.UDPAddr{
+				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+				Port: int(curDataPathNode.UPF.Port),
+			}
 			message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDataPathNode.UPF.Port)
+				remoteAddress,
+				curDataPathNode.UPF.NodeID,
+				smContext,
+				pdrList,
+				farList,
+				barList,
+				qerList,
+			)
 		} else {
 			if reflect.DeepEqual(curDataPathNode.UPF.NodeID, ulcl.NodeID) {
 				nodeAfterULCL = true
@@ -200,7 +209,7 @@ func EstablishULCL(smContext *context.SMContext) {
 				logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
 			}
 
-			UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+			UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{
 				Bid:                     false,
 				Fl:                      false,
 				Spi:                     false,
@@ -219,7 +228,11 @@ func EstablishULCL(smContext *context.SMContext) {
 
 			curDPNodeIP := ulcl.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
-			message.SendPfcpSessionModificationRequest(ulcl.NodeID, smContext, pdrList, farList, barList, qerList, ulcl.Port)
+			remoteAddress := &net.UDPAddr{
+				IP:   ulcl.NodeID.ResolveNodeIdToIp(),
+				Port: int(ulcl.Port),
+			}
+			message.SendPfcpSessionModificationRequest(remoteAddress, ulcl.NodeID, smContext, pdrList, farList, barList, qerList)
 			break
 		}
 	}
@@ -256,8 +269,19 @@ func UpdatePSA2DownLink(smContext *context.SMContext) {
 
 				curDPNodeIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 				bpMGR.PendingUPF[curDPNodeIP] = true
+				remoteAddress := &net.UDPAddr{
+					IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+					Port: int(curDataPathNode.UPF.Port),
+				}
 				message.SendPfcpSessionModificationRequest(
-					curDataPathNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDataPathNode.UPF.Port)
+					remoteAddress,
+					curDataPathNode.UPF.NodeID,
+					smContext,
+					pdrList,
+					farList,
+					barList,
+					qerList,
+				)
 				logger.PfcpLog.Info("[SMF] Update PSA2 downlink msg has been send")
 				break
 			}
@@ -286,7 +310,7 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 
 	defaultANUPFDLFAR := defaultANUPF.DownLinkTunnel.PDR["default"].FAR       // TODO: Iterate over all PDRs
 	activatingANUPFDLFAR := activatingANUPF.DownLinkTunnel.PDR["default"].FAR // TODO: Iterate over all PDRs
-	activatingANUPFDLFAR.ApplyAction = pfcpType.ApplyAction{
+	activatingANUPFDLFAR.ApplyAction = context.ApplyAction{
 		Buff: false,
 		Drop: false,
 		Dupl: false,
@@ -294,16 +318,16 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 		Nocp: false,
 	}
 	activatingANUPFDLFAR.ForwardingParameters = &context.ForwardingParameters{
-		DestinationInterface: pfcpType.DestinationInterface{
-			InterfaceValue: pfcpType.DestinationInterfaceAccess,
+		DestinationInterface: context.DestinationInterface{
+			InterfaceValue: context.DestinationInterfaceAccess,
 		},
 		NetworkInstance: []byte(smContext.Dnn),
 	}
 
 	activatingANUPFDLFAR.State = context.RULE_INITIAL
-	activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
+	activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation = new(context.OuterHeaderCreation)
 	anOuterHeaderCreation := activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation
-	anOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
+	anOuterHeaderCreation.OuterHeaderCreationDescription = context.OuterHeaderCreationGtpUUdpIpv4
 	anOuterHeaderCreation.Teid = defaultANUPFDLFAR.ForwardingParameters.OuterHeaderCreation.Teid
 	anOuterHeaderCreation.Ipv4Address = defaultANUPFDLFAR.ForwardingParameters.OuterHeaderCreation.Ipv4Address
 }
@@ -353,7 +377,7 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 					logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
 				}
 
-				UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+				UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{
 					Bid:                     false,
 					Fl:                      false,
 					Spi:                     false,
@@ -371,7 +395,11 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 
 			curDPNodeIP := curDPNode.UPF.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
-			message.SendPfcpSessionModificationRequest(curDPNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDPNode.UPF.Port)
+			remoteAddress := &net.UDPAddr{
+				IP:   curDPNode.UPF.NodeID.ResolveNodeIdToIp(),
+				Port: int(curDPNode.UPF.Port),
+			}
+			message.SendPfcpSessionModificationRequest(remoteAddress, curDPNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
 		}
 	}
 

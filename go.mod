@@ -15,13 +15,13 @@ require (
 	github.com/omec-project/ngap v1.2.2
 	github.com/omec-project/nrf v1.4.1
 	github.com/omec-project/openapi v1.2.0
-	github.com/omec-project/pfcp v1.2.2
 	github.com/omec-project/util v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli v1.22.15
+	github.com/wmnsk/go-pfcp v0.0.24
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -104,7 +104,6 @@ require (
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
-	github.com/omec-project/tlv v1.2.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect

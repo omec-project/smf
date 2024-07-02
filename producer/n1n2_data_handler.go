@@ -11,7 +11,6 @@ import (
 	"github.com/omec-project/nas"
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/transaction"
@@ -336,10 +335,10 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
 				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
+					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: false, Dupl: false, Forw: true, Nocp: false}
 					DLPDR.FAR.ForwardingParameters = &smf_context.ForwardingParameters{
-						DestinationInterface: pfcpType.DestinationInterface{
-							InterfaceValue: pfcpType.DestinationInterfaceAccess,
+						DestinationInterface: smf_context.DestinationInterface{
+							InterfaceValue: smf_context.DestinationInterfaceAccess,
 						},
 						NetworkInstance: []byte(smContext.Dnn),
 					}

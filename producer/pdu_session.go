@@ -9,6 +9,7 @@ package producer
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/antihax/optional"
@@ -19,7 +20,6 @@ import (
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -730,7 +730,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 					smContext.SubPduSessLog.Errorf("AN Release Error")
 					return fmt.Errorf("AN Release Error")
 				} else {
-					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
+					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
 					DLPDR.FAR.State = smf_context.RULE_UPDATE
 					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 					farList = append(farList, DLPDR.FAR)
@@ -742,7 +742,11 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		ANUPF := defaultPath.FirstDPNode
 
 		// Sending PFCP modification with flag set to DROP the packets.
-		pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, ANUPF.UPF.Port)
+		remoteAddress := &net.UDPAddr{
+			IP:   ANUPF.UPF.NodeID.ResolveNodeIdToIp(),
+			Port: int(ANUPF.UPF.Port),
+		}
+		pfcp_message.SendPfcpSessionModificationRequest(remoteAddress, ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
 	}
 
 	// Listening PFCP modification response.
@@ -754,9 +758,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 }
 
 // Handles PFCP response depending upon response cause recevied.
-func HandlePFCPResponse(smContext *smf_context.SMContext,
-	PFCPResponseStatus smf_context.PFCPSessionResponseStatus,
-) *httpwrapper.Response {
+func HandlePFCPResponse(smContext *smf_context.SMContext, PFCPResponseStatus smf_context.PFCPSessionResponseStatus) *httpwrapper.Response {
 	smContext.SubPfcpLog.Traceln("In HandlePFCPResponse")
 	var httpResponse *httpwrapper.Response
 

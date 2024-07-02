@@ -9,60 +9,94 @@ import (
 	"net"
 	"time"
 
-	"github.com/omec-project/pfcp"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
+	"github.com/wmnsk/go-pfcp/message"
 )
 
-const MaxPfcpUdpDataSize = 1024
+const PFCP_MAX_UDP_LEN = 2048
 
-var Server *pfcpUdp.PfcpServer
+type PfcpServer struct {
+	SrcAddr *net.UDPAddr
+}
 
-var ServerStartTime time.Time
+var (
+	Server          PfcpServer
+	ServerStartTime time.Time
+)
 
-func Run(Dispatch func(*pfcpUdp.Message)) {
-	CPNodeID := context.SMF_Self().CPNodeID
-	Server = pfcpUdp.NewPfcpServer(CPNodeID.ResolveNodeIdToIp().String())
-
-	err := Server.Listen()
-	if err != nil {
-		logger.PfcpLog.Errorf("Failed to listen: %v", err)
-	}
-	logger.PfcpLog.Infof("Listen on %s", Server.Conn.LocalAddr().String())
-
-	go func(p *pfcpUdp.PfcpServer) {
-		for {
-			var pfcpMessage pfcp.Message
-			remoteAddr, eventData, err := p.ReadFrom(&pfcpMessage)
-			if err != nil {
-				if err.Error() == "Receive resend PFCP request" {
-					logger.PfcpLog.Infoln(err)
-				} else {
-					logger.PfcpLog.Warnf("Read PFCP error: %v", err)
-				}
-
-				continue
-			}
-
-			msg := pfcpUdp.NewMessage(remoteAddr, &pfcpMessage, eventData)
-			go Dispatch(&msg)
-		}
-	}(Server)
-
+func Run(sourceAddress *net.UDPAddr, Dispatch func(message.Message, *net.UDPAddr)) {
+	pfcpServer := NewPfcpServer(sourceAddress)
+	go pfcpServer.Listen(Dispatch)
 	ServerStartTime = time.Now()
 }
 
-func SendPfcp(msg pfcp.Message, addr *net.UDPAddr, eventData interface{}) error {
-	err := Server.WriteTo(msg, addr, eventData)
+func SendPfcp(msg message.Message, addr *net.UDPAddr) error {
+	err := Server.WriteTo(msg, addr)
 	if err != nil {
 		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
-		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Failure", err.Error())
+		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", err.Error())
+		return err
+	}
+	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Success", "")
+	return nil
+}
+
+func NewPfcpServer(srcAddr *net.UDPAddr) *PfcpServer {
+	return &PfcpServer{
+		SrcAddr: srcAddr,
+	}
+}
+
+func (pfcpServer *PfcpServer) Listen(Dispatch func(message.Message, *net.UDPAddr)) error {
+	conn, err := net.ListenUDP("udp", pfcpServer.SrcAddr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	logger.PfcpLog.Infof("PFCP server listening on %s", pfcpServer.SrcAddr.String())
+
+	buf := make([]byte, PFCP_MAX_UDP_LEN)
+
+	for {
+		n, remoteAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			logger.PfcpLog.Errorf("Error reading from UDP: %v", err)
+			continue
+		}
+
+		msg, err := message.Parse(buf[:n])
+		if err != nil {
+			logger.PfcpLog.Errorf("Error parsing PFCP message: %v", err)
+			continue
+		}
+
+		Dispatch(msg, remoteAddr)
+	}
+}
+
+func (pfcpServer *PfcpServer) WriteTo(msg message.Message, addr *net.UDPAddr) error {
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to dial server: %v", err)
+		return err
+	}
+	defer conn.Close()
+
+	buf := make([]byte, msg.MarshalLen())
+	err = msg.MarshalTo(buf)
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to marshal PFCP message: %v", err)
 		return err
 	}
 
-	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.Header.MessageType), "Out", "Success", "")
+	_, err = conn.Write(buf)
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to write to UDP: %v", err)
+		return err
+	}
+
 	return nil
 }

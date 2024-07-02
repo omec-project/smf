@@ -7,13 +7,14 @@ import (
 	"net"
 	"time"
 
-	"github.com/omec-project/pfcp"
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"upf-adapter/config"
 	"upf-adapter/logger"
 	"upf-adapter/pfcp/handler"
 	"upf-adapter/pfcp/udp"
+
+	"github.com/omec-project/pfcp"
+	"github.com/omec-project/pfcp/pfcpType"
+	"github.com/omec-project/pfcp/pfcpUdp"
 )
 
 const MaxPfcpUdpDataSize = 1024

@@ -5,14 +5,15 @@
 package producer
 
 import (
-	"github.com/omec-project/pfcp/pfcpType"
+	"net"
+
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 )
 
 type PFCPState struct {
-	nodeID  pfcpType.NodeID
+	nodeID  smf_context.NodeID
 	pdrList []*smf_context.PDR
 	farList []*smf_context.FAR
 	qerList []*smf_context.QER
@@ -49,11 +50,33 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 
 		sessionContext, exist := smContext.PFCPContext[curDataPathNode.GetNodeIP()]
 		if !exist || sessionContext.RemoteSEID == 0 {
+			remoteAddress := &net.UDPAddr{
+				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+				Port: int(curDataPathNode.UPF.Port),
+			}
 			pfcp_message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
+				remoteAddress,
+				curDataPathNode.UPF.NodeID,
+				smContext,
+				pdrList,
+				farList,
+				nil,
+				qerList,
+			)
 		} else {
+			remoteAddress := &net.UDPAddr{
+				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+				Port: int(curDataPathNode.UPF.Port),
+			}
 			pfcp_message.SendPfcpSessionModificationRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, nil, qerList, curDataPathNode.UPF.Port)
+				remoteAddress,
+				curDataPathNode.UPF.NodeID,
+				smContext,
+				pdrList,
+				farList,
+				nil,
+				qerList,
+			)
 		}
 	}
 }
@@ -108,12 +131,30 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 	}
 	for ip, pfcp := range pfcpPool {
 		sessionContext, exist := smContext.PFCPContext[ip]
+		remoteAddress := &net.UDPAddr{
+			IP:   pfcp.nodeID.ResolveNodeIdToIp(),
+			Port: int(pfcp.port),
+		}
 		if !exist || sessionContext.RemoteSEID == 0 {
 			pfcp_message.SendPfcpSessionEstablishmentRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
+				remoteAddress,
+				pfcp.nodeID,
+				smContext,
+				pfcp.pdrList,
+				pfcp.farList,
+				nil,
+				pfcp.qerList,
+			)
 		} else {
 			pfcp_message.SendPfcpSessionModificationRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
+				remoteAddress,
+				pfcp.nodeID,
+				smContext,
+				pfcp.pdrList,
+				pfcp.farList,
+				nil,
+				pfcp.qerList,
+			)
 		}
 	}
 }
