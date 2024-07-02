@@ -7,14 +7,14 @@
 package upf
 
 import (
+	"net"
 	"time"
 
-	"github.com/omec-project/pfcp"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
-	"github.com/omec-project/smf/msgtypes/pfcpmsgtypes"
 	"github.com/omec-project/smf/pfcp/message"
+	pfcp_message "github.com/wmnsk/go-pfcp/message"
 )
 
 const (
@@ -30,7 +30,11 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 		for _, upf := range userplane.UPFs {
 			upf.UPF.UpfLock.Lock()
 			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
-				err := message.SendHeartbeatRequest(upf.NodeID, upf.Port) // needs lock in sync rsp(adapter mode)
+				remoteAddress := &net.UDPAddr{
+					IP:   upf.NodeID.ResolveNodeIdToIp(),
+					Port: int(upf.Port),
+				}
+				err := message.SendHeartbeatRequest(remoteAddress, upf.NodeID) // needs lock in sync rsp(adapter mode)
 				if err != nil {
 					logger.PfcpLog.Errorf("send pfcp heartbeat request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
 				} else {
@@ -38,10 +42,10 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 				}
 			} else if upf.UPF.NHeartBeat == maxHeartbeatRetry {
 				logger.PfcpLog.Errorf("pfcp heartbeat failure for UPF: [%v]", upf.NodeID)
-				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(pfcp.PFCP_HEARTBEAT_REQUEST), "Out", "Failure", "Timeout")
+				heartbeatRequest := pfcp_message.HeartbeatRequest{}
+				metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, heartbeatRequest.MessageTypeName(), "Out", "Failure", "Timeout")
 				upf.UPF.UPFStatus = context.NotAssociated
 			}
-
 			upf.UPF.UpfLock.Unlock()
 		}
 	}
@@ -54,7 +58,11 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 		for _, upf := range upfs.UPFs {
 			upf.UPF.UpfLock.Lock()
 			if upf.UPF.UPFStatus == context.NotAssociated {
-				message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+				remoteAddress := &net.UDPAddr{
+					IP:   upf.NodeID.ResolveNodeIdToIp(),
+					Port: int(upf.Port),
+				}
+				message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
 			}
 			upf.UPF.UpfLock.Unlock()
 		}

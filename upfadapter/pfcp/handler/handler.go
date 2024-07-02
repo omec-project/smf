@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"upf-adapter/config"
+	"upf-adapter/logger"
+
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
-	"upf-adapter/config"
-	"upf-adapter/logger"
 )
 
 func HandlePfcpSendError(msg *pfcp.Message, pfcpErr error) {

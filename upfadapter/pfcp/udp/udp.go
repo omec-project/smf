@@ -10,11 +10,12 @@ import (
 	"net"
 	"time"
 
+	"upf-adapter/config"
+	"upf-adapter/logger"
+
 	"github.com/omec-project/pfcp"
 	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/pfcp/pfcpUdp"
-	"upf-adapter/config"
-	"upf-adapter/logger"
 )
 
 var Server *pfcpUdp.PfcpServer

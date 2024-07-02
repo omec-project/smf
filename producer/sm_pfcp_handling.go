@@ -7,16 +7,28 @@ package producer
 
 import (
 	"fmt"
+	"net"
 
 	smf_context "github.com/omec-project/smf/context"
-	pfcp_message "github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/message"
 )
 
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	ANUPF := defaultPath.FirstDPNode
-	pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
-		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, ANUPF.UPF.Port)
+	remoteAddress := &net.UDPAddr{
+		IP:   ANUPF.UPF.NodeID.ResolveNodeIdToIp(),
+		Port: int(ANUPF.UPF.Port),
+	}
+	message.SendPfcpSessionModificationRequest(
+		remoteAddress,
+		ANUPF.UPF.NodeID,
+		smContext,
+		pfcpParam.pdrList,
+		pfcpParam.farList,
+		pfcpParam.barList,
+		pfcpParam.qerList,
+	)
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 

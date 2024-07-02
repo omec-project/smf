@@ -25,7 +25,6 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -249,7 +248,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		var upf string
 		if smContext.Tunnel != nil {
 			// Set UPF FQDN name if provided else IP-address
-			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
+			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == NodeIdTypeFqdn {
 				upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
 				upf = strings.Split(upf, ".")[0]
 			} else {
@@ -442,7 +441,7 @@ func (smContext *SMContext) PCFSelection() error {
 	return nil
 }
 
-func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID pfcpType.NodeID) {
+func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
 	for _, pfcpCtx := range smContext.PFCPContext {
 		if pfcpCtx.LocalSEID == seid {
 			nodeID = pfcpCtx.NodeID
@@ -497,7 +496,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 	}
 }
 
-func (smContext *SMContext) PutPDRtoPFCPSession(nodeID pfcpType.NodeID, pdrList map[string]*PDR) error {
+func (smContext *SMContext) PutPDRtoPFCPSession(nodeID NodeID, pdrList map[string]*PDR) error {
 	// TODO: Iterate over PDRS
 	NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 	if pfcpSessCtx, exist := smContext.PFCPContext[NodeIDtoIP]; exist {
@@ -510,7 +509,7 @@ func (smContext *SMContext) PutPDRtoPFCPSession(nodeID pfcpType.NodeID, pdrList 
 	return nil
 }
 
-func (smContext *SMContext) RemovePDRfromPFCPSession(nodeID pfcpType.NodeID, pdr *PDR) {
+func (smContext *SMContext) RemovePDRfromPFCPSession(nodeID NodeID, pdr *PDR) {
 	NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 	pfcpSessCtx := smContext.PFCPContext[NodeIDtoIP]
 	delete(pfcpSessCtx.PDRs, pdr.PDRID)
@@ -693,7 +692,7 @@ func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 	if smContext.SMContextState == SmStateActive {
 		if smContext.Tunnel != nil {
 			// Set UPF FQDN name if provided else IP-address
-			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
+			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == NodeIdTypeFqdn {
 				upfName = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
 				upfName = strings.Split(upfName, ".")[0]
 				upfIP = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.ResolveNodeIdToIp().String()

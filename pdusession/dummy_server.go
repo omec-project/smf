@@ -6,6 +6,7 @@ package pdusession
 
 import (
 	"log"
+	"net"
 	"net/http"
 
 	"github.com/omec-project/smf/logger"
@@ -21,7 +22,12 @@ func DummyServer() {
 
 	AddService(router)
 
-	go udp.Run(pfcp.Dispatch)
+	sourceAddress := &net.UDPAddr{
+		IP:   net.ParseIP("127.0.0.1"),
+		Port: 8805,
+	}
+
+	go udp.Run(sourceAddress, pfcp.Dispatch)
 
 	smfKeyLogPath := path_util.Free5gcPath("free5gc/smfsslkey.log")
 	smfPemPath := path_util.Free5gcPath("free5gc/support/TLS/smf.pem")

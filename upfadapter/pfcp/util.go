@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/omec-project/pfcp"
-	"github.com/omec-project/pfcp/pfcpType"
 	"upf-adapter/config"
 	"upf-adapter/logger"
 	"upf-adapter/pfcp/handler"
 	"upf-adapter/pfcp/message"
+
+	"github.com/omec-project/pfcp"
+	"github.com/omec-project/pfcp/pfcpType"
 )
 
 func JsonBodyToPfcpAssocReq(body interface{}) pfcp.PFCPAssociationSetupRequest {

@@ -9,57 +9,106 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/pfcp"
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
-	"github.com/omec-project/smf/context"
-	smf_pfcp "github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/udp"
-	"github.com/stretchr/testify/require"
+	"github.com/wmnsk/go-pfcp/ie"
+	"github.com/wmnsk/go-pfcp/message"
 )
 
-const testPfcpClientPort = 12345
+var (
+	heartbeatRequestReceived    bool
+	associationResponseReceived bool
+)
+
+func HandlePfcpHeartbeatRequestTest(msg message.Message, remoteAddress *net.UDPAddr) {
+	heartbeatRequestReceived = true
+}
+
+func HandleAssociationSetupResponseTest(msg message.Message, remoteAddress *net.UDPAddr) {
+	associationResponseReceived = true
+}
+
+func Dispatch(msg message.Message, remoteAddress *net.UDPAddr) {
+	switch msg.MessageType() {
+	case message.MsgTypeHeartbeatRequest:
+		HandlePfcpHeartbeatRequestTest(msg, remoteAddress)
+	case message.MsgTypeAssociationSetupResponse:
+		HandleAssociationSetupResponseTest(msg, remoteAddress)
+	}
+}
 
 func TestRun(t *testing.T) {
-	// Set SMF Node ID
-
-	context.SMF_Self().CPNodeID = pfcpType.NodeID{
-		NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
-		NodeIdValue: net.ParseIP("127.0.0.1").To4(),
-	}
-
-	udp.Run(smf_pfcp.Dispatch)
-
-	testPfcpReq := pfcp.Message{
-		Header: pfcp.Header{
-			Version:         1,
-			MP:              0,
-			S:               0,
-			MessageType:     pfcp.PFCP_ASSOCIATION_SETUP_REQUEST,
-			MessageLength:   9,
-			SEID:            0,
-			SequenceNumber:  1,
-			MessagePriority: 0,
-		},
-		Body: pfcp.PFCPAssociationSetupRequest{
-			NodeID: &pfcpType.NodeID{
-				NodeIdType:  0,
-				NodeIdValue: net.ParseIP("192.168.1.1").To4(),
-			},
-		},
-	}
-
-	srcAddr := &net.UDPAddr{
+	sourceAddress := &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
-		Port: testPfcpClientPort,
+		Port: 8805,
 	}
+
+	udp.Run(sourceAddress, Dispatch)
+
+	time.Sleep(1 * time.Second)
+
+	setupRequest := message.NewHeartbeatRequest(
+		1,
+		ie.NewRecoveryTimeStamp(time.Now()),
+		nil,
+	)
+
+	associationResponse := message.NewAssociationSetupResponse(
+		1,
+		ie.NewNodeID("2.3.4.5", "", ""),
+	)
+
 	dstAddr := &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: 8805,
 	}
 
-	err := pfcpUdp.SendPfcpMessage(testPfcpReq, srcAddr, dstAddr)
-	require.Nil(t, err)
+	err := udp.SendPfcp(setupRequest, dstAddr)
+	if err != nil {
+		t.Errorf("Failed to send PFCP message: %v", err)
+	}
 
-	time.Sleep(300 * time.Millisecond)
+	err = udp.SendPfcp(associationResponse, dstAddr)
+	if err != nil {
+		t.Errorf("Failed to send PFCP message: %v", err)
+	}
+
+	time.Sleep(1 * time.Second)
+
+	if !heartbeatRequestReceived {
+		t.Error("Expected Heartbeat Request to be received")
+	}
+
+	if !associationResponseReceived {
+		t.Error("Expected Association Response to be received")
+	}
+}
+
+func TestNewServer(t *testing.T) {
+	sourceAddress := net.UDPAddr{
+		IP:   net.ParseIP("1.2.3.4"),
+		Port: 8805,
+	}
+	s := udp.NewPfcpServer(&sourceAddress)
+
+	if s.SrcAddr != &sourceAddress {
+		t.Errorf("Expected %v, got %v", sourceAddress, s.SrcAddr)
+	}
+}
+
+func TestServerWriteTo(t *testing.T) {
+	sourceAddress := &net.UDPAddr{
+		IP:   net.ParseIP("0.0.0.0"),
+		Port: 8805,
+	}
+
+	remoteAddress := &net.UDPAddr{
+		IP:   net.ParseIP("10.152.183.116"),
+		Port: 8805,
+	}
+
+	server := udp.NewPfcpServer(sourceAddress)
+
+	msg := message.NewAssociationSetupResponse(1)
+
+	server.WriteTo(msg, remoteAddress)
 }

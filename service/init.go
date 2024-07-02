@@ -8,6 +8,7 @@ package service
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof" // Using package only for invoking initialization.
 	"os"
@@ -22,8 +23,6 @@ import (
 	ngapLogger "github.com/omec-project/ngap/logger"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
-	pfcpLogger "github.com/omec-project/pfcp/logger"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
@@ -233,17 +232,17 @@ func (smf *SMF) setLogLevel() {
 	if factory.SmfConfig.Logger.PFCP != nil {
 		if factory.SmfConfig.Logger.PFCP.DebugLevel != "" {
 			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.PFCP.DebugLevel); err != nil {
-				pfcpLogger.PFCPLog.Warnf("PFCP Log level [%s] is invalid, set to [info] level",
+				logger.PfcpLog.Warnf("PFCP Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.PFCP.DebugLevel)
-				pfcpLogger.SetLogLevel(logrus.InfoLevel)
+				logger.PfcpLog.Logger.SetLevel(logrus.InfoLevel)
 			} else {
-				pfcpLogger.SetLogLevel(level)
+				logger.PfcpLog.Logger.SetLevel(level)
 			}
 		} else {
-			pfcpLogger.PFCPLog.Warnln("PFCP Log level not set. Default set to [info] level")
-			pfcpLogger.SetLogLevel(logrus.InfoLevel)
+			logger.PfcpLog.Warnln("PFCP Log level not set. Default set to [info] level")
+			logger.PfcpLog.Logger.SetLevel(logrus.InfoLevel)
 		}
-		pfcpLogger.SetReportCaller(factory.SmfConfig.Logger.PFCP.ReportCaller)
+		logger.PfcpLog.Logger.SetReportCaller(factory.SmfConfig.Logger.PFCP.ReportCaller)
 	}
 
 	// Initialise Statistics
@@ -348,16 +347,24 @@ func (smf *SMF) Start() {
 		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
 
-	udp.Run(pfcp.Dispatch)
+	sourceAddress := &net.UDPAddr{
+		IP:   smfCtxt.CPNodeID.ResolveNodeIdToIp(),
+		Port: smfCtxt.PFCPPort,
+	}
+	udp.Run(sourceAddress, pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
-		if upf.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
+		if upf.NodeID.NodeIdType == context.NodeIdTypeFqdn {
 			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s](%s)\n", upf.NodeID.NodeIdValue,
 				upf.NodeID.ResolveNodeIdToIp().String())
 		} else {
 			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
 		}
-		message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+		remoteAddress := &net.UDPAddr{
+			IP:   upf.NodeID.ResolveNodeIdToIp(),
+			Port: int(upf.Port),
+		}
+		message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
 	}
 
 	// Trigger PFCP Heartbeat towards all connected UPFs
