@@ -351,7 +351,7 @@ func (smf *SMF) Start() {
 		IP:   smfCtxt.CPNodeID.ResolveNodeIdToIp(),
 		Port: smfCtxt.PFCPPort,
 	}
-	udp.Run(sourceAddress, pfcp.Dispatch)
+	go udp.Run(sourceAddress, pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
 		if upf.NodeID.NodeIdType == context.NodeIdTypeFqdn {
@@ -364,7 +364,10 @@ func (smf *SMF) Start() {
 			IP:   upf.NodeID.ResolveNodeIdToIp(),
 			Port: int(upf.Port),
 		}
-		message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
+		err := message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
+		if err != nil {
+			logger.PfcpLog.Errorf("send pfcp association setup request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
+		}
 	}
 
 	// Trigger PFCP Heartbeat towards all connected UPFs

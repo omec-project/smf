@@ -32,7 +32,10 @@ func HandlePfcpHeartbeatRequest(msg message.Message, remoteAddress *net.UDPAddr)
 
 	logger.PfcpLog.Infof("Handle PFCP Heartbeat Request")
 
-	pfcp_message.SendHeartbeatResponse(remoteAddress, msg.Sequence())
+	err := pfcp_message.SendHeartbeatResponse(remoteAddress, msg.Sequence())
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to send PFCP Heartbeat Response: %+v", err)
+	}
 }
 
 func HandlePfcpHeartbeatResponse(msg message.Message, remoteAddress *net.UDPAddr) {
@@ -177,7 +180,10 @@ func HandlePfcpAssociationSetupRequest(msg message.Message, remoteAddress *net.U
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
 	// Response with PFCP Association Setup Response
-	pfcp_message.SendPfcpAssociationSetupResponse(remoteAddress, ie.CauseRequestAccepted)
+	err = pfcp_message.SendPfcpAssociationSetupResponse(remoteAddress, ie.CauseRequestAccepted)
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to send PFCP Association Setup Response: %+v", err)
+	}
 }
 
 func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.UDPAddr) {
@@ -349,7 +355,10 @@ func HandlePfcpAssociationReleaseRequest(msg message.Message, remoteAddress *net
 		cause = ie.CauseNoEstablishedPFCPAssociation
 	}
 
-	pfcp_message.SendPfcpAssociationReleaseResponse(remoteAddress, nodeID, cause)
+	err = pfcp_message.SendPfcpAssociationReleaseResponse(remoteAddress, nodeID, cause)
+	if err != nil {
+		logger.PfcpLog.Errorf("Failed to send PFCP Association Release Response: %+v", err)
+	}
 }
 
 func HandlePfcpAssociationReleaseResponse(msg message.Message, remoteAddress *net.UDPAddr) {
@@ -643,7 +652,10 @@ func HandlePfcpSessionReportRequest(msg message.Message, remoteAddress *net.UDPA
 		drobu = true
 
 		// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
-		pfcp_message.SendPfcpSessionReportResponse(remoteAddress, cause, drobu, seqFromUPF, SEID)
+		err := pfcp_message.SendPfcpSessionReportResponse(remoteAddress, cause, drobu, seqFromUPF, SEID)
+		if err != nil {
+			logger.PfcpLog.Errorf("Failed to send PFCP Session Report Response: %+v", err)
+		}
 		return
 	}
 
@@ -722,7 +734,10 @@ func HandlePfcpSessionReportRequest(msg message.Message, remoteAddress *net.UDPA
 
 			// Sending Session Report Response to UPF.
 			smContext.SubPfcpLog.Infof("Sending Session Report to UPF with Cause %v", cause)
-			pfcp_message.SendPfcpSessionReportResponse(remoteAddress, cause, drobu, seqFromUPF, SEID)
+			err = pfcp_message.SendPfcpSessionReportResponse(remoteAddress, cause, drobu, seqFromUPF, SEID)
+			if err != nil {
+				logger.PfcpLog.Errorf("Failed to send PFCP Session Report Response: %+v", err)
+			}
 		}
 	}
 

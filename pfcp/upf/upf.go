@@ -62,7 +62,10 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 					IP:   upf.NodeID.ResolveNodeIdToIp(),
 					Port: int(upf.Port),
 				}
-				message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
+				err := message.SendPfcpAssociationSetupRequest(remoteAddress, upf.NodeID)
+				if err != nil {
+					logger.PfcpLog.Errorf("send pfcp association setup request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
+				}
 			}
 			upf.UPF.UpfLock.Unlock()
 		}

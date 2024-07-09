@@ -32,7 +32,8 @@ func outerHeaderRemovalSet(pdrIEs []*ie.IE) bool {
 }
 
 func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
-	cpIpv4Address := net.ParseIP("2.3.4.5")
+	const cpIPv4AddressStr = "2.3.4.5"
+	cpIpv4Address := net.ParseIP(cpIPv4AddressStr)
 	upIpv4Adddress := net.ParseIP("1.2.3.4")
 	context.SMF_Self().CPNodeID = context.NodeID{
 		NodeIdType:  0,
@@ -97,8 +98,8 @@ func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 		t.Fatalf("Error getting NodeID from PFCP session establishment request: %v", err)
 	}
 
-	if nodeID != "2.3.4.5" {
-		t.Errorf("Expected NodeID to be '2.3.4.5', got %v", nodeID)
+	if nodeID != cpIPv4AddressStr {
+		t.Errorf("Expected NodeID to be %v, got %v", cpIPv4AddressStr, nodeID)
 	}
 
 	pdr := req.CreatePDR
