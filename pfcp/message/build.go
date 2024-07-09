@@ -167,15 +167,17 @@ func farToCreateFAR(far *context.FAR) *ie.IE {
 		forwardingParametersIEs := make([]*ie.IE, 0)
 		forwardingParametersIEs = append(forwardingParametersIEs, ie.NewDestinationInterface(far.ForwardingParameters.DestinationInterface.InterfaceValue))
 		forwardingParametersIEs = append(forwardingParametersIEs, ie.NewNetworkInstance(string(far.ForwardingParameters.NetworkInstance)))
-		forwardingParametersIEs = append(forwardingParametersIEs, ie.NewOuterHeaderCreation(
-			far.ForwardingParameters.OuterHeaderCreation.OuterHeaderCreationDescription,
-			far.ForwardingParameters.OuterHeaderCreation.Teid,
-			far.ForwardingParameters.OuterHeaderCreation.Ipv4Address.String(),
-			far.ForwardingParameters.OuterHeaderCreation.Ipv6Address.String(),
-			far.ForwardingParameters.OuterHeaderCreation.PortNumber,
-			0, // Here we set ctag and stag to 0, let's valiate this makes sense
-			0,
-		))
+		if far.ForwardingParameters.OuterHeaderCreation != nil {
+			forwardingParametersIEs = append(forwardingParametersIEs, ie.NewOuterHeaderCreation(
+				far.ForwardingParameters.OuterHeaderCreation.OuterHeaderCreationDescription,
+				far.ForwardingParameters.OuterHeaderCreation.Teid,
+				far.ForwardingParameters.OuterHeaderCreation.Ipv4Address.String(),
+				far.ForwardingParameters.OuterHeaderCreation.Ipv6Address.String(),
+				far.ForwardingParameters.OuterHeaderCreation.PortNumber,
+				0, // Here we set ctag and stag to 0, let's valiate this makes sense
+				0,
+			))
+		}
 
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			forwardingParametersIEs = append(forwardingParametersIEs, ie.NewForwardingPolicy(far.ForwardingParameters.ForwardingPolicyID))
@@ -195,10 +197,16 @@ func barToCreateBAR(bar *context.BAR) *ie.IE {
 func qerToCreateQER(qer *context.QER) *ie.IE {
 	createQERies := make([]*ie.IE, 0)
 	createQERies = append(createQERies, ie.NewQERID(qer.QERID))
-	createQERies = append(createQERies, ie.NewGateStatus(qer.GateStatus.ULGate, qer.GateStatus.DLGate))
+	if qer.GateStatus != nil {
+		createQERies = append(createQERies, ie.NewGateStatus(qer.GateStatus.ULGate, qer.GateStatus.DLGate))
+	}
 	createQERies = append(createQERies, ie.NewQFI(qer.QFI.QFI))
-	createQERies = append(createQERies, ie.NewMBR(qer.MBR.ULMBR, qer.MBR.DLMBR))
-	createQERies = append(createQERies, ie.NewGBR(qer.GBR.ULGBR, qer.GBR.DLGBR))
+	if qer.MBR != nil {
+		createQERies = append(createQERies, ie.NewMBR(qer.MBR.ULMBR, qer.MBR.DLMBR))
+	}
+	if qer.GBR != nil {
+		createQERies = append(createQERies, ie.NewGBR(qer.GBR.ULGBR, qer.GBR.DLGBR))
+	}
 	return ie.NewCreateQER(createQERies...)
 }
 
@@ -207,8 +215,12 @@ func pdrToUpdatePDR(pdr *context.PDR) *ie.IE {
 	updatePDRies = append(updatePDRies, ie.NewPDRID(pdr.PDRID))
 	updatePDRies = append(updatePDRies, ie.NewPrecedence(pdr.Precedence))
 	updatePDRies = append(updatePDRies, createPDIIE(&pdr.PDI))
-	updatePDRies = append(updatePDRies, ie.NewOuterHeaderRemoval(pdr.OuterHeaderRemoval.OuterHeaderRemovalDescription, 0))
-	updatePDRies = append(updatePDRies, ie.NewFARID(pdr.FAR.FARID))
+	if pdr.OuterHeaderRemoval != nil {
+		updatePDRies = append(updatePDRies, ie.NewOuterHeaderRemoval(pdr.OuterHeaderRemoval.OuterHeaderRemovalDescription, 0))
+	}
+	if pdr.FAR != nil {
+		updatePDRies = append(updatePDRies, ie.NewFARID(pdr.FAR.FARID))
+	}
 	for _, qer := range pdr.QER {
 		if qer != nil {
 			updatePDRies = append(updatePDRies, ie.NewQERID(qer.QERID))
