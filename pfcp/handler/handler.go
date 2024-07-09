@@ -420,6 +420,10 @@ func HandlePfcpSessionEstablishmentResponse(msg message.Message, remoteAddress *
 	}
 
 	smContext := smf_context.GetSMContextBySEID(seid)
+	if smContext == nil {
+		logger.PfcpLog.Errorf("No SMF context found for SEID[%d]", seid)
+		return
+	}
 	smContext.SMLock.Lock()
 
 	upFSEID, err := rsp.UPFSEID.FSEID()

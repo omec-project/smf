@@ -451,28 +451,6 @@ func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
 	return
 }
 
-func (smContext *SMContext) AllocateLocalSEIDForUPPath(path UPPath) {
-	for _, upNode := range path {
-		NodeIDtoIP := upNode.NodeID.ResolveNodeIdToIp().String()
-		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID, _ := AllocateLocalSEID()
-
-			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
-				PDRs:      make(map[uint16]*PDR),
-				NodeID:    upNode.NodeID,
-				LocalSEID: allocatedSEID,
-			}
-
-			seidSMContextMap.Store(allocatedSEID, smContext)
-
-			if factory.SmfConfig.Configuration.EnableDbStore {
-				StoreSeidContextInDB(allocatedSEID, smContext)
-				StoreRefToSeidInDB(allocatedSEID, smContext)
-			}
-		}
-	}
-}
-
 func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 	logger.PduSessLog.Traceln("In AllocateLocalSEIDForDataPath")
 	for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {

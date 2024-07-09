@@ -68,46 +68,50 @@ func (f *Flag) SetBit(position uint8, value bool) {
 }
 
 func createPDIIE(pdi *context.PDI) *ie.IE {
-	fteidFlags := new(Flag)
-	fteidFlags.SetBit(1, pdi.LocalFTeid.V4)
-	fteidFlags.SetBit(2, pdi.LocalFTeid.V6)
-	fteidFlags.SetBit(3, pdi.LocalFTeid.Ch)
-	fteidFlags.SetBit(4, pdi.LocalFTeid.Chid)
-
-	ueIPAddressflags := new(Flag)
-	ueIPAddressflags.SetBit(1, pdi.UEIPAddress.V6)
-	ueIPAddressflags.SetBit(2, pdi.UEIPAddress.V4)
-	ueIPAddressflags.SetBit(3, pdi.UEIPAddress.Sd)
-	ueIPAddressflags.SetBit(4, pdi.UEIPAddress.Ipv6d)
-	ueIPAddressflags.SetBit(5, pdi.UEIPAddress.CHV4)
-	ueIPAddressflags.SetBit(6, pdi.UEIPAddress.CHV6)
-	ueIPAddressflags.SetBit(7, pdi.UEIPAddress.IP6PL)
-
 	createPDIIes := make([]*ie.IE, 0)
 	createPDIIes = append(createPDIIes,
 		ie.NewSourceInterface(pdi.SourceInterface.InterfaceValue),
 	)
-	createPDIIes = append(createPDIIes,
-		ie.NewFTEID(
-			uint8(*fteidFlags),
-			pdi.LocalFTeid.Teid,
-			pdi.LocalFTeid.Ipv4Address,
-			pdi.LocalFTeid.Ipv6Address,
-			pdi.LocalFTeid.ChooseId,
-		),
-	)
+
+	if pdi.LocalFTeid != nil {
+		fteidFlags := new(Flag)
+		fteidFlags.SetBit(1, pdi.LocalFTeid.V4)
+		fteidFlags.SetBit(2, pdi.LocalFTeid.V6)
+		fteidFlags.SetBit(3, pdi.LocalFTeid.Ch)
+		fteidFlags.SetBit(4, pdi.LocalFTeid.Chid)
+		createPDIIes = append(createPDIIes,
+			ie.NewFTEID(
+				uint8(*fteidFlags),
+				pdi.LocalFTeid.Teid,
+				pdi.LocalFTeid.Ipv4Address,
+				pdi.LocalFTeid.Ipv6Address,
+				pdi.LocalFTeid.ChooseId,
+			),
+		)
+	}
+
 	createPDIIes = append(createPDIIes,
 		ie.NewNetworkInstance(string(pdi.NetworkInstance)),
 	)
-	createPDIIes = append(createPDIIes,
-		ie.NewUEIPAddress(
-			uint8(*ueIPAddressflags),
-			pdi.UEIPAddress.Ipv4Address.String(),
-			pdi.UEIPAddress.Ipv6Address.String(),
-			pdi.UEIPAddress.Ipv6PrefixDelegationBits,
-			pdi.UEIPAddress.Ipv6PrefixLength,
-		),
-	)
+	if pdi.UEIPAddress != nil {
+		ueIPAddressflags := new(Flag)
+		ueIPAddressflags.SetBit(1, pdi.UEIPAddress.V6)
+		ueIPAddressflags.SetBit(2, pdi.UEIPAddress.V4)
+		ueIPAddressflags.SetBit(3, pdi.UEIPAddress.Sd)
+		ueIPAddressflags.SetBit(4, pdi.UEIPAddress.Ipv6d)
+		ueIPAddressflags.SetBit(5, pdi.UEIPAddress.CHV4)
+		ueIPAddressflags.SetBit(6, pdi.UEIPAddress.CHV6)
+		ueIPAddressflags.SetBit(7, pdi.UEIPAddress.IP6PL)
+		createPDIIes = append(createPDIIes,
+			ie.NewUEIPAddress(
+				uint8(*ueIPAddressflags),
+				pdi.UEIPAddress.Ipv4Address.String(),
+				pdi.UEIPAddress.Ipv6Address.String(),
+				pdi.UEIPAddress.Ipv6PrefixDelegationBits,
+				pdi.UEIPAddress.Ipv6PrefixLength,
+			),
+		)
+	}
 
 	if pdi.ApplicationID != "" {
 		createPDIIes = append(createPDIIes, ie.NewApplicationID(pdi.ApplicationID))
