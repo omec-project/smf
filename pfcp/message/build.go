@@ -8,7 +8,6 @@ package message
 
 import (
 	"errors"
-	"net"
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/udp"
@@ -291,36 +290,26 @@ func BuildPfcpSessionEstablishmentRequest(
 	}
 	seid := pfcpContext.LocalSEID
 
-	nodeIDtoIP := upNodeID.ResolveNodeIdToIp()
-	var ipv4Address net.IP
-	var ipv6Address net.IP
-	if nodeIDtoIP.To4() != nil {
-		ipv4Address = nodeIDtoIP
-		ipv6Address = nil
-	} else {
-		ipv4Address = nil
-		ipv6Address = nodeIDtoIP
-	}
 	ies := make([]*ie.IE, 0)
 	ies = append(ies, ie.NewNodeIDHeuristic(context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String()))
-	ies = append(ies, ie.NewFSEID(seid, ipv4Address, ipv6Address))
+	ies = append(ies, ie.NewFSEID(seid, context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), nil))
 
 	for _, pdr := range pdrList {
 		if pdr.State == context.RULE_INITIAL {
-			ies = append(ies, ie.NewCreatePDR(pdrToCreatePDR(pdr)))
+			ies = append(ies, pdrToCreatePDR(pdr))
 		}
 	}
 
 	for _, far := range farList {
 		if far.State == context.RULE_INITIAL {
-			ies = append(ies, ie.NewCreateFAR(farToCreateFAR(far)))
+			ies = append(ies, farToCreateFAR(far))
 		}
 		far.State = context.RULE_CREATE
 	}
 
 	for _, bar := range barList {
 		if bar.State == context.RULE_INITIAL {
-			ies = append(ies, ie.NewCreateBAR(barToCreateBAR(bar)))
+			ies = append(ies, barToCreateBAR(bar))
 		}
 		bar.State = context.RULE_CREATE
 	}
@@ -331,7 +320,7 @@ func BuildPfcpSessionEstablishmentRequest(
 	}
 	for _, filteredQER := range qerMap {
 		if filteredQER.State == context.RULE_INITIAL {
-			ies = append(ies, ie.NewCreateQER(qerToCreateQER(filteredQER)))
+			ies = append(ies, qerToCreateQER(filteredQER))
 		}
 		filteredQER.State = context.RULE_CREATE
 	}
