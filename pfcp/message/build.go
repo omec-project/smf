@@ -136,8 +136,12 @@ func pdrToCreatePDR(pdr *context.PDR) *ie.IE {
 	ies = append(ies, ie.NewPDRID(pdr.PDRID))
 	ies = append(ies, ie.NewPrecedence(pdr.Precedence))
 	ies = append(ies, createPDIIE(&pdr.PDI))
-	ies = append(ies, ie.NewOuterHeaderRemoval(pdr.OuterHeaderRemoval.OuterHeaderRemovalDescription, 0))
-	ies = append(ies, ie.NewFARID(pdr.FAR.FARID))
+	if pdr.OuterHeaderRemoval != nil {
+		ies = append(ies, ie.NewOuterHeaderRemoval(pdr.OuterHeaderRemoval.OuterHeaderRemovalDescription, 0))
+	}
+	if pdr.FAR != nil {
+		ies = append(ies, ie.NewFARID(pdr.FAR.FARID))
+	}
 	for _, qer := range pdr.QER {
 		if qer != nil {
 			ies = append(ies, ie.NewQERID(qer.QERID))
