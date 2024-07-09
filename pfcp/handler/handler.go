@@ -246,8 +246,6 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 		// validate if DNNs served by UPF matches with the one provided by UPF
 		if userPlaneIPResourceInformation != nil {
 			upfProvidedDnn := userPlaneIPResourceInformation.NetworkInstance
-			fmt.Println("upfProvidedDnn: ", upfProvidedDnn)
-			fmt.Println("upfProvidedDnn.Length: ", len(upfProvidedDnn))
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
 				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, %s is not configured", upfProvidedDnn)
 				return

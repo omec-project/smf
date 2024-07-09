@@ -65,7 +65,7 @@ func TestUnmarshalUEIPInformationBinaryOnlySourceInterface(t *testing.T) {
 
 func TestUnmarshalUEIPInformationBinaryOnlyNetworkInstance(t *testing.T) {
 	flags := CreateFlags(true, false, true, false)
-	userplaneIE := ie.NewUserPlaneIPResourceInformation(flags, 0, "1.2.3.4", "", "internet", 0)
+	userplaneIE := ie.NewUserPlaneIPResourceInformation(flags, 0, "1.2.3.4", "", string(ie.NewNetworkInstanceFQDN("internet").Payload), 0)
 
 	ueIpInfo, err := handler.UnmarshalUEIPInformationBinary(userplaneIE.Payload)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestUnmarshalUEIPInformationBinaryOnlyNetworkInstance(t *testing.T) {
 
 func TestUnmarshalUEIPInformationBinary(t *testing.T) {
 	flags := CreateFlags(true, false, true, true)
-	userplaneIE := ie.NewUserPlaneIPResourceInformation(flags, 0, "1.2.3.4", "", "internet", ie.SrcInterfaceAccess)
+	userplaneIE := ie.NewUserPlaneIPResourceInformation(flags, 0, "1.2.3.4", "", string(ie.NewNetworkInstanceFQDN("internet").Payload), ie.SrcInterfaceAccess)
 
 	ueIpInfo, err := handler.UnmarshalUEIPInformationBinary(userplaneIE.Payload)
 	if err != nil {
