@@ -132,8 +132,6 @@ func SendPfcpAssociationSetupRequest(remoteAddress *net.UDPAddr, upNodeID smf_co
 
 	pfcpMsg := BuildPfcpAssociationSetupRequest()
 
-	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
-
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		sendAssociationSetupRequestToAdapter(remoteAddress, pfcpMsg, pfcpMsg.Sequence(), upNodeID)
 	} else {
@@ -143,6 +141,7 @@ func SendPfcpAssociationSetupRequest(remoteAddress *net.UDPAddr, upNodeID smf_co
 			return fmt.Errorf("failed to send PFCP Association Request: %v", err.Error())
 		}
 	}
+	logger.PfcpLog.Infof("Sent PFCP Association Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return nil
 }
 

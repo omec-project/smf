@@ -230,8 +230,15 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 			return
 		}
 
+		if len(rsp.UserPlaneIPResourceInformation) == 0 {
+			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
+			return
+		}
+
+		upIPResourceInformationIE := rsp.UserPlaneIPResourceInformation[0]
+
 		// validate if DNNs served by UPF matches with the one provided by UPF
-		userPlaneIPResourceInformation, err := rsp.UserPlaneIPResourceInformation[0].UserPlaneIPResourceInformation()
+		userPlaneIPResourceInformation, err := upIPResourceInformationIE.UserPlaneIPResourceInformation()
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to get UserPlaneIPResourceInformation: %+v", err)
 			return
@@ -277,27 +284,17 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 			}
 		}
 
-		if len(rsp.UserPlaneIPResourceInformation) == 0 {
-			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
-			return
-		}
-		upIPResourceInformationIE := rsp.UserPlaneIPResourceInformation[0]
-		upIPResourceInformation, err := upIPResourceInformationIE.UserPlaneIPResourceInformation()
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to get UserPlaneIPResourceInformation: %+v", err)
-			return
-		}
-		if upIPResourceInformation != nil {
+		if userPlaneIPResourceInformation != nil {
 			newIPIPInfo := smf_context.UserPlaneIPResourceInformation{
-				Ipv4Address:     upIPResourceInformation.IPv4Address,
-				Ipv6Address:     upIPResourceInformation.IPv6Address,
-				TeidRange:       upIPResourceInformation.TEIDRange,
-				NetworkInstance: upIPResourceInformation.NetworkInstance,
-				SourceInterface: upIPResourceInformation.SourceInterface,
+				Ipv4Address:     userPlaneIPResourceInformation.IPv4Address,
+				Ipv6Address:     userPlaneIPResourceInformation.IPv6Address,
+				TeidRange:       userPlaneIPResourceInformation.TEIDRange,
+				NetworkInstance: userPlaneIPResourceInformation.NetworkInstance,
+				SourceInterface: userPlaneIPResourceInformation.SourceInterface,
 				Assosi:          upIPResourceInformationIE.HasASSOSI(),
 				Assoni:          upIPResourceInformationIE.HasASSONI(),
-				V4:              upIPResourceInformation.IPv4Address != nil,
-				V6:              upIPResourceInformation.IPv6Address != nil,
+				V4:              userPlaneIPResourceInformation.IPv4Address != nil,
+				V6:              userPlaneIPResourceInformation.IPv6Address != nil,
 			}
 			upf.UPIPInfo = newIPIPInfo
 

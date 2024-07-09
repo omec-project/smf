@@ -68,3 +68,19 @@ func TestFindUEIPAddressNoUEIPAddressInCreatedPDR(t *testing.T) {
 		t.Errorf("Expected %v, got %v", "1.2.3.4", ipAddress)
 	}
 }
+
+func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
+	msg := message.NewAssociationSetupResponse(
+		1,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.1", "", ""),
+		ie.NewUserPlaneIPResourceInformation(uint8(0x61), 0, "1.2.3.4", "", "internet", ie.SrcInterfaceAccess),
+	)
+
+	remoteAddress := &net.UDPAddr{
+		IP:   net.ParseIP("1.1.1.1"),
+		Port: 8805,
+	}
+
+	handler.HandlePfcpAssociationSetupResponse(msg, remoteAddress)
+}
