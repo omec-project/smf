@@ -186,6 +186,93 @@ func HandlePfcpAssociationSetupRequest(msg message.Message, remoteAddress *net.U
 	}
 }
 
+// func HandlePfcpAssociationSetupResponseOld(msg *pfcpUdp.Message) {
+// 	rsp := msg.PfcpMessage.Body.(pfcp.PFCPAssociationSetupResponse)
+
+// 	nodeID := rsp.NodeID
+// 	if rsp.Cause.CauseValue == pfcpType.CauseRequestAccepted {
+// 		if nodeID == nil {
+// 			logger.PfcpLog.Errorln("pfcp association needs NodeID")
+// 			return
+// 		}
+// 		logger.PfcpLog.Infof("Handle PFCP Association Setup Response with NodeID[%s]", nodeID.ResolveNodeIdToIp().String())
+
+// 		// Get NodeId from Seq:NodeId Map
+// 		seq := msg.PfcpMessage.Header.SequenceNumber
+// 		nodeID = pfcp_message.FetchPfcpTxn(seq)
+
+// 		if nodeID == nil {
+// 			logger.PfcpLog.Errorf("No pending pfcp Assoc req for sequence no: %v", seq)
+// 			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "invalid_seqno")
+// 			return
+// 		}
+
+// 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
+// 		if upf == nil {
+// 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+// 			return
+// 		}
+
+// 		// validate if DNNs served by UPF matches with the one provided by UPF
+// 		if rsp.UserPlaneIPResourceInformation != nil {
+// 			upfProvidedDnn := string(rsp.UserPlaneIPResourceInformation.NetworkInstance)
+// 			if !upf.IsDnnConfigured(upfProvidedDnn) {
+// 				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+// 				return
+// 			}
+// 		}
+
+// 		upf.UpfLock.Lock()
+// 		defer upf.UpfLock.Unlock()
+// 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
+// 		upf.RecoveryTimeStamp = *rsp.RecoveryTimeStamp
+// 		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
+
+// 		if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
+// 			// Send Metric event
+// 			upfStatus := mi.MetricEvent{
+// 				EventType: mi.CNfStatusEvt,
+// 				NfStatusData: mi.CNfStatus{
+// 					NfType:   mi.NfTypeUPF,
+// 					NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
+// 				},
+// 			}
+// 			metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+// 		}
+
+// 		// Supported Features of UPF
+// 		if rsp.UPFunctionFeatures != nil {
+// 			logger.PfcpLog.Debugf("Handle PFCP Association Setup success Response, received UPFunctionFeatures= %v ", rsp.UPFunctionFeatures)
+// 			upf.UPFunctionFeatures = rsp.UPFunctionFeatures
+// 		}
+
+// 		if rsp.UserPlaneIPResourceInformation != nil {
+// 			upf.UPIPInfo = *rsp.UserPlaneIPResourceInformation
+
+// 			if upf.UPIPInfo.Assosi && upf.UPIPInfo.Assoni && upf.UPIPInfo.SourceInterface == pfcpType.SourceInterfaceAccess &&
+// 				upf.UPIPInfo.V4 && !upf.UPIPInfo.Ipv4Address.Equal(net.IPv4zero) {
+// 				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]",
+// 					upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.Ipv4Address,
+// 					string(upf.UPIPInfo.NetworkInstance), upf.UPIPInfo.TeidRange)
+
+// 				// reset the N3 interface of UPF
+// 				upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
+
+// 				// Insert N3 interface info from UPF
+// 				n3Interface := smf_context.UPFInterfaceInfo{}
+// 				n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
+// 				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
+// 				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
+// 			}
+
+// 			logger.PfcpLog.Infof("UPF(%s)[%s] setup association success",
+// 				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)
+// 		} else {
+// 			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
+// 		}
+// 	}
+// }
+
 func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.UDPAddr) {
 	rsp, ok := msg.(*message.AssociationSetupResponse)
 	if !ok {
@@ -235,8 +322,6 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 			return
 		}
 
-		fmt.Println("Length of upIPResourceInformationIE: ", len(rsp.UserPlaneIPResourceInformation))
-
 		upIPResourceInformationIE := rsp.UserPlaneIPResourceInformation[0]
 
 		userPlaneIPResourceInformation, err := UnmarshalUEIPInformationBinary(upIPResourceInformationIE.Payload)
@@ -248,8 +333,9 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 		// validate if DNNs served by UPF matches with the one provided by UPF
 		if userPlaneIPResourceInformation != nil {
 			upfProvidedDnn := userPlaneIPResourceInformation.NetworkInstance
+			fmt.Println("upfProvidedDnn: ", upfProvidedDnn)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, %v is not configured", upfProvidedDnn)
 				return
 			}
 		}

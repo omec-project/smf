@@ -28,6 +28,7 @@ func DummyServer() {
 	}
 
 	go udp.Run(sourceAddress, pfcp.Dispatch)
+	udp.WaitForServer()
 
 	smfKeyLogPath := path_util.Free5gcPath("free5gc/smfsslkey.log")
 	smfPemPath := path_util.Free5gcPath("free5gc/support/TLS/smf.pem")

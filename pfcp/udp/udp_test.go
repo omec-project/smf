@@ -43,6 +43,7 @@ func TestRun(t *testing.T) {
 	}
 
 	go udp.Run(sourceAddress, Dispatch)
+	udp.WaitForServer()
 
 	time.Sleep(1 * time.Second)
 

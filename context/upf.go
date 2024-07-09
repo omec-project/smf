@@ -632,6 +632,7 @@ func (upf *UPF) IsDnnConfigured(sDnn string) bool {
 	// iterate through slices and check if DNN is configured
 
 	for _, slice := range upf.SNssaiInfos {
+		fmt.Println("DNN List: ", slice.DnnList)
 		for _, dnn := range slice.DnnList {
 			if dnn.Dnn == sDnn {
 				return true

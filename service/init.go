@@ -352,6 +352,7 @@ func (smf *SMF) Start() {
 		Port: smfCtxt.PFCPPort,
 	}
 	go udp.Run(sourceAddress, pfcp.Dispatch)
+	udp.WaitForServer()
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
 		if upf.NodeID.NodeIdType == context.NodeIdTypeFqdn {

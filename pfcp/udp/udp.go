@@ -61,6 +61,15 @@ func Run(sourceAddress *net.UDPAddr, Dispatch func(message.Message, *net.UDPAddr
 	}
 }
 
+func WaitForServer() {
+	for {
+		if Server != nil && Server.Conn != nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
 func SendPfcp(msg message.Message, addr *net.UDPAddr) error {
 	if Server == nil {
 		return fmt.Errorf("PFCP server is nil")
