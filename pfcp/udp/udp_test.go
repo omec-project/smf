@@ -111,3 +111,20 @@ func TestServerSendPfcp(t *testing.T) {
 		t.Errorf("Failed to send PFCP message: %v", err)
 	}
 }
+
+func TestServerNotSetSendPfcp(t *testing.T) {
+	udp.Server = nil
+
+	remoteAddress := &net.UDPAddr{
+		IP:   net.ParseIP("1.2.3.4"),
+		Port: 8805,
+	}
+
+	msg := message.NewAssociationSetupResponse(1)
+
+	err := udp.SendPfcp(msg, remoteAddress)
+
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+}
