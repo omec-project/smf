@@ -8,7 +8,9 @@ import (
 	"net"
 	"testing"
 
+	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/handler"
+	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
 )
@@ -70,11 +72,14 @@ func TestFindUEIPAddressNoUEIPAddressInCreatedPDR(t *testing.T) {
 }
 
 func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
+	upNodeID := context.NewNodeID("1.1.1.1")
+	context.NewUPF(&upNodeID, nil)
+	pfcp_message.InsertPfcpTxn(1, &upNodeID)
 	msg := message.NewAssociationSetupResponse(
 		1,
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
-		ie.NewUserPlaneIPResourceInformation(uint8(0x61), 0, "1.2.3.4", "", "internet", ie.SrcInterfaceAccess),
+		ie.NewUserPlaneIPResourceInformation(uint8(0x61), 0, "1.2.3.4", "", "", ie.SrcInterfaceAccess),
 	)
 
 	remoteAddress := &net.UDPAddr{
@@ -83,4 +88,5 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 	}
 
 	handler.HandlePfcpAssociationSetupResponse(msg, remoteAddress)
+	// panic("TestHandlePfcpAssociationSetupResponse")
 }

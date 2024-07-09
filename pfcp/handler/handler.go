@@ -235,14 +235,17 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 			return
 		}
 
+		fmt.Println("Length of upIPResourceInformationIE: ", len(rsp.UserPlaneIPResourceInformation))
+
 		upIPResourceInformationIE := rsp.UserPlaneIPResourceInformation[0]
 
-		// validate if DNNs served by UPF matches with the one provided by UPF
-		userPlaneIPResourceInformation, err := upIPResourceInformationIE.UserPlaneIPResourceInformation()
+		userPlaneIPResourceInformation, err := UnmarshalUEIPInformationBinary(upIPResourceInformationIE.Payload)
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to get UserPlaneIPResourceInformation: %+v", err)
 			return
 		}
+
+		// validate if DNNs served by UPF matches with the one provided by UPF
 		if userPlaneIPResourceInformation != nil {
 			upfProvidedDnn := userPlaneIPResourceInformation.NetworkInstance
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
