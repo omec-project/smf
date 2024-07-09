@@ -21,6 +21,7 @@ func BoolPointer(b bool) *bool {
 }
 
 func TestSendPfcpAssociationSetupRequest(t *testing.T) {
+	const upNodeIDStr = "1.1.1.1"
 	kafkaInfo := factory.KafkaInfo{
 		EnableKafka: BoolPointer(false),
 	}
@@ -33,10 +34,10 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 	}
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
-		NodeIdValue: net.ParseIP("2.3.4.5").To4(),
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("2.3.4.5"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 8805,
 	}
 	localAddress := &net.UDPAddr{
@@ -62,8 +63,9 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 }
 
 func TestSendPfcpAssociationSetupResponse(t *testing.T) {
+	const upNodeIDStr = "2.2.2.2"
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("2.2.3.4"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 8805,
 	}
 	localAddress := &net.UDPAddr{
@@ -90,7 +92,7 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 
 // When the User Plane Node exists in the stored context, then the PFCP Session Establishment Request is sent
 func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
-	const upNodeIDStr = "2.3.4.5"
+	const upNodeIDStr = "3.3.3.3"
 	configuration := &factory.Configuration{
 		EnableUpfAdapter: false,
 	}
@@ -147,6 +149,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 
 // Given the User Plane Node does not exist in the stored context, then the PFCP Session Establishment Request is not sent
 func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
+	const upNodeIDStr = "4.4.4.4"
 	configuration := &factory.Configuration{
 		EnableUpfAdapter: false,
 	}
@@ -155,12 +158,12 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 	}
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
-		NodeIdValue: net.ParseIP("2.3.4.5").To4(),
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
 	smContext := &context.SMContext{}
 
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("2.2.3.4"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 8805,
 	}
 
@@ -192,13 +195,13 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 }
 
 func TestSendPfcpSessionModificationRequest(t *testing.T) {
+	const upNodeIDStr = "5.5.5.5"
 	configuration := &factory.Configuration{
 		EnableUpfAdapter: false,
 	}
 	factory.SmfConfig = factory.Config{
 		Configuration: configuration,
 	}
-	upNodeIDStr := "2.3.4.5"
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -249,13 +252,13 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 }
 
 func TestSendPfcpSessionDeletionRequest(t *testing.T) {
+	const upNodeIDStr = "6.6.6.6"
 	configuration := &factory.Configuration{
 		EnableUpfAdapter: false,
 	}
 	factory.SmfConfig = factory.Config{
 		Configuration: configuration,
 	}
-	upNodeIDStr := "2.3.4.5"
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -303,8 +306,9 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 }
 
 func TestSendPfcpSessionReportResponse(t *testing.T) {
+	const upNodeIDStr = "7.7.7.7"
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("2.3.4.5"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 8805,
 	}
 
@@ -332,6 +336,7 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 }
 
 func TestSendHeartbeatRequest(t *testing.T) {
+	const upNodeIDStr = "8.8.8.8"
 	configuration := &factory.Configuration{
 		EnableUpfAdapter: false,
 	}
@@ -340,10 +345,10 @@ func TestSendHeartbeatRequest(t *testing.T) {
 	}
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
-		NodeIdValue: net.ParseIP("2.3.4.5").To4(),
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("2.3.4.5"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 8805,
 	}
 
@@ -371,8 +376,9 @@ func TestSendHeartbeatRequest(t *testing.T) {
 }
 
 func TestSendHeartbeatResponse(t *testing.T) {
+	const upNodeIDStr = "9.9.9.9"
 	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
+		IP:   net.ParseIP(upNodeIDStr),
 		Port: 7001,
 	}
 
