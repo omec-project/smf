@@ -43,7 +43,10 @@ func TestRun(t *testing.T) {
 	}
 
 	go udp.Run(sourceAddress, Dispatch)
-	udp.WaitForServer()
+	err := udp.WaitForServer()
+	if err != nil {
+		t.Fatalf("Failed to start PFCP server: %v", err)
+	}
 
 	time.Sleep(1 * time.Second)
 
@@ -63,7 +66,7 @@ func TestRun(t *testing.T) {
 		Port: 8805,
 	}
 
-	err := udp.SendPfcp(setupRequest, dstAddr)
+	err = udp.SendPfcp(setupRequest, dstAddr)
 	if err != nil {
 		t.Errorf("Failed to send PFCP message: %v", err)
 	}

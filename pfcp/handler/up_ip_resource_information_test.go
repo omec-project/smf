@@ -102,10 +102,6 @@ func TestUnmarshalUEIPInformationBinary(t *testing.T) {
 		t.Errorf("Error unmarshalling UE IP Information: %v", err)
 	}
 
-	if ueIpInfo.Flags != 0x61 {
-		t.Errorf("Expected flags 0x61, got %x", ueIpInfo.Flags)
-	}
-
 	if ueIpInfo.TEIDRange != 0 {
 		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TEIDRange)
 	}

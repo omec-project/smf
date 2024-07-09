@@ -11,77 +11,89 @@ package handler
 
 import (
 	"fmt"
-	"io"
 	"net"
 
 	"github.com/wmnsk/go-pfcp/ie"
 )
 
-func has7thBit(f uint8) bool {
-	return (f&0x40)>>6 == 1
+const (
+	Mask4 = 1<<4 - 1
+	Mask3 = 1<<3 - 1
+)
+
+const (
+	BitMask7 = 1 << 6
+	BitMask6 = 1 << 5
+	BitMask2 = 1 << 1
+	BitMask1 = 1
+)
+
+func utob(u uint8) bool {
+	return u != 0
 }
 
-func has6thBit(f uint8) bool {
-	return (f&0x20)>>5 == 1
-}
+func UnmarshalUEIPInformationBinary(data []byte) (*ie.UserPlaneIPResourceInformationFields, error) {
+	u := &ie.UserPlaneIPResourceInformationFields{}
+	length := uint16(len(data))
 
-func has2ndBit(f uint8) bool {
-	return (f&0x02)>>1 == 1
-}
-
-func has1stBit(f uint8) bool {
-	return (f & 0x01) == 1
-}
-
-func UnmarshalUEIPInformationBinary(b []byte) (*ie.UserPlaneIPResourceInformationFields, error) {
-	l := len(b)
-	if l < 2 {
-		return nil, io.ErrUnexpectedEOF
+	var idx uint16 = 0
+	// Octet 5
+	if length < idx+1 {
+		return nil, fmt.Errorf("inadequate TLV length: %d", length)
 	}
+	Assosi := utob(data[idx] & BitMask7)
+	Assoni := utob(data[idx] & BitMask6)
+	Teidri := data[idx] >> 2 & Mask3
+	V6 := utob(data[idx] & BitMask2)
+	V4 := utob(data[idx] & BitMask1)
+	idx = idx + 1
 
-	f := &ie.UserPlaneIPResourceInformationFields{}
-
-	f.Flags = b[0]
-	offset := 1
-
-	if (f.Flags>>2)&0x07 != 0 {
-		if l < offset+1 {
-			return nil, io.ErrUnexpectedEOF
+	// Octet 6
+	if Teidri != 0 {
+		if length < idx+1 {
+			return nil, fmt.Errorf("inadequate TLV length: %d", length)
 		}
-		f.TEIDRange = b[offset]
-		offset++
+		u.TEIDRange = data[idx]
+		idx = idx + 1
 	}
 
-	if has1stBit(f.Flags) {
-		if l < offset+4 {
-			return nil, io.ErrUnexpectedEOF
+	// Octet m to (m+3)
+	if V4 {
+		if length < idx+net.IPv4len {
+			return nil, fmt.Errorf("inadequate TLV length: %d", length)
 		}
-		f.IPv4Address = net.IP(b[offset : offset+4]).To4()
-		offset += 4
+		u.IPv4Address = net.IP(data[idx : idx+net.IPv4len])
+		idx = idx + net.IPv4len
 	}
 
-	if has2ndBit(f.Flags) {
-		if l < offset+16 {
-			return nil, io.ErrUnexpectedEOF
+	// Octet p to (p+15)
+	if V6 {
+		if length < idx+net.IPv6len {
+			return nil, fmt.Errorf("inadequate TLV length: %d", length)
 		}
-		f.IPv6Address = net.IP(b[offset : offset+16]).To16()
-		offset += 16
+		u.IPv6Address = net.IP(data[idx : idx+net.IPv6len])
+		idx = idx + net.IPv6len
 	}
 
-	if has6thBit(f.Flags) {
-		n := l
-		if has7thBit(f.Flags) {
-			n--
-			f.SourceInterface = b[n] & 0x0f
+	if !V4 && !V6 {
+		return nil, fmt.Errorf("none of V4 and V6 flags is set")
+	}
+
+	// Octet r
+	if Assosi {
+		if length < idx+1 {
+			return nil, fmt.Errorf("inadequate TLV length: %d", length)
 		}
-		f.NetworkInstance = string(b[offset:n])
-		return f, nil
+		u.SourceInterface = data[length-1] & Mask4
+		data = data[:length-1]
 	}
 
-	if has7thBit(f.Flags) {
-		f.SourceInterface = b[offset] & 0x0f
-		fmt.Println("Source Interface: ", f.SourceInterface)
+	// Octet k to l
+	if Assoni {
+		if length < idx+1 {
+			return nil, fmt.Errorf("inadequate TLV length: %d", length)
+		}
+		u.NetworkInstance = string(data[idx:])
 	}
-
-	return f, nil
+	return u, nil
 }

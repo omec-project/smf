@@ -61,11 +61,17 @@ func Run(sourceAddress *net.UDPAddr, Dispatch func(message.Message, *net.UDPAddr
 	}
 }
 
-func WaitForServer() {
+func WaitForServer() error {
+	timeout := 10 * time.Second
+	t0 := time.Now()
 	for {
-		if Server != nil && Server.Conn != nil {
-			break
+		if time.Since(t0) > timeout {
+			return fmt.Errorf("timeout waiting for PFCP server to start")
 		}
+		if Server != nil && Server.Conn != nil {
+			return nil
+		}
+		logger.PfcpLog.Infof("Waiting for PFCP server to start...")
 		time.Sleep(1 * time.Second)
 	}
 }

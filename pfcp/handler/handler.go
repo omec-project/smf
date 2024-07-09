@@ -243,9 +243,6 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 			return
 		}
 
-		ll := upf.IsDnnConfigured("internet")
-		logger.PfcpLog.Warnf("Handle PFCP Association Setup Response, DNN mismatch, %s is configured: %v", "internet", ll)
-
 		// validate if DNNs served by UPF matches with the one provided by UPF
 		if userPlaneIPResourceInformation != nil {
 			upfProvidedDnn := userPlaneIPResourceInformation.NetworkInstance
