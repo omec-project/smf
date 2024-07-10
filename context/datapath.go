@@ -506,16 +506,21 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 		}
 
 		var iface *UPFInterfaceInfo
+		logger.CtxLog.Warnf("TO DELETE: IS an UPF: %v", dpNode.IsANUPF())
 		if dpNode.IsANUPF() {
 			iface = ULDestUPF.GetInterface(models.UpInterfaceType_N3, smContext.Dnn)
 		} else {
 			iface = ULDestUPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 		}
 
+		logger.CtxLog.Warnf("TO DELETE: Interface: %v", iface)
+		logger.CtxLog.Warnf("TO DELETE: smContext.SelectedPDUSessionType: %v", smContext.SelectedPDUSessionType)
+
 		if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 			logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v ", name, err)
 			return err
 		} else {
+			logger.CtxLog.Warnf("TO DELETE: upIP: %v", upIP)
 			ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
 			ULPDR.PDI.LocalFTeid = &FTEID{
 				V4:          true,

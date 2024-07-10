@@ -85,6 +85,7 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 func SendPFCPRules(smContext *smf_context.SMContext) {
 	pfcpPool := make(map[string]*PFCPState)
 
+	logger.AppLog.Warnf("TO DELETE: Length of datapath pool: %v\n", len(smContext.Tunnel.DataPathPool))
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		if dataPath.Activated {
 			for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {

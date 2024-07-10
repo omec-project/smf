@@ -48,15 +48,11 @@ func Run(sourceAddress *net.UDPAddr, Dispatch func(message.Message, *net.UDPAddr
 			logger.PfcpLog.Errorf("Error reading from UDP: %v", err)
 			continue
 		}
-
 		msg, err := message.Parse(buf[:n])
 		if err != nil {
 			logger.PfcpLog.Errorf("Error parsing PFCP message: %v", err)
 			continue
 		}
-
-		logger.PfcpLog.Infof("Received message from %s", remoteAddr.String())
-
 		Dispatch(msg, remoteAddr)
 	}
 }

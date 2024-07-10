@@ -330,8 +330,6 @@ func sendSessionDeletionRequestToAdapter(upNodeID smf_context.NodeID, message pf
 		if err != nil {
 			logger.PfcpLog.Fatalln(err)
 		}
-		pfcpMsgString := string(pfcpMsgBytes)
-		logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 		pfcpRspMsg, err := pfcp_message.Parse(pfcpMsgBytes)
 		if err != nil {
 			logger.PfcpLog.Errorf("Parse PFCP message failed: %v", err)

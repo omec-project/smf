@@ -123,7 +123,7 @@ func createPDIIE(pdi *context.PDI) *ie.IE {
 			string(pdi.SDFFilter.TosTrafficClass),
 			string(pdi.SDFFilter.SecurityParameterIndex),
 			string(pdi.SDFFilter.FlowLabel),
-			pdi.SDFFilter.SdfFilterId,
+			0,
 		),
 		)
 	}
@@ -329,7 +329,7 @@ func BuildPfcpSessionEstablishmentRequest(
 	ies = append(ies, ie.NewPDNType(ie.PDNTypeIPv4))
 
 	return message.NewSessionEstablishmentRequest(
-		0,
+		1,
 		0,
 		0,
 		getSeqNumber(),
