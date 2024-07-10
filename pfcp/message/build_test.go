@@ -4,7 +4,6 @@
 package message_test
 
 import (
-	"fmt"
 	"net"
 	"testing"
 
@@ -36,27 +35,19 @@ func outerHeaderCreationSet(farIEs []*ie.IE) bool {
 	for _, farIE := range farIEs {
 		createFar, err := farIE.UpdateFAR()
 		if err != nil {
-			fmt.Println("Error parsing CreateFAR IE")
 			continue
 		}
 
 		for _, x := range createFar {
 			forwardingParamers, err := x.UpdateForwardingParameters()
 			if err != nil {
-				fmt.Println("Error parsing ForwardingParameters IE")
 				continue
 			}
 
 			for _, y := range forwardingParamers {
 				outerHeaderCreation, err := y.OuterHeaderCreation()
 				if err == nil && outerHeaderCreation != nil {
-					fmt.Println("description: ", outerHeaderCreation.OuterHeaderCreationDescription)
-					fmt.Println("ipv4 address: ", outerHeaderCreation.IPv4Address)
-					if outerHeaderCreation.IPv4Address == nil {
-						fmt.Println("outer header creation Ipv4Address is nil")
-						return false
-					}
-					return true
+					return outerHeaderCreation.IPv4Address.String() == "1.2.3.4"
 				}
 			}
 		}

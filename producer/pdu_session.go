@@ -625,7 +625,11 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 				continue
 			}
 			if _, exist := deletedPFCPNode[curUPFID]; !exist {
-				pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext, curDataPathNode.UPF.Port)
+				remoteAddress := &net.UDPAddr{
+					IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+					Port: int(curDataPathNode.UPF.Port),
+				}
+				pfcp_message.SendPfcpSessionDeletionRequest(remoteAddress, curDataPathNode.UPF.NodeID, smContext)
 				deletedPFCPNode[curUPFID] = true
 				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
 			}

@@ -86,15 +86,18 @@ func SendPfcp(msg message.Message, addr *net.UDPAddr) error {
 	buf := make([]byte, msg.MarshalLen())
 	err := msg.MarshalTo(buf)
 	if err != nil {
-		logger.PfcpLog.Errorf("Failed to marshal PFCP message: %v", err)
 		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", err.Error())
-		return err
+		return fmt.Errorf("failed to marshal PFCP message: %v", err)
 	}
+	// Print remote address
+	logger.PfcpLog.Infof("Sending message to %s", addr.String())
+
+	// Print local address
+	logger.PfcpLog.Infof("Sending message from %s", Server.SrcAddr.String())
 	_, err = Server.Conn.WriteToUDP(buf, addr)
 	if err != nil {
-		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
 		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", err.Error())
-		return err
+		return fmt.Errorf("failed to write PFCP message to udp: %v", err)
 	}
 	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Success", "")
 	return nil

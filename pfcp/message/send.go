@@ -299,21 +299,17 @@ func sendSessionModificationRequestToAdapter(upNodeID smf_context.NodeID, messag
 	}
 }
 
-func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_context.SMContext, upfPort uint16) (uint32, error) {
+func SendPfcpSessionDeletionRequest(remoteAddress *net.UDPAddr, upNodeID smf_context.NodeID, ctx *smf_context.SMContext) (uint32, error) {
 	pfcpMsg, err := BuildPfcpSessionDeletionRequest(upNodeID, ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to build PFCP Session Deletion Request: %v", err)
 	}
 	seqNum := getSeqNumber()
-	upaddr := &net.UDPAddr{
-		IP:   upNodeID.ResolveNodeIdToIp(),
-		Port: int(upfPort),
-	}
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
-		sendSessionDeletionRequestToAdapter(upNodeID, pfcpMsg, upaddr)
+		sendSessionDeletionRequestToAdapter(upNodeID, pfcpMsg, remoteAddress)
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		err := udp.SendPfcp(pfcpMsg, upaddr) // Again, to validate that we can get rid of eventData
+		err := udp.SendPfcp(pfcpMsg, remoteAddress) // Again, to validate that we can get rid of eventData
 		if err != nil {
 			return 0, fmt.Errorf("failed to send PFCP Session Deletion Request: %v", err)
 		}

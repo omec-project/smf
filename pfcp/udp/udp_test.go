@@ -104,7 +104,7 @@ func TestNewServer(t *testing.T) {
 
 func TestServerSendPfcp(t *testing.T) {
 	remoteAddress := &net.UDPAddr{
-		IP:   net.ParseIP("10.152.183.116"),
+		IP:   net.ParseIP("127.0.0.1"),
 		Port: 8805,
 	}
 
@@ -120,7 +120,7 @@ func TestServerNotSetSendPfcp(t *testing.T) {
 	udp.Server = nil
 
 	remoteAddress := &net.UDPAddr{
-		IP:   net.ParseIP("1.2.3.4"),
+		IP:   net.ParseIP("127.0.0.1"),
 		Port: 8805,
 	}
 
