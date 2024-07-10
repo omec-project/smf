@@ -58,7 +58,6 @@ func outerHeaderCreationSet(farIEs []*ie.IE) bool {
 					}
 					return true
 				}
-
 			}
 		}
 	}
@@ -219,7 +218,6 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 	}
 
 	req, err := pfcp_message.ParseSessionModificationRequest(buf)
-
 	if err != nil {
 		t.Fatalf("Error parsing PFCP session modification request: %v", err)
 	}
@@ -237,5 +235,4 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 	if req.MessagePriority != 12 {
 		t.Errorf("Expected MessagePriority to be 12, got %d", req.MessagePriority)
 	}
-
 }
