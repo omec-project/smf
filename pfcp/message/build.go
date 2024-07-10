@@ -117,6 +117,7 @@ func createPDIIE(pdi *context.PDI) *ie.IE {
 	}
 
 	if pdi.SDFFilter != nil {
+		// There seems to be something wrong here, bid should be false
 		createPDIIes = append(createPDIIes, ie.NewSDFFilter(
 			string(pdi.SDFFilter.FlowDescription),
 			string(pdi.SDFFilter.TosTrafficClass),
@@ -270,7 +271,7 @@ func farToUpdateFAR(far *context.FAR) *ie.IE {
 		if far.ForwardingParameters.ForwardingPolicyID != "" {
 			forwardingParametersIEs = append(forwardingParametersIEs, ie.NewForwardingPolicy(far.ForwardingParameters.ForwardingPolicyID))
 		}
-		updateFARies = append(updateFARies, ie.NewForwardingParameters(forwardingParametersIEs...))
+		updateFARies = append(updateFARies, ie.NewUpdateForwardingParameters(forwardingParametersIEs...))
 	}
 	return ie.NewUpdateFAR(updateFARies...)
 }

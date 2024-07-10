@@ -572,8 +572,6 @@ func HandlePfcpSessionModificationResponse(msg message.Message, remoteAddress *n
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
 
-	logger.PfcpLog.Infoln("In HandlePfcpSessionModificationResponse")
-
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
 			smContext.SubPfcpLog.Infoln("Keep Adding PSAAndULCL")
@@ -615,9 +613,9 @@ func HandlePfcpSessionModificationResponse(msg message.Message, remoteAddress *n
 			}
 		}
 
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infoln("PFCP Session Modification Success: ", SEID)
 	} else {
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infoln("PFCP Session Modification Rejected with cause ", causeValue, ":", SEID)
 		if smContext.SMContextState == smf_context.SmStatePfcpModify {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateFailed
 		}

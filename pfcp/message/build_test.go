@@ -41,7 +41,7 @@ func outerHeaderCreationSet(farIEs []*ie.IE) bool {
 		}
 
 		for _, x := range createFar {
-			forwardingParamers, err := x.ForwardingParameters()
+			forwardingParamers, err := x.UpdateForwardingParameters()
 			if err != nil {
 				fmt.Println("Error parsing ForwardingParameters IE")
 				continue
