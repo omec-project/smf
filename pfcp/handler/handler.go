@@ -338,6 +338,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 				n3Interface.NetworkInstance = upf.UPIPInfo.NetworkInstance
 				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
 				logger.PfcpLog.Warnf("TO DELETE: Appending ipv4 address: %v", upf.UPIPInfo.Ipv4Address)
+				logger.PfcpLog.Warnf("TO DELETE: List of ipv4 address: %v", n3Interface.IPv4EndPointAddresses)
 				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
 			}
 
@@ -530,11 +531,15 @@ func HandlePfcpSessionEstablishmentResponse(msg message.Message, remoteAddress *
 		logger.PfcpLog.Errorf("No SMF context found for SEID[%d]", seid)
 		return
 	}
-	smContext.SMLock.Lock()
 
 	// Get NodeId from Seq:NodeId Map
 	nodeID := pfcp_message.FetchPfcpTxn(rsp.SequenceNumber)
 
+	if nodeID == nil {
+		logger.PfcpLog.Errorf("No pending pfcp session establishment response for sequence no: %v", rsp.SequenceNumber)
+		return
+	}
+	smContext.SMLock.Lock()
 	if rsp.UPFSEID != nil {
 		upFSEID, err := rsp.UPFSEID.FSEID()
 		if err != nil {

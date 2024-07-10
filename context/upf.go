@@ -151,7 +151,8 @@ func NewUPFInterfaceInfo(i *factory.InterfaceUpfInfoItem) *UPFInterfaceInfo {
 // IP returns the IP of the user plane IP information of the pduSessType
 func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
 	if (pduSessType == nasMessage.PDUSessionTypeIPv4 || pduSessType == nasMessage.PDUSessionTypeIPv4IPv6) && len(i.IPv4EndPointAddresses) != 0 {
-		logger.CtxLog.Warnf("TO DELETE: resolve addr [%s]", i.IPv4EndPointAddresses[0].String())
+		logger.CtxLog.Warnf("TO DELETE: resolve addr ipv4 0 [%s]", i.IPv4EndPointAddresses[0].String())
+		logger.CtxLog.Warnf("TO DELETE: List of ipv4 [%+v]", i.IPv4EndPointAddresses)
 		return i.IPv4EndPointAddresses[0].To4(), nil
 	}
 
@@ -160,7 +161,7 @@ func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
 	}
 
 	if i.EndpointFQDN != "" {
-		logger.CtxLog.Warnf("TO DELETE: resolve addr [%s]", i.EndpointFQDN)
+		logger.CtxLog.Warnf("TO DELETE: resolve addr fqdn [%s]", i.EndpointFQDN)
 		if resolvedAddr, err := net.ResolveIPAddr("ip", i.EndpointFQDN); err != nil {
 			logger.CtxLog.Errorf("resolve addr [%s] failed", i.EndpointFQDN)
 		} else {
