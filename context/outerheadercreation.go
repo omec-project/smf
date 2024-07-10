@@ -4,6 +4,6 @@
 package context
 
 const (
-	OuterHeaderCreationGtpUUdpIpv4 uint16 = 1
-	OuterHeaderRemovalGtpUUdpIpv4  uint8  = 1
+	OuterHeaderCreationGtpUUdpIpv4 uint16 = 256
+	OuterHeaderRemovalGtpUUdpIpv4  uint8  = 0
 )

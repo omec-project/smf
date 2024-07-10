@@ -173,7 +173,7 @@ func farToCreateFAR(far *context.FAR) *ie.IE {
 				far.ForwardingParameters.OuterHeaderCreation.Ipv4Address.String(),
 				far.ForwardingParameters.OuterHeaderCreation.Ipv6Address.String(),
 				far.ForwardingParameters.OuterHeaderCreation.PortNumber,
-				0, // Here we set ctag and stag to 0, let's valiate this makes sense
+				0,
 				0,
 			))
 		}
@@ -254,7 +254,7 @@ func farToUpdateFAR(far *context.FAR) *ie.IE {
 			far.ForwardingParameters.OuterHeaderCreation.Ipv4Address.String(),
 			far.ForwardingParameters.OuterHeaderCreation.Ipv6Address.String(),
 			far.ForwardingParameters.OuterHeaderCreation.PortNumber,
-			0, // Here we set ctag and stag to 0, let's valiate this makes sense
+			0,
 			0,
 		))
 		if far.ForwardingParameters.PFCPSMReqFlags != nil {
@@ -396,7 +396,6 @@ func BuildPfcpSessionModificationRequest(
 		}
 		qer.State = context.RULE_CREATE
 	}
-
 	return message.NewSessionModificationRequest(
 		1,
 		0,
