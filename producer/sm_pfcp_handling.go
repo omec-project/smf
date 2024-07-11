@@ -26,7 +26,6 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 		smContext,
 		pfcpParam.pdrList,
 		pfcpParam.farList,
-		pfcpParam.barList,
 		pfcpParam.qerList,
 	)
 

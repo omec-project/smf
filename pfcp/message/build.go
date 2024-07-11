@@ -187,13 +187,6 @@ func farToCreateFAR(far *context.FAR) *ie.IE {
 	return ie.NewCreateFAR(createFARies...)
 }
 
-func barToCreateBAR(bar *context.BAR) *ie.IE {
-	createBARies := make([]*ie.IE, 0)
-	createBARies = append(createBARies, ie.NewBARID(bar.BARID))
-	createBARies = append(createBARies, ie.NewDownlinkDataNotificationDelay(bar.DownlinkDataNotificationDelay.DelayValue))
-	return ie.NewCreateBAR(createBARies...)
-}
-
 func qerToCreateQER(qer *context.QER) *ie.IE {
 	createQERies := make([]*ie.IE, 0)
 	createQERies = append(createQERies, ie.NewQERID(qer.QERID))
@@ -281,7 +274,6 @@ func BuildPfcpSessionEstablishmentRequest(
 	smContext *context.SMContext,
 	pdrList []*context.PDR,
 	farList []*context.FAR,
-	barList []*context.BAR,
 	qerList []*context.QER,
 ) (message.Message, error) {
 	nodeIDstr := upNodeID.ResolveNodeIdToIp().String()
@@ -306,13 +298,6 @@ func BuildPfcpSessionEstablishmentRequest(
 			ies = append(ies, farToCreateFAR(far))
 		}
 		far.State = context.RULE_CREATE
-	}
-
-	for _, bar := range barList {
-		if bar.State == context.RULE_INITIAL {
-			ies = append(ies, barToCreateBAR(bar))
-		}
-		bar.State = context.RULE_CREATE
 	}
 
 	qerMap := make(map[uint32]*context.QER)
@@ -344,7 +329,6 @@ func BuildPfcpSessionModificationRequest(
 	smContext *context.SMContext,
 	pdrList []*context.PDR,
 	farList []*context.FAR,
-	barList []*context.BAR,
 	qerList []*context.QER,
 ) (message.Message, error) {
 	ies := make([]*ie.IE, 0)
@@ -383,13 +367,6 @@ func BuildPfcpSessionModificationRequest(
 		far.State = context.RULE_CREATE
 	}
 
-	for _, bar := range barList {
-		switch bar.State {
-		case context.RULE_INITIAL:
-			ies = append(ies, barToCreateBAR(bar))
-		}
-	}
-
 	for _, qer := range qerList {
 		switch qer.State {
 		case context.RULE_INITIAL:
@@ -398,11 +375,11 @@ func BuildPfcpSessionModificationRequest(
 		qer.State = context.RULE_CREATE
 	}
 	return message.NewSessionModificationRequest(
-		1,
+		0,
 		0,
 		remoteSEID,
 		getSeqNumber(),
-		12,
+		0,
 		ies...,
 	), nil
 }

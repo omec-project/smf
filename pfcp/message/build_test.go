@@ -94,10 +94,9 @@ func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 		},
 	}
 	farList := []*context.FAR{}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
+	msg, err := message.BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, qerList)
 	if err != nil {
 		t.Fatalf("Error building PFCP session establishment request: %v", err)
 	}
@@ -190,10 +189,9 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 			ApplyAction: context.ApplyAction{},
 		},
 	}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
+	msg, err := message.BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList)
 	if err != nil {
 		t.Fatalf("Error building PFCP session modification request: %v", err)
 	}
@@ -221,9 +219,5 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 
 	if !outerHeaderCreationSet(updateFars) {
 		t.Errorf("Expected OuterHeaderCreation to be set")
-	}
-
-	if req.MessagePriority != 12 {
-		t.Errorf("Expected MessagePriority to be 12, got %d", req.MessagePriority)
 	}
 }

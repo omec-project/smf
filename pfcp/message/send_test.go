@@ -122,7 +122,6 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 
 	pdrList := []*context.PDR{}
 	farList := []*context.FAR{}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
 	localAddress := &net.UDPAddr{
@@ -141,7 +140,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		Conn:    conn,
 	}
 
-	err = message.SendPfcpSessionEstablishmentRequest(remoteAddr, upNodeID, smContext, pdrList, farList, barList, qerList)
+	err = message.SendPfcpSessionEstablishmentRequest(remoteAddr, upNodeID, smContext, pdrList, farList, qerList)
 	if err != nil {
 		t.Errorf("Error sending PFCP Session Establishment Request: %v", err)
 	}
@@ -169,7 +168,6 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 
 	pdrList := []*context.PDR{}
 	farList := []*context.FAR{}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
 	localAddress := &net.UDPAddr{
@@ -188,7 +186,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 		Conn:    conn,
 	}
 
-	err = message.SendPfcpSessionEstablishmentRequest(remoteAddr, upNodeID, smContext, pdrList, farList, barList, qerList)
+	err = message.SendPfcpSessionEstablishmentRequest(remoteAddr, upNodeID, smContext, pdrList, farList, qerList)
 	if err == nil {
 		t.Errorf("Expected error sending PFCP Session Establishment Request")
 	}
@@ -223,7 +221,6 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 	}
 	pdrList := []*context.PDR{}
 	farList := []*context.FAR{}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
 	localAddress := &net.UDPAddr{
@@ -242,7 +239,7 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 		Conn:    conn,
 	}
 
-	seq, err := message.SendPfcpSessionModificationRequest(remoteAddr, upNodeID, smContext, pdrList, farList, barList, qerList)
+	seq, err := message.SendPfcpSessionModificationRequest(remoteAddr, upNodeID, smContext, pdrList, farList, qerList)
 	if err != nil {
 		t.Errorf("Error sending PFCP Session Modification Request: %v", err)
 	}

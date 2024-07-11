@@ -318,7 +318,6 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	pfcpParam := &pfcpParam{
 		pdrList: []*smf_context.PDR{},
 		farList: []*smf_context.FAR{},
-		barList: []*smf_context.BAR{},
 		qerList: []*smf_context.QER{},
 	}
 
@@ -723,7 +722,6 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	pdrList := []*smf_context.PDR{}
 	farList := []*smf_context.FAR{}
 	qerList := []*smf_context.QER{}
-	barList := []*smf_context.BAR{}
 
 	if smContext.Tunnel != nil {
 		smContext.PendingUPF = make(smf_context.PendingUPF)
@@ -750,7 +748,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 			IP:   ANUPF.UPF.NodeID.ResolveNodeIdToIp(),
 			Port: int(ANUPF.UPF.Port),
 		}
-		pfcp_message.SendPfcpSessionModificationRequest(remoteAddress, ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
+		pfcp_message.SendPfcpSessionModificationRequest(remoteAddress, ANUPF.UPF.NodeID, smContext, pdrList, farList, qerList)
 	}
 
 	// Listening PFCP modification response.

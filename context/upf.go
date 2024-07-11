@@ -233,6 +233,7 @@ func (upTunnel *UPTunnel) AddDataPath(dataPath *DataPath) {
 // *** add unit test ***//
 // NewUPF returns a new UPF context in SMF
 func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
+	logger.CtxLog.Warnf("TO DELETE: Create UPF with NodeID: %+v", nodeID)
 	upf = new(UPF)
 	upf.uuid = uuid.New()
 
@@ -256,7 +257,10 @@ func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 
 		switch iface.InterfaceType {
 		case models.UpInterfaceType_N3:
+			logger.CtxLog.Warnf("TO DELETE: Adding interface to UPF N3 [%s]", iface.NetworkInstance)
+			logger.CtxLog.Warnf("TO DELETE: Interface: %+v", upIface)
 			upf.N3Interfaces = append(upf.N3Interfaces, *upIface)
+			logger.CtxLog.Warnf("TO DELETE: UPF N3 Interfaces: %+v", upf.N3Interfaces)
 		case models.UpInterfaceType_N9:
 			upf.N9Interfaces = append(upf.N9Interfaces, *upIface)
 		}

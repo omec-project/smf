@@ -194,22 +194,20 @@ func SendPfcpSessionEstablishmentRequest(
 	ctx *smf_context.SMContext,
 	pdrList []*smf_context.PDR,
 	farList []*smf_context.FAR,
-	barList []*smf_context.BAR,
 	qerList []*smf_context.QER,
 ) error {
-	message, err := BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
+	message, err := BuildPfcpSessionEstablishmentRequest(upNodeID, ctx, pdrList, farList, qerList)
 	if err != nil {
 		return fmt.Errorf("failed to build PFCP Session Establishment Request: %v", err)
 	}
 	logger.PfcpLog.Debugf("in SendPfcpSessionEstablishmentRequest pfcpMsg.CPFSEID.Seid %v\n", message.SEID())
-	ip := upNodeID.ResolveNodeIdToIp()
 
 	ctx.SubPduSessLog.Traceln("[SMF] Send SendPfcpSessionEstablishmentRequest")
 	ctx.SubPduSessLog.Traceln("Send to addr ", remoteAddress.String())
 	logger.PfcpLog.Infof("in SendPfcpSessionEstablishmentRequest fseid %v\n", message.SEID())
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
-		sendSessionEstablishmentRequestToAdapter(remoteAddress, message, message.Sequence(), upNodeID)
+		sendSessionEstablishmentRequestToAdapter(remoteAddress, message, upNodeID)
 	} else {
 		// What am I loosing by getting rid of this eventData? To validate
 		InsertPfcpTxn(message.Sequence(), &upNodeID)
@@ -218,12 +216,12 @@ func SendPfcpSessionEstablishmentRequest(
 			return fmt.Errorf("failed to send PFCP Session Establishment Request: %v", err)
 		}
 	}
-	ctx.SubPfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", ip.String())
+	ctx.SubPfcpLog.Infof("Sent PFCP Session Establish Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
 	return nil
 }
 
-func sendSessionEstablishmentRequestToAdapter(remoteAddress *net.UDPAddr, message pfcp_message.Message, sequenceNumber uint32, upNodeID smf_context.NodeID) {
-	adapter.InsertPfcpTxn(sequenceNumber, &upNodeID)
+func sendSessionEstablishmentRequestToAdapter(remoteAddress *net.UDPAddr, message pfcp_message.Message, upNodeID smf_context.NodeID) {
+	adapter.InsertPfcpTxn(message.Sequence(), &upNodeID)
 	rsp, err := SendPfcpMsgToAdapter(upNodeID, message, remoteAddress)
 	if err != nil {
 		logger.PfcpLog.Errorf("send pfcp session establish msg to upf-adapter error [%v] ", err.Error())
@@ -255,10 +253,9 @@ func SendPfcpSessionModificationRequest(
 	ctx *smf_context.SMContext,
 	pdrList []*smf_context.PDR,
 	farList []*smf_context.FAR,
-	barList []*smf_context.BAR,
 	qerList []*smf_context.QER,
 ) (uint32, error) {
-	pfcpMsg, err := BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, barList, qerList)
+	pfcpMsg, err := BuildPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList)
 	if err != nil {
 		return 0, fmt.Errorf("failed to build PFCP Session Modification Request: %v", err)
 	}

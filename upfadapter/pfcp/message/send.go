@@ -106,12 +106,12 @@ func SendPfcpSessionModificationRequest(upNodeID pfcpType.NodeID, pMsg pfcp.Mess
 	message := pfcp.Message{
 		Header: pfcp.Header{
 			Version:         pfcp.PfcpVersion,
-			MP:              1,
+			MP:              0,
 			S:               pfcp.SEID_PRESENT,
 			MessageType:     pfcp.PFCP_SESSION_MODIFICATION_REQUEST,
 			SEID:            remoteSEID,
 			SequenceNumber:  pMsg.Header.SequenceNumber,
-			MessagePriority: 12,
+			MessagePriority: 0,
 		},
 		Body: pMsg.Body,
 	}
@@ -135,12 +135,12 @@ func SendPfcpSessionDeletionRequest(upNodeID pfcpType.NodeID, pMsg pfcp.Message)
 	message := pfcp.Message{
 		Header: pfcp.Header{
 			Version:         pfcp.PfcpVersion,
-			MP:              1,
+			MP:              0,
 			S:               pfcp.SEID_PRESENT,
 			MessageType:     pfcp.PFCP_SESSION_DELETION_REQUEST,
 			SEID:            remoteSEID,
 			SequenceNumber:  pMsg.Header.SequenceNumber,
-			MessagePriority: 12,
+			MessagePriority: 0,
 		},
 		Body: pMsg.Body,
 	}

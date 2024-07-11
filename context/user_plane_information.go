@@ -391,6 +391,9 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 		}
 
 		if !reflect.DeepEqual(existingNode.NodeID, newNodeID) {
+			logger.CtxLog.Warnf("TO DELETE: Difference between existing and new node ID")
+			logger.CtxLog.Warnf("TO DELETE: Existing node: %v", existingNode.NodeID)
+			logger.CtxLog.Warnf("TO DELETE: New node: %v", newNodeID)
 			existingNode.NodeID = newNodeID
 			existingNode.UPF = NewUPF(&existingNode.NodeID, newNode.InterfaceUpfInfoList)
 		}

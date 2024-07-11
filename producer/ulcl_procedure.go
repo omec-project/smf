@@ -119,7 +119,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 	for curDataPathNode := activatingPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		if nodeAfterULCL {
 			addr := net.UDPAddr{
-				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
+				IP:   curDataPathNode.UPF.NodeID.NodeIdValue,
 				Port: int(curDataPathNode.UPF.Port),
 			}
 
@@ -129,7 +129,6 @@ func EstablishPSA2(smContext *context.SMContext) {
 
 			pdrList := []*context.PDR{upLinkPDR}
 			farList := []*context.FAR{upLinkPDR.FAR}
-			barList := []*context.BAR{}
 			qerList := upLinkPDR.QER
 
 			lastNode := curDataPathNode.Prev()
@@ -152,7 +151,6 @@ func EstablishPSA2(smContext *context.SMContext) {
 				smContext,
 				pdrList,
 				farList,
-				barList,
 				qerList,
 			)
 		} else {
@@ -223,7 +221,6 @@ func EstablishULCL(smContext *context.SMContext) {
 
 			pdrList := []*context.PDR{UPLinkPDR, DownLinkPDR}
 			farList := []*context.FAR{UPLinkPDR.FAR, DownLinkPDR.FAR}
-			barList := []*context.BAR{}
 			qerList := UPLinkPDR.QER
 
 			curDPNodeIP := ulcl.NodeID.ResolveNodeIdToIp().String()
@@ -232,7 +229,7 @@ func EstablishULCL(smContext *context.SMContext) {
 				IP:   ulcl.NodeID.ResolveNodeIdToIp(),
 				Port: int(ulcl.Port),
 			}
-			message.SendPfcpSessionModificationRequest(remoteAddress, ulcl.NodeID, smContext, pdrList, farList, barList, qerList)
+			message.SendPfcpSessionModificationRequest(remoteAddress, ulcl.NodeID, smContext, pdrList, farList, qerList)
 			break
 		}
 	}
@@ -251,7 +248,6 @@ func UpdatePSA2DownLink(smContext *context.SMContext) {
 
 	farList := []*context.FAR{}
 	pdrList := []*context.PDR{}
-	barList := []*context.BAR{}
 	qerList := []*context.QER{}
 
 	for curDataPathNode := activatingPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
@@ -279,7 +275,6 @@ func UpdatePSA2DownLink(smContext *context.SMContext) {
 					smContext,
 					pdrList,
 					farList,
-					barList,
 					qerList,
 				)
 				logger.PfcpLog.Info("[SMF] Update PSA2 downlink msg has been send")
@@ -390,7 +385,6 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 
 			pdrList := []*context.PDR{UPLinkPDR, DownLinkPDR}
 			farList := []*context.FAR{UPLinkPDR.FAR, DownLinkPDR.FAR}
-			barList := []*context.BAR{}
 			qerList := UPLinkPDR.QER
 
 			curDPNodeIP := curDPNode.UPF.NodeID.ResolveNodeIdToIp().String()
@@ -399,7 +393,7 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 				IP:   curDPNode.UPF.NodeID.ResolveNodeIdToIp(),
 				Port: int(curDPNode.UPF.Port),
 			}
-			message.SendPfcpSessionModificationRequest(remoteAddress, curDPNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList)
+			message.SendPfcpSessionModificationRequest(remoteAddress, curDPNode.UPF.NodeID, smContext, pdrList, farList, qerList)
 		}
 	}
 

@@ -19,7 +19,7 @@ const (
 
 type NodeID struct {
 	NodeIdValue []byte
-	NodeIdType  uint8
+	NodeIdType  uint8 // 0x00001111
 }
 
 var dnsHostIpCache map[string]net.IP
