@@ -23,6 +23,7 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
+	"github.com/omec-project/util/util_3gpp"
 )
 
 var upfPool sync.Map
@@ -94,12 +95,13 @@ type UPFunctionFeatures struct {
 type UserPlaneIPResourceInformation struct {
 	Ipv4Address     net.IP
 	Ipv6Address     net.IP
-	NetworkInstance string
+	NetworkInstance util_3gpp.Dnn
 	Assosi          bool
 	Assoni          bool
 	V6              bool
 	V4              bool
 	TeidRange       uint8
+	Teidri          uint8 // 0x00011100
 	SourceInterface uint8 // 0x00001111
 }
 
@@ -369,7 +371,7 @@ func SelectUPFByDnn(Dnn string) *UPF {
 	var upf *UPF
 	upfPool.Range(func(key, value interface{}) bool {
 		upf = value.(*UPF)
-		if upf.UPIPInfo.Assoni && upf.UPIPInfo.NetworkInstance == Dnn {
+		if upf.UPIPInfo.Assoni && string(upf.UPIPInfo.NetworkInstance) == Dnn {
 			return false
 		}
 		upf = nil

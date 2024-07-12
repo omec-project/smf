@@ -121,7 +121,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message) {
 		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
 		upf.UPIPInfo = context.UserPlaneIPResourceInformation{
-			NetworkInstance: userPlaneIpResourceInfo.NetworkInstance,
+			NetworkInstance: []byte(userPlaneIpResourceInfo.NetworkInstance),
 			Ipv4Address:     userPlaneIpResourceInfo.IPv4Address,
 			Ipv6Address:     userPlaneIpResourceInfo.IPv6Address,
 			Assosi:          rsp.UserPlaneIPResourceInformation[0].HasASSOSI(),
@@ -143,7 +143,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message) {
 
 			// Insert N3 interface info from UPF
 			n3Interface := context.UPFInterfaceInfo{}
-			n3Interface.NetworkInstance = upf.UPIPInfo.NetworkInstance
+			n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
 			n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
 			upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
 		}

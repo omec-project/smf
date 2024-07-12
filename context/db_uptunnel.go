@@ -67,18 +67,20 @@ type PFCPSessionContextInDB struct {
 
 type PFCPContextInDB map[string]PFCPSessionContextInDB
 
-func (nodeID *NodeID) ToNodeIDInDB() NodeIDInDB {
-	return NodeIDInDB{
+func GetNodeIDInDB(nodeID NodeID) (nodeIDInDB NodeIDInDB) {
+	nodeIDInDB = NodeIDInDB{
 		NodeIdType:  nodeID.NodeIdType,
 		NodeIdValue: nodeID.NodeIdValue,
 	}
+	return nodeIDInDB
 }
 
-func (nodeIDInDB *NodeIDInDB) ToNodeID() NodeID {
-	return NodeID{
+func GetNodeID(nodeIDInDB NodeIDInDB) (nodeID NodeID) {
+	nodeID = NodeID{
 		NodeIdType:  nodeIDInDB.NodeIdType,
 		NodeIdValue: nodeIDInDB.NodeIdValue,
 	}
+	return nodeID
 }
 
 func testEq(a, b []byte) bool {
@@ -122,7 +124,7 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 	nodeInDB := GetNodeInDBFromDB(nodeIDInDB)
 	dataPathNode = &DataPathNode{
 		IsBranchingPoint: nodeInDB.IsBranchingPoint,
-		UPF:              RetrieveUPFNodeByNodeID(nodeInDB.DataPathNodeUPFNodeID.ToNodeID()),
+		UPF:              RetrieveUPFNodeByNodeID(GetNodeID(nodeInDB.DataPathNodeUPFNodeID)),
 		// UPF: RetrieveUPFNodeByNodeID(GetNodeID(nodeIDInDB)),
 	}
 	var nilVal *TunnelInfo = nil
@@ -197,7 +199,7 @@ func RecoverDataPathNode(dataPathNodeInDB *DataPathNodeInDB) (dataPathNode *Data
 	var nilVarTunnelInfo *TunnelInfo = nil
 	if dataPathNodeInDB != nilValDpn {
 		dataPathNode := &DataPathNode{
-			UPF:              RetrieveUPFNodeByNodeID(dataPathNodeInDB.DataPathNodeUPFNodeID.ToNodeID()),
+			UPF:              RetrieveUPFNodeByNodeID(GetNodeID(dataPathNodeInDB.DataPathNodeUPFNodeID)),
 			IsBranchingPoint: dataPathNodeInDB.IsBranchingPoint,
 		}
 
@@ -233,7 +235,7 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 	var nilValTunnel *GTPTunnel = nil
 	if dataPathNode != nilValDpn {
 		dataPathNodeInDB := &DataPathNodeInDB{
-			DataPathNodeUPFNodeID: dataPathNode.UPF.NodeID.ToNodeIDInDB(),
+			DataPathNodeUPFNodeID: GetNodeIDInDB(dataPathNode.UPF.NodeID),
 			IsBranchingPoint:      dataPathNode.IsBranchingPoint,
 		}
 
@@ -250,7 +252,7 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 			// upLinkTunnelDEP := upLinkTunnel.DestEndPoint
 			upLinkTunnelSEP := upLinkTunnel.SrcEndPoint
 			if upLinkTunnelSEP != nilValDpn {
-				uLTunnelInfo.DataPathNodeUPFNodeID = upLinkTunnelSEP.UPF.NodeID.ToNodeIDInDB()
+				uLTunnelInfo.DataPathNodeUPFNodeID = GetNodeIDInDB(upLinkTunnelSEP.UPF.NodeID)
 			}
 			dataPathNodeInDB.ULTunnelInfo = uLTunnelInfo
 		}
@@ -261,7 +263,7 @@ func StoreDataPathNode(dataPathNode *DataPathNode) (dataPathNodeInDB *DataPathNo
 
 			dlLinkTunnelSEP := downLinkTunnel.SrcEndPoint
 			if dlLinkTunnelSEP != nilValDpn {
-				dLTunnelInfo.DataPathNodeUPFNodeID = dlLinkTunnelSEP.UPF.NodeID.ToNodeIDInDB()
+				dLTunnelInfo.DataPathNodeUPFNodeID = GetNodeIDInDB(dlLinkTunnelSEP.UPF.NodeID)
 			}
 			dataPathNodeInDB.DLTunnelInfo = dLTunnelInfo
 		}

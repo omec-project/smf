@@ -60,6 +60,7 @@ func Dispatch(msg message.Message, remoteAddress *net.UDPAddr) {
 		handler.HandlePfcpSessionReportResponse(msg, remoteAddress)
 	default:
 		logger.PfcpLog.Errorf("Unknown PFCP message type: %d", messageType)
+		return
 	}
 
 	// stats

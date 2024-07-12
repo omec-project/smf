@@ -699,7 +699,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 			return err
 		}
 
-		logger.CtxLog.Traceln("Calculate ", curDataPathNode.UPF.NodeID)
+		logger.CtxLog.Traceln("Calculate ", curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
 
 		// Setup UpLink PDR
 		if curDataPathNode.UpLinkTunnel != nil {

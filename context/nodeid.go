@@ -83,7 +83,7 @@ func (n *NodeID) ResolveNodeIdToIp() net.IP {
 
 func RefreshDnsHostIpCache() {
 	for hostName := range dnsHostIpCache {
-		logger.PfcpLog.Debugf("refreshing DNS for host [%v] ", hostName)
+		logger.PfcpLog.Warnf("TO DELETE: refreshing DNS for host [%v] ", hostName)
 		if ns, err := net.LookupHost(hostName); err != nil {
 			logger.PfcpLog.Warnf("Host lookup failed: %+v", err)
 			deleteDnsHost(hostName)
@@ -92,6 +92,7 @@ func RefreshDnsHostIpCache() {
 			logger.PfcpLog.Infof("smf dns cache updated for host [%v]: [%v] ", hostName, net.ParseIP(ns[0]).String())
 			dnsHostIpCache[hostName] = net.ParseIP(ns[0])
 		}
+		logger.CtxLog.Warnf("TO DELETE: Cache content: %v", dnsHostIpCache)
 	}
 }
 

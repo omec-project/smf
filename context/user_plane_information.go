@@ -206,7 +206,7 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 				upi.DefaultUserPlanePath[selection.String()] = path
 				break
 			} else {
-				logger.CtxLog.Debugf("No path between an-node[%v] and upf[%v] ", anName, destinations[0].NodeID)
+				logger.CtxLog.Debugf("No path between an-node[%v] and upf[%v] ", anName, string(destinations[0].NodeID.NodeIdValue))
 				continue
 			}
 		}

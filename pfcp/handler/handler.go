@@ -154,7 +154,7 @@ func HandlePfcpAssociationSetupRequest(msg message.Message, remoteAddress *net.U
 
 	upf := smf_context.RetrieveUPFNodeByNodeID(nodeID)
 	if upf == nil {
-		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp())
+		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 		return
 	}
 
@@ -174,7 +174,7 @@ func HandlePfcpAssociationSetupRequest(msg message.Message, remoteAddress *net.U
 		Ipv4Address:     upIPInfoIE.IPv4Address,
 		Ipv6Address:     upIPInfoIE.IPv6Address,
 		TeidRange:       upIPInfoIE.TEIDRange,
-		NetworkInstance: upIPInfoIE.NetworkInstance,
+		NetworkInstance: []byte(upIPInfoIE.NetworkInstance),
 		SourceInterface: upIPInfoIE.SourceInterface,
 	}
 	if req.RecoveryTimeStamp == nil {
@@ -319,7 +319,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 				Ipv4Address:     userPlaneIPResourceInformation.IPv4Address,
 				Ipv6Address:     userPlaneIPResourceInformation.IPv6Address,
 				TeidRange:       userPlaneIPResourceInformation.TEIDRange,
-				NetworkInstance: userPlaneIPResourceInformation.NetworkInstance,
+				NetworkInstance: []byte(userPlaneIPResourceInformation.NetworkInstance),
 				SourceInterface: userPlaneIPResourceInformation.SourceInterface,
 				Assosi:          upIPResourceInformationIE.HasASSOSI(),
 				Assoni:          upIPResourceInformationIE.HasASSONI(),
@@ -337,7 +337,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 				// Insert N3 interface info from UPF
 				upf.N3Interfaces = []smf_context.UPFInterfaceInfo{
 					{
-						NetworkInstance:       upf.UPIPInfo.NetworkInstance,
+						NetworkInstance:       string(upf.UPIPInfo.NetworkInstance),
 						IPv4EndPointAddresses: []net.IP{upf.UPIPInfo.Ipv4Address},
 					},
 				}
