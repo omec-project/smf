@@ -381,8 +381,8 @@ func (smf *SMF) Start() {
 	}
 
 	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
-	smfPemPath := path_util.Free5gcPath(factory.SmfConfig.Configuration.Sbi.TLS.PEM)
-	smfKeyPath := path_util.Free5gcPath(factory.SmfConfig.Configuration.Sbi.TLS.Key)
+	smfPemPath := factory.SmfConfig.Configuration.Sbi.TLS.PEM
+	smfKeyPath := factory.SmfConfig.Configuration.Sbi.TLS.Key
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
