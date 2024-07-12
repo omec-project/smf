@@ -268,7 +268,7 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 		logger.PfcpLog.Warnf("TO DELETE: User Plane IP Resource Information: %v", userPlaneIPResourceInformation)
 		// validate if DNNs served by UPF matches with the one provided by UPF
 		if userPlaneIPResourceInformation != nil {
-			upfProvidedDnn := userPlaneIPResourceInformation.NetworkInstance
+			upfProvidedDnn := string(userPlaneIPResourceInformation.NetworkInstance)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
 				logger.PfcpLog.Errorf("Handle PFCP Association Setup success Response, DNN mismatch, %s is not configured", upfProvidedDnn)
 				return
@@ -314,25 +314,13 @@ func HandlePfcpAssociationSetupResponse(msg message.Message, remoteAddress *net.
 		}
 
 		if userPlaneIPResourceInformation != nil {
-			logger.PfcpLog.Warnf("TO DELETE: Received response with ipv4 address: %s", userPlaneIPResourceInformation.IPv4Address)
-			upf.UPIPInfo = smf_context.UserPlaneIPResourceInformation{
-				Ipv4Address:     userPlaneIPResourceInformation.IPv4Address,
-				Ipv6Address:     userPlaneIPResourceInformation.IPv6Address,
-				TeidRange:       userPlaneIPResourceInformation.TEIDRange,
-				NetworkInstance: []byte(userPlaneIPResourceInformation.NetworkInstance),
-				SourceInterface: userPlaneIPResourceInformation.SourceInterface,
-				Assosi:          upIPResourceInformationIE.HasASSOSI(),
-				Assoni:          upIPResourceInformationIE.HasASSONI(),
-				V4:              userPlaneIPResourceInformation.IPv4Address != nil,
-				V6:              userPlaneIPResourceInformation.IPv6Address != nil,
-			}
+			logger.PfcpLog.Warnf("TO DELETE: Received response with ipv4 address: %s", userPlaneIPResourceInformation.Ipv4Address)
+			upf.UPIPInfo = *userPlaneIPResourceInformation
 			logger.PfcpLog.Warnf("TO DELETE: UPF UP IP Info: %v", upf.UPIPInfo)
 
 			if upf.UPIPInfo.Assosi && upf.UPIPInfo.Assoni && upf.UPIPInfo.SourceInterface == smf_context.SourceInterfaceAccess &&
 				upf.UPIPInfo.V4 && !upf.UPIPInfo.Ipv4Address.Equal(net.IPv4zero) {
-				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]",
-					upf.NodeID.ResolveNodeIdToIp(), upf.UPIPInfo.Ipv4Address,
-					upf.UPIPInfo.NetworkInstance, upf.UPIPInfo.TeidRange)
+				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]", upf.NodeID.ResolveNodeIdToIp(), upf.UPIPInfo.Ipv4Address, upf.UPIPInfo.NetworkInstance, upf.UPIPInfo.TeidRange)
 
 				// Insert N3 interface info from UPF
 				upf.N3Interfaces = []smf_context.UPFInterfaceInfo{
@@ -450,44 +438,35 @@ func HandlePfcpSessionEstablishmentResponse(msg message.Message, remoteAddress *
 		logger.PfcpLog.Errorf("Invalid message type for session establishment response")
 		return
 	}
-
 	logger.PfcpLog.Infof("Handle PFCP Session Establishment Response")
 
-	// Here I got rid of event Data, we should likely set the seid to the local seid when we get 0 in the response
-	seid := rsp.SEID()
-	if seid == 0 {
-		logger.PfcpLog.Warnf("SEID is nil")
+	SEID := msg.SEID()
+	if SEID == 0 {
+		logger.PfcpLog.Warnf("SEID is nil - use Local SEID - not implemented yet")
 		return
 	}
+	smContext := smf_context.GetSMContextBySEID(SEID)
+	smContext.SMLock.Lock()
 
 	// Get NodeId from Seq:NodeId Map
-	nodeID := pfcp_message.FetchPfcpTxn(rsp.SequenceNumber)
+	seq := msg.Sequence()
+	nodeID := pfcp_message.FetchPfcpTxn(seq)
 
-	if nodeID == nil {
-		logger.PfcpLog.Errorf("No pending pfcp session establishment response for sequence no: %v", rsp.SequenceNumber)
-		return
-	}
-
-	smContext := smf_context.GetSMContextBySEID(seid)
-	if smContext == nil {
-		logger.PfcpLog.Errorf("No SMF context found for SEID[%d]", seid)
-		return
-	}
-
-	smContext.SMLock.Lock()
 	if rsp.UPFSEID != nil {
 		upFSEID, err := rsp.UPFSEID.FSEID()
 		if err != nil {
-			logger.PfcpLog.Errorf("failed to get UPFSEID: %+v", err)
+			logger.PfcpLog.Errorf("failed to get FSEID: %+v", err)
 			return
 		}
+		// NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
 		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
-		logger.PfcpLog.Warnf("TO DELETE: NodeIDtoIP: %v", NodeIDtoIP)
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		pfcpSessionCtx.RemoteSEID = upFSEID.SEID
-		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", upFSEID)
+
+		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", upFSEID.SEID)
 	}
 
+	// UE IP-Addr(only v4 supported)
 	if rsp.CreatedPDR != nil {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
@@ -520,24 +499,23 @@ func HandlePfcpSessionEstablishmentResponse(msg message.Message, remoteAddress *
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		// UPF Accept
-		if rsp.Cause == nil {
+		cause := rsp.Cause
+		if cause == nil {
 			logger.PfcpLog.Errorf("Cause is nil in PFCP Session Establishment Response")
 			return
 		}
-		cause, err := rsp.Cause.Cause()
+		causeValue, err := cause.Cause()
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to get Cause: %+v", err)
 			return
 		}
-
-		if cause == ie.CauseRequestAccepted {
+		if causeValue == ie.CauseRequestAccepted {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess
 			smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 		} else {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed
-			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", cause)
-			if cause ==
-				ie.CauseNoEstablishedPFCPAssociation {
+			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
+			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
 				SetUpfInactive(rspNodeID, msg.MessageTypeName())
 			}
 		}

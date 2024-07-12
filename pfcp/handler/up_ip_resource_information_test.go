@@ -42,23 +42,23 @@ func TestUnmarshalUEIPInformationBinaryOnlySourceInterface(t *testing.T) {
 		t.Errorf("Error unmarshalling UE IP Information: %v", err)
 	}
 
-	if ueIpInfo.TEIDRange != 0 {
-		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TEIDRange)
+	if ueIpInfo.TeidRange != 0 {
+		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TeidRange)
 	}
 
-	if ueIpInfo.IPv4Address.String() != ipv4Address {
-		t.Errorf("Expected IP address %v got %s", ipv4Address, ueIpInfo.IPv4Address.String())
+	if ueIpInfo.Ipv4Address.String() != ipv4Address {
+		t.Errorf("Expected IP address %v got %s", ipv4Address, ueIpInfo.Ipv4Address.String())
 	}
 
-	if ueIpInfo.IPv6Address != nil {
-		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.IPv6Address.String())
+	if ueIpInfo.Ipv6Address != nil {
+		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.Ipv6Address.String())
 	}
 
 	if ueIpInfo.SourceInterface != ie.SrcInterfaceAccess {
 		t.Errorf("Expected Source Interface Access, got %d", ueIpInfo.SourceInterface)
 	}
 
-	if ueIpInfo.NetworkInstance != "" {
+	if string(ueIpInfo.NetworkInstance) != "" {
 		t.Errorf("Expected empty network instance, got %s", ueIpInfo.NetworkInstance)
 	}
 }
@@ -72,23 +72,23 @@ func TestUnmarshalUEIPInformationBinaryOnlyNetworkInstance(t *testing.T) {
 		t.Errorf("Error unmarshalling UE IP Information: %v", err)
 	}
 
-	if ueIpInfo.TEIDRange != 0 {
-		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TEIDRange)
+	if ueIpInfo.TeidRange != 0 {
+		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TeidRange)
 	}
 
-	if ueIpInfo.IPv4Address.String() != "1.2.3.4" {
-		t.Errorf("Expected IP address 1.2.3.4 got %s", ueIpInfo.IPv4Address.String())
+	if ueIpInfo.Ipv4Address.String() != "1.2.3.4" {
+		t.Errorf("Expected IP address 1.2.3.4 got %s", ueIpInfo.Ipv4Address.String())
 	}
 
-	if ueIpInfo.IPv6Address != nil {
-		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.IPv6Address.String())
+	if ueIpInfo.Ipv6Address != nil {
+		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.Ipv6Address.String())
 	}
 
 	if ueIpInfo.SourceInterface != 0 {
 		t.Errorf("Expected Source Interface 0, got %d", ueIpInfo.SourceInterface)
 	}
 
-	if ueIpInfo.NetworkInstance != "internet" {
+	if string(ueIpInfo.NetworkInstance) != "internet" {
 		t.Errorf("Expected network instance internet, got %s", ueIpInfo.NetworkInstance)
 	}
 }
@@ -102,23 +102,23 @@ func TestUnmarshalUEIPInformationBinary(t *testing.T) {
 		t.Errorf("Error unmarshalling UE IP Information: %v", err)
 	}
 
-	if ueIpInfo.TEIDRange != 0 {
-		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TEIDRange)
+	if ueIpInfo.TeidRange != 0 {
+		t.Errorf("Expected TEIDRange 0, got %d", ueIpInfo.TeidRange)
 	}
 
-	if ueIpInfo.IPv4Address.String() != "1.2.3.4" {
-		t.Errorf("Expected IP address 1.2.3.4 got %s", ueIpInfo.IPv4Address.String())
+	if ueIpInfo.Ipv4Address.String() != "1.2.3.4" {
+		t.Errorf("Expected IP address 1.2.3.4 got %s", ueIpInfo.Ipv4Address.String())
 	}
 
-	if ueIpInfo.IPv6Address != nil {
-		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.IPv6Address.String())
+	if ueIpInfo.Ipv6Address != nil {
+		t.Errorf("Expected nil IPv6 address, got %s", ueIpInfo.Ipv6Address.String())
 	}
 
 	if ueIpInfo.SourceInterface != ie.SrcInterfaceAccess {
 		t.Errorf("Expected Source Interface Access, got %d", ueIpInfo.SourceInterface)
 	}
 
-	if ueIpInfo.NetworkInstance != "internet" {
+	if string(ueIpInfo.NetworkInstance) != "internet" {
 		t.Errorf("Expected network instance internet, got %s", ueIpInfo.NetworkInstance)
 	}
 }
