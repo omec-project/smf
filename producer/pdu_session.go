@@ -25,7 +25,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	pfcp_message "github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
@@ -628,7 +628,7 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 					IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
 					Port: int(curDataPathNode.UPF.Port),
 				}
-				pfcp_message.SendPfcpSessionDeletionRequest(remoteAddress, curDataPathNode.UPF.NodeID, smContext)
+				message.SendPfcpSessionDeletionRequest(remoteAddress, curDataPathNode.UPF.NodeID, smContext)
 				deletedPFCPNode[curUPFID] = true
 				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
 			}
@@ -748,7 +748,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 			IP:   ANUPF.UPF.NodeID.ResolveNodeIdToIp(),
 			Port: int(ANUPF.UPF.Port),
 		}
-		pfcp_message.SendPfcpSessionModificationRequest(remoteAddress, ANUPF.UPF.NodeID, smContext, pdrList, farList, qerList)
+		message.SendPfcpSessionModificationRequest(remoteAddress, ANUPF.UPF.NodeID, smContext, pdrList, farList, qerList)
 	}
 
 	// Listening PFCP modification response.

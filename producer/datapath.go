@@ -7,27 +7,27 @@ package producer
 import (
 	"net"
 
-	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
-	pfcp_message "github.com/omec-project/smf/pfcp/message"
+	"github.com/omec-project/smf/pfcp/message"
 )
 
 type PFCPState struct {
-	nodeID  smf_context.NodeID
-	pdrList []*smf_context.PDR
-	farList []*smf_context.FAR
-	qerList []*smf_context.QER
+	nodeID  context.NodeID
+	pdrList []*context.PDR
+	farList []*context.FAR
+	qerList []*context.QER
 	port    uint16
 }
 
 // SendPFCPRule send one datapath to UPF
-func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPath) {
+func SendPFCPRule(smContext *context.SMContext, dataPath *context.DataPath) {
 	logger.PduSessLog.Infoln("Send PFCP Rule")
 	logger.PduSessLog.Infoln("DataPath: ", dataPath)
 	for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-		pdrList := make([]*smf_context.PDR, 0, 2)
-		farList := make([]*smf_context.FAR, 0, 2)
-		qerList := make([]*smf_context.QER, 0, 2)
+		pdrList := make([]*context.PDR, 0, 2)
+		farList := make([]*context.FAR, 0, 2)
+		qerList := make([]*context.QER, 0, 2)
 
 		if curDataPathNode.UpLinkTunnel != nil && curDataPathNode.UpLinkTunnel.PDR != nil {
 			for _, pdr := range curDataPathNode.UpLinkTunnel.PDR {
@@ -54,7 +54,7 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
 				Port: int(curDataPathNode.UPF.Port),
 			}
-			pfcp_message.SendPfcpSessionEstablishmentRequest(
+			message.SendPfcpSessionEstablishmentRequest(
 				remoteAddress,
 				curDataPathNode.UPF.NodeID,
 				smContext,
@@ -67,7 +67,7 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 				IP:   curDataPathNode.UPF.NodeID.ResolveNodeIdToIp(),
 				Port: int(curDataPathNode.UPF.Port),
 			}
-			pfcp_message.SendPfcpSessionModificationRequest(
+			message.SendPfcpSessionModificationRequest(
 				remoteAddress,
 				curDataPathNode.UPF.NodeID,
 				smContext,
@@ -80,15 +80,15 @@ func SendPFCPRule(smContext *smf_context.SMContext, dataPath *smf_context.DataPa
 }
 
 // SendPFCPRules send all datapaths to UPFs
-func SendPFCPRules(smContext *smf_context.SMContext) {
+func SendPFCPRules(smContext *context.SMContext) {
 	pfcpPool := make(map[string]*PFCPState)
 
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		if dataPath.Activated {
 			for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-				pdrList := make([]*smf_context.PDR, 0, 2)
-				farList := make([]*smf_context.FAR, 0, 2)
-				qerList := make([]*smf_context.QER, 0, 2)
+				pdrList := make([]*context.PDR, 0, 2)
+				farList := make([]*context.FAR, 0, 2)
+				qerList := make([]*context.QER, 0, 2)
 
 				if curDataPathNode.UpLinkTunnel != nil && curDataPathNode.UpLinkTunnel.PDR != nil {
 					for _, pdr := range curDataPathNode.UpLinkTunnel.PDR {
@@ -134,7 +134,7 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 			Port: int(pfcp.port),
 		}
 		if !exist || sessionContext.RemoteSEID == 0 {
-			pfcp_message.SendPfcpSessionEstablishmentRequest(
+			message.SendPfcpSessionEstablishmentRequest(
 				remoteAddress,
 				pfcp.nodeID,
 				smContext,
@@ -143,7 +143,7 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 				pfcp.qerList,
 			)
 		} else {
-			pfcp_message.SendPfcpSessionModificationRequest(
+			message.SendPfcpSessionModificationRequest(
 				remoteAddress,
 				pfcp.nodeID,
 				smContext,
@@ -155,25 +155,25 @@ func SendPFCPRules(smContext *smf_context.SMContext) {
 	}
 }
 
-func removeDataPath(datapath *smf_context.DataPath) {
+func removeDataPath(datapath *context.DataPath) {
 	for curDPNode := datapath.FirstDPNode; curDPNode != nil; curDPNode = curDPNode.Next() {
 		if curDPNode.DownLinkTunnel != nil && curDPNode.DownLinkTunnel.PDR != nil {
 			for _, pdr := range curDPNode.DownLinkTunnel.PDR {
-				pdr.State = smf_context.RULE_REMOVE
-				pdr.FAR.State = smf_context.RULE_REMOVE
+				pdr.State = context.RULE_REMOVE
+				pdr.FAR.State = context.RULE_REMOVE
 			}
 		}
 		if curDPNode.UpLinkTunnel != nil && curDPNode.UpLinkTunnel.PDR != nil {
 			for _, pdr := range curDPNode.UpLinkTunnel.PDR {
-				pdr.State = smf_context.RULE_REMOVE
-				pdr.FAR.State = smf_context.RULE_REMOVE
+				pdr.State = context.RULE_REMOVE
+				pdr.FAR.State = context.RULE_REMOVE
 			}
 		}
 	}
 }
 
 // UpdateDataPathToUPF update the datapath of the UPF
-func UpdateDataPathToUPF(smContext *smf_context.SMContext, oldDataPath, updateDataPath *smf_context.DataPath) {
+func UpdateDataPathToUPF(smContext *context.SMContext, oldDataPath, updateDataPath *context.DataPath) {
 	if oldDataPath == nil {
 		SendPFCPRule(smContext, updateDataPath)
 		return

@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"net"
 
-	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/message"
 )
 
-func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
+func SendPfcpSessionModifyReq(smContext *context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	ANUPF := defaultPath.FirstDPNode
 	remoteAddress := &net.UDPAddr{
@@ -32,13 +32,13 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 
 	switch PFCPResponseStatus {
-	case smf_context.SessionUpdateSuccess:
+	case context.SessionUpdateSuccess:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Success")
 
-	case smf_context.SessionUpdateFailed:
+	case context.SessionUpdateFailed:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Update Failed")
 		fallthrough
-	case smf_context.SessionUpdateTimeout:
+	case context.SessionUpdateTimeout:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
 
 		err := fmt.Errorf("pfcp modification failure")
@@ -48,19 +48,19 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	return nil
 }
 
-func SendPfcpSessionReleaseReq(smContext *smf_context.SMContext) error {
+func SendPfcpSessionReleaseReq(smContext *context.SMContext) error {
 	// release UPF data tunnel
 	releaseTunnel(smContext)
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 	switch PFCPResponseStatus {
-	case smf_context.SessionReleaseSuccess:
+	case context.SessionReleaseSuccess:
 		smContext.SubCtxLog.Traceln("PDUSessionSMContextUpdate, PFCP Session Release Success")
 		return nil
-	case smf_context.SessionReleaseTimeout:
+	case context.SessionReleaseTimeout:
 		smContext.SubCtxLog.Error("PDUSessionSMContextUpdate, PFCP Session Release Failed")
 		return fmt.Errorf("pfcp session release timeout")
-	case smf_context.SessionReleaseFailed:
+	case context.SessionReleaseFailed:
 		smContext.SubCtxLog.Error("PDUSessionSMContextUpdate, PFCP Session Release Failed")
 		return fmt.Errorf("pfcp session release failed")
 	}
