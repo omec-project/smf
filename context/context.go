@@ -23,6 +23,7 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/drsm"
 )
 
@@ -148,6 +149,9 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.URIScheme = models.UriScheme(sbi.Scheme)
 		smfContext.RegisterIPv4 = factory.SMF_DEFAULT_IPV4 // default localhost
 		smfContext.SBIPort = factory.SMF_DEFAULT_PORT_INT  // default port
+		smfContext.Key = util.SmfKeyPath                   // default key path
+		smfContext.PEM = util.SmfPemPath                   // default PEM path
+
 		if sbi.RegisterIPv4 != "" {
 			// smfContext.RegisterIPv4 = sbi.RegisterIPv4
 			sbi.RegisterIPv4 = localIp
@@ -160,8 +164,12 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		}
 
 		if tls := sbi.TLS; tls != nil {
-			smfContext.Key = tls.Key
-			smfContext.PEM = tls.PEM
+			if tls.Key != "" {
+				smfContext.Key = tls.Key
+			}
+			if tls.PEM != "" {
+				smfContext.PEM = tls.PEM
+			}
 		}
 
 		smfContext.BindingIPv4 = os.Getenv(sbi.BindingIPv4)
