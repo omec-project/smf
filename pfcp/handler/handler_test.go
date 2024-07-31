@@ -20,9 +20,9 @@ import (
 
 type Flag uint8
 
-// SetBit sets the bit at the given position to the specified value (true or false)
+// setBit sets the bit at the given position to the specified value (true or false)
 // Positions go from 1 to 8
-func (f *Flag) SetBit(position uint8) {
+func (f *Flag) setBit(position uint8) {
 	if position < 1 || position > 8 {
 		return
 	}
@@ -56,7 +56,7 @@ func TestFindUEIPAddressNoAddressInCreatedPDR(t *testing.T) {
 
 func TestFindUEIPAddressNoUEIPAddressInCreatedPDR(t *testing.T) {
 	ueIPAddressFlags := new(Flag)
-	ueIPAddressFlags.SetBit(2)
+	ueIPAddressFlags.setBit(2)
 	sessionEstablishmentResponse := message.NewSessionEstablishmentResponse(
 		0,
 		0,

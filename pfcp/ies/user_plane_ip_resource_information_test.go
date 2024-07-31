@@ -13,9 +13,9 @@ import (
 
 type Flag uint8
 
-// SetBit sets the bit at the given position to the specified value (true or false)
+// setBit sets the bit at the given position to the specified value (true or false)
 // Positions go from 1 to 8
-func (f *Flag) SetBit(position uint8) {
+func (f *Flag) setBit(position uint8) {
 	if position < 1 || position > 8 {
 		return
 	}
@@ -25,18 +25,18 @@ func (f *Flag) SetBit(position uint8) {
 func CreateFlags(v4 bool, v6 bool, ni bool, si bool) uint8 {
 	flags := new(Flag)
 	if v4 {
-		flags.SetBit(1)
+		flags.setBit(1)
 	}
 	if v6 {
-		flags.SetBit(2)
+		flags.setBit(2)
 	}
 
 	if ni {
-		flags.SetBit(6)
+		flags.setBit(6)
 	}
 
 	if si {
-		flags.SetBit(7)
+		flags.setBit(7)
 	}
 
 	return uint8(*flags)

@@ -59,9 +59,9 @@ func BuildPfcpAssociationReleaseResponse(cause uint8, nodeID string) *message.As
 	)
 }
 
-// SetBit sets the bit at the given position to the specified value (true or false)
+// setBit sets the bit at the given position to the specified value (true or false)
 // Positions go from 1 to 8
-func (f *Flag) SetBit(position uint8, value bool) {
+func (f *Flag) setBit(position uint8, value bool) {
 	if position < 1 || position > 8 {
 		return
 	}
@@ -80,10 +80,10 @@ func createPDIIE(pdi *context.PDI) *ie.IE {
 
 	if pdi.LocalFTeid != nil {
 		fteidFlags := new(Flag)
-		fteidFlags.SetBit(1, pdi.LocalFTeid.V4)
-		fteidFlags.SetBit(2, pdi.LocalFTeid.V6)
-		fteidFlags.SetBit(3, pdi.LocalFTeid.Ch)
-		fteidFlags.SetBit(4, pdi.LocalFTeid.Chid)
+		fteidFlags.setBit(1, pdi.LocalFTeid.V4)
+		fteidFlags.setBit(2, pdi.LocalFTeid.V6)
+		fteidFlags.setBit(3, pdi.LocalFTeid.Ch)
+		fteidFlags.setBit(4, pdi.LocalFTeid.Chid)
 		createPDIIes = append(createPDIIes,
 			ie.NewFTEID(
 				uint8(*fteidFlags),
@@ -100,12 +100,12 @@ func createPDIIE(pdi *context.PDI) *ie.IE {
 	)
 	if pdi.UEIPAddress != nil {
 		ueIPAddressflags := new(Flag)
-		ueIPAddressflags.SetBit(1, pdi.UEIPAddress.V6)
-		ueIPAddressflags.SetBit(2, pdi.UEIPAddress.V4)
-		ueIPAddressflags.SetBit(3, pdi.UEIPAddress.Sd)
-		ueIPAddressflags.SetBit(4, pdi.UEIPAddress.Ipv6d)
-		ueIPAddressflags.SetBit(5, pdi.UEIPAddress.CHV4)
-		ueIPAddressflags.SetBit(6, pdi.UEIPAddress.CHV6)
+		ueIPAddressflags.setBit(1, pdi.UEIPAddress.V6)
+		ueIPAddressflags.setBit(2, pdi.UEIPAddress.V4)
+		ueIPAddressflags.setBit(3, pdi.UEIPAddress.Sd)
+		ueIPAddressflags.setBit(4, pdi.UEIPAddress.Ipv6d)
+		ueIPAddressflags.setBit(5, pdi.UEIPAddress.CHV4)
+		ueIPAddressflags.setBit(6, pdi.UEIPAddress.CHV6)
 		createPDIIes = append(createPDIIes,
 			ie.NewUEIPAddress(
 				uint8(*ueIPAddressflags),
@@ -158,11 +158,11 @@ func farToCreateFAR(far *context.FAR) *ie.IE {
 	createFARies := make([]*ie.IE, 0)
 	createFARies = append(createFARies, ie.NewFARID(far.FARID))
 	applyActionflag := new(Flag)
-	applyActionflag.SetBit(1, far.ApplyAction.Drop)
-	applyActionflag.SetBit(2, far.ApplyAction.Forw)
-	applyActionflag.SetBit(3, far.ApplyAction.Buff)
-	applyActionflag.SetBit(4, far.ApplyAction.Nocp)
-	applyActionflag.SetBit(5, far.ApplyAction.Dupl)
+	applyActionflag.setBit(1, far.ApplyAction.Drop)
+	applyActionflag.setBit(2, far.ApplyAction.Forw)
+	applyActionflag.setBit(3, far.ApplyAction.Buff)
+	applyActionflag.setBit(4, far.ApplyAction.Nocp)
+	applyActionflag.setBit(5, far.ApplyAction.Dupl)
 	createFARies = append(createFARies, ie.NewApplyAction(uint8(*applyActionflag)))
 	if far.BAR != nil {
 		createFARies = append(createFARies, ie.NewBARID(far.BAR.BARID))
@@ -235,11 +235,11 @@ func farToUpdateFAR(far *context.FAR) *ie.IE {
 	}
 
 	applyActionflag := new(Flag)
-	applyActionflag.SetBit(1, far.ApplyAction.Drop)
-	applyActionflag.SetBit(2, far.ApplyAction.Forw)
-	applyActionflag.SetBit(3, far.ApplyAction.Buff)
-	applyActionflag.SetBit(4, far.ApplyAction.Nocp)
-	applyActionflag.SetBit(5, far.ApplyAction.Dupl)
+	applyActionflag.setBit(1, far.ApplyAction.Drop)
+	applyActionflag.setBit(2, far.ApplyAction.Forw)
+	applyActionflag.setBit(3, far.ApplyAction.Buff)
+	applyActionflag.setBit(4, far.ApplyAction.Nocp)
+	applyActionflag.setBit(5, far.ApplyAction.Dupl)
 	updateFARies = append(updateFARies, ie.NewApplyAction(uint8(*applyActionflag)))
 
 	if far.ForwardingParameters != nil {
@@ -259,9 +259,9 @@ func farToUpdateFAR(far *context.FAR) *ie.IE {
 		}
 		if far.ForwardingParameters.PFCPSMReqFlags != nil {
 			pfcpSMReqFlag := new(Flag)
-			pfcpSMReqFlag.SetBit(1, far.ForwardingParameters.PFCPSMReqFlags.Drobu)
-			pfcpSMReqFlag.SetBit(2, far.ForwardingParameters.PFCPSMReqFlags.Sndem)
-			pfcpSMReqFlag.SetBit(3, far.ForwardingParameters.PFCPSMReqFlags.Qaurr)
+			pfcpSMReqFlag.setBit(1, far.ForwardingParameters.PFCPSMReqFlags.Drobu)
+			pfcpSMReqFlag.setBit(2, far.ForwardingParameters.PFCPSMReqFlags.Sndem)
+			pfcpSMReqFlag.setBit(3, far.ForwardingParameters.PFCPSMReqFlags.Qaurr)
 			forwardingParametersIEs = append(forwardingParametersIEs, ie.NewPFCPSMReqFlags(uint8(*pfcpSMReqFlag)))
 			// reset original far sndem flag
 			far.ForwardingParameters.PFCPSMReqFlags = nil
@@ -397,7 +397,7 @@ func BuildPfcpSessionDeletionRequest(
 func BuildPfcpSessionReportResponse(cause uint8, drobu bool, seqFromUPF uint32, seid uint64) *message.SessionReportResponse {
 	flag := new(Flag)
 	if drobu {
-		flag.SetBit(1, true)
+		flag.setBit(1, true)
 	}
 	return message.NewSessionReportResponse(
 		0,
