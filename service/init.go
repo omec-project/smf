@@ -22,8 +22,6 @@ import (
 	ngapLogger "github.com/omec-project/ngap/logger"
 	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
-	pfcpLogger "github.com/omec-project/pfcp/logger"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
@@ -230,22 +228,6 @@ func (smf *SMF) setLogLevel() {
 		pathUtilLogger.SetReportCaller(factory.SmfConfig.Logger.PathUtil.ReportCaller)
 	}
 
-	if factory.SmfConfig.Logger.PFCP != nil {
-		if factory.SmfConfig.Logger.PFCP.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.PFCP.DebugLevel); err != nil {
-				pfcpLogger.PFCPLog.Warnf("PFCP Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.PFCP.DebugLevel)
-				pfcpLogger.SetLogLevel(logrus.InfoLevel)
-			} else {
-				pfcpLogger.SetLogLevel(level)
-			}
-		} else {
-			pfcpLogger.PFCPLog.Warnln("PFCP Log level not set. Default set to [info] level")
-			pfcpLogger.SetLogLevel(logrus.InfoLevel)
-		}
-		pfcpLogger.SetReportCaller(factory.SmfConfig.Logger.PFCP.ReportCaller)
-	}
-
 	// Initialise Statistics
 	go metrics.InitMetrics()
 }
@@ -287,7 +269,7 @@ func (smf *SMF) Start() {
 	// Wait for additional/updated config from config pod
 	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 	if roc == "true" {
-		initLog.Infof("Configuration is managed by Config Pod")
+		initLog.Infof("configuration is managed by Config Pod")
 		initLog.Infof("waiting for initial configuration from config pod")
 
 		// Main thread should be blocked for config update from ROC
@@ -299,7 +281,7 @@ func (smf *SMF) Start() {
 
 		// Trigger background goroutine to handle further config updates
 		go func() {
-			initLog.Infof("Dynamic config update task initialised")
+			initLog.Infof("dynamic config update task initialised")
 			for {
 				if <-factory.ConfigPodTrigger {
 					if context.ProcessConfigUpdate() {
@@ -310,14 +292,14 @@ func (smf *SMF) Start() {
 			}
 		}()
 	} else {
-		initLog.Infof("Configuration is managed by Helm")
+		initLog.Infof("configuration is managed by Helm")
 	}
 
 	// Send NRF Registration
 	smf.SendNrfRegistration()
 
 	if smfCtxt.EnableNrfCaching {
-		initLog.Infof("Enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
+		initLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
 		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
@@ -351,13 +333,16 @@ func (smf *SMF) Start() {
 	udp.Run(pfcp.Dispatch)
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
-		if upf.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn {
-			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s](%s)\n", upf.NodeID.NodeIdValue,
+		if upf.NodeID.NodeIdType == context.NodeIdTypeFqdn {
+			logger.AppLog.Infof("send PFCP Association Request to UPF[%s](%s)\n", upf.NodeID.NodeIdValue,
 				upf.NodeID.ResolveNodeIdToIp().String())
 		} else {
-			logger.AppLog.Infof("Send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
+			logger.AppLog.Infof("send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
 		}
-		message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+		err := message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+		if err != nil {
+			logger.AppLog.Errorf("send PFCP Association Request failed: %v", err)
+		}
 	}
 
 	// Trigger PFCP Heartbeat towards all connected UPFs
@@ -372,21 +357,19 @@ func (smf *SMF) Start() {
 	server, err := http2_util.NewServer(HTTPAddr, util.SmfLogPath, router)
 
 	if server == nil {
-		initLog.Error("Initialize HTTP server failed:", err)
+		initLog.Error("initialize HTTP server failed:", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnln("Initialize HTTP server:", err)
+		initLog.Warnln("initialize HTTP server:", err)
 	}
 
 	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
-	smfPemPath := path_util.Free5gcPath(factory.SmfConfig.Configuration.Sbi.TLS.PEM)
-	smfKeyPath := path_util.Free5gcPath(factory.SmfConfig.Configuration.Sbi.TLS.Key)
 	if serverScheme == "http" {
 		err = server.ListenAndServe()
 	} else if serverScheme == "https" {
-		err = server.ListenAndServeTLS(smfPemPath, smfKeyPath)
+		err = server.ListenAndServeTLS(context.SMF_Self().PEM, context.SMF_Self().Key)
 	}
 
 	if err != nil {
@@ -395,15 +378,15 @@ func (smf *SMF) Start() {
 }
 
 func (smf *SMF) Terminate() {
-	logger.InitLog.Infof("Terminating SMF...")
+	logger.InitLog.Infof("terminating SMF...")
 	// deregister with NRF
 	problemDetails, err := consumer.SendDeregisterNFInstance()
 	if problemDetails != nil {
-		logger.InitLog.Errorf("Deregister NF instance Failed Problem[%+v]", problemDetails)
+		logger.InitLog.Errorf("deregister NF instance Failed Problem[%+v]", problemDetails)
 	} else if err != nil {
-		logger.InitLog.Errorf("Deregister NF instance Error[%+v]", err)
+		logger.InitLog.Errorf("deregister NF instance Error[%+v]", err)
 	} else {
-		logger.InitLog.Infof("Deregister from NRF successfully")
+		logger.InitLog.Infof("deregister from NRF successfully")
 	}
 }
 
@@ -418,14 +401,14 @@ func StartKeepAliveTimer(nfProfile *models.NfProfile) {
 	if nfProfile.HeartBeatTimer == 0 {
 		nfProfile.HeartBeatTimer = 30
 	}
-	logger.InitLog.Infof("Started KeepAlive Timer: %v sec", nfProfile.HeartBeatTimer)
+	logger.InitLog.Infof("started KeepAlive Timer: %v sec", nfProfile.HeartBeatTimer)
 	// AfterFunc starts timer and waits for KeepAliveTimer to elapse and then calls smf.UpdateNF function
 	KeepAliveTimer = time.AfterFunc(time.Duration(nfProfile.HeartBeatTimer)*time.Second, UpdateNF)
 }
 
 func StopKeepAliveTimer() {
 	if KeepAliveTimer != nil {
-		logger.InitLog.Infof("Stopped KeepAlive Timer.")
+		logger.InitLog.Infof("stopped KeepAlive Timer.")
 		KeepAliveTimer.Stop()
 		KeepAliveTimer = nil
 	}
@@ -436,7 +419,7 @@ func UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer == nil {
-		initLog.Warnf("KeepAlive timer has been stopped.")
+		initLog.Warnf("keepAlive timer has been stopped.")
 		return
 	}
 	// setting default value 30 sec
@@ -457,14 +440,14 @@ func UpdateNF() {
 			// register with NRF full profile
 			nfProfile, err = consumer.SendNFRegistration()
 			if err != nil {
-				initLog.Errorf("Error [%v] when sending NF registration", err)
+				initLog.Errorf("error [%v] when sending NF registration", err)
 			}
 		}
 	} else if err != nil {
 		initLog.Errorf("SMF update to NRF Error[%s]", err.Error())
 		nfProfile, err = consumer.SendNFRegistration()
 		if err != nil {
-			initLog.Errorf("Error [%v] when sending NF registration", err)
+			initLog.Errorf("error [%v] when sending NF registration", err)
 		}
 	}
 
@@ -472,7 +455,7 @@ func UpdateNF() {
 		// use hearbeattimer value with received timer value from NRF
 		heartBeatTimer = nfProfile.HeartBeatTimer
 	}
-	logger.InitLog.Debugf("Restarted KeepAlive Timer: %v sec", heartBeatTimer)
+	logger.InitLog.Debugf("restarted KeepAlive Timer: %v sec", heartBeatTimer)
 	// restart timer with received HeartBeatTimer value
 	KeepAliveTimer = time.AfterFunc(time.Duration(heartBeatTimer)*time.Second, UpdateNF)
 }
@@ -494,7 +477,7 @@ func (smf *SMF) SendNrfRegistration() {
 			logger.InitLog.Infof("NRF Registration failure, %v", err.Error())
 		} else {
 			StartKeepAliveTimer(prof)
-			logger.CfgLog.Infof("Sent Register NF Instance with updated profile")
+			logger.CfgLog.Infof("sent Register NF Instance with updated profile")
 		}
 	}
 }

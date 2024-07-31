@@ -19,6 +19,9 @@ type UEPreConfigPaths struct {
 }
 
 func NewUEDataPathNode(name string) (node *DataPathNode, err error) {
+	if smfContext.UserPlaneInformation == nil {
+		return nil, fmt.Errorf("smfContext.UserPlaneInformation is nil")
+	}
 	upNodes := smfContext.UserPlaneInformation.UPNodes
 
 	if _, exist := upNodes[name]; !exist {

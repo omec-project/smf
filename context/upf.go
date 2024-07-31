@@ -15,15 +15,15 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
+	"github.com/omec-project/util/util_3gpp"
 )
 
 var upfPool sync.Map
@@ -58,11 +58,28 @@ func (s UPFStatus) String() string {
 	}
 }
 
+type RecoveryTimeStamp struct {
+	RecoveryTimeStamp time.Time
+}
+
+type UserPlaneIPResourceInformation struct {
+	Ipv4Address     net.IP
+	Ipv6Address     net.IP
+	NetworkInstance util_3gpp.Dnn
+	Assosi          bool
+	Assoni          bool
+	V6              bool
+	V4              bool
+	TeidRange       uint8
+	Teidri          uint8 // 0x00011100
+	SourceInterface uint8 // 0x00001111
+}
+
 type UPF struct {
 	SNssaiInfos        []SnssaiUPFInfo
 	N3Interfaces       []UPFInterfaceInfo
 	N9Interfaces       []UPFInterfaceInfo
-	UPFunctionFeatures *pfcpType.UPFunctionFeatures
+	UPFunctionFeatures *UPFunctionFeatures
 
 	pdrPool sync.Map
 	farPool sync.Map
@@ -76,9 +93,9 @@ type UPF struct {
 	qerIDGenerator *idgenerator.IDGenerator
 	teidGenerator  *idgenerator.IDGenerator
 
-	RecoveryTimeStamp pfcpType.RecoveryTimeStamp
-	NodeID            pfcpType.NodeID
-	UPIPInfo          pfcpType.UserPlaneIPResourceInformation
+	RecoveryTimeStamp RecoveryTimeStamp
+	NodeID            NodeID
+	UPIPInfo          UserPlaneIPResourceInformation
 	UPFStatus         UPFStatus
 	uuid              uuid.UUID
 	Port              uint16
@@ -210,7 +227,7 @@ func (upTunnel *UPTunnel) AddDataPath(dataPath *DataPath) {
 
 // *** add unit test ***//
 // NewUPF returns a new UPF context in SMF
-func NewUPF(nodeID *pfcpType.NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
+func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 	upf = new(UPF)
 	upf.uuid = uuid.New()
 
@@ -290,17 +307,17 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 func (upf *UPF) PFCPAddr() *net.UDPAddr {
 	return &net.UDPAddr{
 		IP:   upf.NodeID.ResolveNodeIdToIp(),
-		Port: pfcpUdp.PFCP_PORT,
+		Port: factory.DEFAULT_PFCP_PORT,
 	}
 }
 
 // *** add unit test ***//
-func RetrieveUPFNodeByNodeID(nodeID pfcpType.NodeID) *UPF {
+func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 	var targetUPF *UPF = nil
 	upfPool.Range(func(key, value interface{}) bool {
 		curUPF := value.(*UPF)
 		if curUPF.NodeID.NodeIdType != nodeID.NodeIdType &&
-			(curUPF.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn || nodeID.NodeIdType == pfcpType.NodeIdTypeFqdn) {
+			(curUPF.NodeID.NodeIdType == NodeIdTypeFqdn || nodeID.NodeIdType == NodeIdTypeFqdn) {
 			curUPFNodeIdIP := curUPF.NodeID.ResolveNodeIdToIp().To4()
 			nodeIdIP := nodeID.ResolveNodeIdToIp().To4()
 			logger.CtxLog.Tracef("RetrieveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]", curUPFNodeIdIP, nodeIdIP)
@@ -319,13 +336,13 @@ func RetrieveUPFNodeByNodeID(nodeID pfcpType.NodeID) *UPF {
 }
 
 // *** add unit test ***//
-func RemoveUPFNodeByNodeID(nodeID pfcpType.NodeID) bool {
+func RemoveUPFNodeByNodeID(nodeID NodeID) bool {
 	upfID := ""
 	upfPool.Range(func(key, value interface{}) bool {
 		upfID = key.(string)
 		upf := value.(*UPF)
 		if upf.NodeID.NodeIdType != nodeID.NodeIdType &&
-			(upf.NodeID.NodeIdType == pfcpType.NodeIdTypeFqdn || nodeID.NodeIdType == pfcpType.NodeIdTypeFqdn) {
+			(upf.NodeID.NodeIdType == NodeIdTypeFqdn || nodeID.NodeIdType == NodeIdTypeFqdn) {
 			upfNodeIdIP := upf.NodeID.ResolveNodeIdToIp().To4()
 			nodeIdIP := nodeID.ResolveNodeIdToIp().To4()
 			logger.CtxLog.Tracef("RemoveUPF - upfNodeIdIP:[%+v], nodeIdIP:[%+v]", upfNodeIdIP, nodeIdIP)
@@ -444,7 +461,7 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	}
 
 	// SDF Filter
-	sdfFilter := pfcpType.SDFFilter{}
+	sdfFilter := SDFFilter{}
 
 	// First Flow
 	flow := rule.FlowInfos[0]
@@ -636,7 +653,7 @@ func (upf *UPF) IsDnnConfigured(sDnn string) bool {
 // IsUpfSupportUeIpAddrAlloc UE IP addr alloc by UPF supported
 func (upf *UPF) IsUpfSupportUeIpAddrAlloc() bool {
 	if upf.UPFunctionFeatures != nil &&
-		(upf.UPFunctionFeatures.SupportedFeatures1&pfcpType.UpFunctionFeatures1Ueip) == pfcpType.UpFunctionFeatures1Ueip {
+		(upf.UPFunctionFeatures.SupportedFeatures1&UpFunctionFeatures1Ueip) == UpFunctionFeatures1Ueip {
 		return true
 	}
 

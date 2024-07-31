@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/stretchr/testify/require"
@@ -231,8 +230,8 @@ func TestUpdateSmfUserPlaneNode_NodeIDChange(t *testing.T) {
 		DefaultUserPlanePath: make(map[string][]*context.UPNode),
 	}
 
-	nodeID := pfcpType.NodeID{
-		NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
+	nodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: []byte(net.ParseIP("1.2.3.4").To4()),
 	}
 
@@ -246,8 +245,8 @@ func TestUpdateSmfUserPlaneNode_NodeIDChange(t *testing.T) {
 		Links: []*context.UPNode{
 			{
 				Type: context.UPNODE_AN,
-				NodeID: pfcpType.NodeID{
-					NodeIdType:  pfcpType.NodeIdTypeIpv4Address,
+				NodeID: context.NodeID{
+					NodeIdType:  context.NodeIdTypeIpv4Address,
 					NodeIdValue: []byte(net.ParseIP("5.6.7.8").To4()),
 				},
 				Port: 0,

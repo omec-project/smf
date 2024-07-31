@@ -6,20 +6,21 @@
 package pfcp
 
 import (
-	"github.com/omec-project/pfcp"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"upf-adapter/logger"
 	"upf-adapter/pfcp/handler"
+
+	"github.com/wmnsk/go-pfcp/message"
 )
 
-func Dispatch(msg *pfcpUdp.Message) {
+func Dispatch(msg message.Message) {
 	// TODO: Add return status to all handlers
-	switch msg.PfcpMessage.Header.MessageType {
+	msgType := msg.MessageType()
+	switch msgType {
 	/*
 		case pfcp.PFCP_HEARTBEAT_REQUEST:
 			handler.HandlePfcpHeartbeatRequest(msg)
 	*/
-	case pfcp.PFCP_HEARTBEAT_RESPONSE:
+	case message.MsgTypeHeartbeatResponse:
 		handler.HandlePfcpHeartbeatResponse(msg)
 	/*
 		case pfcp.PFCP_PFD_MANAGEMENT_REQUEST:
@@ -29,7 +30,7 @@ func Dispatch(msg *pfcpUdp.Message) {
 		case pfcp.PFCP_ASSOCIATION_SETUP_REQUEST:
 			handler.HandlePfcpAssociationSetupRequest(msg)
 	*/
-	case pfcp.PFCP_ASSOCIATION_SETUP_RESPONSE:
+	case message.MsgTypeAssociationSetupResponse:
 		handler.HandlePfcpAssociationSetupResponse(msg)
 		/*
 			case pfcp.PFCP_ASSOCIATION_UPDATE_REQUEST:
@@ -51,11 +52,11 @@ func Dispatch(msg *pfcpUdp.Message) {
 			case pfcp.PFCP_SESSION_SET_DELETION_RESPONSE:
 				handler.HandlePfcpSessionSetDeletionResponse(msg)
 		*/
-	case pfcp.PFCP_SESSION_ESTABLISHMENT_RESPONSE:
+	case message.MsgTypeSessionEstablishmentResponse:
 		handler.HandlePfcpSessionEstablishmentResponse(msg)
-	case pfcp.PFCP_SESSION_MODIFICATION_RESPONSE:
+	case message.MsgTypeSessionModificationResponse:
 		handler.HandlePfcpSessionModificationResponse(msg)
-	case pfcp.PFCP_SESSION_DELETION_RESPONSE:
+	case message.MsgTypeSessionDeletionResponse:
 		handler.HandlePfcpSessionDeletionResponse(msg)
 		/*
 			case pfcp.PFCP_SESSION_REPORT_REQUEST:
@@ -64,7 +65,7 @@ func Dispatch(msg *pfcpUdp.Message) {
 				handler.HandlePfcpSessionReportResponse(msg)
 		*/
 	default:
-		logger.PfcpLog.Errorf("unknown pfcp message type [%d] ", msg.PfcpMessage.Header.MessageType)
+		logger.PfcpLog.Errorf("unknown pfcp message type [%d]: %s", msgType, msg.MessageTypeName())
 		return
 	}
 }
