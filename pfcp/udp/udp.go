@@ -2,8 +2,6 @@
 // Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
-//
-// Some of the content in this file was taken from https://github.com/omec-project/pfcp
 
 package udp
 
