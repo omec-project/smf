@@ -14,6 +14,8 @@ import (
 	"upf-adapter/logger"
 	"upf-adapter/pfcp"
 	"upf-adapter/pfcp/udp"
+
+	"github.com/wmnsk/go-pfcp/message"
 )
 
 // Hnadler for SMF initiated msgs
@@ -27,19 +29,26 @@ func handler(w http.ResponseWriter, req *http.Request) {
 	var udpPodMsg config.UdpPodPfcpMsg
 	json.Unmarshal(reqBody, &udpPodMsg)
 
-	logger.AppLog.Debugf("\n received msg type [%v], upf nodeId [%s], smfIp [%v], msg [%v]",
-		udpPodMsg.Msg.Header.MessageType, udpPodMsg.UpNodeID.NodeIdValue, udpPodMsg.SmfIp, udpPodMsg.Msg)
-
-	pfcpJsonRsp, err := pfcp.ForwardPfcpMsgToUpf(udpPodMsg)
+	pfcpMessage, err := message.Parse(udpPodMsg.Msg.Body)
 	if err != nil {
-		logger.AppLog.Errorf("Error HttpLib received pfcp Rsp ")
+		logger.AppLog.Errorf("error parsing pfcp msg")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.AppLog.Debugf("\n received msg type [%v], upf nodeId [%s], smfIp [%v], msg [%v]",
+		pfcpMessage.MessageType(), udpPodMsg.UpNodeID.NodeIdValue, udpPodMsg.SmfIp, udpPodMsg.Msg)
+
+	pfcpJsonRsp, err := pfcp.ForwardPfcpMsgToUpf(pfcpMessage, udpPodMsg.UpNodeID)
+	if err != nil {
+		logger.AppLog.Errorf("error forwarding pfcp msg to UPF: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(pfcpJsonRsp)
-	logger.AppLog.Debugf("response sent for %v", udpPodMsg.Msg.Header.MessageType)
+	logger.AppLog.Debugf("response sent for %v", pfcpMessage.MessageType())
 }
 
 // UDP handler for pfcp msg from UPF

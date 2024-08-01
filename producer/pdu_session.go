@@ -19,7 +19,6 @@ import (
 	"github.com/omec-project/openapi/Nsmf_PDUSession"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -730,7 +729,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 					smContext.SubPduSessLog.Errorf("AN Release Error")
 					return fmt.Errorf("AN Release Error")
 				} else {
-					DLPDR.FAR.ApplyAction = pfcpType.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
+					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
 					DLPDR.FAR.State = smf_context.RULE_UPDATE
 					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 					farList = append(farList, DLPDR.FAR)

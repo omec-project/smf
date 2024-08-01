@@ -18,8 +18,6 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -52,7 +50,7 @@ type SMFContext struct {
 	BindingIPv4  string
 	RegisterIPv4 string
 
-	UPNodeIDs []pfcpType.NodeID
+	UPNodeIDs []NodeID
 	Key       string
 	PEM       string
 	KeyLog    string
@@ -78,7 +76,8 @@ type SMFContext struct {
 	PodIp                 string
 
 	StaticIpInfo             *[]factory.StaticIpInfo
-	CPNodeID                 pfcpType.NodeID
+	CPNodeID                 NodeID
+	PFCPPort                 int
 	UDMProfile               models.NfProfile
 	NrfCacheEvictionInterval time.Duration
 	SBIPort                  int
@@ -100,6 +99,9 @@ func RetrieveDnnInformation(Snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo 
 }
 
 func AllocateLocalSEID() (uint64, error) {
+	if smfContext.DrsmCtxts.SeidPool == nil {
+		return 0, fmt.Errorf("SEID pool is not initialized")
+	}
 	seid32, err := smfContext.DrsmCtxts.SeidPool.AllocateInt32ID()
 	if err != nil {
 		logger.CtxLog.Errorf("allocate SEID error: %+v", err)
@@ -193,7 +195,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	if pfcp := configuration.PFCP; pfcp != nil {
 		if pfcp.Port == 0 {
-			pfcp.Port = pfcpUdp.PFCP_PORT
+			pfcp.Port = factory.DEFAULT_PFCP_PORT
 		}
 		pfcpAddrEnv := os.Getenv(pfcp.Addr)
 		if pfcpAddrEnv != "" {
@@ -208,6 +210,8 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		if err != nil {
 			logger.CtxLog.Warnf("PFCP Parse Addr Fail: %v", err)
 		}
+
+		smfContext.PFCPPort = int(pfcp.Port)
 
 		smfContext.CPNodeID.NodeIdType = 0
 		smfContext.CPNodeID.NodeIdValue = addr.IP.To4()

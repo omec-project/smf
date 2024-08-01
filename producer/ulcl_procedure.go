@@ -9,15 +9,14 @@ import (
 	"net"
 	"reflect"
 
-	"github.com/omec-project/pfcp/pfcpType"
-	"github.com/omec-project/pfcp/pfcpUdp"
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/util/flowdesc"
 )
 
-func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID pfcpType.NodeID) {
+func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID context.NodeID) {
 	bpMGR := smContext.BPManager
 	pendingUPF := bpMGR.PendingUPF
 
@@ -122,7 +121,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 		if nodeAfterULCL {
 			addr := net.UDPAddr{
 				IP:   curDataPathNode.UPF.NodeID.NodeIdValue,
-				Port: pfcpUdp.PFCP_PORT,
+				Port: factory.DEFAULT_PFCP_PORT,
 			}
 
 			logger.PduSessLog.Traceln("Send to upf addr: ", addr.String())
@@ -144,8 +143,11 @@ func EstablishPSA2(smContext *context.SMContext) {
 
 			curDPNodeIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
-			message.SendPfcpSessionEstablishmentRequest(
+			err := message.SendPfcpSessionEstablishmentRequest(
 				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDataPathNode.UPF.Port)
+			if err != nil {
+				logger.PduSessLog.Errorf("send pfcp session establishment request failed: %v for UPF[%v, %v]: ", err, curDataPathNode.UPF.NodeID, curDataPathNode.UPF.NodeID.ResolveNodeIdToIp())
+			}
 		} else {
 			if reflect.DeepEqual(curDataPathNode.UPF.NodeID, ulcl.NodeID) {
 				nodeAfterULCL = true
@@ -200,7 +202,7 @@ func EstablishULCL(smContext *context.SMContext) {
 				logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
 			}
 
-			UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+			UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{
 				Bid:                     false,
 				Fl:                      false,
 				Spi:                     false,
@@ -286,7 +288,7 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 
 	defaultANUPFDLFAR := defaultANUPF.DownLinkTunnel.PDR["default"].FAR       // TODO: Iterate over all PDRs
 	activatingANUPFDLFAR := activatingANUPF.DownLinkTunnel.PDR["default"].FAR // TODO: Iterate over all PDRs
-	activatingANUPFDLFAR.ApplyAction = pfcpType.ApplyAction{
+	activatingANUPFDLFAR.ApplyAction = context.ApplyAction{
 		Buff: false,
 		Drop: false,
 		Dupl: false,
@@ -294,16 +296,16 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 		Nocp: false,
 	}
 	activatingANUPFDLFAR.ForwardingParameters = &context.ForwardingParameters{
-		DestinationInterface: pfcpType.DestinationInterface{
-			InterfaceValue: pfcpType.DestinationInterfaceAccess,
+		DestinationInterface: context.DestinationInterface{
+			InterfaceValue: context.DestinationInterfaceAccess,
 		},
 		NetworkInstance: []byte(smContext.Dnn),
 	}
 
 	activatingANUPFDLFAR.State = context.RULE_INITIAL
-	activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation = new(pfcpType.OuterHeaderCreation)
+	activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation = new(context.OuterHeaderCreation)
 	anOuterHeaderCreation := activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation
-	anOuterHeaderCreation.OuterHeaderCreationDescription = pfcpType.OuterHeaderCreationGtpUUdpIpv4
+	anOuterHeaderCreation.OuterHeaderCreationDescription = context.OuterHeaderCreationGtpUUdpIpv4
 	anOuterHeaderCreation.Teid = defaultANUPFDLFAR.ForwardingParameters.OuterHeaderCreation.Teid
 	anOuterHeaderCreation.Ipv4Address = defaultANUPFDLFAR.ForwardingParameters.OuterHeaderCreation.Ipv4Address
 }
@@ -353,7 +355,7 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 					logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
 				}
 
-				UPLinkPDR.PDI.SDFFilter = &pfcpType.SDFFilter{
+				UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{
 					Bid:                     false,
 					Fl:                      false,
 					Spi:                     false,

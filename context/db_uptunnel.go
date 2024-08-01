@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/omec-project/pfcp/pfcpType"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
@@ -63,25 +62,17 @@ type PFCPSessionContextInDB struct {
 	PDRs       map[uint16]*PDR
 	LocalSEID  string
 	RemoteSEID string
-	NodeID     pfcpType.NodeID
+	NodeID     NodeID
 }
 
 type PFCPContextInDB map[string]PFCPSessionContextInDB
 
-func GetNodeIDInDB(nodeID pfcpType.NodeID) (nodeIDInDB NodeIDInDB) {
-	nodeIDInDB = NodeIDInDB{
-		NodeIdType:  nodeID.NodeIdType,
-		NodeIdValue: nodeID.NodeIdValue,
-	}
-	return nodeIDInDB
+func GetNodeIDInDB(nodeID NodeID) NodeIDInDB {
+	return NodeIDInDB(nodeID)
 }
 
-func GetNodeID(nodeIDInDB NodeIDInDB) (nodeID pfcpType.NodeID) {
-	nodeID = pfcpType.NodeID{
-		NodeIdType:  nodeIDInDB.NodeIdType,
-		NodeIdValue: nodeIDInDB.NodeIdValue,
-	}
-	return nodeID
+func GetNodeID(nodeIDInDB NodeIDInDB) NodeID {
+	return NodeID(nodeIDInDB)
 }
 
 func testEq(a, b []byte) bool {

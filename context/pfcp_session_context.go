@@ -7,8 +7,6 @@ package context
 
 import (
 	"fmt"
-
-	"github.com/omec-project/pfcp/pfcpType"
 )
 
 type PFCPSessionResponseStatus int
@@ -27,7 +25,7 @@ const (
 
 type PFCPSessionContext struct {
 	PDRs       map[uint16]*PDR
-	NodeID     pfcpType.NodeID
+	NodeID     NodeID
 	LocalSEID  uint64
 	RemoteSEID uint64
 }
