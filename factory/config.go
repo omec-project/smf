@@ -291,7 +291,7 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 	pfcpPortVal := DEFAULT_PFCP_PORT
 	if pfcpPortStr != "" {
 		if val, err := strconv.ParseUint(pfcpPortStr, 10, 32); err != nil {
-			logger.CtxLog.Infoln("Parse pfcp port failed : ", pfcpPortStr)
+			return fmt.Errorf("parse pfcp port failed : %v", pfcpPortStr)
 		} else {
 			pfcpPortVal = int(val)
 		}

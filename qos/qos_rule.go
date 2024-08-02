@@ -257,45 +257,27 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 	ipfRule.protoId = pfcTags[2]
 
 	// decode source IP/mask
-	err := ipfRule.decodeIpFilterAddrv4(true, pfcTags[4])
-	if err != nil {
-		logger.QosLog.Errorf("error decoding source IP/mask: %s", err)
-	}
+	ipfRule.decodeIpFilterAddrv4(true, pfcTags[4])
 
 	// decode source port/port-range (optional)
 	if pfcTags[6] == "to" {
 		// decode source port/port-range
-		err := ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
-		if err != nil {
-			logger.QosLog.Errorf("error decoding source port/port-range: %s", err)
-		}
+		ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
 
 		// decode destination IP/mask
-		err = ipfRule.decodeIpFilterAddrv4(false, pfcTags[7])
-		if err != nil {
-			logger.QosLog.Errorf("error decoding destination IP/mask: %s", err)
-		}
+		ipfRule.decodeIpFilterAddrv4(false, pfcTags[7])
 
 		// decode destination port/port-range(optional), if any
 		if len(pfcTags) == 9 {
-			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[8])
-			if err != nil {
-				logger.QosLog.Errorf("error decoding destination port/port-range: %s", err)
-			}
+			ipfRule.decodeIpFilterPortInfo(false, pfcTags[8])
 		}
 	} else {
 		// decode destination IP/mask
-		err := ipfRule.decodeIpFilterAddrv4(false, pfcTags[6])
-		if err != nil {
-			logger.QosLog.Errorf("error decoding destination IP/mask: %s", err)
-		}
+		ipfRule.decodeIpFilterAddrv4(false, pfcTags[6])
 
 		// decode destination port/port-range(optional), if any
 		if len(pfcTags) == 8 {
-			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[7])
-			if err != nil {
-				logger.QosLog.Errorf("error decoding destination port/port-range: %s", err)
-			}
+			ipfRule.decodeIpFilterPortInfo(false, pfcTags[7])
 		}
 	}
 
@@ -309,7 +291,7 @@ func (ipf *IPFilterRule) IsMatchAllIPFilter() bool {
 	return false
 }
 
-func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) error {
+func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) {
 	// check if it is single port or range
 	ports := strings.Split(tag, "-")
 
@@ -328,10 +310,9 @@ func (ipfRule *IPFilterRule) decodeIpFilterPortInfo(source bool, tag string) err
 			ipfRule.dPort = ports[0]
 		}
 	}
-	return nil
 }
 
-func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) error {
+func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) {
 	ipAndMask := strings.Split(tag, "/")
 	if source {
 		ipfRule.sAddrv4.addr = ipAndMask[0] // can be x.x.x.x or "any"
@@ -347,7 +328,6 @@ func (ipfRule *IPFilterRule) decodeIpFilterAddrv4(source bool, tag string) error
 			ipfRule.dAddrv4.mask = ipAndMask[1]
 		}
 	}
-	return nil
 }
 
 func (pf *PacketFilter) GetPfContent(flowDesc string) {
