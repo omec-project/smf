@@ -219,7 +219,10 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	// Static config
 	for _, snssaiInfoConfig := range configuration.SNssaiInfo {
-		smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
+		err := smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
+		if err != nil {
+			logger.CtxLog.Warnln(err)
+		}
 	}
 
 	// Set client and set url
@@ -299,7 +302,10 @@ func ProcessConfigUpdate() bool {
 	// Lets parse through network slice configs first
 	if updatedCfg.DelSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.DelSNssaiInfo {
-			SMF_Self().deleteSmfNssaiInfo(&slice)
+			err := SMF_Self().deleteSmfNssaiInfo(&slice)
+			if err != nil {
+				logger.CtxLog.Errorf("delete network slice [%v] failed: %v", slice, err)
+			}
 		}
 		factory.UpdatedSmfConfig.DelSNssaiInfo = nil
 		sendNrfRegistration = true
@@ -307,7 +313,10 @@ func ProcessConfigUpdate() bool {
 
 	if updatedCfg.AddSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.AddSNssaiInfo {
-			SMF_Self().insertSmfNssaiInfo(&slice)
+			err := SMF_Self().insertSmfNssaiInfo(&slice)
+			if err != nil {
+				logger.CtxLog.Errorf("insert network slice [%v] failed: %v", slice, err)
+			}
 		}
 		factory.UpdatedSmfConfig.AddSNssaiInfo = nil
 		sendNrfRegistration = true
@@ -315,7 +324,10 @@ func ProcessConfigUpdate() bool {
 
 	if updatedCfg.ModSNssaiInfo != nil {
 		for _, slice := range *updatedCfg.ModSNssaiInfo {
-			SMF_Self().updateSmfNssaiInfo(&slice)
+			err := SMF_Self().updateSmfNssaiInfo(&slice)
+			if err != nil {
+				logger.CtxLog.Errorf("update network slice [%v] failed: %v", slice, err)
+			}
 		}
 		factory.UpdatedSmfConfig.ModSNssaiInfo = nil
 		sendNrfRegistration = true
@@ -324,7 +336,10 @@ func ProcessConfigUpdate() bool {
 	// UP Node Links should be deleted before underlying UPFs are deleted
 	if updatedCfg.DelLinks != nil {
 		for _, link := range *updatedCfg.DelLinks {
-			GetUserPlaneInformation().DeleteUPNodeLinks(&link)
+			err := GetUserPlaneInformation().DeleteUPNodeLinks(&link)
+			if err != nil {
+				logger.CtxLog.Errorf("delete UP Node Links failed: %v", err)
+			}
 		}
 		factory.UpdatedSmfConfig.DelLinks = nil
 	}
@@ -332,14 +347,20 @@ func ProcessConfigUpdate() bool {
 	// Iterate through UserPlane Info
 	if updatedCfg.DelUPNodes != nil {
 		for name, upf := range *updatedCfg.DelUPNodes {
-			GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf)
+			err := GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf)
+			if err != nil {
+				logger.CtxLog.Errorf("delete UP Node [%s] failed: %v", name, err)
+			}
 		}
 		factory.UpdatedSmfConfig.DelUPNodes = nil
 	}
 
 	if updatedCfg.AddUPNodes != nil {
 		for name, upf := range *updatedCfg.AddUPNodes {
-			GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
+			err := GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
+			if err != nil {
+				logger.CtxLog.Errorf("insert UP Node [%s] failed: %v", name, err)
+			}
 		}
 		factory.UpdatedSmfConfig.AddUPNodes = nil
 		AllocateUPFID()
@@ -348,7 +369,10 @@ func ProcessConfigUpdate() bool {
 
 	if updatedCfg.ModUPNodes != nil {
 		for name, upf := range *updatedCfg.ModUPNodes {
-			GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
+			err := GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
+			if err != nil {
+				logger.CtxLog.Errorf("update UP Node [%s] failed: %v", name, err)
+			}
 		}
 		factory.UpdatedSmfConfig.ModUPNodes = nil
 	}
@@ -357,7 +381,10 @@ func ProcessConfigUpdate() bool {
 	// UP Links should be added only after underlying UPFs have been added
 	if updatedCfg.AddLinks != nil {
 		for _, link := range *updatedCfg.AddLinks {
-			GetUserPlaneInformation().InsertUPNodeLinks(&link)
+			err := GetUserPlaneInformation().InsertUPNodeLinks(&link)
+			if err != nil {
+				logger.CtxLog.Errorf("insert UP Node Links failed: %v", err)
+			}
 		}
 		factory.UpdatedSmfConfig.AddLinks = nil
 	}

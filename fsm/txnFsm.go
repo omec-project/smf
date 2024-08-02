@@ -35,11 +35,20 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		createData := req.JsonData
 		if smCtxtRef, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId); err == nil {
 			// Previous context exist
-			producer.HandlePduSessionContextReplacement(smCtxtRef)
+			err := producer.HandlePduSessionContextReplacement(smCtxtRef)
+			if err != nil {
+				txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v] ",
+					transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
+			}
 		}
 		// Create fresh context
 		txn.Ctxt = smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
-		txn.CtxtKey, _ = smf_context.ResolveRef(createData.Supi, createData.PduSessionId)
+		CtxtKey, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId)
+		if err != nil {
+			txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v] ",
+				transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
+		}
+		txn.CtxtKey = CtxtKey
 	case svcmsgtypes.UpdateSmContext:
 		fallthrough
 	case svcmsgtypes.ReleaseSmContext:

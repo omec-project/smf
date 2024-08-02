@@ -27,7 +27,10 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 	// Check if prev slice with same sst+sd exist
 	if slice := c.getSmfNssaiInfo(snssaiInfoConfig.SNssai.Sst, snssaiInfoConfig.SNssai.Sd); slice != nil {
 		logger.InitLog.Errorf("network slice [%v] already exist, deleting", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*snssaiInfoConfig}))
-		c.deleteSmfNssaiInfo(snssaiInfoConfig)
+		err := c.deleteSmfNssaiInfo(snssaiInfoConfig)
+		if err != nil {
+			logger.InitLog.Errorf("network slice delete error %v", err)
+		}
 	}
 
 	snssaiInfo := SnssaiSmfInfo{}

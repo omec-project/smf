@@ -102,7 +102,10 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 				NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
 			},
 		}
-		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+		err := metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+		if err != nil {
+			logger.PfcpLog.Errorf("failed to publish NfStatusEvent: %+v", err)
+		}
 	}
 
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
@@ -276,7 +279,10 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 					NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
 				},
 			}
-			metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+			err := metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+			if err != nil {
+				logger.PfcpLog.Errorf("failed to publish NfStatusEvent: %+v", err)
+			}
 		}
 
 		// Supported Features of UPF
@@ -461,7 +467,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
 
 		// Release previous locally allocated UE IP-Addr
-		smContext.ReleaseUeIpAddr()
+		err := smContext.ReleaseUeIpAddr()
+		if err != nil {
+			logger.PfcpLog.Errorf("failed to release UE IP-Addr: %+v", err)
+		}
 
 		// Update with one received from UPF
 		smContext.PDUAddress.Ip = ueIPAddress

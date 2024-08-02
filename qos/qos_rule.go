@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/logger"
 )
 
 const (
@@ -256,27 +257,45 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 	ipfRule.protoId = pfcTags[2]
 
 	// decode source IP/mask
-	ipfRule.decodeIpFilterAddrv4(true, pfcTags[4])
+	err := ipfRule.decodeIpFilterAddrv4(true, pfcTags[4])
+	if err != nil {
+		logger.QosLog.Errorf("Error decoding source IP/mask: %s", err)
+	}
 
 	// decode source port/port-range (optional)
 	if pfcTags[6] == "to" {
 		// decode source port/port-range
-		ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
+		err := ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
+		if err != nil {
+			logger.QosLog.Errorf("Error decoding source port/port-range: %s", err)
+		}
 
 		// decode destination IP/mask
-		ipfRule.decodeIpFilterAddrv4(false, pfcTags[7])
+		err = ipfRule.decodeIpFilterAddrv4(false, pfcTags[7])
+		if err != nil {
+			logger.QosLog.Errorf("Error decoding destination IP/mask: %s", err)
+		}
 
 		// decode destination port/port-range(optional), if any
 		if len(pfcTags) == 9 {
-			ipfRule.decodeIpFilterPortInfo(false, pfcTags[8])
+			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[8])
+			if err != nil {
+				logger.QosLog.Errorf("Error decoding destination port/port-range: %s", err)
+			}
 		}
 	} else {
 		// decode destination IP/mask
-		ipfRule.decodeIpFilterAddrv4(false, pfcTags[6])
+		err := ipfRule.decodeIpFilterAddrv4(false, pfcTags[6])
+		if err != nil {
+			logger.QosLog.Errorf("Error decoding destination IP/mask: %s", err)
+		}
 
 		// decode destination port/port-range(optional), if any
 		if len(pfcTags) == 8 {
-			ipfRule.decodeIpFilterPortInfo(false, pfcTags[7])
+			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[7])
+			if err != nil {
+				logger.QosLog.Errorf("Error decoding destination port/port-range: %s", err)
+			}
 		}
 	}
 
@@ -431,7 +450,10 @@ func buildPFCompAddr(local bool, val IPFilterRuleIpAddrV4) (*PacketFilterCompone
 	}
 
 	if val.mask != "" {
-		maskInt, _ := strconv.Atoi(val.mask)
+		maskInt, err := strconv.Atoi(val.mask)
+		if err != nil {
+			logger.QosLog.Errorf("error converting mask to int: %s", err)
+		}
 		mask = net.CIDRMask(maskInt, 32)
 		pfc.ComponentValue = append(pfc.ComponentValue, mask...)
 	} else {

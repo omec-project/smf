@@ -105,7 +105,10 @@ func init() {
 // InitMetrics initialises SMF stats
 func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":9089", nil)
+	err := http.ListenAndServe(":9089", nil)
+	if err != nil {
+		log.Fatalf("Failed to start metrics server: %v", err)
+	}
 }
 
 // IncrementN11MsgStats increments message level stats

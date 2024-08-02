@@ -296,7 +296,10 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 	// Assuming one SMF host 5000 UEs, this code gets offset = smfCount * 5000 and generate unique TEID
 
 	smfCountStr := os.Getenv("SMF_COUNT")
-	smfCount, _ := strconv.Atoi(smfCountStr)
+	smfCount, err := strconv.Atoi(smfCountStr)
+	if err != nil {
+		logger.CtxLog.Errorf("Failed to convert SMF_COUNT to int: %v", err)
+	}
 
 	offset := (smfCount - 1) * 5000
 	uniqueId := id + uint32(offset)

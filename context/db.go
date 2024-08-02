@@ -158,8 +158,16 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key] = &PFCPSessionContext{}
 		smContext.PFCPContext[key].NodeID = pfcpCtxInDB.NodeID
 		smContext.PFCPContext[key].PDRs = pfcpCtxInDB.PDRs
-		smContext.PFCPContext[key].LocalSEID, _ = strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
-		smContext.PFCPContext[key].RemoteSEID, _ = strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
+		localSeid, err := strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
+		if err != nil {
+			logger.DataRepoLog.Errorf("LocalSEID unmarshall error: %v", err)
+		}
+		smContext.PFCPContext[key].LocalSEID = localSeid
+		remoteSeid, err := strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
+		if err != nil {
+			logger.DataRepoLog.Errorf("RemoteSEID unmarshall error: %v", err)
+		}
+		smContext.PFCPContext[key].RemoteSEID = remoteSeid
 	}
 
 	var dataPathInDBIf interface{}
@@ -298,7 +306,10 @@ func GetSeidByRefInDB(ref string) (seid uint64) {
 		logger.DataRepoLog.Warnln(getOneErr)
 	}
 	seidStr := result["seid"].(string)
-	seid, _ = strconv.ParseUint(seidStr, 16, 64)
+	seid, err := strconv.ParseUint(seidStr, 16, 64)
+	if err != nil {
+		logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
+	}
 	return
 }
 
@@ -394,7 +405,10 @@ func ClearSMContextInMem(ref string) {
 }
 
 func mapToByte(data map[string]interface{}) (ret []byte) {
-	ret, _ = json.Marshal(data)
+	ret, err := json.Marshal(data)
+	if err != nil {
+		logger.DataRepoLog.Errorf("map to byte error: %v", err)
+	}
 	return
 }
 

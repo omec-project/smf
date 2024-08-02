@@ -255,14 +255,17 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	err := smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	if err != nil {
+		logger.CtxLog.Errorln("deactivated UpLinkTunnel", err)
+	}
 	node.DownLinkTunnel = &GTPTunnel{}
 }
 
 func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 	for name, pdr := range node.DownLinkTunnel.PDR {
 		if pdr != nil {
-			logger.CtxLog.Infof("Deactivaed DownLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
+			logger.CtxLog.Infof("deactivated DownLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
 
 			// Remove PDR from PFCP Session
 			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
@@ -270,20 +273,20 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 			// Remove from UPF
 			err := node.UPF.RemovePDR(pdr)
 			if err != nil {
-				logger.CtxLog.Warnln("Deactivaed DownLinkTunnel", err)
+				logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
 			}
 
 			if far := pdr.FAR; far != nil {
 				err = node.UPF.RemoveFAR(far)
 				if err != nil {
-					logger.CtxLog.Warnln("Deactivaed DownLinkTunnel", err)
+					logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
 				}
 
 				bar := far.BAR
 				if bar != nil {
 					err = node.UPF.RemoveBAR(bar)
 					if err != nil {
-						logger.CtxLog.Warnln("Deactivaed DownLinkTunnel", err)
+						logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
 					}
 				}
 			}
@@ -292,7 +295,7 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 					if qer != nil {
 						err = node.UPF.RemoveQER(qer)
 						if err != nil {
-							logger.CtxLog.Warnln("Deactivaed UpLinkTunnel", err)
+							logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
 						}
 					}
 				}
@@ -301,7 +304,10 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	err := smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	if err != nil {
+		logger.CtxLog.Errorln("deactivated DownLinkTunnel", err)
+	}
 	node.DownLinkTunnel = &GTPTunnel{}
 }
 

@@ -233,7 +233,10 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		smContext.Tunnel.DataPathPool = uePreConfigPaths.DataPathPool
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
 		defaultPath = smContext.Tunnel.DataPathPool.GetDefaultPath()
-		defaultPath.ActivateTunnelAndPDR(smContext, 255)
+		err := defaultPath.ActivateTunnelAndPDR(smContext, 255)
+		if err != nil {
+			smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, data path error: %v", err.Error())
+		}
 		smContext.BPManager = smf_context.NewBPManager(createData.Supi)
 	} else {
 		// UE has no pre-config path.
@@ -508,7 +511,10 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	}
 
 	// Release UE IP-Address
-	smContext.ReleaseUeIpAddr()
+	err := smContext.ReleaseUeIpAddr()
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, release UE IP address failed: %v", err)
+	}
 
 	// Initiate PFCP release
 	smContext.ChangeState(smf_context.SmStatePfcpRelease)
@@ -624,7 +630,10 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 				continue
 			}
 			if _, exist := deletedPFCPNode[curUPFID]; !exist {
-				pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext, curDataPathNode.UPF.Port)
+				err := pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext, curDataPathNode.UPF.Port)
+				if err != nil {
+					smContext.SubPduSessLog.Errorf("releaseTunnel, send PFCP session deletion request failed: %v", err)
+				}
 				deletedPFCPNode[curUPFID] = true
 				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
 			}
@@ -693,16 +702,25 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed, %v ", err.Error())
-		smContext.CommitSmPolicyDecision(false)
+		err = smContext.CommitSmPolicyDecision(false)
+		if err != nil {
+			smContext.SubPfcpLog.Errorf("CommitSmPolicyDecision failed, %v", err)
+		}
 		return err
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
-		smContext.CommitSmPolicyDecision(false)
+		err = smContext.CommitSmPolicyDecision(false)
+		if err != nil {
+			smContext.SubPfcpLog.Errorf("CommitSmPolicyDecision failed, %v", err)
+		}
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
 
-	smContext.CommitSmPolicyDecision(true)
+	err = smContext.CommitSmPolicyDecision(true)
+	if err != nil {
+		smContext.SubPfcpLog.Errorf("CommitSmPolicyDecision failed, %v", err)
+	}
 	smContext.SubPduSessLog.Infof("N1N2 Transfer completed")
 	return nil
 }
@@ -741,7 +759,10 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		ANUPF := defaultPath.FirstDPNode
 
 		// Sending PFCP modification with flag set to DROP the packets.
-		pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, ANUPF.UPF.Port)
+		err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, ANUPF.UPF.Port)
+		if err != nil {
+			smContext.SubPduSessLog.Errorf("PFCP Session Modification Request failed: %v", err)
+		}
 	}
 
 	// Listening PFCP modification response.
@@ -821,7 +842,10 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			}, // Depends on the reason why N4 fail
 		}
 
-		SendPfcpSessionReleaseReq(smContext)
+		err = SendPfcpSessionReleaseReq(smContext)
+		if err != nil {
+			smContext.SubCtxLog.Errorf("pfcp session release error: %v ", err.Error())
+		}
 
 	default:
 		smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, SM Context State [%s] shouldn't be here\n", smContext.SMContextState)

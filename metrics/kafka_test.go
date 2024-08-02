@@ -40,7 +40,10 @@ func TestSendMessageWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	err := InitialiseKafkaStream(&configuration)
+	if err != nil {
+		t.Errorf("Expected return value to be nil, got %v", err)
+	}
 
 	writer := GetWriter()
 
@@ -63,7 +66,10 @@ func TestPublishPduSessEventWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	err := InitialiseKafkaStream(&configuration)
+	if err != nil {
+		t.Errorf("Expected return value to be nil, got %v", err)
+	}
 
 	writer := GetWriter()
 
@@ -86,7 +92,10 @@ func TestPublishMsgEventWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	err := InitialiseKafkaStream(&configuration)
+	if err != nil {
+		t.Errorf("Expected return value to be nil, got %v", err)
+	}
 
 	// If the kafkaWriter is called, this will panic and fail the test
 	result := PublishMsgEvent(0)
@@ -107,7 +116,10 @@ func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 	}
 	factory.SmfConfig = config
 
-	InitialiseKafkaStream(&configuration)
+	err := InitialiseKafkaStream(&configuration)
+	if err != nil {
+		t.Errorf("Expected return value to be nil, got %v", err)
+	}
 
 	writer := GetWriter()
 

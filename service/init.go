@@ -134,7 +134,10 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	if factory.SmfConfig.Configuration.DebugProfilePort != 0 {
 		addr := fmt.Sprintf(":%d", factory.SmfConfig.Configuration.DebugProfilePort)
 		go func() {
-			http.ListenAndServe(addr, nil)
+			err := http.ListenAndServe(addr, nil)
+			if err != nil {
+				initLog.Warnf("start profiling server failed: %+v", err)
+			}
 		}()
 	}
 
