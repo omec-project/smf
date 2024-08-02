@@ -259,7 +259,7 @@ linters:
     - whitespace
     - unconvert
     # - predeclared
-    # - noctx
+    - noctx
     - dogsled
     # - bodyclose
     - asciicheck
