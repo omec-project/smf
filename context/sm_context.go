@@ -715,7 +715,7 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	// Send to stream
 	err := metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
 	if err != nil {
-		smContext.SubCtxLog.Errorf("Failed to publish sm ctxt info on kafka stream: %v", err)
+		smContext.SubCtxLog.Errorf("failed to publish sm ctxt info on kafka stream: %v", err)
 	}
 }
 
