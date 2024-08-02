@@ -354,14 +354,12 @@ func HandlePfcpAssociationReleaseRequest(msg *udp.Message) {
 	nodeID := smf_context.NewNodeID(nodeIDStr)
 
 	upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
-	var cause uint8
-	if upf != nil {
-		smf_context.RemoveUPFNodeByNodeID(*nodeID)
-		cause = ie.CauseRequestAccepted
-	} else {
-		cause = ie.CauseNoEstablishedPFCPAssociation
+	if upf == nil {
+		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeIDStr)
+		return
 	}
-
+	smf_context.RemoveUPFNodeByNodeID(*nodeID)
+	cause := ie.CauseRequestAccepted
 	err = pfcp_message.SendPfcpAssociationReleaseResponse(*nodeID, cause, upf.Port)
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to send PFCP Association Release Response: %+v", err)
