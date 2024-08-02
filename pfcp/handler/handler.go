@@ -187,8 +187,7 @@ func HandlePfcpAssociationSetupRequest(msg *udp.Message) {
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
 	// Response with PFCP Association Setup Response
-	cause := ie.CauseRequestAccepted
-	err = pfcp_message.SendPfcpAssociationSetupResponse(*nodeID, cause, upf.Port)
+	err = pfcp_message.SendPfcpAssociationSetupResponse(*nodeID, ie.CauseRequestAccepted, upf.Port)
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to send PFCP Association Setup Response: %+v", err)
 	}
@@ -359,8 +358,7 @@ func HandlePfcpAssociationReleaseRequest(msg *udp.Message) {
 		return
 	}
 	smf_context.RemoveUPFNodeByNodeID(*nodeID)
-	cause := ie.CauseRequestAccepted
-	err = pfcp_message.SendPfcpAssociationReleaseResponse(*nodeID, cause, upf.Port)
+	err = pfcp_message.SendPfcpAssociationReleaseResponse(*nodeID, ie.CauseRequestAccepted, upf.Port)
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to send PFCP Association Release Response: %+v", err)
 	}
