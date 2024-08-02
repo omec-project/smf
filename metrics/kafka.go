@@ -84,7 +84,10 @@ func (writer Writer) PublishPduSessEvent(ctxt mi.CoreSubscriber, op mi.Subscribe
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing pdu sess event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		err := StatWriter.SendMessage(msg)
+		if err != nil {
+			logger.KafkaLog.Errorf("publishing pdu sess event error [%v] ", err.Error())
+		}
 	}
 	return nil
 }
@@ -106,7 +109,10 @@ func PublishMsgEvent(msgType mi.SmfMsgType) error {
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing msg event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		err := StatWriter.SendMessage(msg)
+		if err != nil {
+			logger.KafkaLog.Errorf("publishing msg event error [%v] ", err.Error())
+		}
 	}
 	return nil
 }
@@ -118,7 +124,10 @@ func (writer Writer) PublishNfStatusEvent(msgEvent mi.MetricEvent) error {
 		return err
 	} else {
 		logger.KafkaLog.Debugf("publishing nf status event[%s] ", msg)
-		StatWriter.SendMessage(msg)
+		err := StatWriter.SendMessage(msg)
+		if err != nil {
+			logger.KafkaLog.Errorf("publishing nf status event error [%v] ", err.Error())
+		}
 	}
 	return nil
 }

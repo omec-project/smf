@@ -143,5 +143,8 @@ func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSe
 	smContext.Pti = req.GetPTI()
 
 	// Release UE IP Addr
-	smContext.ReleaseUeIpAddr()
+	err := smContext.ReleaseUeIpAddr()
+	if err != nil {
+		smContext.SubGsmLog.Errorf("release UE IP Addr failed: %s", err)
+	}
 }

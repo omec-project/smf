@@ -22,8 +22,14 @@ func TestUpdateSliceInfo(t *testing.T) {
 	cfg1 := Configuration{}
 	cfg2 := Configuration{}
 
-	cfg1.parseRocConfig(makeDummyConfig("1", "010203"))
-	cfg2.parseRocConfig(makeDummyConfig("2", "010203"))
+	err := cfg1.parseRocConfig(makeDummyConfig("1", "010203"))
+	if err != nil {
+		t.Errorf("error parsing config: %v", err)
+	}
+	err = cfg2.parseRocConfig(makeDummyConfig("2", "010203"))
+	if err != nil {
+		t.Errorf("error parsing config: %v", err)
+	}
 
 	compareAndProcessConfigs(&cfg1, &cfg2)
 }

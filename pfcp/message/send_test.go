@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -52,7 +53,12 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -74,7 +80,12 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -130,7 +141,12 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -171,7 +187,12 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -221,7 +242,12 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -267,7 +293,11 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
 
-	defer conn.Close()
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -296,7 +326,11 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
 
-	defer conn.Close()
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -332,7 +366,11 @@ func TestSendHeartbeatRequest(t *testing.T) {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
 
-	defer conn.Close()
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,
@@ -361,7 +399,11 @@ func TestSendHeartbeatResponse(t *testing.T) {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
 
-	defer conn.Close()
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,

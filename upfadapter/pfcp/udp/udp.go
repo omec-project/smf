@@ -139,7 +139,7 @@ func readPfcpMessage() (message.Message, error) {
 
 	msg, err := message.Parse(buf[:n])
 	if err != nil {
-		logger.PfcpLog.Errorf("Error parsing PFCP message: %v", err)
+		logger.PfcpLog.Errorf("error parsing PFCP message: %v", err)
 		return nil, err
 	}
 

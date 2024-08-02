@@ -5,6 +5,7 @@
 package udp_test
 
 import (
+	"log"
 	"net"
 	"testing"
 	"time"
@@ -89,7 +90,12 @@ func TestRun(t *testing.T) {
 	if udp.Server.Conn == nil {
 		t.Fatalf("expected Server to be listening")
 	}
-	defer udp.Server.Conn.Close()
+
+	defer func() {
+		if err = udp.Server.Conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	setupRequest := message.NewHeartbeatRequest(
 		1,
@@ -100,8 +106,14 @@ func TestRun(t *testing.T) {
 	server := &Server{
 		addr: remoteAddr,
 	}
-	server.Start()
-	server.SendPFCPMessage(setupRequest, localAddr)
+	err = server.Start()
+	if err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	err = server.SendPFCPMessage(setupRequest, localAddr)
+	if err != nil {
+		t.Fatalf("failed to send PFCP message: %v", err)
+	}
 
 	time.Sleep(1 * time.Second)
 
@@ -126,7 +138,12 @@ func TestServerSendPfcp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listening on UDP: %v", err)
 	}
-	defer conn.Close()
+
+	defer func() {
+		if err = conn.Close(); err != nil {
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	udp.Server = &udp.PfcpServer{
 		Conn: conn,

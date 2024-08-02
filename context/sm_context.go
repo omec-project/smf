@@ -317,7 +317,10 @@ func RemoveSMContext(ref string) {
 	}
 
 	// Release UE IP-Address
-	smContext.ReleaseUeIpAddr()
+	err := smContext.ReleaseUeIpAddr()
+	if err != nil {
+		smContext.SubCtxLog.Errorf("release UE IP-Address failed, %v", err)
+	}
 
 	smContextPool.Delete(ref)
 
@@ -457,7 +460,10 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 		NodeIDtoIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 		logger.PduSessLog.Traceln("NodeIDtoIP: ", NodeIDtoIP)
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
-			allocatedSEID, _ := AllocateLocalSEID()
+			allocatedSEID, err := AllocateLocalSEID()
+			if err != nil {
+				logger.PduSessLog.Errorf("allocateLocalSEID failed, %v", err)
+			}
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),
 				NodeID:    curDataPathNode.UPF.NodeID,
@@ -652,7 +658,10 @@ func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
 	defer smContext.SMLock.Unlock()
 
 	if status {
-		qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
+		err := qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
+		if err != nil {
+			logger.CtxLog.Errorf("failed to commit SM Policy Decision, %v", err)
+		}
 	}
 
 	// Release 0th index update
@@ -704,7 +713,10 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	kafkaSmCtxt.SmfIp = SMF_Self().PodIp
 
 	// Send to stream
-	metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
+	err := metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
+	if err != nil {
+		smContext.SubCtxLog.Errorf("failed to publish sm ctxt info on kafka stream: %v", err)
+	}
 }
 
 func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {

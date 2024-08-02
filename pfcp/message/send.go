@@ -38,8 +38,12 @@ const UPFAdapterURL = "http://upf-adapter:8090"
 
 func getSeqNumber() uint32 {
 	smfCount := 1
+	var err error
 	if smfCountStr, ok := os.LookupEnv("SMF_COUNT"); ok {
-		smfCount, _ = strconv.Atoi(smfCountStr)
+		smfCount, err = strconv.Atoi(smfCountStr)
+		if err != nil {
+			logger.PfcpLog.Errorf("SMF_COUNT env variable is not a number: %v", smfCountStr)
+		}
 	}
 
 	seqNum := atomic.AddUint32(&seq, 1) + uint32((smfCount-1)*5000)
@@ -84,7 +88,11 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 			return err
 		} else {
 			logger.PfcpLog.Debugf("send pfcp heartbeat response [%v] ", rsp)
-			defer rsp.Body.Close()
+			defer func() {
+				if err = rsp.Body.Close(); err != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", err)
+				}
+			}()
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 				if err != nil {
@@ -98,7 +106,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 					logger.PfcpLog.Errorf("parse pfcp heartbeat response failed: %v", err)
 					return err
 				}
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
+				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
+				if err != nil {
+					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				}
 			}
 		}
 	} else {
@@ -123,7 +134,10 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 				NfStatus: mi.NfStatusDisconnected, NfName: string(upNodeID.NodeIdValue),
 			},
 		}
-		metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+		err := metrics.StatWriter.PublishNfStatusEvent(upfStatus)
+		if err != nil {
+			logger.PfcpLog.Errorf("failed to publish UPF status event: %v", err)
+		}
 	}
 
 	if net.IP.Equal(upNodeID.ResolveNodeIdToIp(), net.IPv4zero) {
@@ -154,7 +168,10 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 					logger.PfcpLog.Errorf("parse pfcp association response failed: %v", err)
 					return err
 				}
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
+				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
+				if err != nil {
+					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				}
 			}
 		}
 	} else {
@@ -256,7 +273,10 @@ func SendPfcpSessionEstablishmentRequest(
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				if err != nil {
+					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				}
 			} else {
 				// http status !OK
 				HandlePfcpSendError(pfcpMsg, fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode))
@@ -318,7 +338,10 @@ func SendPfcpSessionModificationRequest(
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				if err != nil {
+					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				}
 			}
 		}
 	} else {
@@ -366,7 +389,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
-				adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
+				if err != nil {
+					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				}
 			}
 		}
 	} else {

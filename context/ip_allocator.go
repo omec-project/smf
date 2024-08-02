@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/omec-project/smf/logger"
 )
 
 type IPAllocator struct {
@@ -93,7 +95,10 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 		if smfCountStr == "" {
 			smfCountStr = "1"
 		}
-		smfCount, _ := strconv.Atoi(smfCountStr)
+		smfCount, err := strconv.Atoi(smfCountStr)
+		if err != nil {
+			logger.CtxLog.Errorf("failed to convert SMF_COUNT to int: %v", err)
+		}
 		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(smfCount-1)*5000)
 		fmt.Printf("unique id - ip %v \n", ip)
 		fmt.Printf("unique id - offset %v \n", offset)

@@ -15,8 +15,11 @@ import (
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	ANUPF := defaultPath.FirstDPNode
-	pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
+	err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
 		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, ANUPF.UPF.Port)
+	if err != nil {
+		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
+	}
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
 
