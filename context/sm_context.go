@@ -319,7 +319,7 @@ func RemoveSMContext(ref string) {
 	// Release UE IP-Address
 	err := smContext.ReleaseUeIpAddr()
 	if err != nil {
-		smContext.SubCtxLog.Errorf("Release UE IP-Address failed, %v", err)
+		smContext.SubCtxLog.Errorf("release UE IP-Address failed, %v", err)
 	}
 
 	smContextPool.Delete(ref)
@@ -462,7 +462,7 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 		if _, exist := smContext.PFCPContext[NodeIDtoIP]; !exist {
 			allocatedSEID, err := AllocateLocalSEID()
 			if err != nil {
-				logger.PduSessLog.Errorf("AllocateLocalSEID failed, %v", err)
+				logger.PduSessLog.Errorf("allocateLocalSEID failed, %v", err)
 			}
 			smContext.PFCPContext[NodeIDtoIP] = &PFCPSessionContext{
 				PDRs:      make(map[uint16]*PDR),

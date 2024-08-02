@@ -95,7 +95,7 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 	if err := producer.HandlePDUSessionSMContextCreate(eventData.Txn); err != nil {
 		err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_failure)
 		if err != nil {
-			logger.FsmLog.Errorf("Error while publishing pdu session create response failure, %v ", err.Error())
+			logger.FsmLog.Errorf("error while publishing pdu session create response failure, %v ", err.Error())
 		}
 		txn := eventData.Txn.(*transaction.Transaction)
 		txn.Err = err
@@ -104,7 +104,7 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 
 	err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_success)
 	if err != nil {
-		logger.FsmLog.Errorf("Error while publishing pdu session create response success, %v ", err.Error())
+		logger.FsmLog.Errorf("error while publishing pdu session create response success, %v ", err.Error())
 	}
 	return smf_context.SmStatePfcpCreatePending, nil
 }
@@ -134,14 +134,14 @@ func HandleStateN1N2TransferPendingEventN1N2Transfer(event SmEvent, eventData *S
 	if err := producer.SendPduSessN1N2Transfer(smCtxt, true); err != nil {
 		err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_rsp_failure)
 		if err != nil {
-			smCtxt.SubFsmLog.Errorf("Error while publishing pdu session modify response failure, %v ", err.Error())
+			smCtxt.SubFsmLog.Errorf("error while publishing pdu session modify response failure, %v ", err.Error())
 		}
 		smCtxt.SubFsmLog.Errorf("N1N2 transfer failure error, %v ", err.Error())
 		return smf_context.SmStateN1N2TransferPending, fmt.Errorf("N1N2 Transfer failure error, %v ", err.Error())
 	}
 	err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_rsp_success)
 	if err != nil {
-		smCtxt.SubFsmLog.Errorf("Error while publishing pdu session modify response success, %v ", err.Error())
+		smCtxt.SubFsmLog.Errorf("error while publishing pdu session modify response success, %v ", err.Error())
 	}
 	return smf_context.SmStateActive, nil
 }
@@ -181,14 +181,14 @@ func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData)
 	if err := producer.HandlePDUSessionSMContextRelease(eventData.Txn); err != nil {
 		err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_rsp_failure)
 		if err != nil {
-			smCtxt.SubFsmLog.Errorf("Error while publishing pdu session release response failure, %v ", err.Error())
+			smCtxt.SubFsmLog.Errorf("error while publishing pdu session release response failure, %v ", err.Error())
 		}
 		smCtxt.SubFsmLog.Errorf("sm context release error, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
 	err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_rsp_success)
 	if err != nil {
-		smCtxt.SubFsmLog.Errorf("Error while publishing pdu session release response success, %v ", err.Error())
+		smCtxt.SubFsmLog.Errorf("error while publishing pdu session release response success, %v ", err.Error())
 	}
 	return smf_context.SmStateInit, nil
 }
@@ -198,7 +198,7 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn); err != nil {
-		smCtxt.SubFsmLog.Errorf("Error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
+		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
 	return smf_context.SmStateInit, nil

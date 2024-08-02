@@ -107,7 +107,7 @@ func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
 	err := http.ListenAndServe(":9089", nil)
 	if err != nil {
-		log.Fatalf("Failed to start metrics server: %v", err)
+		log.Fatalf("failed to start metrics server: %v", err)
 	}
 }
 

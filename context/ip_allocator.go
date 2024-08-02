@@ -97,7 +97,7 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 		}
 		smfCount, err := strconv.Atoi(smfCountStr)
 		if err != nil {
-			logger.CtxLog.Errorf("Failed to convert SMF_COUNT to int: %v", err)
+			logger.CtxLog.Errorf("failed to convert SMF_COUNT to int: %v", err)
 		}
 		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(smfCount-1)*5000)
 		fmt.Printf("unique id - ip %v \n", ip)

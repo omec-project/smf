@@ -160,12 +160,12 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key].PDRs = pfcpCtxInDB.PDRs
 		localSeid, err := strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
 		if err != nil {
-			logger.DataRepoLog.Errorf("LocalSEID unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("localSEID unmarshall error: %v", err)
 		}
 		smContext.PFCPContext[key].LocalSEID = localSeid
 		remoteSeid, err := strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
 		if err != nil {
-			logger.DataRepoLog.Errorf("RemoteSEID unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("remoteSEID unmarshall error: %v", err)
 		}
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
 	}

@@ -76,7 +76,7 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 	for name, node := range upTopology.UPNodes {
 		err := userplaneInformation.InsertSmfUserPlaneNode(name, &node)
 		if err != nil {
-			logger.UPNodeLog.Errorf("Failed to insert UP Node[%v] ", node)
+			logger.UPNodeLog.Errorf("failed to insert UP Node[%v] ", node)
 		}
 	}
 
@@ -84,7 +84,7 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 	for _, link := range upTopology.Links {
 		err := userplaneInformation.InsertUPNodeLinks(&link)
 		if err != nil {
-			logger.UPNodeLog.Errorf("Failed to insert UP Node link[%v] ", link)
+			logger.UPNodeLog.Errorf("failed to insert UP Node link[%v] ", link)
 		}
 	}
 	return userplaneInformation

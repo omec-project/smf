@@ -298,7 +298,7 @@ func (upf *UPF) GenerateTEID() (uint32, error) {
 	smfCountStr := os.Getenv("SMF_COUNT")
 	smfCount, err := strconv.Atoi(smfCountStr)
 	if err != nil {
-		logger.CtxLog.Errorf("Failed to convert SMF_COUNT to int: %v", err)
+		logger.CtxLog.Errorf("failed to convert SMF_COUNT to int: %v", err)
 	}
 
 	offset := (smfCount - 1) * 5000

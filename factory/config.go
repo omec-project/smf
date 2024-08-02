@@ -307,7 +307,7 @@ func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 		sNssai.Sd = ns.Nssai.Sd
 		numSst, err := strconv.Atoi(ns.Nssai.Sst)
 		if err != nil {
-			logger.CtxLog.Errorf("Failed to convert SST to int : %v", ns.Nssai.Sst)
+			logger.CtxLog.Errorf("failed to convert SST to int : %v", ns.Nssai.Sst)
 		}
 		sNssai.Sst = int32(numSst)
 		sNssaiInfoItem.SNssai = &sNssai

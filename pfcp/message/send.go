@@ -136,7 +136,7 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		}
 		err := metrics.StatWriter.PublishNfStatusEvent(upfStatus)
 		if err != nil {
-			logger.PfcpLog.Errorf("Failed to publish UPF status event: %v", err)
+			logger.PfcpLog.Errorf("failed to publish UPF status event: %v", err)
 		}
 	}
 

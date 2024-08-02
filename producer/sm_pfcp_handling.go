@@ -18,7 +18,7 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
 		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, ANUPF.UPF.Port)
 	if err != nil {
-		smContext.SubCtxLog.Errorf("PDUSessionSMContextUpdate, PFCP Session Modification Failure: %+v", err)
+		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
 	}
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan

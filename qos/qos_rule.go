@@ -259,7 +259,7 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 	// decode source IP/mask
 	err := ipfRule.decodeIpFilterAddrv4(true, pfcTags[4])
 	if err != nil {
-		logger.QosLog.Errorf("Error decoding source IP/mask: %s", err)
+		logger.QosLog.Errorf("error decoding source IP/mask: %s", err)
 	}
 
 	// decode source port/port-range (optional)
@@ -267,13 +267,13 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 		// decode source port/port-range
 		err := ipfRule.decodeIpFilterPortInfo(true, pfcTags[5])
 		if err != nil {
-			logger.QosLog.Errorf("Error decoding source port/port-range: %s", err)
+			logger.QosLog.Errorf("error decoding source port/port-range: %s", err)
 		}
 
 		// decode destination IP/mask
 		err = ipfRule.decodeIpFilterAddrv4(false, pfcTags[7])
 		if err != nil {
-			logger.QosLog.Errorf("Error decoding destination IP/mask: %s", err)
+			logger.QosLog.Errorf("error decoding destination IP/mask: %s", err)
 		}
 
 		// decode destination port/port-range(optional), if any
