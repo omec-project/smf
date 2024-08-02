@@ -252,7 +252,7 @@ linters:
     # - gocognit
     # - nestif
     # - gomodguard
-    # - nakedret
+    - nakedret
     - gci
     - misspell
     - gofumpt

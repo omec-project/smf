@@ -588,7 +588,7 @@ func compareNetworkSlices(slice1, slice2 []SnssaiInfoItem) (match bool, add, mod
 			slice1, slice2 = slice2, slice1
 		}
 	}
-	return
+	return match, add, mod, del
 }
 
 func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bool, add, mod, del []models.SnssaiUpfInfoItem) {
@@ -626,7 +626,7 @@ func compareUPNetworkSlices(slice1, slice2 []models.SnssaiUpfInfoItem) (match bo
 			slice1, slice2 = slice2, slice1
 		}
 	}
-	return
+	return match, add, mod, del
 }
 
 func compareGenericSlices(t1, t2 interface{}, compare func(i, j interface{}) bool) (match bool, add, remove interface{}) {
