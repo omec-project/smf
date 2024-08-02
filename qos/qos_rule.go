@@ -280,21 +280,21 @@ func DecodeFlowDescToIPFilters(flowDesc string) *IPFilterRule {
 		if len(pfcTags) == 9 {
 			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[8])
 			if err != nil {
-				logger.QosLog.Errorf("Error decoding destination port/port-range: %s", err)
+				logger.QosLog.Errorf("error decoding destination port/port-range: %s", err)
 			}
 		}
 	} else {
 		// decode destination IP/mask
 		err := ipfRule.decodeIpFilterAddrv4(false, pfcTags[6])
 		if err != nil {
-			logger.QosLog.Errorf("Error decoding destination IP/mask: %s", err)
+			logger.QosLog.Errorf("error decoding destination IP/mask: %s", err)
 		}
 
 		// decode destination port/port-range(optional), if any
 		if len(pfcTags) == 8 {
 			err := ipfRule.decodeIpFilterPortInfo(false, pfcTags[7])
 			if err != nil {
-				logger.QosLog.Errorf("Error decoding destination port/port-range: %s", err)
+				logger.QosLog.Errorf("error decoding destination port/port-range: %s", err)
 			}
 		}
 	}
