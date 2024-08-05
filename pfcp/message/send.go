@@ -598,7 +598,7 @@ func SendPfcpMsgToAdapter(upNodeID smf_context.NodeID, msg message.Message, addr
 	logger.PfcpLog.Debugf("send to :%s\n", url)
 
 	bodyReader := bytes.NewReader(udpPodMsgJson)
-	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bodyReader)
 	if err != nil {
 		logger.PfcpLog.Errorf("client: could not create request: %s\n", err)
 	}
