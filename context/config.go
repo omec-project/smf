@@ -29,7 +29,7 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 		logger.InitLog.Errorf("network slice [%v] already exist, deleting", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*snssaiInfoConfig}))
 		err := c.deleteSmfNssaiInfo(snssaiInfoConfig)
 		if err != nil {
-			logger.InitLog.Errorf("network slice delete error %v", err)
+			return fmt.Errorf("network slice delete error %v", err)
 		}
 	}
 
@@ -80,11 +80,11 @@ func (c *SMFContext) updateSmfNssaiInfo(modSliceInfo *factory.SnssaiInfoItem) er
 	// identify slices to be updated
 	logger.InitLog.Infof("Network Slices to be modified [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*modSliceInfo}))
 	if err := c.deleteSmfNssaiInfo(modSliceInfo); err != nil {
-		logger.InitLog.Errorf("network slice delete error %v", err)
+		return fmt.Errorf("network slice delete error %v", err)
 	}
 
 	if err := c.insertSmfNssaiInfo(modSliceInfo); err != nil {
-		logger.InitLog.Errorf("network slice insert error %v", err)
+		return fmt.Errorf("network slice insert error %v", err)
 	}
 	return nil
 }
