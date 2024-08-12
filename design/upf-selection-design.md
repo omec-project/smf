@@ -17,10 +17,12 @@
 
 - **Objectives:**
   - Refactor the SMF to ensure that the UPF selection process accurately considers both the DNN and Slice ID parameters.
+
 - **Action Steps:**
   - **Code Identification:** Locate the exact portion of the SMF codebase where the UPF selection logic is implemented.
   - **Logic Enhancement:** Modify the existing logic to incorporate DNN and Slice ID as key criteria in UPF selection.
   - **PFCP Session Updates:** Update the SMF's PFCP session handling logic to include DNN information, ensuring compatibility with the new selection criteria.
+  
 - **Expected Outcome:** By making these changes, the SMF will be able to accurately select the appropriate UPF based on the DNN and Slice ID, resolving issues like the one observed with the sdcore DNN.
 
 ### 3.2. UPF Changes
