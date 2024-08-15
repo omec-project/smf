@@ -20,8 +20,8 @@ import (
 	aperLogger "github.com/omec-project/aper/logger"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
-	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
+	nrfCache "github.com/omec-project/openapi/nrfcache"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
@@ -303,7 +303,7 @@ func (smf *SMF) Start() {
 
 	if smfCtxt.EnableNrfCaching {
 		initLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
-		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
+		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
 	router := logger_util.NewGinWithLogrus(logger.GinLog)

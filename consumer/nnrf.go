@@ -15,12 +15,12 @@ import (
 
 	"github.com/antihax/optional"
 	"github.com/mohae/deepcopy"
-	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
+	nrfCache "github.com/omec-project/openapi/nrfcache"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -258,7 +258,7 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 	var localErr error
 
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	} else {
 		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	}
@@ -296,7 +296,7 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 	var localErr error
 
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	} else {
 		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	}
@@ -325,7 +325,7 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 	var localErr error
 
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrf_cache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	} else {
 		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	}
