@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	nrf_cache "github.com/omec-project/nrf/nrfcache"
 	"github.com/omec-project/openapi/models"
+	nrfCache "github.com/omec-project/openapi/nrfcache"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
@@ -158,7 +158,7 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	// If nrf caching is enabled, go ahead and delete the entry from the cache.
 	// This will force the smf to do nf discovery and get the updated nf profile from the nrf.
 	if smf_context.SMF_Self().EnableNrfCaching {
-		ok := nrf_cache.RemoveNfProfileFromNrfCache(nfInstanceId)
+		ok := nrfCache.RemoveNfProfileFromNrfCache(nfInstanceId)
 		logger.PduSessLog.Tracef("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
 	}
 
