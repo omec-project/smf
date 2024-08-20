@@ -148,7 +148,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {
-		fmt.Println("Err in customized unMarshall!!")
+		fmt.Println("err in customized unMarshall!!")
 		return err
 	}
 
