@@ -16,7 +16,7 @@ require (
 	github.com/omec-project/openapi v1.2.1
 	github.com/omec-project/util v1.1.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.19.1
+	github.com/prometheus/client_golang v1.20.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli v1.22.15
@@ -48,7 +48,7 @@ require (
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.15.9 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -59,9 +59,9 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.5.0 // indirect
-	github.com/prometheus/common v0.48.0 // indirect
-	github.com/prometheus/procfs v0.12.0 // indirect
+	github.com/prometheus/client_model v0.6.1 // indirect
+	github.com/prometheus/common v0.55.0 // indirect
+	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/thakurajayL/go-ipam v0.0.5-dev // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
@@ -76,12 +76,12 @@ require (
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
 	go4.org/intern v0.0.0-20220617035311-6925f38cc365 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
-	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/oauth2 v0.20.0 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/oauth2 v0.21.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
-	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
 	google.golang.org/grpc v1.65.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/h2non/gock.v1 v1.1.2 // indirect
@@ -102,6 +102,7 @@ require (
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect
