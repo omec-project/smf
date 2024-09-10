@@ -8,8 +8,7 @@
 ### 2.1. DNN: `internet`
 - **Status:** Successfully connected.
 
-#### Example Configuration:
-# Example of current sdcore-5g-values.yaml configuration
+#### Example of current sdcore-5g-values.yaml configuration:
 
 device-groups:
   - name: "5g-gnbsim-user-group1"
@@ -37,6 +36,34 @@ device-groups:
           pdb: 300
           pelr: 6
     site-info: "enterprise"
+ network-slices:
+            - name: "default"      # can be any unique slice name
+              slice-id:            # must match with slice configured in gNB, UE
+                sd: "000000"
+                sst: 1
+              site-device-group:
+              - "5g-gnbsim-user-group1"   # All UEs in this device-group are assigned to this slice
+              # Applicaiton filters control what each user can access.
+              # Default, allow access to all applications
+              application-filtering-rules:
+              - rule-name: "ALLOW-ALL"
+                priority: 250
+                action: "permit"
+                endpoint: "0.0.0.0/0"
+              site-info:
+                # Provide gNBs and UPF details and also PLMN for the site
+                gNodeBs:
+                - name: "gnb1"
+                  tac: 1
+                - name: "gnb2"
+                  tac: 2
+                plmn:
+                  mcc: "001"
+                  mnc: "01"
+                site-name: "enterprise"
+                upf:
+                  upf-name: "upf"  # associated UPF for this slice. One UPF per Slice.
+                  upf-port: 8805
 
 **Current Behavior:** The SMF selects UPF based on a simple mapping of DNN to UPF. For the `internet` DNN, the current configuration successfully establishes a PDU session.
 
@@ -45,8 +72,7 @@ device-groups:
 ### 2.2. DNN: `sdcore`
 - **Issue:** SMF selection failure occurred.
 
-#### Example Configuration:
-### Here's an example of the intended sdcore-5g-values.yaml configuration for the `sdcore` DNN:
+#### Here's an example of the intended sdcore-5g-values.yaml configuration for the `sdcore` DNN:
 
 device-groups:
   - name: "5g-gnbsim-user-group1"
@@ -87,7 +113,7 @@ device-groups:
       dnn: sdcore
       dns-primary: "10.176.0.11"        # Value sent to UE
       mtu: 1460                        # Value sent to UE when PDU Session Established
-      ue-ip-pool: "172.250.1.0/16"     # IP address pool for subscribers
+      ue-ip-pool: "172.252.1.0/16"     # IP address pool for subscribers
       ue-dnn-qos:
         dnn-mbr-downlink: 1000         # UE level downlink QoS (Maximum bit rate per UE)
         dnn-mbr-uplink: 1000           # UE level uplink QoS (Maximum bit rate per UE)
@@ -98,7 +124,35 @@ device-groups:
           arp: 6
           pdb: 300
           pelr: 6
-
+    site-info: "enterprise"
+ network-slices:
+            - name: "default"      # can be any unique slice name
+              slice-id:            # must match with slice configured in gNB, UE
+                sd: "000000"
+                sst: 1
+              site-device-group:
+              - "5g-gnbsim-user-group1"   # All UEs in this device-group are assigned to this slice
+              # Applicaiton filters control what each user can access.
+              # Default, allow access to all applications
+              application-filtering-rules:
+              - rule-name: "ALLOW-ALL"
+                priority: 250
+                action: "permit"
+                endpoint: "0.0.0.0/0"
+              site-info:
+                # Provide gNBs and UPF details and also PLMN for the site
+                gNodeBs:
+                - name: "gnb1"
+                  tac: 1
+                - name: "gnb2"
+                  tac: 2
+                plmn:
+                  mcc: "001"
+                  mnc: "01"
+                site-name: "enterprise"
+                upf:
+                  upf-name: "upf"  # associated UPF for this slice. One UPF per Slice.
+                  upf-port: 8805
     **Intended Behavior:** The new design aims to enhance the SMF logic to support UPF selection based on both DNN and Slice ID. This improvement will enable the SMF to correctly handle multiple DNNs within the same Slice ID, ensuring accurate UPF selection and preventing issues like the current failure with the `sdcore` DNN.
 
 ## 3. Proposed Changes
@@ -117,9 +171,12 @@ device-groups:
 
 ### 3.2. UPF Changes
 - **PFCP Association:**
+  - PFCP association should now send a list of supported DNNs.
   - UPF should send back both DNNs during a new PFCP association.
-  - Use DNN as an additional key when processing PFCP session additions.
-
+  - Each DNN should have its own set of UE IPs, ensuring proper IP assignment based on the DNN selected during session establishment.
+  - Currently, the system only supports single DNN. Future changes will include extending support to handle multiple DNNs with distinct UE IP pools.
+  - Use DNN as an additional key when processing PFCP session additions to map the correct DNN and UE IPs.
+  
 ## 4. Next Steps
 - **Documentation:** Continue documenting design thoughts.
 - **Implementation:** Start implementing the changes in SMF and UPF.
