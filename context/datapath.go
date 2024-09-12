@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
@@ -153,11 +154,21 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	if teid, err := smfContext.DrsmCtxts.TeidPool.AllocateInt32ID(); err != nil {
-		logger.CtxLog.Errorf("Generate uplink TEID fail: %s", err)
-		return err
+	var teid uint32
+	var teidErr error
+
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		var tmp int32
+		tmp, teidErr = smfContext.DrsmCtxts.TeidPool.AllocateInt32ID()
+		teid = uint32(tmp)
 	} else {
-		node.UpLinkTunnel.TEID = (uint32(teid))
+		teid, teidErr = destUPF.GenerateTEID()
+	}
+	if teidErr != nil {
+		logger.CtxLog.Errorf("Generate uplink TEID fail: %s", teidErr)
+		return teidErr
+	} else {
+		node.UpLinkTunnel.TEID = teid
 	}
 
 	return nil
@@ -203,11 +214,21 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	}
 
 	// Generate TEID for Tunnel
-	if teid, err := smfContext.DrsmCtxts.TeidPool.AllocateInt32ID(); err != nil {
-		logger.CtxLog.Errorf("Generate downlink TEID fail: %s", err)
-		return err
+	var teid uint32
+	var teidErr error
+
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		var tmp int32
+		tmp, teidErr = smfContext.DrsmCtxts.TeidPool.AllocateInt32ID()
+		teid = uint32(tmp)
 	} else {
-		node.DownLinkTunnel.TEID = (uint32(teid))
+		teid, teidErr = destUPF.GenerateTEID()
+	}
+	if teidErr != nil {
+		logger.CtxLog.Errorf("Generate downlink TEID fail: %s", teidErr)
+		return teidErr
+	} else {
+		node.DownLinkTunnel.TEID = teid
 	}
 
 	return nil
@@ -216,7 +237,7 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 	for name, pdr := range node.UpLinkTunnel.PDR {
 		if pdr != nil {
-			logger.CtxLog.Infof("Deactivaed UpLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
+			logger.CtxLog.Infof("deactivated UpLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
 
 			// Remove PDR from PFCP Session
 			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
@@ -224,20 +245,20 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 			// Remove of UPF
 			err := node.UPF.RemovePDR(pdr)
 			if err != nil {
-				logger.CtxLog.Warnln("Deactivaed UpLinkTunnel", err)
+				logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
 			}
 
 			if far := pdr.FAR; far != nil {
 				err = node.UPF.RemoveFAR(far)
 				if err != nil {
-					logger.CtxLog.Warnln("Deactivaed UpLinkTunnel", err)
+					logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
 				}
 
 				bar := far.BAR
 				if bar != nil {
 					err = node.UPF.RemoveBAR(bar)
 					if err != nil {
-						logger.CtxLog.Warnln("Deactivaed UpLinkTunnel", err)
+						logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
 					}
 				}
 			}
@@ -246,7 +267,7 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 					if qer != nil {
 						err = node.UPF.RemoveQER(qer)
 						if err != nil {
-							logger.CtxLog.Warnln("Deactivaed UpLinkTunnel", err)
+							logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
 						}
 					}
 				}
@@ -255,7 +276,12 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	err := smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	var err error
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		err = smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	} else {
+		node.UPF.teidGenerator.FreeID(int64(teid))
+	}
 	if err != nil {
 		logger.CtxLog.Errorln("deactivated UpLinkTunnel", err)
 	}
@@ -304,7 +330,12 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 	}
 
 	teid := node.DownLinkTunnel.TEID
-	err := smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	var err error
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		err = smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
+	} else {
+		node.UPF.teidGenerator.FreeID(int64(teid))
+	}
 	if err != nil {
 		logger.CtxLog.Errorln("deactivated DownLinkTunnel", err)
 	}
