@@ -108,7 +108,7 @@ device-groups:
       - "001010000000005"
       - "001010000000008"
       - "001010000000009"
-    ip-domain-name: "pool1"
+    ip-domain-name: "pool2"
     ip-domain-expanded:
       dnn: sdcore
       dns-primary: "10.176.0.11"        # Value sent to UE
