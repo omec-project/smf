@@ -1,11 +1,16 @@
 module github.com/omec-project/smf
 
+replace github.com/omec-project/nrf => ../nrf
+
+replace github.com/omec-project/util => ../util
+
 go 1.21
 
 require (
 	github.com/antihax/optional v1.0.0
 	github.com/antonfisher/nested-logrus-formatter v1.3.1
 	github.com/gin-gonic/gin v1.10.0
+	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.1.2

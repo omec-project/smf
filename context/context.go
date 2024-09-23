@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/google/uuid"
 	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
@@ -79,10 +80,15 @@ type SMFContext struct {
 	CPNodeID                 NodeID
 	PFCPPort                 int
 	UDMProfile               models.NfProfile
+	UdmProfileMap            sync.Map
+	PcfProfileMap            sync.Map
 	NrfCacheEvictionInterval time.Duration
 	SBIPort                  int
 	LocalSEIDCount           uint64
 	EnableNrfCaching         bool
+	EnableScaling            bool
+	RedisClient              *redis.Client
+	RedisDb                  int
 
 	// For ULCL
 	ULCLSupport bool
@@ -241,7 +247,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
 
 	smfContext.EnableNrfCaching = configuration.EnableNrfCaching
-
+	smfContext.EnableScaling = configuration.EnableScaling
 	if configuration.EnableNrfCaching {
 		if configuration.NrfCacheEvictionInterval == 0 {
 			smfContext.NrfCacheEvictionInterval = time.Duration(900) // 15 mins
@@ -252,7 +258,13 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.PodIp = os.Getenv("POD_IP")
 	SetupNFProfile(config)
-
+	if smfContext.EnableScaling == true {
+		smfContext.RedisClient = redis.NewClient(&redis.Options{
+			Addr:     "redis:6379",
+			Password: "",
+			DB:       factory.SmfConfig.Configuration.RedisDb,
+		})
+	}
 	return &smfContext
 }
 
@@ -425,14 +437,14 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	db := drsm.DbInfo{Url: dbUrl, Name: dbName}
 
 	// for local FSEID
-	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
+	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
 		smfCtxt.DrsmCtxts.SeidPool = drsmCtxt
 	} else {
 		return err
 	}
 
 	// for local FTEID
-	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt); err == nil {
+	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
 		smfCtxt.DrsmCtxts.TeidPool = drsmCtxt
 	} else {
 		return err
