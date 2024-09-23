@@ -113,7 +113,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	}
 
 	// Query UDM
-	if problemDetails, err := consumer.SendNFDiscoveryUDM(); err != nil {
+	if problemDetails, err := consumer.SendNFDiscoveryUDM(smContext); err != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Error[%v]", err)
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UDMDiscoveryFailure")
 		return fmt.Errorf("UdmError")
@@ -150,7 +150,8 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		SingleNssai: optional.NewInterface(openapi.MarshToJsonString(smContext.Snssai)),
 	}
 
-	SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
+	// SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
+	SubscriberDataManagementClient := smContext.SubscriberDataManagementClient
 	metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "Out", "", "")
 
 	if sessSubData, rsp, err := SubscriberDataManagementClient.

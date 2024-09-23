@@ -92,6 +92,9 @@ type Configuration struct {
 	EnableDbStore            bool                 `yaml:"enableDBStore,omitempty"`
 	EnableUpfAdapter         bool                 `yaml:"enableUPFAdapter,omitempty"`
 	ULCL                     bool                 `yaml:"ulcl,omitempty"`
+	EnableScaling            bool                 `yaml:"enableScaling,omitempty"`
+	DrsmPunchLiveTime        int                  `yaml:"drsmPunchLiveTime,omitempty"`
+	RedisDb                  int                  `yaml:"redisDb,omitempty"`
 }
 
 type StaticIpInfo struct {
