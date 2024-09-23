@@ -1,7 +1,7 @@
 # UPF Selection Design for Multiple DNNs
 
 ## 1. Introduction
-- **Objective:** Modify the SMF to support UPF selection based on DNN and Slice ID.
+- **Objective:** Modify the SMF to support UPF selection based on DNN and Slice ID. Each UPF will support only one DNN, and the SMF will maintain a list of UPFs to select from based on the DNN and Slice ID provided in the PDU session request. The system will ensure precise routing by associating each DNN with a specific UPF.
 
 ## 2. Discussion Points
 
@@ -24,7 +24,7 @@ device-groups:
       dnn: internet
       dns-primary: "10.176.0.11"        # Value sent to UE
       mtu: 1460                        # Value sent to UE when PDU Session Established
-      ue-ip-pool: "172.250.1.0/16"     # IP address pool for subscribers
+      ue-ip-pool: "172.250.1.0/24"     # IP address pool for subscribers
       ue-dnn-qos:
         dnn-mbr-downlink: 1000         # UE level downlink QoS (Maximum bit rate per UE)
         dnn-mbr-uplink: 1000           # UE level uplink QoS (Maximum bit rate per UE)
@@ -152,9 +152,12 @@ device-groups:
                   mcc: "001"
                   mnc: "01"
                 site-name: "enterprise"
-                upf:
-                  upf-name: "upf"  # associated UPF for this slice. One UPF per Slice.
+                upfs:   # List of UPFs, each with a unique DNN
+                - upf-name: "upf-1"  
                   upf-port: 8805
+                - upf-name: "upf-2"  
+                  upf-port: 8805
+      
     **Intended Behavior:** The new design aims to enhance the SMF logic to support UPF selection based on both DNN and Slice ID. This improvement will enable the SMF to correctly handle multiple DNNs within the same Slice ID, ensuring accurate UPF selection and preventing issues like the current failure with the `sdcore` DNN.
 
 ## 3. Proposed Changes
