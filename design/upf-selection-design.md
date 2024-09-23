@@ -132,6 +132,8 @@ device-groups:
                 sst: 1
               site-device-group:
               - "5g-gnbsim-user-group1"   # All UEs in this device-group are assigned to this slice
+              - "5g-gnbsim-user-group2"   # All UEs in this device-group are assigned to this slice
+              
               # Applicaiton filters control what each user can access.
               # Default, allow access to all applications
               application-filtering-rules:
