@@ -113,7 +113,7 @@ device-groups:
       dnn: sdcore
       dns-primary: "10.176.0.11"        # Value sent to UE
       mtu: 1460                        # Value sent to UE when PDU Session Established
-      ue-ip-pool: "172.252.1.0/16"     # IP address pool for subscribers
+      ue-ip-pool: "172.252.2.0/24"     # IP address pool for subscribers
       ue-dnn-qos:
         dnn-mbr-downlink: 1000         # UE level downlink QoS (Maximum bit rate per UE)
         dnn-mbr-uplink: 1000           # UE level uplink QoS (Maximum bit rate per UE)
