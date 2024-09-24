@@ -102,6 +102,13 @@ var (
 		Cause:         "REQUEST_REJECTED",
 		InvalidParams: nil,
 	}
+	PduSessionTypeNotSupported = models.ProblemDetails{
+		Title:         "PduSession Type Not Supported",
+		Status:        http.StatusForbidden,
+		Detail:        "Unstructured PDU Type is not Supported.",
+		Cause:         "REQUEST_REJECTED",
+		InvalidParams: nil,
+	}
 )
 
 var ErrorType = map[string]*models.ProblemDetails{
@@ -117,6 +124,7 @@ var ErrorType = map[string]*models.ProblemDetails{
 	"PCFPolicyCreateFailure":       &PCFPolicyCreateFailure,
 	"ApplySMPolicyFailure":         &ApplySMPolicyFailure,
 	"AMFDiscoveryFailure":          &AMFDiscoveryFailure,
+	"UnknownPDUSessionType":        &PduSessionTypeNotSupported,
 }
 
 var ErrorCause = map[string]uint8{
@@ -132,4 +140,5 @@ var ErrorCause = map[string]uint8{
 	"PCFPolicyCreateFailure":       nasMessage.Cause5GSMRequestRejectedUnspecified,
 	"ApplySMPolicyFailure":         nasMessage.Cause5GSMRequestRejectedUnspecified,
 	"AMFDiscoveryFailure":          nasMessage.Cause5GSMRequestRejectedUnspecified,
+	"UnknownPDUSessionType":        nasMessage.Cause5GSMUnknownPDUSessionType,
 }
