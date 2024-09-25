@@ -184,7 +184,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 
 	if smContext.SelectedPDUSessionType == nasMessage.PDUSessionTypeUnstructured {
 		smContext.SubPduSessLog.Errorf("Unstructured PDU Session Not Supported")
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UnknownPDUSessionType")
+		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PDUSessionTypeIPv4OnlyAllowed")
 		return fmt.Errorf("Unstructured PDU Session not supported")
 	}
 
