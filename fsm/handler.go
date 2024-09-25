@@ -101,7 +101,7 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 		}
 		txn := eventData.Txn.(*transaction.Transaction)
 		txn.Err = err
-		return smf_context.SmStateInit, fmt.Errorf("pdu session create: %v ", errorMessage)
+		return smf_context.SmStateInit, fmt.Errorf("pdu session create: %v", errorMessage)
 	}
 
 	err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_success)
