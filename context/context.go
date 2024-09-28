@@ -445,14 +445,16 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	db := drsm.DbInfo{Url: dbUrl, Name: dbName}
 
 	// for local FSEID
-	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
+	// if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
+	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
 		smfCtxt.DrsmCtxts.SeidPool = drsmCtxt
 	} else {
 		return err
 	}
 
 	// for local FTEID
-	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
+	// if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt, factory.SmfConfig.Configuration.DrsmPunchLiveTime); err == nil {
+	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt); err == nil {
 		smfCtxt.DrsmCtxts.TeidPool = drsmCtxt
 	} else {
 		return err
