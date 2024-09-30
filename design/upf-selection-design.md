@@ -1,3 +1,6 @@
+// Copyright (c) 2024 https://www.cdac.in All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 # UPF Selection Design for Multiple DNNs
 
 ## 1. Introduction
