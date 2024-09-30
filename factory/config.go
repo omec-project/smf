@@ -21,7 +21,7 @@ import (
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/logger"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 )
 
 const (
@@ -32,7 +32,7 @@ const (
 type Config struct {
 	Info          *Info               `yaml:"info"`
 	Configuration *Configuration      `yaml:"configuration"`
-	Logger        *logger_util.Logger `yaml:"logger"`
+	Logger        *utilLogger.Logger `yaml:"logger"`
 }
 
 type UpdateSmfConfig struct {
