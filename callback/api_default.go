@@ -59,6 +59,9 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	}
 
 	resBody, err := openapi.Serialize(HTTPResponse.Body, "application/json")
+	if err != nil {
+		log.Println(err)
+	}
 	c.Writer.Write(resBody)
 	c.Status(HTTPResponse.Status)
 }

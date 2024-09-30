@@ -20,8 +20,9 @@ import (
 	aperLogger "github.com/omec-project/aper/logger"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
-	nrf_cache "github.com/omec-project/nrf/nrfcache"
+	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/openapi/models"
+	nrfCache "github.com/omec-project/openapi/nrfcache"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
@@ -37,11 +38,13 @@ import (
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/http2_util"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 	pathUtilLogger "github.com/omec-project/util/path_util/logger"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type SMF struct{}
@@ -185,34 +188,47 @@ func (smf *SMF) setLogLevel() {
 
 	if factory.SmfConfig.Logger.NGAP != nil {
 		if factory.SmfConfig.Logger.NGAP.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.NGAP.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.NGAP.DebugLevel); err != nil {
 				ngapLogger.NgapLog.Warnf("NGAP Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.NGAP.DebugLevel)
-				ngapLogger.SetLogLevel(logrus.InfoLevel)
+				ngapLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				ngapLogger.SetLogLevel(level)
 			}
 		} else {
 			ngapLogger.NgapLog.Warnln("NGAP Log level not set. Default set to [info] level")
-			ngapLogger.SetLogLevel(logrus.InfoLevel)
+			ngapLogger.SetLogLevel(zap.InfoLevel)
 		}
-		ngapLogger.SetReportCaller(factory.SmfConfig.Logger.NGAP.ReportCaller)
 	}
 
 	if factory.SmfConfig.Logger.Aper != nil {
 		if factory.SmfConfig.Logger.Aper.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.Aper.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.Aper.DebugLevel); err != nil {
 				aperLogger.AperLog.Warnf("Aper Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.Aper.DebugLevel)
-				aperLogger.SetLogLevel(logrus.InfoLevel)
+				aperLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				aperLogger.SetLogLevel(level)
 			}
 		} else {
 			aperLogger.AperLog.Warnln("Aper Log level not set. Default set to [info] level")
-			aperLogger.SetLogLevel(logrus.InfoLevel)
+			aperLogger.SetLogLevel(zap.InfoLevel)
 		}
-		aperLogger.SetReportCaller(factory.SmfConfig.Logger.Aper.ReportCaller)
+	}
+
+	if factory.SmfConfig.Logger.OpenApi != nil {
+		if factory.SmfConfig.Logger.OpenApi.DebugLevel != "" {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.OpenApi.DebugLevel); err != nil {
+				openapiLogger.OpenapiLog.Warnf("Openapi Log level [%s] is invalid, set to [info] level",
+					factory.SmfConfig.Logger.OpenApi.DebugLevel)
+				openapiLogger.SetLogLevel(zap.InfoLevel)
+			} else {
+				openapiLogger.SetLogLevel(level)
+			}
+		} else {
+			openapiLogger.OpenapiLog.Warnln("Openapi Log level not set. Default set to [info] level")
+			openapiLogger.SetLogLevel(zap.InfoLevel)
+		}
 	}
 
 	if factory.SmfConfig.Logger.PathUtil != nil {
@@ -303,10 +319,10 @@ func (smf *SMF) Start() {
 
 	if smfCtxt.EnableNrfCaching {
 		initLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
-		nrf_cache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
+		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithLogrus(logger.GinLog)
 	oam.AddService(router)
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
@@ -321,11 +337,12 @@ func (smf *SMF) Start() {
 	if factory.SmfConfig.Configuration.EnableDbStore {
 		initLog.Infof("SetupSmfCollection")
 		context.SetupSmfCollection()
-	}
-
-	// Init DRSM for unique FSEID/FTEID/IP-Addr
-	if err := smfCtxt.InitDrsm(); err != nil {
-		initLog.Errorf("initialse drsm failed, %v ", err.Error())
+		// Init DRSM for unique FSEID/FTEID/IP-Addr
+		if err := smfCtxt.InitDrsm(); err != nil {
+			initLog.Errorf("initialise drsm failed, %v ", err.Error())
+		}
+	} else {
+		initLog.Infof("DB is disabled, not initialising drsm")
 	}
 
 	// Init Kafka stream
