@@ -30,8 +30,8 @@ const (
 )
 
 type Config struct {
-	Info          *Info               `yaml:"info"`
-	Configuration *Configuration      `yaml:"configuration"`
+	Info          *Info              `yaml:"info"`
+	Configuration *Configuration     `yaml:"configuration"`
 	Logger        *utilLogger.Logger `yaml:"logger"`
 }
 
