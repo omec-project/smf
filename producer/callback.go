@@ -97,7 +97,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 
 	// N1 Msg
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionModificationCommand(smContext); err != nil {
-		logger.PduSessLog.Errorf("Build GSM BuildGSMPDUSessionModificationCommand failed: %s", err)
+		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err)
 	} else {
 		n1n2Request.BinaryDataN1Message = smNasBuf
 		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
@@ -112,25 +112,25 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 		n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 	}
 
-	smContext.SubPduSessLog.Infof("QoS N1N2 transfer initiated")
+	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
 	rspData, _, err := smContext.
 		CommunicationClient.
 		N1N2MessageCollectionDocumentApi.
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	if err != nil {
-		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed, %v ", err.Error())
+		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed, %v", err.Error())
 		return err
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
-	smContext.SubPduSessLog.Infof("QoS N1N2 Transfer completed")
+	smContext.SubPduSessLog.Infoln("QoS N1N2 Transfer completed")
 	return nil
 }
 
 func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper.Response {
-	logger.PduSessLog.Traceln("[SMF] Handle NF Status Notify")
+	logger.PduSessLog.Debugln("[SMF] Handle NF Status Notify")
 
 	notificationData := request.Body.(models.NotificationData)
 
@@ -159,7 +159,7 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	// This will force the smf to do nf discovery and get the updated nf profile from the nrf.
 	if smf_context.SMF_Self().EnableNrfCaching {
 		ok := nrfCache.RemoveNfProfileFromNrfCache(nfInstanceId)
-		logger.PduSessLog.Tracef("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
+		logger.PduSessLog.Debugf("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
 	}
 
 	return nil

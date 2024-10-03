@@ -15,7 +15,6 @@
 package callback
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -38,14 +37,14 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 
 	err := openapi.Deserialize(&request, reqBody, c.ContentType())
 	if err != nil {
-		logger.PduSessLog.Errorln("Deserialize request failed")
+		logger.PduSessLog.Errorln("deserialize request failed")
 	}
 
 	reqWrapper := httpwrapper.NewRequest(c.Request, request)
 	reqWrapper.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := reqWrapper.Params["smContextRef"]
-	log.Printf("HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
+	logger.PduSessLog.Infof("HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
 
 	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
 	txn.CtxtKey = smContextRef
@@ -60,7 +59,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 
 	resBody, err := openapi.Serialize(HTTPResponse.Body, "application/json")
 	if err != nil {
-		log.Println(err)
+		logger.PduSessLog.Errorln(err)
 	}
 	c.Writer.Write(resBody)
 	c.Status(HTTPResponse.Status)
@@ -71,7 +70,7 @@ func SmPolicyControlTerminationRequestNotification(c *gin.Context) {
 }
 
 func N1N2FailureNotification(c *gin.Context) {
-	logger.PduSessLog.Info("Receive N1N2 Failure Notification")
+	logger.PduSessLog.Info("receive N1N2 Failure Notification")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.N1N2MessageTransferFailureNotification), "In", "", "")
 
 	var request models.N1N2MsgTxfrFailureNotification

@@ -120,7 +120,7 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 	if smContext == nil {
-		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid ", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
+		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
 		return transaction.TxnEventFailure, fmt.Errorf("TxnProcess, invalid SM Ctxt")
 	}
 
@@ -130,7 +130,7 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		smContextPool := smf_context.GetSmContextPool()
 		val, ok := smContextPool.Load(smContext.Ref)
 		if ok {
-			fmt.Println("db - smContext in smContextPool ", val)
+			txn.TxnFsmLog.Infoln("db - smContext in smContextPool", val)
 		} else {
 			smf_context.StoreSmContextPool(smContext)
 		}

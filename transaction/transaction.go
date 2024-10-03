@@ -11,7 +11,7 @@ import (
 
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type Transaction struct {
@@ -23,19 +23,14 @@ type Transaction struct {
 	Err                error
 	Status             chan bool
 	NextTxn            *Transaction
-	TxnFsmLog          *logrus.Entry
+	TxnFsmLog          *zap.SugaredLogger
 	MsgType            svcmsgtypes.SmfMsgType
 	TxnId              uint32
 	Priority           uint32
 }
 
 func (t *Transaction) initLogTags() {
-	subField := logrus.Fields{
-		"txnid":   t.TxnId,
-		"txntype": string(t.MsgType), "ctxtkey": t.CtxtKey,
-	}
-
-	t.TxnFsmLog = logger.TxnFsmLog.WithFields(subField)
+	t.TxnFsmLog = logger.TxnFsmLog.With("txnid", t.TxnId, "txntype", string(t.MsgType), "ctxtkey", t.CtxtKey)
 }
 
 type TxnEvent uint
@@ -119,7 +114,7 @@ func NewTransaction(req, rsp interface{}, msgType svcmsgtypes.SmfMsgType) *Trans
 
 func (t *Transaction) TransactionEnd() {
 	t.endTime = time.Now()
-	t.TxnFsmLog.Infof("txn ended, execution time [%v] ", t.endTime.Sub(t.startTime))
+	t.TxnFsmLog.Infof("txn ended, execution time [%v]", t.endTime.Sub(t.startTime))
 }
 
 type TxnBus []*Transaction
@@ -180,9 +175,9 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 
 	for {
 		currEvent := nextEvent
-		t.TxnFsmLog.Debugf("processing event[%v] ", currEvent.String())
+		t.TxnFsmLog.Debugf("processing event[%v]", currEvent.String())
 		if nextEvent, err = TxnFsmHandler[currEvent](t); err != nil {
-			t.TxnFsmLog.Errorf("TxnFsm Error, Stage[%s] Err[%v] ", currEvent.String(), err.Error())
+			t.TxnFsmLog.Errorf("TxnFsm Error, Stage[%s] Err[%v]", currEvent.String(), err.Error())
 		}
 
 		// Current active txn is over, Schedule Next Txn if available
@@ -196,12 +191,12 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 		// Note- Pipelined Txn will not get chance to run immediately,
 		// so they shall exit FSM and shall wait to run in TxnBus
 		if nextEvent == TxnEventExit || nextEvent == TxnEventQueue {
-			t.TxnFsmLog.Debugf("TxnFsm [%v] ", nextEvent.String())
+			t.TxnFsmLog.Debugf("TxnFsm [%v]", nextEvent.String())
 			return
 		}
 	}
 }
 
 func (t Transaction) String() string {
-	return fmt.Sprintf(" txn-id [%v], txn-type [%v], txn-key [%v] ", t.TxnId, t.MsgType, t.CtxtKey)
+	return fmt.Sprintf(" txn-id [%v], txn-type [%v], txn-key [%v]", t.TxnId, t.MsgType, t.CtxtKey)
 }

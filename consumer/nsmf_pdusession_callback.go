@@ -33,7 +33,7 @@ func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error)
 				return nil, openapi.ReportError("Send SMContextStatus Notification Failed")
 			}
 
-			logger.PduSessLog.Tracef("Send SMContextStatus Notification Success")
+			logger.PduSessLog.Debugln("send SMContextStatus Notification Success")
 		} else if httpResp != nil {
 			defer func() {
 				if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
@@ -47,7 +47,7 @@ func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error)
 			problem := localErr.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 			return &problem, nil
 		} else {
-			logger.PduSessLog.Warnln("Http Response is nil in comsumer API SMContextNotification")
+			logger.PduSessLog.Warnln("http response is nil in comsumer API SMContextNotification")
 			return nil, openapi.ReportError("Send SMContextStatus Notification Failed[%s]", localErr.Error())
 		}
 	}

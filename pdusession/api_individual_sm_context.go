@@ -14,12 +14,11 @@
 package pdusession
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
+	mi "github.com/omec-project/util/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -33,7 +32,7 @@ import (
 
 // HTTPReleaseSmContext - Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
-	logger.PduSessLog.Info("Receive Release SM Context Request")
+	logger.PduSessLog.Infoln("receive Release SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
 
@@ -49,7 +48,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	}
 	if err != nil {
-		log.Print(err)
+		logger.PduSessLog.Errorln(err)
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := models.ProblemDetails{
 			Title:  "Malformed request syntax",
@@ -85,7 +84,7 @@ func RetrieveSmContext(c *gin.Context) {
 
 // HTTPUpdateSmContext - Update SM Context
 func HTTPUpdateSmContext(c *gin.Context) {
-	logger.PduSessLog.Info("Receive Update SM Context Request")
+	logger.PduSessLog.Infoln("receive Update SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
 
@@ -111,7 +110,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, rsp)
 
 		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(http.StatusBadRequest), "Malformed")
-		log.Print(err)
+		logger.PduSessLog.Errorln(err)
 		return
 	}
 

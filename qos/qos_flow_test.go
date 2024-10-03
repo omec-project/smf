@@ -5,7 +5,6 @@
 package qos_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/omec-project/openapi/models"
@@ -27,7 +26,7 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 
 	authorizedQosFlow := qos.BuildAuthorizedQosFlowDescriptions(smPolicyUpdates)
 
-	fmt.Printf("Authorized QosFlow: %v\n", authorizedQosFlow.Content)
+	t.Logf("authorized QosFlow: %v", authorizedQosFlow.Content)
 	firstQosDataId := authorizedQosFlow.Content[0]
 	if firstQosDataId == 1 {
 		expectedBytes := []byte{

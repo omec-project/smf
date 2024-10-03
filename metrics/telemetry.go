@@ -10,9 +10,9 @@
 package metrics
 
 import (
-	"log"
 	"net/http"
 
+	"github.com/omec-project/smf/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -98,7 +98,7 @@ func init() {
 	smfStats = initSmfStats()
 
 	if err := smfStats.register(); err != nil {
-		log.Panicln("SMF Stats register failed")
+		logger.KafkaLog.Panicln("SMF Stats register failed")
 	}
 }
 
@@ -107,7 +107,7 @@ func InitMetrics() {
 	http.Handle("/metrics", promhttp.Handler())
 	err := http.ListenAndServe(":9089", nil)
 	if err != nil {
-		log.Fatalf("failed to start metrics server: %v", err)
+		logger.KafkaLog.Fatalf("failed to start metrics server: %v", err)
 	}
 }
 
