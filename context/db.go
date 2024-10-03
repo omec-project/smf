@@ -45,19 +45,19 @@ func SetupSmfCollection() {
 		dbName = factory.SmfConfig.Configuration.SmfDbName
 	}
 
-	logger.CfgLog.Infof("initialising db name [%v] url [%v] ", dbName, dbUrl)
+	logger.CfgLog.Infof("initialising db name [%v] url [%v]", dbName, dbUrl)
 
 	// UUID table
 	mongoapi.ConnectMongo(dbUrl, dbName)
 	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, "ref")
 	if err != nil {
-		logger.DataRepoLog.Errorf("Create index failed on ref field.")
+		logger.DataRepoLog.Errorln("create index failed on ref field")
 	}
 
 	// SEID Table
 	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, "seid")
 	if err != nil {
-		logger.DataRepoLog.Errorf("Create index failed on TxnId field.")
+		logger.DataRepoLog.Errorln("create index failed on TxnId field")
 	}
 
 	smfCount := mongoapi.CommonDBClient.GetUniqueIdentity("smfCount")
@@ -66,7 +66,7 @@ func SetupSmfCollection() {
 	// set os env
 	setEnvErr := os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
 	if setEnvErr != nil {
-		logger.DataRepoLog.Errorf("Setting SMF_COUNT env variable is failed.")
+		logger.DataRepoLog.Errorln("setting SMF_COUNT env variable is failed")
 	}
 }
 
@@ -137,7 +137,7 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON customized unmarshaller for sm context
 func (smContext *SMContext) UnmarshalJSON(data []byte) error {
-	fmt.Println("db - in UnmarshalJSON")
+	logger.DataRepoLog.Infoln("db - in UnmarshalJSON")
 	type Alias SMContext
 	aux := &struct {
 		*Alias
@@ -148,7 +148,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {
-		fmt.Println("err in customized unMarshall!!")
+		logger.DataRepoLog.Errorln("err in customized unMarshall")
 		return err
 	}
 
@@ -224,7 +224,7 @@ func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
 
 func ToBsonM(data *SMContext) (ret bson.M) {
 	// Marshal data into json format
-	fmt.Println("db - in ToBsonM before marshal")
+	logger.DataRepoLog.Infoln("db - in ToBsonM before marshal")
 	tmp, err := json.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("SMContext marshall error: %v", err)
@@ -240,7 +240,7 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 
 // StoreSmContextInDB Store SmContext In DB
 func StoreSmContextInDB(smContext *SMContext) {
-	fmt.Println("db - Store SMContext In DB w ref")
+	logger.DataRepoLog.Infoln("db - Store SMContext In DB w ref")
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 	smContextBsonA := ToBsonM(smContext)
@@ -332,7 +332,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 			return nil
 		}
 	} else {
-		logger.DataRepoLog.Warningf("SmContext doesn't exist with ref: %v", ref)
+		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
 		return nil
 	}
 
@@ -351,10 +351,10 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	}
 	if result != nil {
 		ref := result["ref"].(string)
-		logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string : ", ref)
+		logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string:", ref)
 		return GetSMContext(ref)
 	} else {
-		logger.DataRepoLog.Warningf("SmContext doesn't exist with seid: %v", seid)
+		logger.DataRepoLog.Warnf("SmContext doesn't exist with seid: %v", seid)
 		return nil
 	}
 }
@@ -362,7 +362,7 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 // DeleteSmContextInDBBySEID Delete SMContext By SEID from DB
 func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
-	fmt.Println("db - delete SMContext In DB by seid")
+	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
 	filter := bson.M{"seid": seid}
 	logger.DataRepoLog.Infof("filter: %+v", filter)
 
@@ -379,13 +379,13 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 		}
 		DeleteSmContextInDBByRef(ref)
 	} else {
-		logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
+		logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v", seid)
 	}
 }
 
 // DeleteSmContextInDBByRef Delete SMContext By ref from DB
 func DeleteSmContextInDBByRef(ref string) {
-	fmt.Println("db - delete SMContext In DB w ref")
+	logger.DataRepoLog.Infoln("db - delete SMContext In DB w ref")
 	filter := bson.M{"ref": ref}
 	logger.DataRepoLog.Infof("filter: %+v", filter)
 
@@ -414,7 +414,7 @@ func mapToByte(data map[string]interface{}) (ret []byte) {
 
 func ShowSmContextPool() {
 	smContextPool.Range(func(k, v interface{}) bool {
-		fmt.Println("db - iterate:", k, v)
+		logger.DataRepoLog.Infoln("db - iterate:", k, v)
 		return true
 	})
 }

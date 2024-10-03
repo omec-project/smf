@@ -5,7 +5,6 @@
 package context_test
 
 import (
-	"fmt"
 	"net"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestIPPoolAlloc(t *testing.T) {
 		if err != nil {
 			t.Errorf("failed to allocate pool %v", err)
 		}
-		fmt.Printf("Allocated address = %v\n", ip)
+		t.Logf("allocated address = %v", ip)
 		allocAddresses = append(allocAddresses, ip.String())
 	}
 
@@ -52,7 +51,7 @@ func TestIPPoolAllocRelease(t *testing.T) {
 		if err != nil {
 			t.Errorf("failed to allocate pool %v", err)
 		}
-		fmt.Printf("Allocated address = %v\n", ip)
+		t.Logf("allocated address = %v", ip)
 		if i == 1 {
 			if ip.Equal(ip1) == false {
 				t.Errorf("address not allocated in order ? allocated address %v", ip1)
@@ -82,13 +81,13 @@ func TestIPPoolAllocLeastRecentlyUsed(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)
 	}
-	fmt.Printf("Allocated address = %v\n", ip1)
+	t.Logf("allocated address = %v", ip1)
 	allocator.Release("", ip1)
 	ip2, err := allocator.Allocate("")
 	if err != nil {
 		t.Errorf("failed to allocate pool %v", err)
 	}
-	fmt.Printf("Allocated address = %v\n", ip2)
+	t.Logf("allocated address = %v", ip2)
 
 	// Same address is not allocate again..
 	if ip1.Equal(ip2) {

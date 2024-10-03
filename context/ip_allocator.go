@@ -7,7 +7,6 @@ package context
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -100,9 +99,9 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 			logger.CtxLog.Errorf("failed to convert SMF_COUNT to int: %v", err)
 		}
 		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(smfCount-1)*5000)
-		fmt.Printf("unique id - ip %v \n", ip)
-		fmt.Printf("unique id - offset %v \n", offset)
-		fmt.Printf("unique id - smfCount %v \n", smfCount)
+		logger.CtxLog.Infof("unique id - ip %v", ip)
+		logger.CtxLog.Infof("unique id - offset %v", offset)
+		logger.CtxLog.Infof("unique id - smfCount %v", smfCount)
 		return ip, nil
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,10 +18,10 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/wmnsk/go-pfcp/ie"
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
+	"go.uber.org/zap"
 )
 
 func boolPointer(b bool) *bool {
@@ -56,7 +55,7 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -83,7 +82,7 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -115,8 +114,12 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
-	log := logrus.New()
-	mockLog := log.WithFields(logrus.Fields{})
+	config := zap.NewProductionConfig()
+	log, err := config.Build()
+	if err != nil {
+		panic(err)
+	}
+	mockLog := log.Sugar()
 	smContext := &context.SMContext{
 		PFCPContext: map[string]*context.PFCPSessionContext{
 			upNodeIDStr: {
@@ -144,7 +147,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -190,7 +193,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -216,8 +219,12 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
-	log := logrus.New()
-	mockLog := log.WithFields(logrus.Fields{})
+	config := zap.NewProductionConfig()
+	log, err := config.Build()
+	if err != nil {
+		panic(err)
+	}
+	mockLog := log.Sugar()
 	smContext := &context.SMContext{
 		PFCPContext: map[string]*context.PFCPSessionContext{
 			upNodeIDStr: {
@@ -245,7 +252,7 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -271,8 +278,12 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
 	}
-	log := logrus.New()
-	mockLog := log.WithFields(logrus.Fields{})
+	config := zap.NewProductionConfig()
+	log, err := config.Build()
+	if err != nil {
+		panic(err)
+	}
+	mockLog := log.Sugar()
 	smContext := &context.SMContext{
 		PFCPContext: map[string]*context.PFCPSessionContext{
 			upNodeIDStr: {
@@ -295,7 +306,7 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -328,7 +339,7 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -368,7 +379,7 @@ func TestSendHeartbeatRequest(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -401,7 +412,7 @@ func TestSendHeartbeatResponse(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 

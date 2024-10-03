@@ -5,7 +5,6 @@
 package pdusession
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/omec-project/smf/logger"
@@ -17,7 +16,7 @@ import (
 )
 
 func DummyServer() {
-	router := utilLogger.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 
 	AddService(router)
 
@@ -34,6 +33,6 @@ func DummyServer() {
 	}
 
 	if err := server.ListenAndServeTLS(smfPemPath, smfkeyPath); err != nil {
-		log.Fatal(err)
+		logger.PduSessLog.Fatalln(err)
 	}
 }

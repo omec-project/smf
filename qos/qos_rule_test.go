@@ -5,7 +5,6 @@
 package qos_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/omec-project/openapi/models"
@@ -24,7 +23,7 @@ var flowDesc = []string{
 func TestDecodeFlowDescToIPFilters(t *testing.T) {
 	for i, flow := range flowDesc {
 		ipf := qos.DecodeFlowDescToIPFilters(flow)
-		fmt.Printf("Flow: %v %v\n", i, ipf.String())
+		t.Logf("flow: %v %v", i, ipf.String())
 	}
 }
 
@@ -32,9 +31,9 @@ func TestGetPfContent(t *testing.T) {
 	pf := &qos.PacketFilter{}
 	for i, flow := range flowDesc {
 		pf.GetPfContent(flow)
-		fmt.Println("Flow:", i)
+		t.Logf("Flow: %v", i)
 		for _, pfc := range pf.Content {
-			fmt.Printf("%v", pfc.String())
+			t.Logf("%v", pfc.String())
 		}
 	}
 }
@@ -54,12 +53,12 @@ func TestBuildQosRules(t *testing.T) {
 
 	qosRules := qos.BuildQosRules(smPolicyUpdates)
 
-	fmt.Println("QosRules:", qosRules)
+	t.Logf("QosRules: %v", qosRules)
 
 	if bytes, err := qosRules.MarshalBinary(); err != nil {
-		fmt.Printf("Marshal Error : %v", err.Error())
+		t.Logf("marshal Error: %v", err.Error())
 	} else {
-		fmt.Printf("Encoded Bytes: %v", bytes)
+		t.Logf("encoded Bytes: %v", bytes)
 		expectedBytes := []byte{
 			0x1, 0x0, 0x37, 0x32, 0x31, 0x18, 0x10,
 			0x1, 0x1, 0x1, 0x1, 0xff, 0xff, 0xff, 0xff, 0x50, 0x3, 0xe8,

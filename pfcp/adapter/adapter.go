@@ -114,7 +114,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
-			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+			logger.PfcpLog.Errorf("can not find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
 		}
 
@@ -122,7 +122,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		if userPlaneIPResourceInformation != nil {
 			upfProvidedDnn := string(userPlaneIPResourceInformation.NetworkInstance)
 			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured ", upfProvidedDnn)
+				logger.PfcpLog.Errorf("handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured", upfProvidedDnn)
 				return
 			}
 		}
@@ -230,7 +230,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	SEID := rsp.SEID()
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnf("PFCP Session Establish Response found invalid event data, response discarded")
+			logger.PfcpLog.Warnln("PFCP Session Establish Response found invalid event data, response discarded")
 			return
 		} else {
 			SEID = eventData.LSEID
@@ -299,7 +299,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	cause := pfcpRsp.Cause
 	if cause == nil {
-		logger.PfcpLog.Warnf("PFCP Session Modification Response found invalid cause, response discarded")
+		logger.PfcpLog.Warnln("PFCP Session Modification Response found invalid cause, response discarded")
 		return
 	}
 	causeValue, err := cause.Cause()
@@ -318,7 +318,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnf("PFCP Session Modification Response found invalid event data, response discarded")
+			logger.PfcpLog.Warnln("PFCP Session Modification Response found invalid event data, response discarded")
 			return
 		} else {
 			SEID = eventData.LSEID
@@ -331,7 +331,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
-			smContext.SubPduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
+			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
 			if smContext.PendingUPF.IsEmpty() {
 				smContext.SBIPFCPCommunicationChan <- context.SessionUpdateSuccess
@@ -346,9 +346,9 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		}
 	}
 
-	smContext.SubCtxLog.Traceln("PFCP Session Context")
+	smContext.SubCtxLog.Debugln("PFCP Session Context")
 	for _, ctx := range smContext.PFCPContext {
-		smContext.SubCtxLog.Traceln(ctx.String())
+		smContext.SubCtxLog.Debugln(ctx.String())
 	}
 }
 
@@ -358,12 +358,12 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 		logger.PfcpLog.Errorln("invalid PFCP Session Deletion Response")
 		return
 	}
-	logger.PfcpLog.Infof("handle PFCP Session Deletion Response")
+	logger.PfcpLog.Infoln("handle PFCP Session Deletion Response")
 	SEID := pfcpRsp.SEID()
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnf("PFCP Session Deletion Response found invalid event data, response discarded")
+			logger.PfcpLog.Warnln("PFCP Session Deletion Response found invalid event data, response discarded")
 			return
 		} else {
 			SEID = eventData.LSEID
@@ -372,13 +372,13 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 	smContext := context.GetSMContextBySEID(SEID)
 
 	if smContext == nil {
-		logger.PfcpLog.Warnf("PFCP Session Deletion Response found SM context nil, response discarded")
+		logger.PfcpLog.Warnln("PFCP Session Deletion Response found SM context nil, response discarded")
 		return
 	}
 
 	cause := pfcpRsp.Cause
 	if cause == nil {
-		logger.PfcpLog.Warnf("PFCP Session Deletion Response found invalid cause, response discarded")
+		logger.PfcpLog.Warnln("PFCP Session Deletion Response found invalid cause, response discarded")
 		return
 	}
 
@@ -393,25 +393,25 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
-			smContext.SubPduSessLog.Tracef("Delete pending pfcp response: UPF IP [%s]\n", upfIP)
+			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
 			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
 				smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 			}
 		}
-		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]", SEID)
 	} else {
 		if smContext.SMContextState == context.SmStatePfcpRelease && !smContext.LocalPurged {
 			smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 		}
-		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)
 	}
 }
 
 func SetUpfInactive(nodeID context.NodeID) {
 	upf := context.RetrieveUPFNodeByNodeID(nodeID)
 	if upf == nil {
-		logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+		logger.PfcpLog.Errorf("can not find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 		// metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID,
 		//	pfcpmsgtypes.PfcpMsgTypeString(msgType),
 		//	"In", "Failure", "unknown_upf")
