@@ -231,7 +231,7 @@ func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfTy
 	for _, nfProfile := range result.NfInstances {
 		if _, ok := smfSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
 			nrfSubscriptionData := models.NrfSubscriptionData{
-				NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/nf-status-notify",
+				NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/v1/nf-status-notify",
 					smfSelf.URIScheme,
 					smfSelf.RegisterIPv4,
 					smfSelf.SBIPort),
