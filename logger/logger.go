@@ -24,6 +24,7 @@ var (
 	ConsumerLog *zap.SugaredLogger
 	GinLog      *zap.SugaredLogger
 	GrpcLog     *zap.SugaredLogger
+	ProducerLog *zap.SugaredLogger
 	UPNodeLog   *zap.SugaredLogger
 	FsmLog      *zap.SugaredLogger
 	TxnFsmLog   *zap.SugaredLogger
@@ -69,6 +70,7 @@ func init() {
 	ConsumerLog = log.Sugar().With("component", "SMF", "category", "Consumer")
 	GinLog = log.Sugar().With("component", "SMF", "category", "GIN")
 	GrpcLog = log.Sugar().With("component", "SMF", "category", "GRPC")
+	ProducerLog = log.Sugar().With("component", "SMF", "category", "Producer")
 	UPNodeLog = log.Sugar().With("component", "SMF", "category", "UPNode")
 	FsmLog = log.Sugar().With("component", "SMF", "category", "Fsm")
 	TxnFsmLog = log.Sugar().With("component", "SMF", "category", "TxnFsm")

@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	mi "github.com/omec-project/util/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -28,6 +27,7 @@ import (
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
+	mi "github.com/omec-project/util/metricinfo"
 )
 
 // HTTPPostSmContexts - Create SM Context
