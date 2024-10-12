@@ -361,7 +361,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	if SMF_Self().EnableScaling {
 		result, err := SMF_Self().RedisClient.Get(ref).Result()
 		if err != nil {
-			logger.DataRepoLog.Warningf("SmContext doesn't exist with ref: %v", ref)
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with ref:", ref)
 			return nil
 		}
 		if result != "" {
@@ -387,7 +387,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 				return nil
 			}
 		} else {
-			logger.DataRepoLog.Warningf("SmContext doesn't exist with ref: %v", ref)
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with ref:", ref)
 			return nil
 		}
 	}
@@ -402,13 +402,13 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	if SMF_Self().EnableScaling {
 		result, err := SMF_Self().RedisClient.Get(seid).Result()
 		if err != nil {
-			logger.DataRepoLog.Warningf("SmContext doesn't exist with seid: %v", seid)
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with seid:", seid)
 			return nil
 		}
 		resultJson := &SeidSmContextRef{}
 		err = json.Unmarshal([]byte(result), resultJson)
 		if err != nil {
-			logger.DataRepoLog.Warningf("SeidSmContextRef unmarshall error: %v", err)
+			logger.DataRepoLog.Warnf("SeidSmContextRef unmarshall error:", err)
 		}
 		ref = resultJson.Ref
 		return GetSMContext(ref)
