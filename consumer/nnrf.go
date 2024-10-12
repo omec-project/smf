@@ -278,7 +278,7 @@ func SendNFDiscoveryUDM(smContext *smf_context.SMContext) (*models.ProblemDetail
 	SmContextlenMutex.Lock()
 	smf_context.IncSmContextLen()
 	if _, err := SendNFRegistration(); err != nil {
-		fmt.Println("NRF Registration failure, %v", err.Error())
+		fmt.Println("NRF Registration failure ", err.Error())
 	}
 	SmContextlenMutex.Unlock()
 
@@ -306,11 +306,16 @@ func SendNFDiscoveryUDM(smContext *smf_context.SMContext) (*models.ProblemDetail
 		}
 
 		nfInstanceIndex := 0
-		if smf_context.SMF_Self().EnableScaling == true {
+		if smf_context.SMF_Self().EnableScaling {
 			parts := strings.Split(id, "-")
-			imsiNumber, _ := strconv.Atoi(parts[1])
+			imsiNumber, err := strconv.Atoi(parts[1])
+			if err != nil {
+				logger.ConsumerLog.Warnln("imsiNumber conversion failed")
+				return nil, err
+			}
 			nfInstanceIndex = imsiNumber % len(result.NfInstances)
 		}
+
 		for _, nfProfile := range result.NfInstances {
 			if nfInstanceIndex != nfInstanceIdIndexMap[nfProfile.NfInstanceId] {
 				continue

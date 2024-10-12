@@ -463,7 +463,8 @@ func (smContext *SMContext) PCFSelection() error {
 		// Select PCF from available PCF
 		metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", http.StatusText(res.StatusCode), "")
 	}
-	if SMF_Self().EnableScaling == true {
+
+	if SMF_Self().EnableScaling {
 		nfInstanceIds := make([]string, 0, len(rep.NfInstances))
 		for _, nfProfile := range rep.NfInstances {
 			nfInstanceIds = append(nfInstanceIds, nfProfile.NfInstanceId)
@@ -475,7 +476,11 @@ func (smContext *SMContext) PCFSelection() error {
 		}
 		nfInstanceIndex := 0
 		parts := strings.Split(smContext.Supi, "-")
-		imsiNumber, _ := strconv.Atoi(parts[1])
+		imsiNumber, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return err
+		}
+
 		nfInstanceIndex = imsiNumber % len(rep.NfInstances)
 		for _, nfProfile := range rep.NfInstances {
 			if nfInstanceIndex != nfInstanceIdIndexMap[nfProfile.NfInstanceId] {

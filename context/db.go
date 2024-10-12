@@ -335,7 +335,6 @@ func GetSeidByRefInDB(ref string) (seid uint64) {
 		if err != nil {
 			logger.DataRepoLog.Errorf("seid parseUint error: %v", err)
 		}
-
 	} else {
 		filter := bson.M{}
 		filter["ref"] = ref
@@ -372,7 +371,6 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 				return nil
 			}
 		}
-
 	} else {
 		filter := bson.M{}
 		filter["ref"] = ref
@@ -410,7 +408,7 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 		resultJson := &SeidSmContextRef{}
 		err = json.Unmarshal([]byte(result), resultJson)
 		if err != nil {
-			logger.DataRepoLog.Warnln("SeidSmContextRef unmarshall error: %v", err)
+			logger.DataRepoLog.Warningf("SeidSmContextRef unmarshall error: %v", err)
 		}
 		ref = resultJson.Ref
 	} else {
@@ -445,7 +443,7 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 		resultJson := &SeidSmContextRef{}
 		err = json.Unmarshal([]byte(result), resultJson)
 		if err != nil {
-			logger.DataRepoLog.Warnln("DeleteSmContextInDBBySEID: unmarshall error: %v", err)
+			logger.DataRepoLog.Warnln("DeleteSmContextInDBBySEID: unmarshall error: ", err)
 		}
 		ref := resultJson.Ref
 		err = SMF_Self().RedisClient.Del(seid).Err()
@@ -473,7 +471,6 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 			logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
 		}
 	}
-
 }
 
 // DeleteSmContextInDBByRef Delete SMContext By ref from DB
@@ -545,7 +542,6 @@ func GetLocalIP() string {
 }
 
 func ProcessSmContextDbChannel() {
-
 	for {
 		rcvdSmContext := <-SmContextDbChannel
 		rcvdSmContext.SMLock.Lock()
