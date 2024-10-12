@@ -43,7 +43,7 @@ func NewUEPreConfigPaths(SUPI string, paths []factory.Path) (*UEPreConfigPaths, 
 	lowerBound := 0
 	pathIDGenerator := idgenerator.NewGenerator(1, math.MaxInt32)
 
-	logger.PduSessLog.Infoln("In NewUEPreConfigPaths")
+	logger.PduSessLog.Infoln("in NewUEPreConfigPaths")
 
 	for idx, path := range paths {
 		dataPath := NewDataPath()
@@ -54,7 +54,7 @@ func NewUEPreConfigPaths(SUPI string, paths []factory.Path) (*UEPreConfigPaths, 
 
 		var pathID int64
 		if allocPathID, err := pathIDGenerator.Allocate(); err != nil {
-			logger.CtxLog.Warnf("Allocate pathID error: %+v", err)
+			logger.CtxLog.Warnf("allocate pathID error: %+v", err)
 			return nil, err
 		} else {
 			pathID = allocPathID
@@ -80,8 +80,7 @@ func NewUEPreConfigPaths(SUPI string, paths []factory.Path) (*UEPreConfigPaths, 
 			parentNode = newUeNode
 		}
 
-		logger.CtxLog.Traceln("New data path added")
-		logger.CtxLog.Traceln("\n" + dataPath.String() + "\n")
+		logger.CtxLog.Debugln("new data path added:", dataPath.String())
 	}
 
 	uePreConfigPaths = &UEPreConfigPaths{
@@ -97,7 +96,7 @@ func GetUEPreConfigPaths(SUPI string) *UEPreConfigPaths {
 
 func CheckUEHasPreConfig(SUPI string) (exist bool) {
 	_, exist = smfContext.UEPreConfigPathPool[SUPI]
-	fmt.Println("CheckUEHasPreConfig")
-	fmt.Println(smfContext.UEPreConfigPathPool)
+	logger.CtxLog.Infoln("CheckUEHasPreConfig")
+	logger.CtxLog.Infoln(smfContext.UEPreConfigPathPool)
 	return
 }

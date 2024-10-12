@@ -25,21 +25,6 @@ jobs:
       - name: Build
         run: go build
 
-  build-upfadapter:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./upfadapter
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Build
-        run: go build
-
   docker-build:
     runs-on: ubuntu-latest
     steps:
@@ -58,7 +43,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6.1.0
+        uses: golangci/golangci-lint-action@v6.1.1
         with:
           version: latest
           args: -v --timeout=5m  --config ./.golangci.yml

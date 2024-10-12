@@ -6,8 +6,8 @@ package metrics
 import (
 	"testing"
 
-	"github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/util/metricinfo"
 )
 
 var my_false bool = false

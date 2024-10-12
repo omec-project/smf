@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM golang:1.23.1-bookworm AS builder
+FROM golang:1.23.2-bookworm AS builder
 
 LABEL maintainer="Aether SD-Core <dev@lists.aetherproject.org>"
 
@@ -25,9 +25,6 @@ WORKDIR $GOPATH/src/smf
 COPY . .
 RUN make all
 
-WORKDIR $GOPATH/src/smf/upfadapter
-RUN CGO_ENABLED=0 go build
-
 FROM alpine:3.20 AS smf
 
 LABEL description="ONF open source 5G Core Network" \
@@ -41,12 +38,6 @@ RUN apk update && apk add --no-cache -U bash
 RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
         apk update && apk add --no-cache -U vim strace net-tools curl netcat-openbsd bind-tools tcpdump; \
         fi
-
-# Set working dir
-WORKDIR /free5gc/bin
-
-# copy upf-adapter image
-COPY --from=builder /go/src/smf/upfadapter/upf-adapter .
 
 # Set working dir
 WORKDIR /free5gc/smf

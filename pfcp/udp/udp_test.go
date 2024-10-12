@@ -5,7 +5,6 @@
 package udp_test
 
 import (
-	"log"
 	"net"
 	"testing"
 	"time"
@@ -93,7 +92,7 @@ func TestRun(t *testing.T) {
 
 	defer func() {
 		if err = udp.Server.Conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 
@@ -141,7 +140,7 @@ func TestServerSendPfcp(t *testing.T) {
 
 	defer func() {
 		if err = conn.Close(); err != nil {
-			log.Printf("error closing connection: %v", err)
+			t.Logf("error closing connection: %v", err)
 		}
 	}()
 

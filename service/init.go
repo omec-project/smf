@@ -20,6 +20,7 @@ import (
 	aperLogger "github.com/omec-project/aper/logger"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
+	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/openapi/models"
 	nrfCache "github.com/omec-project/openapi/nrfcache"
 	"github.com/omec-project/smf/callback"
@@ -37,11 +38,11 @@ import (
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/http2_util"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
-	pathUtilLogger "github.com/omec-project/util/path_util/logger"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type SMF struct{}
@@ -85,7 +86,7 @@ type OneInstance struct {
 
 var nrfRegInProgress OneInstance
 
-var initLog *logrus.Entry
+var initLog *zap.SugaredLogger
 
 func init() {
 	initLog = logger.InitLog
@@ -152,83 +153,78 @@ func (smf *SMF) setLogLevel() {
 
 	if factory.SmfConfig.Logger.SMF != nil {
 		if factory.SmfConfig.Logger.SMF.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.SMF.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.SMF.DebugLevel); err != nil {
 				initLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.SMF.DebugLevel)
-				logger.SetLogLevel(logrus.InfoLevel)
+				logger.SetLogLevel(zap.InfoLevel)
 			} else {
 				initLog.Infof("SMF Log level is set to [%s] level", level)
 				logger.SetLogLevel(level)
 			}
 		} else {
 			initLog.Infoln("SMF Log level is default set to [info] level")
-			logger.SetLogLevel(logrus.InfoLevel)
+			logger.SetLogLevel(zap.InfoLevel)
 		}
-		logger.SetReportCaller(factory.SmfConfig.Logger.SMF.ReportCaller)
 	}
 
 	if factory.SmfConfig.Logger.NAS != nil {
 		if factory.SmfConfig.Logger.NAS.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.NAS.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.NAS.DebugLevel); err != nil {
 				nasLogger.NasLog.Warnf("NAS Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.NAS.DebugLevel)
-				logger.SetLogLevel(logrus.InfoLevel)
+				logger.SetLogLevel(zap.InfoLevel)
 			} else {
 				nasLogger.SetLogLevel(level)
 			}
 		} else {
 			nasLogger.NasLog.Warnln("NAS Log level not set. Default set to [info] level")
-			nasLogger.SetLogLevel(logrus.InfoLevel)
+			nasLogger.SetLogLevel(zap.InfoLevel)
 		}
-		nasLogger.SetReportCaller(factory.SmfConfig.Logger.NAS.ReportCaller)
 	}
 
 	if factory.SmfConfig.Logger.NGAP != nil {
 		if factory.SmfConfig.Logger.NGAP.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.NGAP.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.NGAP.DebugLevel); err != nil {
 				ngapLogger.NgapLog.Warnf("NGAP Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.NGAP.DebugLevel)
-				ngapLogger.SetLogLevel(logrus.InfoLevel)
+				ngapLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				ngapLogger.SetLogLevel(level)
 			}
 		} else {
 			ngapLogger.NgapLog.Warnln("NGAP Log level not set. Default set to [info] level")
-			ngapLogger.SetLogLevel(logrus.InfoLevel)
+			ngapLogger.SetLogLevel(zap.InfoLevel)
 		}
-		ngapLogger.SetReportCaller(factory.SmfConfig.Logger.NGAP.ReportCaller)
 	}
 
 	if factory.SmfConfig.Logger.Aper != nil {
 		if factory.SmfConfig.Logger.Aper.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.Aper.DebugLevel); err != nil {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.Aper.DebugLevel); err != nil {
 				aperLogger.AperLog.Warnf("Aper Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.Aper.DebugLevel)
-				aperLogger.SetLogLevel(logrus.InfoLevel)
+				aperLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				aperLogger.SetLogLevel(level)
 			}
 		} else {
 			aperLogger.AperLog.Warnln("Aper Log level not set. Default set to [info] level")
-			aperLogger.SetLogLevel(logrus.InfoLevel)
+			aperLogger.SetLogLevel(zap.InfoLevel)
 		}
-		aperLogger.SetReportCaller(factory.SmfConfig.Logger.Aper.ReportCaller)
 	}
 
-	if factory.SmfConfig.Logger.PathUtil != nil {
-		if factory.SmfConfig.Logger.PathUtil.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.SmfConfig.Logger.PathUtil.DebugLevel); err != nil {
-				pathUtilLogger.PathLog.Warnf("PathUtil Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.PathUtil.DebugLevel)
-				pathUtilLogger.SetLogLevel(logrus.InfoLevel)
+	if factory.SmfConfig.Logger.OpenApi != nil {
+		if factory.SmfConfig.Logger.OpenApi.DebugLevel != "" {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.OpenApi.DebugLevel); err != nil {
+				openapiLogger.OpenapiLog.Warnf("Openapi Log level [%s] is invalid, set to [info] level",
+					factory.SmfConfig.Logger.OpenApi.DebugLevel)
+				openapiLogger.SetLogLevel(zap.InfoLevel)
 			} else {
-				pathUtilLogger.SetLogLevel(level)
+				openapiLogger.SetLogLevel(level)
 			}
 		} else {
-			pathUtilLogger.PathLog.Warnln("PathUtil Log level not set. Default set to [info] level")
-			pathUtilLogger.SetLogLevel(logrus.InfoLevel)
+			openapiLogger.OpenapiLog.Warnln("Openapi Log level not set. Default set to [info] level")
+			openapiLogger.SetLogLevel(zap.InfoLevel)
 		}
-		pathUtilLogger.SetReportCaller(factory.SmfConfig.Logger.PathUtil.ReportCaller)
 	}
 
 	// Initialise Statistics
@@ -306,7 +302,7 @@ func (smf *SMF) Start() {
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 	oam.AddService(router)
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
@@ -338,10 +334,10 @@ func (smf *SMF) Start() {
 
 	for _, upf := range context.SMF_Self().UserPlaneInformation.UPFs {
 		if upf.NodeID.NodeIdType == context.NodeIdTypeFqdn {
-			logger.AppLog.Infof("send PFCP Association Request to UPF[%s](%s)\n", upf.NodeID.NodeIdValue,
+			logger.AppLog.Infof("send PFCP Association Request to UPF[%s](%s)", upf.NodeID.NodeIdValue,
 				upf.NodeID.ResolveNodeIdToIp().String())
 		} else {
-			logger.AppLog.Infof("send PFCP Association Request to UPF[%s]\n", upf.NodeID.ResolveNodeIdToIp().String())
+			logger.AppLog.Infof("send PFCP Association Request to UPF[%s]", upf.NodeID.ResolveNodeIdToIp().String())
 		}
 		err := message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
 		if err != nil {
@@ -382,7 +378,7 @@ func (smf *SMF) Start() {
 }
 
 func (smf *SMF) Terminate() {
-	logger.InitLog.Infof("terminating SMF...")
+	logger.InitLog.Infoln("terminating SMF...")
 	// deregister with NRF
 	problemDetails, err := consumer.SendDeregisterNFInstance()
 	if problemDetails != nil {
@@ -390,7 +386,7 @@ func (smf *SMF) Terminate() {
 	} else if err != nil {
 		logger.InitLog.Errorf("deregister NF instance Error[%+v]", err)
 	} else {
-		logger.InitLog.Infof("deregister from NRF successfully")
+		logger.InitLog.Infoln("deregister from NRF successfully")
 	}
 }
 
@@ -412,7 +408,7 @@ func StartKeepAliveTimer(nfProfile *models.NfProfile) {
 
 func StopKeepAliveTimer() {
 	if KeepAliveTimer != nil {
-		logger.InitLog.Infof("stopped KeepAlive Timer.")
+		logger.InitLog.Infoln("stopped KeepAlive Timer")
 		KeepAliveTimer.Stop()
 		KeepAliveTimer = nil
 	}
@@ -423,7 +419,7 @@ func UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer == nil {
-		initLog.Warnf("keepAlive timer has been stopped.")
+		initLog.Warnf("keepAlive timer has been stopped")
 		return
 	}
 	// setting default value 30 sec
@@ -468,7 +464,7 @@ func (smf *SMF) SendNrfRegistration() {
 	// If NRF registration is ongoing then don't start another in parallel
 	// Just mark it so that once ongoing finishes then resend another
 	if nrfRegInProgress.intanceRun(consumer.ReSendNFRegistration) {
-		logger.InitLog.Infof("NRF Registration already in progress...")
+		logger.InitLog.Infoln("NRF Registration already in progress...")
 		refreshNrfRegistration = true
 		return
 	}
@@ -481,7 +477,7 @@ func (smf *SMF) SendNrfRegistration() {
 			logger.InitLog.Infof("NRF Registration failure, %v", err.Error())
 		} else {
 			StartKeepAliveTimer(prof)
-			logger.CfgLog.Infof("sent Register NF Instance with updated profile")
+			logger.CfgLog.Infoln("sent Register NF Instance with updated profile")
 		}
 	}
 }

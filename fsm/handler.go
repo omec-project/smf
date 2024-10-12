@@ -7,12 +7,12 @@ package fsm
 import (
 	"fmt"
 
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/smf/transaction"
+	mi "github.com/omec-project/util/metricinfo"
 )
 
 // Define SM Context level Events
@@ -96,7 +96,7 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 		err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_failure)
 		var errorMessage string = ""
 		if err != nil {
-			logger.FsmLog.Errorf("error while publishing pdu session create response failure, %v ", err.Error())
+			logger.FsmLog.Errorf("error while publishing pdu session create response failure, %v", err.Error())
 			errorMessage = err.Error()
 		}
 		txn := eventData.Txn.(*transaction.Transaction)
@@ -106,7 +106,7 @@ func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (s
 
 	err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_success)
 	if err != nil {
-		logger.FsmLog.Errorf("error while publishing pdu session create response success, %v ", err.Error())
+		logger.FsmLog.Errorf("error while publishing pdu session create response success, %v", err.Error())
 	}
 	return smf_context.SmStatePfcpCreatePending, nil
 }

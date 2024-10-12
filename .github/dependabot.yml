@@ -27,11 +27,3 @@ updates:
       day: "sunday"
       time: "21:00"
       timezone: "America/Los_Angeles"
-
-  - package-ecosystem: "gomod"
-    directory: "/upfadapter/"
-    schedule:
-      interval: "weekly"
-      day: "sunday"
-      time: "21:00"
-      timezone: "America/Los_Angeles"

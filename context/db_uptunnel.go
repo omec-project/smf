@@ -6,7 +6,6 @@ package context
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 
 	"github.com/omec-project/smf/logger"
@@ -112,7 +111,7 @@ func RecoverTunnel(tunnelInfo *TunnelInfo) (tunnel *GTPTunnel) {
 }
 
 func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
-	fmt.Println("in RecoverFirstDPNode")
+	logger.CtxLog.Infoln("in RecoverFirstDPNode")
 	nodeInDB := GetNodeInDBFromDB(nodeIDInDB)
 	dataPathNode = &DataPathNode{
 		IsBranchingPoint: nodeInDB.IsBranchingPoint,
@@ -126,13 +125,13 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 	if nodeInDB.DLTunnelInfo != nilVal {
 		dataPathNode.DownLinkTunnel = RecoverTunnel(nodeInDB.DLTunnelInfo)
 	}
-	fmt.Println("RecoverFirstDPNode - dataPathNode", dataPathNode)
+	logger.CtxLog.Infoln("RecoverFirstDPNode - dataPathNode", dataPathNode)
 	if nodeInDB.ULTunnelInfo != nilVal {
-		fmt.Println("nodeInDB.ULTunnelInfo != nilVal")
+		logger.CtxLog.Infoln("nodeInDB.ULTunnelInfo != nilVal")
 		dataPathNode.UpLinkTunnel.DestEndPoint = dataPathNode
 	}
 	if nodeInDB.DLTunnelInfo != nilVal {
-		fmt.Println("nodeInDB.DLTunnelInfo != nilVal")
+		logger.CtxLog.Infoln("nodeInDB.DLTunnelInfo != nilVal")
 		dataPathNode.DownLinkTunnel.DestEndPoint = dataPathNode
 	}
 	return dataPathNode
@@ -175,8 +174,8 @@ func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInD
 	}
 
 	dataPathNodeInDB = new(DataPathNodeInDB)
-	fmt.Println("GetNodeInDBFromDB, smf state json : ", result)
-	fmt.Println("GetNodeInDBFromDB, smf dataPathNodeInDB : ", dataPathNodeInDB)
+	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf state json:", result)
+	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf dataPathNodeInDB:", dataPathNodeInDB)
 
 	err := json.Unmarshal(mapToByte(result), dataPathNodeInDB)
 	if err != nil {

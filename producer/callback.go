@@ -12,22 +12,28 @@ import (
 
 	"github.com/omec-project/openapi/models"
 	nrfCache "github.com/omec-project/openapi/nrfcache"
-	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/consumer"
+	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
 )
 
+var (
+	NRFCacheRemoveNfProfileFromNrfCache = nrfCache.RemoveNfProfileFromNrfCache
+	SendRemoveSubscription              = consumer.SendRemoveSubscription
+)
+
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.SmPolicyNotification)
-	smContext := txn.Ctxt.(*smf_context.SMContext)
+	smContext := txn.Ctxt.(*smfContext.SMContext)
 
 	logger.PduSessLog.Infoln("In HandleSMPolicyUpdateNotify")
 	pcfPolicyDecision := request.SmPolicyDecision
 
-	if smContext.SMContextState != smf_context.SmStateActive {
+	if smContext.SMContextState != smfContext.SmStateActive {
 		// Wait till the state becomes SmStateActive again
 		// TODO: implement waiting in concurrent architecture
 		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be SmStateActive, but actual %s",
@@ -67,7 +73,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	return nil
 }
 
-func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
+func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// N1N2 Request towards AMF
 	n1n2Request := models.N1N2MessageTransferRequest{}
 
@@ -96,15 +102,15 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
 
 	// N1 Msg
-	if smNasBuf, err := smf_context.BuildGSMPDUSessionModificationCommand(smContext); err != nil {
-		logger.PduSessLog.Errorf("Build GSM BuildGSMPDUSessionModificationCommand failed: %s", err)
+	if smNasBuf, err := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err != nil {
+		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err)
 	} else {
 		n1n2Request.BinaryDataN1Message = smNasBuf
 		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 	}
 
 	// N2 Msg
-	n2Pdu, err := smf_context.BuildPDUSessionResourceModifyRequestTransfer(smContext)
+	n2Pdu, err := smfContext.BuildPDUSessionResourceModifyRequestTransfer(smContext)
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("SMPolicyUpdate, build PDUSession Resource Modify Request Transfer Error(%s)", err.Error())
 	} else {
@@ -112,25 +118,25 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smf_context.SMContext) error {
 		n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 	}
 
-	smContext.SubPduSessLog.Infof("QoS N1N2 transfer initiated")
+	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
 	rspData, _, err := smContext.
 		CommunicationClient.
 		N1N2MessageCollectionDocumentApi.
 		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
 	if err != nil {
-		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed, %v ", err.Error())
+		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed, %v", err.Error())
 		return err
 	}
 	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
-	smContext.SubPduSessLog.Infof("QoS N1N2 Transfer completed")
+	smContext.SubPduSessLog.Infoln("QoS N1N2 Transfer completed")
 	return nil
 }
 
 func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper.Response {
-	logger.PduSessLog.Traceln("[SMF] Handle NF Status Notify")
+	logger.PduSessLog.Debugln("[SMF] Handle NF Status Notify")
 
 	notificationData := request.Body.(models.NotificationData)
 
@@ -142,8 +148,11 @@ func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper
 	}
 }
 
+// NfSubscriptionStatusNotifyProcedure is handler method of notification procedure.
+// According to event type retrieved in the notification data, it performs some actions.
+// For example, if event type is deregistered, it deletes cached NF profile and performs an NF discovery.
 func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationData) *models.ProblemDetails {
-	logger.PduSessLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
+	logger.ProducerLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
 
 	if notificationData.Event == "" || notificationData.NfInstanceUri == "" {
 		problemDetails := &models.ProblemDetails{
@@ -155,11 +164,28 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	}
 	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
 
+	logger.ProducerLog.Infof("Received Subscription Status Notification from NRF: %v", notificationData.Event)
 	// If nrf caching is enabled, go ahead and delete the entry from the cache.
-	// This will force the smf to do nf discovery and get the updated nf profile from the nrf.
-	if smf_context.SMF_Self().EnableNrfCaching {
-		ok := nrfCache.RemoveNfProfileFromNrfCache(nfInstanceId)
-		logger.PduSessLog.Tracef("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
+	// This will force the PCF to do nf discovery and get the updated nf profile from the NRF.
+	if notificationData.Event == models.NotificationEventType_DEREGISTERED {
+		if smfContext.SMF_Self().EnableNrfCaching {
+			ok := NRFCacheRemoveNfProfileFromNrfCache(nfInstanceId)
+			logger.ProducerLog.Debugf("nfinstance %v deleted from cache: %v", nfInstanceId, ok)
+		}
+		if subscriptionId, ok := smfContext.SMF_Self().NfStatusSubscriptions.Load(nfInstanceId); ok {
+			logger.ConsumerLog.Debugf("SubscriptionId of nfInstance %v is %v", nfInstanceId, subscriptionId.(string))
+			problemDetails, err := SendRemoveSubscription(subscriptionId.(string))
+			if problemDetails != nil {
+				logger.ConsumerLog.Errorf("Remove NF Subscription Failed Problem[%+v]", problemDetails)
+			} else if err != nil {
+				logger.ConsumerLog.Errorf("Remove NF Subscription Error[%+v]", err)
+			} else {
+				logger.ConsumerLog.Infoln("Remove NF Subscription successful")
+				smfContext.SMF_Self().NfStatusSubscriptions.Delete(nfInstanceId)
+			}
+		} else {
+			logger.ProducerLog.Infof("nfinstance %v not found in map", nfInstanceId)
+		}
 	}
 
 	return nil

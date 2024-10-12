@@ -101,7 +101,7 @@ func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID context.Nod
 			delete(pendingUPF, trggierUPFIP)
 		} else {
 			logger.CtxLog.Warnln("In AddPDUSessionAnchorAndULCL case UpdatingRANAndIUPFUpLink")
-			logger.CtxLog.Warnln("UPF IP ", trggierUPFIP, " doesn't exist in pending UPF!")
+			logger.CtxLog.Warnf("UPF IP %s doesn't exist in pending UPF", trggierUPFIP)
 			return
 		}
 
@@ -118,7 +118,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 	bpMGR.PendingUPF = make(context.PendingUPF)
 	activatingPath := bpMGR.ActivatingPath
 	ulcl := bpMGR.ULCL
-	logger.PduSessLog.Infoln("In EstablishPSA2")
+	logger.PduSessLog.Infoln("in EstablishPSA2")
 	nodeAfterULCL := false
 	for curDataPathNode := activatingPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
 		if nodeAfterULCL {
@@ -127,7 +127,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 				Port: factory.DEFAULT_PFCP_PORT,
 			}
 
-			logger.PduSessLog.Traceln("Send to upf addr: ", addr.String())
+			logger.PduSessLog.Debugln("send to upf addr:", addr.String())
 
 			upLinkPDR := curDataPathNode.UpLinkTunnel.PDR["default"] // TODO: Iterate over all PDRs
 
@@ -159,11 +159,11 @@ func EstablishPSA2(smContext *context.SMContext) {
 	}
 
 	bpMGR.AddingPSAState = context.EstablishingNewPSA
-	logger.PduSessLog.Traceln("End of EstablishPSA2")
+	logger.PduSessLog.Debugln("end of EstablishPSA2")
 }
 
 func EstablishULCL(smContext *context.SMContext) {
-	logger.PduSessLog.Infoln("In EstablishULCL")
+	logger.PduSessLog.Infoln("in EstablishULCL")
 
 	bpMGR := smContext.BPManager
 	bpMGR.PendingUPF = make(context.PendingUPF)
@@ -181,28 +181,28 @@ func EstablishULCL(smContext *context.SMContext) {
 			FlowDespcription := flowdesc.NewIPFilterRule()
 			err := FlowDespcription.SetAction(flowdesc.Permit) // permit
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 			}
 			err = FlowDespcription.SetDirection(flowdesc.Out) // uplink
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 			}
 			err = FlowDespcription.SetDestinationIP(dest.DestinationIP)
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 			}
 			err = FlowDespcription.SetDestinationPorts(dest.DestinationPort)
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 			}
 			err = FlowDespcription.SetSourceIP(smContext.PDUAddress.Ip.To4().String())
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 			}
 
 			FlowDespcriptionStr, err := flowdesc.Encode(FlowDespcription)
 			if err != nil {
-				logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
+				logger.PduSessLog.Errorf("error occurs when encoding flow despcription: %s", err)
 			}
 
 			UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{
@@ -237,7 +237,7 @@ func EstablishULCL(smContext *context.SMContext) {
 }
 
 func UpdatePSA2DownLink(smContext *context.SMContext) {
-	logger.PduSessLog.Traceln("In UpdatePSA2DownLink")
+	logger.PduSessLog.Debugln("in UpdatePSA2DownLink")
 
 	bpMGR := smContext.BPManager
 	bpMGR.PendingUPF = make(context.PendingUPF)
@@ -279,7 +279,7 @@ func UpdatePSA2DownLink(smContext *context.SMContext) {
 }
 
 func EstablishRANTunnelInfo(smContext *context.SMContext) {
-	logger.PduSessLog.Traceln("In UpdatePSA2DownLink")
+	logger.PduSessLog.Debugln("in UpdatePSA2DownLink")
 
 	bpMGR := smContext.BPManager
 	activatingPath := bpMGR.ActivatingPath
@@ -340,28 +340,28 @@ func UpdateRANAndIUPFUpLink(smContext *context.SMContext) {
 				FlowDespcription := flowdesc.NewIPFilterRule()
 				err := FlowDespcription.SetAction(flowdesc.Permit) // permit
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 				}
 				err = FlowDespcription.SetDirection(flowdesc.Out) // uplink
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 				}
 				err = FlowDespcription.SetDestinationIP(dest.DestinationIP)
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 				}
 				err = FlowDespcription.SetDestinationPorts(dest.DestinationPort)
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 				}
 				err = FlowDespcription.SetSourceIP(smContext.PDUAddress.Ip.To4().String())
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when setting flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when setting flow despcription: %s", err)
 				}
 
 				FlowDespcriptionStr, err := flowdesc.Encode(FlowDespcription)
 				if err != nil {
-					logger.PduSessLog.Errorf("Error occurs when encoding flow despcription: %s\n", err)
+					logger.PduSessLog.Errorf("error occurs when encoding flow despcription: %s", err)
 				}
 
 				UPLinkPDR.PDI.SDFFilter = &context.SDFFilter{

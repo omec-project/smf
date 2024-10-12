@@ -46,9 +46,9 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		protocolConfigurationOptions := nasConvert.NewProtocolConfigurationOptions()
 		unmarshalErr := protocolConfigurationOptions.UnMarshal(EPCOContents)
 		if unmarshalErr != nil {
-			smContext.SubGsmLog.Errorf("Parsing PCO failed: %s", unmarshalErr)
+			smContext.SubGsmLog.Errorf("parsing PCO failed: %s", unmarshalErr)
 		}
-		smContext.SubGsmLog.Infoln("Protocol Configuration Options")
+		smContext.SubGsmLog.Infoln("protocol Configuration Options")
 		smContext.SubGsmLog.Infoln(protocolConfigurationOptions)
 
 		// Send MTU to UE always even if UE does not request it.
@@ -56,8 +56,8 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest = true
 
 		for _, container := range protocolConfigurationOptions.ProtocolOrContainerList {
-			smContext.SubGsmLog.Traceln("Container ID: ", container.ProtocolOrContainerID)
-			smContext.SubGsmLog.Traceln("Container Length: ", container.LengthOfContents)
+			smContext.SubGsmLog.Debugln("Container ID:", container.ProtocolOrContainerID)
+			smContext.SubGsmLog.Debugln("Container Length:", container.LengthOfContents)
 			switch container.ProtocolOrContainerID {
 			case nasMessage.PCSCFIPv6AddressRequestUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type PCSCFIPv6AddressRequestUL")

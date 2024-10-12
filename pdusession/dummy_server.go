@@ -5,19 +5,18 @@
 package pdusession
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/util/http2_util"
-	logger_util "github.com/omec-project/util/logger"
+	utilLogger "github.com/omec-project/util/logger"
 	"github.com/omec-project/util/path_util"
 )
 
 func DummyServer() {
-	router := logger_util.NewGinWithLogrus(logger.GinLog)
+	router := utilLogger.NewGinWithZap(logger.GinLog)
 
 	AddService(router)
 
@@ -34,6 +33,6 @@ func DummyServer() {
 	}
 
 	if err := server.ListenAndServeTLS(smfPemPath, smfkeyPath); err != nil {
-		log.Fatal(err)
+		logger.PduSessLog.Fatalln(err)
 	}
 }

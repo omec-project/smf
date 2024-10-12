@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	mi "github.com/omec-project/metricfunc/pkg/metricinfo"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -28,11 +27,12 @@ import (
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
+	mi "github.com/omec-project/util/metricinfo"
 )
 
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
-	logger.PduSessLog.Info("Receive Create SM Context Request")
+	logger.PduSessLog.Infoln("receive create SM Context Request")
 	var request models.PostSmContextsRequest
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
 	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
