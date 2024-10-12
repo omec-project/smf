@@ -317,23 +317,25 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 }
 
-func GetSeidByRefInDB(ref string) (seid uint64) {
+func GetSeidByRefInDB(ref string) (seid uint64, err error) {
 	if SMF_Self().EnableScaling {
-		result, err := SMF_Self().RedisClient.Get(ref).Result()
-		if err != nil {
-			logger.CtxLog.Warnln("GetSeidByRefInDB: Error in fetching from redis: ", err, "ref: ", ref)
-			return
+		result, getOneErr := SMF_Self().RedisClient.Get(ref).Result()
+		if getOneErr != nil {
+			logger.CtxLog.Warnln("GetSeidByRefInDB: Error in fetching from redis: ", getOneErr, "ref: ", ref)
+			return 0, getOneErr
 		}
 		resultJson := &SeidSmContextRef{}
 		err = json.Unmarshal([]byte(result), resultJson)
 		if err != nil {
 			logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
+			return 0, err
 		}
 
 		seidStr := resultJson.Seid
 		seid, err = strconv.ParseUint(seidStr, 16, 64)
 		if err != nil {
 			logger.DataRepoLog.Errorf("seid parseUint error: %v", err)
+			return 0, err
 		}
 	} else {
 		filter := bson.M{}
@@ -342,9 +344,9 @@ func GetSeidByRefInDB(ref string) (seid uint64) {
 		result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(RefSeidCol, filter)
 		if getOneErr != nil {
 			logger.DataRepoLog.Warnln(getOneErr)
+			return 0, err
 		}
 		seidStr := result["seid"].(string)
-		var err error
 		seid, err = strconv.ParseUint(seidStr, 16, 64)
 		if err != nil {
 			logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
@@ -491,14 +493,16 @@ func DeleteSmContextInDBByRef(ref string) {
 			logger.DataRepoLog.Warnln(delOneErr)
 		}
 	}
-
 }
 
 // ClearSMContextInMem Delete SMContext in smContextPool and seidSMContextMap, for test
 func ClearSMContextInMem(ref string) {
 	smContext := GetSMContext(ref)
 	smContextPool.Delete(ref)
-	seid := GetSeidByRefInDB(ref)
+	seid, err := GetSeidByRefInDB(ref)
+	if err != nil {
+		logger.DataRepoLog.Warnln("ClearSMContextInMem: Error in fetching seid from db: ", err, "ref: ", ref)
+	}
 	seidSMContextMap.Delete(seid)
 	canonicalRef.Delete(canonicalName(smContext.Identifier, smContext.PDUSessionID))
 }
@@ -576,7 +580,6 @@ func ProcessSeidSmContextDbChannel() {
 		} else {
 			logger.DataRepoLog.Errorln("Error in marshalling item.Seid: ", item)
 		}
-
 	}
 }
 
