@@ -266,7 +266,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.PodIp = os.Getenv("POD_IP")
 	SetupNFProfile(config)
-	if smfContext.EnableScaling == true {
+	if smfContext.EnableScaling {
 		smfContext.RedisClient = redis.NewClient(&redis.Options{
 			Addr:     "redis:6379",
 			Password: "",
