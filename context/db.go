@@ -23,11 +23,13 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-var SmContextDbChannel chan *SMContext
-var SeidSmContextDbChannel chan SeidSmContextRef
-var DeleteSmContextSeidChannel chan uint64
-var DeleteSmContextRefChannel chan string
-var NodeIdDbChannel chan *DataPathNodeInDB
+var (
+	SeidSmContextDbChannel     chan SeidSmContextRef
+	DeleteSmContextSeidChannel chan uint64
+	DeleteSmContextRefChannel  chan string
+	NodeIdDbChannel            chan *DataPathNodeInDB
+	SmContextDbChannel         chan *SMContext
+)
 
 const (
 	SmContextDataColl = "smf.data.smContext"
