@@ -352,7 +352,7 @@ func GetSeidByRefInDB(ref string) (seid uint64, err error) {
 			logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
 		}
 	}
-	return
+	return seid, err
 }
 
 // GetSMContextByRefInDB GetSMContext By Ref from DB
