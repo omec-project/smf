@@ -12,7 +12,6 @@ import (
 	"strconv"
 
 	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
@@ -154,22 +153,7 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	var teid uint32
-	var teidErr error
-
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		var tmp int32
-		tmp, teidErr = smfContext.DrsmCtxts.TeidPool.AllocateInt32ID()
-		teid = uint32(tmp)
-	} else {
-		teid, teidErr = destUPF.GenerateTEID()
-	}
-	if teidErr != nil {
-		logger.CtxLog.Errorf("generate uplink TEID fail: %s", teidErr)
-		return teidErr
-	} else {
-		node.UpLinkTunnel.TEID = teid
-	}
+	node.UpLinkTunnel.TEID = smContext.Tunnel.FTEID
 
 	return nil
 }
@@ -213,24 +197,7 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	// Generate TEID for Tunnel
-	var teid uint32
-	var teidErr error
-
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		var tmp int32
-		tmp, teidErr = smfContext.DrsmCtxts.TeidPool.AllocateInt32ID()
-		teid = uint32(tmp)
-	} else {
-		teid, teidErr = destUPF.GenerateTEID()
-	}
-	if teidErr != nil {
-		logger.CtxLog.Errorf("generate downlink TEID fail: %s", teidErr)
-		return teidErr
-	} else {
-		node.DownLinkTunnel.TEID = teid
-	}
-
+	node.UpLinkTunnel.TEID = smContext.Tunnel.FTEID
 	return nil
 }
 
@@ -274,17 +241,6 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 			}
 		}
 	}
-
-	teid := node.DownLinkTunnel.TEID
-	var err error
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		err = smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
-	} else {
-		node.UPF.teidGenerator.FreeID(int64(teid))
-	}
-	if err != nil {
-		logger.CtxLog.Errorln("deactivated UpLinkTunnel", err)
-	}
 	node.DownLinkTunnel = &GTPTunnel{}
 }
 
@@ -327,17 +283,6 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 				}
 			}
 		}
-	}
-
-	teid := node.DownLinkTunnel.TEID
-	var err error
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		err = smfContext.DrsmCtxts.TeidPool.ReleaseInt32ID(int32(teid))
-	} else {
-		node.UPF.teidGenerator.FreeID(int64(teid))
-	}
-	if err != nil {
-		logger.CtxLog.Errorln("deactivated DownLinkTunnel", err)
 	}
 	node.DownLinkTunnel = &GTPTunnel{}
 }
@@ -534,7 +479,6 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 
 	curULTunnel := dpNode.UpLinkTunnel
 	for name, ULPDR := range curULTunnel.PDR {
-		ULDestUPF := curULTunnel.DestEndPoint.UPF
 		ULPDR.QER = append(ULPDR.QER, defQER)
 
 		// Set Default precedence
@@ -542,29 +486,13 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 			ULPDR.Precedence = defPrecedence
 		}
 
-		var iface *UPFInterfaceInfo
-		if dpNode.IsANUPF() {
-			iface = ULDestUPF.GetInterface(models.UpInterfaceType_N3, smContext.Dnn)
-		} else {
-			iface = ULDestUPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
+		ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
+		ULPDR.PDI.LocalFTeid = &FTEID{
+			Ch:   true,
+			Teid: curULTunnel.TEID,
 		}
-
-		if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-			logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)
-			return err
-		} else {
-			ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
-			ULPDR.PDI.LocalFTeid = &FTEID{
-				V4:          true,
-				Ipv4Address: upIP,
-				Teid:        curULTunnel.TEID,
-			}
-
-			ULPDR.PDI.UEIPAddress = &ueIpAddr
-
-			ULPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
-		}
-
+		ULPDR.PDI.UEIPAddress = &ueIpAddr
+		ULPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
 		ULPDR.OuterHeaderRemoval = &OuterHeaderRemoval{
 			OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
 		}
@@ -591,7 +519,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 
 		if nextULDest := dpNode.Next(); nextULDest != nil {
 			nextULTunnel := nextULDest.UpLinkTunnel
-			iface = nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
+			iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 				logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)

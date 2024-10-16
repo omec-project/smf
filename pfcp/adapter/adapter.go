@@ -4,12 +4,10 @@
 package adapter
 
 import (
-	"net"
 	"sync"
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/pfcp/ies"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -100,15 +98,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		return
 	}
 
-	var userPlaneIPResourceInformation *context.UserPlaneIPResourceInformation
-	if len(rsp.UserPlaneIPResourceInformation) != 0 {
-		userPlaneIPResourceInformation, err = ies.UnmarshalUEIPInformationBinary(rsp.UserPlaneIPResourceInformation[0].Payload)
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to get UserPlaneIPResourceInformation: %+v", err)
-			return
-		}
-	}
-
 	if causeValue == ie.CauseRequestAccepted {
 		logger.PfcpLog.Infof("handle PFCP Association Setup Response with NodeID[%s]", nodeID.ResolveNodeIdToIp().String())
 
@@ -116,15 +105,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		if upf == nil {
 			logger.PfcpLog.Errorf("can not find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
-		}
-
-		// validate if DNNs served by UPF matches with the one provided by UPF
-		if userPlaneIPResourceInformation != nil {
-			upfProvidedDnn := string(userPlaneIPResourceInformation.NetworkInstance)
-			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured", upfProvidedDnn)
-				return
-			}
 		}
 
 		upf.UPFStatus = context.AssociatedSetUpSuccess
@@ -141,31 +121,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 			RecoveryTimeStamp: recoveryTimestamp,
 		}
 		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
-
-		if rsp.UserPlaneIPResourceInformation != nil {
-			upf.UPIPInfo = *userPlaneIPResourceInformation
-
-			if upf.UPIPInfo.Assosi && upf.UPIPInfo.Assoni && upf.UPIPInfo.SourceInterface == ie.SrcInterfaceAccess &&
-				upf.UPIPInfo.V4 && !upf.UPIPInfo.Ipv4Address.Equal(net.IPv4zero) {
-				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]",
-					upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.Ipv4Address,
-					string(upf.UPIPInfo.NetworkInstance), upf.UPIPInfo.TeidRange)
-
-				// reset the N3 interface of UPF
-				upf.N3Interfaces = make([]context.UPFInterfaceInfo, 0)
-
-				// Insert N3 interface info from UPF
-				n3Interface := context.UPFInterfaceInfo{}
-				n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
-				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
-				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
-			}
-
-			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
-				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)
-		} else {
-			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
-		}
 	}
 }
 
