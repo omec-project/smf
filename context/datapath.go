@@ -552,7 +552,6 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 
 	for name, DLPDR := range curDLTunnel.PDR {
 		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v]", name, DLPDR)
-		DLDestUPF := curDLTunnel.DestEndPoint.UPF
 		DLPDR.QER = append(DLPDR.QER, defQER)
 
 		if DLPDR.Precedence == 0 {
@@ -566,20 +565,13 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 				OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
 			}
 
-			iface = DLDestUPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
-			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
-				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v", name, err)
-				return err
-			} else {
-				DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
-				DLPDR.PDI.LocalFTeid = &FTEID{
-					V4:          true,
-					Ipv4Address: upIP,
-					Teid:        curDLTunnel.TEID,
-				}
-
-				DLPDR.PDI.UEIPAddress = &ueIpAddr
+			DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
+			DLPDR.PDI.LocalFTeid = &FTEID{
+				Ch:   true,
+				Teid: curDLTunnel.TEID,
 			}
+
+			DLPDR.PDI.UEIPAddress = &ueIpAddr
 		}
 
 		DLFAR := DLPDR.FAR
