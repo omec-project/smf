@@ -35,14 +35,14 @@ func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {
 	return nil
 }
 
-func FindFTEID(createdPDRIEs []*ie.IE) (uint32, error) {
+func FindFTEID(createdPDRIEs []*ie.IE) (*ie.FTEIDFields, error) {
 	for _, createdPDRIE := range createdPDRIEs {
 		teid, err := createdPDRIE.FTEID()
 		if err == nil {
-			return teid.TEID, nil
+			return teid, nil
 		}
 	}
-	return 0, fmt.Errorf("TEID not found")
+	return nil, fmt.Errorf("FTEID not found in CreatedPDR")
 }
 
 func HandlePfcpHeartbeatRequest(msg *udp.Message) {
@@ -415,28 +415,41 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
 	}
 
-	if rsp.CreatedPDR != nil {
-		// UE IP-Addr(only v4 supported)
-		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
-		smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
+	// Get N3 interface UPF
+	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-		// Release previous locally allocated UE IP-Addr
-		err := smContext.ReleaseUeIpAddr()
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to release UE IP-Addr: %+v", err)
+	if rsp.CreatedPDR != nil {
+		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
+		if ueIPAddress != nil {
+			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
+			// Release previous locally allocated UE IP-Addr
+			err := smContext.ReleaseUeIpAddr()
+			if err != nil {
+				logger.PfcpLog.Errorf("failed to release UE IP-Addr: %+v", err)
+			}
+
+			// Update with one received from UPF
+			smContext.PDUAddress.Ip = ueIPAddress
+			smContext.PDUAddress.UpfProvided = true
 		}
 
-		// Update with one received from UPF
-		smContext.PDUAddress.Ip = ueIPAddress
-		smContext.PDUAddress.UpfProvided = true
-
 		// Store F-TEID created by UPF
-		teid, err := FindFTEID(rsp.CreatedPDR)
+		fteid, err := FindFTEID(rsp.CreatedPDR)
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to parse TEID IE: %+v", err)
 			return
 		}
-		smContext.Tunnel.FTEID = teid
+		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		ANUPF.UpLinkTunnel.TEID = fteid.TEID
+		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
+		if upf == nil {
+			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+			return
+		}
+		upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
+		n3Interface := smf_context.UPFInterfaceInfo{}
+		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, fteid.IPv4Address)
+		upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
 	}
 	smContext.SMLock.Unlock()
 
@@ -450,9 +463,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 	rspNodeID := smf_context.NewNodeID(rspNodeIDStr)
-
-	// Get N3 interface UPF
-	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		// UPF Accept

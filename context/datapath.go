@@ -153,8 +153,6 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	node.UpLinkTunnel.TEID = smContext.Tunnel.FTEID
-
 	return nil
 }
 
@@ -197,7 +195,6 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	node.DownLinkTunnel.TEID = smContext.Tunnel.FTEID
 	return nil
 }
 
@@ -488,8 +485,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 
 		ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
 		ULPDR.PDI.LocalFTeid = &FTEID{
-			Ch:   true,
-			Teid: curULTunnel.TEID,
+			Ch: true,
 		}
 		ULPDR.PDI.UEIPAddress = &ueIpAddr
 		ULPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
@@ -558,21 +554,15 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 			DLPDR.Precedence = defPrecedence
 		}
 
-		if dpNode.IsAnchorUPF() {
-			DLPDR.PDI.UEIPAddress = &ueIpAddr
-		} else {
+		if !dpNode.IsAnchorUPF() {
 			DLPDR.OuterHeaderRemoval = &OuterHeaderRemoval{
 				OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
 			}
-
-			DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
-			DLPDR.PDI.LocalFTeid = &FTEID{
-				Ch:   true,
-				Teid: curDLTunnel.TEID,
-			}
-
-			DLPDR.PDI.UEIPAddress = &ueIpAddr
 		}
+
+		DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
+		DLPDR.PDI.UEIPAddress = &ueIpAddr
+		DLPDR.PDI.UEIPAddress = &ueIpAddr
 
 		DLFAR := DLPDR.FAR
 
