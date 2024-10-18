@@ -197,7 +197,7 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 		return err
 	}
 
-	node.UpLinkTunnel.TEID = smContext.Tunnel.FTEID
+	node.DownLinkTunnel.TEID = smContext.Tunnel.FTEID
 	return nil
 }
 
