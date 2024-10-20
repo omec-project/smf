@@ -23,6 +23,14 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+var (
+	SeidSmContextDbChannel     chan SeidSmContextRef
+	DeleteSmContextSeidChannel chan uint64
+	DeleteSmContextRefChannel  chan string
+	NodeIdDbChannel            chan *DataPathNodeInDB
+	SmContextDbChannel         chan *SMContext
+)
+
 const (
 	SmContextDataColl = "smf.data.smContext"
 	// TransactionDataCol = "smf.data.transaction"
@@ -36,6 +44,12 @@ const (
 func SetupSmfCollection() {
 	dbName := "sdcore_smf"
 	dbUrl := "mongodb://mongodb-arbiter-headless"
+	SmContextDbChannel = make(chan *SMContext, 26348)
+	SeidSmContextDbChannel = make(chan SeidSmContextRef, 26348)
+	DeleteSmContextSeidChannel = make(chan uint64, 26348)
+	DeleteSmContextRefChannel = make(chan string, 26348)
+	NodeIdDbChannel = make(chan *DataPathNodeInDB, 26348)
+	numOfWorkerThreads := 256
 
 	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
 		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url
@@ -67,6 +81,14 @@ func SetupSmfCollection() {
 	setEnvErr := os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
 	if setEnvErr != nil {
 		logger.DataRepoLog.Errorln("setting SMF_COUNT env variable is failed")
+	}
+
+	for i := 1; i < numOfWorkerThreads; i++ {
+		go ProcessSmContextDbChannel()
+		go ProcessSeidSmContextDbChannel()
+		go ProcessDeleteSmContextSeidChannel()
+		go ProcessDeleteSmContextRefChannel()
+		go ProcessNodeIdDbChannel()
 	}
 }
 
@@ -297,43 +319,81 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 }
 
-func GetSeidByRefInDB(ref string) (seid uint64) {
-	filter := bson.M{}
-	filter["ref"] = ref
+func GetSeidByRefInDB(ref string) (seid uint64, err error) {
+	if SMF_Self().EnableScaling {
+		result, getOneErr := SMF_Self().RedisClient.Get(ref).Result()
+		if getOneErr != nil {
+			logger.CtxLog.Warnln("GetSeidByRefInDB: Error in fetching from redis: ", getOneErr, "ref: ", ref)
+			return 0, getOneErr
+		}
+		resultJson := &SeidSmContextRef{}
+		err = json.Unmarshal([]byte(result), resultJson)
+		if err != nil {
+			logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
+			return 0, err
+		}
 
-	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(RefSeidCol, filter)
-	if getOneErr != nil {
-		logger.DataRepoLog.Warnln(getOneErr)
+		seidStr := resultJson.Seid
+		seid, err = strconv.ParseUint(seidStr, 16, 64)
+		if err != nil {
+			logger.DataRepoLog.Errorf("seid parseUint error: %v", err)
+			return 0, err
+		}
+	} else {
+		filter := bson.M{}
+		filter["ref"] = ref
+
+		result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(RefSeidCol, filter)
+		if getOneErr != nil {
+			logger.DataRepoLog.Warnln(getOneErr)
+			return 0, err
+		}
+		seidStr := result["seid"].(string)
+		seid, err = strconv.ParseUint(seidStr, 16, 64)
+		if err != nil {
+			logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
+		}
 	}
-	seidStr := result["seid"].(string)
-	seid, err := strconv.ParseUint(seidStr, 16, 64)
-	if err != nil {
-		logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
-	}
-	return
+	return seid, err
 }
 
 // GetSMContextByRefInDB GetSMContext By Ref from DB
 func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	logger.DataRepoLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
 	smContext = &SMContext{}
-	filter := bson.M{}
-	filter["ref"] = ref
 
-	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SmContextDataColl, filter)
-	if getOneErr != nil {
-		logger.DataRepoLog.Warnln(getOneErr)
-	}
-
-	if result != nil {
-		err := json.Unmarshal(mapToByte(result), smContext)
+	if SMF_Self().EnableScaling {
+		result, err := SMF_Self().RedisClient.Get(ref).Result()
 		if err != nil {
-			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with ref:", ref)
 			return nil
 		}
+		if result != "" {
+			err := json.Unmarshal([]byte(result), smContext)
+			if err != nil {
+				logger.CtxLog.Errorf("smContext unmarshall error: %v", err)
+				return nil
+			}
+		}
 	} else {
-		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
-		return nil
+		filter := bson.M{}
+		filter["ref"] = ref
+
+		result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SmContextDataColl, filter)
+		if getOneErr != nil {
+			logger.DataRepoLog.Warnln(getOneErr)
+		}
+
+		if result != nil {
+			err := json.Unmarshal(mapToByte(result), smContext)
+			if err != nil {
+				logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
+				return nil
+			}
+		} else {
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with ref:", ref)
+			return nil
+		}
 	}
 
 	return smContext
@@ -342,20 +402,36 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 // GetSMContextBySEIDInDB GetSMContext By SEID from DB
 func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	seid := SeidConv(seidUint)
-	filter := bson.M{}
-	filter["seid"] = seid
-
-	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
-	if getOneErr != nil {
-		logger.DataRepoLog.Warnln(getOneErr)
-	}
-	if result != nil {
-		ref := result["ref"].(string)
-		logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string:", ref)
+	var ref string
+	if SMF_Self().EnableScaling {
+		result, err := SMF_Self().RedisClient.Get(seid).Result()
+		if err != nil {
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with seid:", seid)
+			return nil
+		}
+		resultJson := &SeidSmContextRef{}
+		err = json.Unmarshal([]byte(result), resultJson)
+		if err != nil {
+			logger.DataRepoLog.Warnf("SeidSmContextRef unmarshall error:", err)
+		}
+		ref = resultJson.Ref
 		return GetSMContext(ref)
 	} else {
-		logger.DataRepoLog.Warnf("SmContext doesn't exist with seid: %v", seid)
-		return nil
+		filter := bson.M{}
+		filter["seid"] = seid
+
+		result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
+		if getOneErr != nil {
+			logger.DataRepoLog.Warnln(getOneErr)
+		}
+		if result != nil {
+			ref = result["ref"].(string)
+			logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string:", ref)
+			return GetSMContext(ref)
+		} else {
+			logger.DataRepoLog.Warnf("SmContext doesn't exist with seid: %v", seid)
+			return nil
+		}
 	}
 }
 
@@ -363,35 +439,61 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
-	filter := bson.M{"seid": seid}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
-
-	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
-	if getOneErr != nil {
-		logger.DataRepoLog.Warnln(getOneErr)
-	}
-	if result != nil {
-		ref := result["ref"].(string)
-
-		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
-		if delOneErr != nil {
-			logger.DataRepoLog.Warnln(delOneErr)
+	if SMF_Self().EnableScaling {
+		result, err := SMF_Self().RedisClient.Get(seid).Result()
+		if err != nil {
+			logger.DataRepoLog.Warnln("DeleteSmContextInDBBySEID: error in fetching from redis: ", err, "seid: ", seid)
+			return
+		}
+		resultJson := &SeidSmContextRef{}
+		err = json.Unmarshal([]byte(result), resultJson)
+		if err != nil {
+			logger.DataRepoLog.Warnln("DeleteSmContextInDBBySEID: unmarshall error: ", err)
+		}
+		ref := resultJson.Ref
+		err = SMF_Self().RedisClient.Del(seid).Err()
+		if err != nil {
+			logger.DataRepoLog.Warnln("DeleteSmContextInDBBySEID: error in deleting in redis: ", err, "Seid: ", seid)
 		}
 		DeleteSmContextInDBByRef(ref)
 	} else {
-		logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v", seid)
+		filter := bson.M{"seid": seid}
+		logger.DataRepoLog.Infof("filter: %+v", filter)
+
+		result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
+		if getOneErr != nil {
+			logger.DataRepoLog.Warnln(getOneErr)
+		}
+		if result != nil {
+			ref := result["ref"].(string)
+
+			delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
+			if delOneErr != nil {
+				logger.DataRepoLog.Warnln(delOneErr)
+			}
+			DeleteSmContextInDBByRef(ref)
+		} else {
+			logger.DataRepoLog.Infof("DB entry doesn't exist with seid: %v\n", seid)
+		}
 	}
 }
 
 // DeleteSmContextInDBByRef Delete SMContext By ref from DB
 func DeleteSmContextInDBByRef(ref string) {
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB w ref")
-	filter := bson.M{"ref": ref}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
+	if SMF_Self().EnableScaling {
+		err := SMF_Self().RedisClient.Del(ref).Err()
+		if err != nil {
+			logger.DataRepoLog.Warnln("DeleteSmContextInDBByRef: error in deleting in redis: ", err, "ref: ", ref)
+		}
+	} else {
+		filter := bson.M{"ref": ref}
+		logger.DataRepoLog.Infof("filter: %+v", filter)
 
-	delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)
-	if delOneErr != nil {
-		logger.DataRepoLog.Warnln(delOneErr)
+		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)
+		if delOneErr != nil {
+			logger.DataRepoLog.Warnln(delOneErr)
+		}
 	}
 }
 
@@ -399,7 +501,10 @@ func DeleteSmContextInDBByRef(ref string) {
 func ClearSMContextInMem(ref string) {
 	smContext := GetSMContext(ref)
 	smContextPool.Delete(ref)
-	seid := GetSeidByRefInDB(ref)
+	seid, err := GetSeidByRefInDB(ref)
+	if err != nil {
+		logger.DataRepoLog.Warnln("ClearSMContextInMem: Error in fetching seid from db: ", err, "ref: ", ref)
+	}
 	seidSMContextMap.Delete(seid)
 	canonicalRef.Delete(canonicalName(smContext.Identifier, smContext.PDUSessionID))
 }
@@ -441,4 +546,62 @@ func GetLocalIP() string {
 		}
 	}
 	return ""
+}
+
+func ProcessSmContextDbChannel() {
+	for {
+		rcvdSmContext := <-SmContextDbChannel
+		rcvdSmContext.SMLock.Lock()
+		smContextJson, err := json.Marshal(rcvdSmContext)
+		rcvdSmContext.SMLock.Unlock()
+		if err == nil {
+			err = SMF_Self().RedisClient.Set(rcvdSmContext.Ref, smContextJson, 0).Err()
+			if err != nil {
+				logger.DataRepoLog.Warnln("Error in storing in redis: ", err, "rcvdSmContext.Ref: ", rcvdSmContext.Ref)
+			}
+		} else {
+			logger.DataRepoLog.Errorln("Error in marshalling rcvdSmContext.Ref: ", rcvdSmContext.Ref, " err: ", err)
+		}
+	}
+}
+
+func ProcessSeidSmContextDbChannel() {
+	for {
+		item := <-SeidSmContextDbChannel
+		itemJson, err := json.Marshal(item)
+		if err == nil {
+			err = SMF_Self().RedisClient.Set(item.Seid, itemJson, 0).Err()
+			if err != nil {
+				logger.DataRepoLog.Warnln("Error in storing in redis: ", err, "item.Seid: ", item.Seid)
+			}
+
+			err = SMF_Self().RedisClient.Set(item.Ref, itemJson, 0).Err()
+			if err != nil {
+				logger.DataRepoLog.Warnln("Error in storing in redis: ", err, "item.Ref: ", item.Ref)
+			}
+		} else {
+			logger.DataRepoLog.Errorln("Error in marshalling item.Seid: ", item)
+		}
+	}
+}
+
+func ProcessDeleteSmContextSeidChannel() {
+	for {
+		seid := <-DeleteSmContextSeidChannel
+		DeleteSmContextInDBBySEID(seid)
+	}
+}
+
+func ProcessDeleteSmContextRefChannel() {
+	for {
+		ref := <-DeleteSmContextRefChannel
+		DeleteSmContextInDBByRef(ref)
+	}
+}
+
+func ProcessNodeIdDbChannel() {
+	for {
+		nodeInDB := <-NodeIdDbChannel
+		StoreNodeInDB(nodeInDB)
+	}
 }

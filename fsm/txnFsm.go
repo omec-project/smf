@@ -259,7 +259,8 @@ func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, e
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		smf_context.StoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
+		// smf_context.StoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
+		smf_context.SmContextDbChannel <- txn.Ctxt.(*smf_context.SMContext)
 		// clear sm context in memory for test
 		// smf_context.ClearSMContextInMem(txn.Ctxt.(*smf_context.SMContext).Ref)
 	}
