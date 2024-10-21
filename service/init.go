@@ -263,10 +263,9 @@ func (smf *SMF) Start() {
 	context.InitSMFUERouting(&factory.UERoutingConfig)
 
 	// Wait for additional/updated config from config pod
-	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-	if roc == "true" {
-		logger.InitLog.Infoln("configuration is managed by Config Pod")
-		logger.InitLog.Infoln("waiting for initial configuration from config pod")
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infof("configuration is managed by Config Pod")
+		logger.InitLog.Infof("waiting for initial configuration from config pod")
 
 		// Main thread should be blocked for config update from ROC
 		// Future config update from ROC can be handled via background go-routine.
