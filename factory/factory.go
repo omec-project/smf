@@ -65,7 +65,7 @@ func InitConfigFactory(f string) error {
 }
 
 // updateConfig connects the config pod GRPC server and subscribes the config changes
-// then updates NRF configuration
+// then updates SMF configuration
 func updateConfig(client grpcClient.ConfClient) {
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
 	var err error
