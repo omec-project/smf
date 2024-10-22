@@ -86,10 +86,7 @@ type OneInstance struct {
 
 var nrfRegInProgress OneInstance
 
-var initLog *zap.SugaredLogger
-
 func init() {
-	initLog = logger.InitLog
 	nrfRegInProgress = OneInstance{}
 }
 
@@ -137,7 +134,7 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 		go func() {
 			err := http.ListenAndServe(addr, nil)
 			if err != nil {
-				initLog.Warnf("start profiling server failed: %+v", err)
+				logger.InitLog.Warnf("start profiling server failed: %+v", err)
 			}
 		}()
 	}
@@ -147,22 +144,22 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 
 func (smf *SMF) setLogLevel() {
 	if factory.SmfConfig.Logger == nil {
-		initLog.Warnln("SMF config without log level setting!!!")
+		logger.InitLog.Warnln("SMF config without log level setting")
 		return
 	}
 
 	if factory.SmfConfig.Logger.SMF != nil {
 		if factory.SmfConfig.Logger.SMF.DebugLevel != "" {
 			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.SMF.DebugLevel); err != nil {
-				initLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
+				logger.InitLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.SMF.DebugLevel)
 				logger.SetLogLevel(zap.InfoLevel)
 			} else {
-				initLog.Infof("SMF Log level is set to [%s] level", level)
+				logger.InitLog.Infof("SMF Log level is set to [%s] level", level)
 				logger.SetLogLevel(level)
 			}
 		} else {
-			initLog.Infoln("SMF Log level is default set to [info] level")
+			logger.InitLog.Infoln("SMF Log level is default set to [info] level")
 			logger.SetLogLevel(zap.InfoLevel)
 		}
 	}
@@ -245,7 +242,7 @@ func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (smf *SMF) Start() {
-	initLog.Infoln("SMF app initialising...")
+	logger.InitLog.Infoln("SMF app initialising")
 
 	// Initialise channel to stop SMF
 	signalChannel := make(chan os.Signal, 1)
@@ -268,19 +265,19 @@ func (smf *SMF) Start() {
 	// Wait for additional/updated config from config pod
 	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
 	if roc == "true" {
-		initLog.Infof("configuration is managed by Config Pod")
-		initLog.Infof("waiting for initial configuration from config pod")
+		logger.InitLog.Infoln("configuration is managed by Config Pod")
+		logger.InitLog.Infoln("waiting for initial configuration from config pod")
 
 		// Main thread should be blocked for config update from ROC
 		// Future config update from ROC can be handled via background go-routine.
 		if <-factory.ConfigPodTrigger {
-			initLog.Infof("minimum configuration from config pod available")
+			logger.InitLog.Infoln("minimum configuration from config pod available")
 			context.ProcessConfigUpdate()
 		}
 
 		// Trigger background goroutine to handle further config updates
 		go func() {
-			initLog.Infof("dynamic config update task initialised")
+			logger.InitLog.Infoln("dynamic config update task initialised")
 			for {
 				if <-factory.ConfigPodTrigger {
 					if context.ProcessConfigUpdate() {
@@ -291,14 +288,14 @@ func (smf *SMF) Start() {
 			}
 		}()
 	} else {
-		initLog.Infof("configuration is managed by Helm")
+		logger.InitLog.Infoln("configuration is managed by Helm")
 	}
 
 	// Send NRF Registration
 	smf.SendNrfRegistration()
 
 	if smfCtxt.EnableNrfCaching {
-		initLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
+		logger.InitLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
@@ -315,19 +312,19 @@ func (smf *SMF) Start() {
 	}
 
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		initLog.Infof("SetupSmfCollection")
+		logger.InitLog.Infoln("SetupSmfCollection")
 		context.SetupSmfCollection()
 		// Init DRSM for unique FSEID/FTEID/IP-Addr
 		if err := smfCtxt.InitDrsm(); err != nil {
-			initLog.Errorf("initialise drsm failed, %v ", err.Error())
+			logger.InitLog.Errorf("initialise drsm failed, %v ", err.Error())
 		}
 	} else {
-		initLog.Infof("DB is disabled, not initialising drsm")
+		logger.InitLog.Infoln("DB is disabled, not initialising drsm")
 	}
 
 	// Init Kafka stream
 	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
-		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
+		logger.InitLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
 
 	udp.Run(pfcp.Dispatch)
@@ -357,12 +354,12 @@ func (smf *SMF) Start() {
 	server, err := http2_util.NewServer(HTTPAddr, util.SmfLogPath, router)
 
 	if server == nil {
-		initLog.Error("initialize HTTP server failed:", err)
+		logger.InitLog.Errorln("initialize HTTP server failed:", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnln("initialize HTTP server:", err)
+		logger.InitLog.Warnln("initialize HTTP server:", err)
 	}
 
 	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
@@ -373,12 +370,12 @@ func (smf *SMF) Start() {
 	}
 
 	if err != nil {
-		initLog.Fatalln("HTTP server setup failed:", err)
+		logger.InitLog.Fatalln("HTTP server setup failed:", err)
 	}
 }
 
 func (smf *SMF) Terminate() {
-	logger.InitLog.Infoln("terminating SMF...")
+	logger.InitLog.Infoln("terminating SMF")
 	// deregister with NRF
 	problemDetails, err := consumer.SendDeregisterNFInstance()
 	if problemDetails != nil {
@@ -419,7 +416,7 @@ func UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer == nil {
-		initLog.Warnf("keepAlive timer has been stopped")
+		logger.InitLog.Warnln("keepAlive timer has been stopped")
 		return
 	}
 	// setting default value 30 sec
@@ -433,21 +430,21 @@ func UpdateNF() {
 	patchItem = append(patchItem, pitem)
 	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
 	if problemDetails != nil {
-		initLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
+		logger.InitLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
 		// 5xx response from NRF, 404 Not Found, 400 Bad Request
 		if (problemDetails.Status/100) == 5 ||
 			problemDetails.Status == 404 || problemDetails.Status == 400 {
 			// register with NRF full profile
 			nfProfile, err = consumer.SendNFRegistration()
 			if err != nil {
-				initLog.Errorf("error [%v] when sending NF registration", err)
+				logger.InitLog.Errorf("error [%v] when sending NF registration", err)
 			}
 		}
 	} else if err != nil {
-		initLog.Errorf("SMF update to NRF Error[%s]", err.Error())
+		logger.InitLog.Errorf("SMF update to NRF Error[%s]", err.Error())
 		nfProfile, err = consumer.SendNFRegistration()
 		if err != nil {
-			initLog.Errorf("error [%v] when sending NF registration", err)
+			logger.InitLog.Errorf("error [%v] when sending NF registration", err)
 		}
 	}
 
