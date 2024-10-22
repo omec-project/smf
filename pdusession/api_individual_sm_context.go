@@ -30,21 +30,30 @@ import (
 	mi "github.com/omec-project/util/metricinfo"
 )
 
+var (
+	multipartRelated string = "multipart/related"
+	applicationJson  string = "application/json"
+)
+
 // HTTPReleaseSmContext - Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
+	var err error
 	logger.PduSessLog.Infoln("receive Release SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
-	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
+	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
+	if err != nil {
+		logger.PduSessLog.Errorf("error: %v", err)
+		return
+	}
 
 	var request models.ReleaseSmContextRequest
 	request.JsonData = new(models.SmContextReleaseData)
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
-	var err error
 	switch s[0] {
-	case "application/json":
+	case applicationJson:
 		err = c.ShouldBindJSON(request.JsonData)
-	case "multipart/related":
+	case multipartRelated:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	}
 	if err != nil {
@@ -65,7 +74,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
-	txn := transaction.NewTransaction(req.Body.(models.ReleaseSmContextRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.ReleaseSmContext))
+	txn := transaction.NewTransaction(req.Body.(models.ReleaseSmContextRequest), nil, svcmsgtypes.ReleaseSmContext)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
@@ -84,19 +93,23 @@ func RetrieveSmContext(c *gin.Context) {
 
 // HTTPUpdateSmContext - Update SM Context
 func HTTPUpdateSmContext(c *gin.Context) {
+	var err error
 	logger.PduSessLog.Infoln("receive Update SM Context Request")
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
-	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
+	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
+	if err != nil {
+		logger.PduSessLog.Errorf("error: %v", err)
+		return
+	}
 
 	var request models.UpdateSmContextRequest
 	request.JsonData = new(models.SmContextUpdateData)
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
-	var err error
 	switch s[0] {
-	case "application/json":
+	case applicationJson:
 		err = c.ShouldBindJSON(request.JsonData)
-	case "multipart/related":
+	case multipartRelated:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	}
 	if err != nil {
@@ -119,7 +132,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 
 	smContextRef := req.Params["smContextRef"]
 
-	txn := transaction.NewTransaction(req.Body.(models.UpdateSmContextRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.UpdateSmContext))
+	txn := transaction.NewTransaction(req.Body.(models.UpdateSmContextRequest), nil, svcmsgtypes.UpdateSmContext)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
