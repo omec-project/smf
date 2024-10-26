@@ -13,10 +13,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
-	grpcClient "github.com/omec-project/config5g/proto/client"
-	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	"github.com/omec-project/smf/logger"
 	"gopkg.in/yaml.v2"
 )
@@ -54,51 +51,9 @@ func InitConfigFactory(f string) error {
 
 		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 			logger.CfgLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-			client, err := grpcClient.ConnectToConfigServer(SmfConfig.Configuration.WebuiUri)
-			if err != nil {
-				go updateConfig(client)
-			}
-			return err
 		}
 	}
 	return nil
-}
-
-// updateConfig connects the config pod GRPC server and subscribes the config changes
-// then updates SMF configuration
-func updateConfig(client grpcClient.ConfClient) {
-	var stream protos.ConfigService_NetworkSliceSubscribeClient
-	var err error
-	var configChannel chan *protos.NetworkSliceResponse
-	for {
-		if client != nil {
-			stream, err = client.CheckGrpcConnectivity()
-			if err != nil {
-				logger.CfgLog.Errorf("%v", err)
-				if stream != nil {
-					time.Sleep(time.Second * 30)
-					continue
-				} else {
-					err = client.GetConfigClientConn().Close()
-					if err != nil {
-						logger.CfgLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
-					}
-					client = nil
-					continue
-				}
-			}
-			if configChannel == nil {
-				configChannel = client.PublishOnConfigChange(true, stream)
-				go SmfConfig.updateConfig(configChannel)
-			}
-		} else {
-			client, err = grpcClient.ConnectToConfigServer(SmfConfig.Configuration.WebuiUri)
-			if err != nil {
-				logger.CfgLog.Errorf("%+v", err)
-			}
-			continue
-		}
-	}
 }
 
 func InitRoutingConfigFactory(f string) error {
