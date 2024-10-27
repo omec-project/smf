@@ -144,8 +144,12 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 		go manageGrpcClient(factory.SmfConfig.Configuration.WebuiUri)
+	} else {
+		go func() {
+			logger.InitLog.Infoln("use helm chart config")
+			factory.ConfigPodTrigger <- true
+		}()
 	}
-
 	return nil
 }
 

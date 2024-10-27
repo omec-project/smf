@@ -48,10 +48,6 @@ func InitConfigFactory(f string) error {
 			enableKafka := true
 			SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
 		}
-
-		if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
-			logger.CfgLog.Infoln("MANAGED_BY_CONFIG_POD is true")
-		}
 	}
 	return nil
 }
