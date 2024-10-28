@@ -14,7 +14,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/omec-project/config5g/proto/client"
 	"github.com/omec-project/smf/logger"
 	"gopkg.in/yaml.v2"
 )
@@ -26,7 +25,11 @@ var (
 	SmfConfigSyncLock sync.Mutex
 )
 
-// TODO: Support configuration update from REST api
+// InitConfigFactory gets the NrfConfig and subscribes the config pod.
+// This observes the GRPC client availability and connection status in a loop.
+// When the GRPC server pod is restarted, GRPC connection status stuck in idle.
+// If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
+// then it closes the existing client start a new client.
 func InitConfigFactory(f string) error {
 	if content, err := os.ReadFile(f); err != nil {
 		return err
@@ -45,15 +48,7 @@ func InitConfigFactory(f string) error {
 			enableKafka := true
 			SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
 		}
-
-		roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-		if roc == "true" {
-			gClient := client.ConnectToConfigServer(SmfConfig.Configuration.WebuiUri)
-			commChannel := gClient.PublishOnConfigChange(false)
-			go SmfConfig.updateConfig(commChannel)
-		}
 	}
-
 	return nil
 }
 

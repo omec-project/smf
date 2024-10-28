@@ -18,6 +18,8 @@ import (
 	"time"
 
 	aperLogger "github.com/omec-project/aper/logger"
+	grpcClient "github.com/omec-project/config5g/proto/client"
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
 	openapiLogger "github.com/omec-project/openapi/logger"
@@ -139,7 +141,63 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 		}()
 	}
 
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
+		go manageGrpcClient(factory.SmfConfig.Configuration.WebuiUri)
+	}
 	return nil
+}
+
+// manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
+// Then it updates SMF configuration.
+func manageGrpcClient(webuiUri string) {
+	var configChannel chan *protos.NetworkSliceResponse
+	var client grpcClient.ConfClient
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
+	count := 0
+	for {
+		if client != nil {
+			if client.CheckGrpcConnectivity() != "ready" {
+				time.Sleep(time.Second * 30)
+				count++
+				if count > 5 {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					count = 0
+				}
+				logger.InitLog.Infoln("checking the connectivity readiness")
+				continue
+			}
+
+			if stream == nil {
+				stream, err = client.SubscribeToConfigServer()
+				if err != nil {
+					logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
+					continue
+				}
+			}
+
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
+				go factory.SmfConfig.UpdateConfig(configChannel)
+				logger.InitLog.Infoln("SMF updateConfig is triggered")
+			}
+		} else {
+			client, err = grpcClient.ConnectToConfigServer(webuiUri)
+			stream = nil
+			configChannel = nil
+			logger.InitLog.Infoln("connecting to config server")
+			if err != nil {
+				logger.InitLog.Errorf("%+v", err)
+			}
+			continue
+		}
+	}
 }
 
 func (smf *SMF) setLogLevel() {
@@ -263,10 +321,9 @@ func (smf *SMF) Start() {
 	context.InitSMFUERouting(&factory.UERoutingConfig)
 
 	// Wait for additional/updated config from config pod
-	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-	if roc == "true" {
-		logger.InitLog.Infoln("configuration is managed by Config Pod")
-		logger.InitLog.Infoln("waiting for initial configuration from config pod")
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infof("configuration is managed by Config Pod")
+		logger.InitLog.Infof("waiting for initial configuration from config pod")
 
 		// Main thread should be blocked for config update from ROC
 		// Future config update from ROC can be handled via background go-routine.
