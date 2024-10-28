@@ -144,11 +144,6 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
 		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
 		go manageGrpcClient(factory.SmfConfig.Configuration.WebuiUri)
-	} else {
-		go func() {
-			logger.InitLog.Infoln("use helm chart config")
-			factory.ConfigPodTrigger <- true
-		}()
 	}
 	return nil
 }
@@ -188,15 +183,15 @@ func manageGrpcClient(webuiUri string) {
 
 			if configChannel == nil {
 				configChannel = client.PublishOnConfigChange(true, stream)
-				logger.InitLog.Infoln("PublishOnConfigChange is triggered.")
+				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
 				go factory.SmfConfig.UpdateConfig(configChannel)
-				logger.InitLog.Infoln("SMF updateConfig is triggered.")
+				logger.InitLog.Infoln("SMF updateConfig is triggered")
 			}
 		} else {
 			client, err = grpcClient.ConnectToConfigServer(webuiUri)
 			stream = nil
 			configChannel = nil
-			logger.InitLog.Infoln("connecting to config server.")
+			logger.InitLog.Infoln("connecting to config server")
 			if err != nil {
 				logger.InitLog.Errorf("%+v", err)
 			}
