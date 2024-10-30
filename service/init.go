@@ -127,6 +127,9 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 
 	smf.setLogLevel()
 
+	// Initialise Statistics
+	go metrics.InitMetrics()
+
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
 	}
@@ -227,8 +230,6 @@ func (smf *SMF) setLogLevel() {
 		}
 	}
 
-	// Initialise Statistics
-	go metrics.InitMetrics()
 }
 
 func (smf *SMF) FilterCli(c *cli.Context) (args []string) {

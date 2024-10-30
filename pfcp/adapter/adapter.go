@@ -48,9 +48,11 @@ This function is called when smf runs with upfadapter and the communication betw
 func HandleAdapterPfcpRsp(pfcpMsg message.Message, evtData *udp.PfcpEventData) error {
 	switch pfcpMsg.MessageType() {
 	case message.MsgTypeAssociationSetupResponse:
+		logger.PfcpLog.Errorln("upf adapter Association Setup Response ")
 		msg := udp.Message{PfcpMessage: pfcpMsg}
 		HandlePfcpAssociationSetupResponse(&msg)
 	case message.MsgTypeHeartbeatResponse:
+		logger.PfcpLog.Errorln("upf adapter Heartbeat Response ")
 		msg := udp.Message{PfcpMessage: pfcpMsg}
 		HandlePfcpHeartbeatResponse(&msg)
 	case message.MsgTypeSessionEstablishmentResponse:

@@ -259,6 +259,7 @@ func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 		c.Configuration.SNssaiInfo = cfgNew.SNssaiInfo
 		c.Configuration.UserPlaneInformation = cfgNew.UserPlaneInformation
 		SmfConfigSyncLock.Unlock()
+		logger.GrpcLog.Infof(" EnableUpfAdapter  %v", c.Configuration.EnableUpfAdapter)
 		// Send trigger to update SMF Context
 		ConfigPodTrigger <- true
 	}

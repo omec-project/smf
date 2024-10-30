@@ -28,6 +28,7 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 		time.Sleep(maxHeartbeatInterval * time.Second)
 		for _, upf := range userplane.UPFs {
 			upf.UPF.UpfLock.Lock()
+			logger.PfcpLog.Info("send pfcp heartbeat request : %v for UPF[%v, %v]: ", upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
 			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
 				err := message.SendHeartbeatRequest(upf.NodeID, upf.Port) // needs lock in sync rsp(adapter mode)
 				if err != nil {
