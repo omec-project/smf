@@ -12,6 +12,7 @@ import (
 	_ "net/http/pprof" // Using package only for invoking initialization.
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -38,10 +39,8 @@ import (
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
-	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/omec-project/util/path_util"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -52,7 +51,7 @@ type SMF struct{}
 type (
 	// Config information.
 	Config struct {
-		smfcfg    string
+		cfg       string
 		uerouting string
 	}
 )
@@ -63,16 +62,14 @@ var config Config
 
 var smfCLi = []cli.Flag{
 	cli.StringFlag{
-		Name:  "cfg",
-		Usage: "common config file",
+		Name:     "cfg",
+		Usage:    "smf config file",
+		Required: true,
 	},
 	cli.StringFlag{
-		Name:  "smfcfg",
-		Usage: "config file",
-	},
-	cli.StringFlag{
-		Name:  "uerouting",
-		Usage: "config file",
+		Name:     "uerouting",
+		Usage:    "uerouting config file",
+		Required: true,
 	},
 }
 
@@ -98,30 +95,30 @@ func (*SMF) GetCliCmd() (flags []cli.Flag) {
 
 func (smf *SMF) Initialize(c *cli.Context) error {
 	config = Config{
-		smfcfg:    c.String("smfcfg"),
+		cfg:       c.String("cfg"),
 		uerouting: c.String("uerouting"),
 	}
 
-	if config.smfcfg != "" {
-		if err := factory.InitConfigFactory(config.smfcfg); err != nil {
-			return err
-		}
-	} else {
-		DefaultSmfConfigPath := path_util.Free5gcPath("omec-project/smf/config/smfcfg.yaml")
-		if err := factory.InitConfigFactory(DefaultSmfConfigPath); err != nil {
-			return err
-		}
+	absPath, err := filepath.Abs(config.cfg)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
 	}
 
-	if config.uerouting != "" {
-		if err := factory.InitRoutingConfigFactory(config.uerouting); err != nil {
-			return err
-		}
-	} else {
-		DefaultUERoutingPath := path_util.Free5gcPath("omec-project/smf/config/uerouting.yaml")
-		if err := factory.InitRoutingConfigFactory(DefaultUERoutingPath); err != nil {
-			return err
-		}
+	if err = factory.InitConfigFactory(absPath); err != nil {
+		return err
+	}
+
+	factory.SmfConfig.CfgLocation = absPath
+
+	ueRaoutingPath, err := filepath.Abs(config.uerouting)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
+	}
+
+	if err := factory.InitRoutingConfigFactory(ueRaoutingPath); err != nil {
+		return err
 	}
 
 	smf.setLogLevel()
@@ -408,7 +405,8 @@ func (smf *SMF) Start() {
 	time.Sleep(1000 * time.Millisecond)
 
 	HTTPAddr := fmt.Sprintf("%s:%d", context.SMF_Self().BindingIPv4, context.SMF_Self().SBIPort)
-	server, err := http2_util.NewServer(HTTPAddr, util.SmfLogPath, router)
+	sslLog := filepath.Dir(factory.SmfConfig.CfgLocation) + "/sslkey.log"
+	server, err := http2_util.NewServer(HTTPAddr, sslLog, router)
 
 	if server == nil {
 		logger.InitLog.Errorln("initialize HTTP server failed:", err)

@@ -33,6 +33,7 @@ type Config struct {
 	Info          *Info              `yaml:"info"`
 	Configuration *Configuration     `yaml:"configuration"`
 	Logger        *utilLogger.Logger `yaml:"logger"`
+	CfgLocation   string
 }
 
 type UpdateSmfConfig struct {
