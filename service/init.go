@@ -111,13 +111,13 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 
 	factory.SmfConfig.CfgLocation = absPath
 
-	ueRaoutingPath, err := filepath.Abs(config.uerouting)
+	ueRoutingPath, err := filepath.Abs(config.uerouting)
 	if err != nil {
 		logger.CfgLog.Errorln(err)
 		return err
 	}
 
-	if err := factory.InitRoutingConfigFactory(ueRaoutingPath); err != nil {
+	if err := factory.InitRoutingConfigFactory(ueRoutingPath); err != nil {
 		return err
 	}
 
