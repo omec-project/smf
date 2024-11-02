@@ -12,7 +12,6 @@ import (
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/omec-project/util/path_util"
 )
 
 func DummyServer() {
@@ -22,9 +21,9 @@ func DummyServer() {
 
 	go udp.Run(pfcp.Dispatch)
 
-	smfKeyLogPath := path_util.Free5gcPath("free5gc/smfsslkey.log")
-	smfPemPath := path_util.Free5gcPath("free5gc/support/TLS/smf.pem")
-	smfkeyPath := path_util.Free5gcPath("free5gc/support/TLS/smf.key")
+	smfKeyLogPath := "/opt/sslkey.log"
+	smfPemPath := "/var/run/certs/tls.pem"
+	smfkeyPath := "/var/run/certs/tls.key"
 
 	var server *http.Server
 	if srv, err := http2_util.NewServer(":29502", smfKeyLogPath, router); err != nil {
