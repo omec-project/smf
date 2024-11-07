@@ -33,9 +33,12 @@ import (
 func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	var request models.SmPolicyNotification
 
-	reqBody, _ := c.GetRawData()
+	reqBody, err := c.GetRawData()
+	if err != nil {
+		logger.PduSessLog.Errorf("error: %v", err)
+	}
 
-	err := openapi.Deserialize(&request, reqBody, c.ContentType())
+	err = openapi.Deserialize(&request, reqBody, c.ContentType())
 	if err != nil {
 		logger.PduSessLog.Errorln("deserialize request failed")
 	}
@@ -46,7 +49,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	smContextRef := reqWrapper.Params["smContextRef"]
 	logger.PduSessLog.Infof("HTTPSmPolicyUpdateNotification received for UUID = %v", smContextRef)
 
-	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.SmPolicyUpdateNotification))
+	txn := transaction.NewTransaction(reqWrapper.Body.(models.SmPolicyNotification), nil, svcmsgtypes.SmPolicyUpdateNotification)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
@@ -61,7 +64,11 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
 	}
-	c.Writer.Write(resBody)
+	_, err = c.Writer.Write(resBody)
+	if err != nil {
+		logger.PduSessLog.Errorf("error: %v", err)
+	}
+
 	c.Status(HTTPResponse.Status)
 }
 
@@ -80,7 +87,7 @@ func N1N2FailureNotification(c *gin.Context) {
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
-	txn := transaction.NewTransaction(req.Body.(models.N1N2MsgTxfrFailureNotification), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.N1N2MessageTransferFailureNotification))
+	txn := transaction.NewTransaction(req.Body.(models.N1N2MsgTxfrFailureNotification), nil, svcmsgtypes.N1N2MessageTransferFailureNotification)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status

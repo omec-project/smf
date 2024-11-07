@@ -21,27 +21,21 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/service"
 	"github.com/urfave/cli"
-	"go.uber.org/zap"
 )
 
 var SMF = &service.SMF{}
 
-var appLog *zap.SugaredLogger
-
-func init() {
-	appLog = logger.AppLog
-}
-
 func main() {
 	app := cli.NewApp()
 	app.Name = "smf"
-	appLog.Infoln(app.Name)
-	app.Usage = "-cfg common configuration file -smfcfg smf_configuration_file"
+	logger.AppLog.Infoln(app.Name)
+	app.Usage = "Session Management Function"
+	app.UsageText = "smf -cfg <smf_config_file.conf> -uerouting <uerouting_config_file.conf>"
 	app.Action = action
 	app.Flags = SMF.GetCliCmd()
 
 	if err := app.Run(os.Args); err != nil {
-		appLog.Errorf("SMF Run error: %v", err)
+		logger.AppLog.Fatalf("SMF run error: %v", err)
 	}
 }
 

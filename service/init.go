@@ -12,12 +12,15 @@ import (
 	_ "net/http/pprof" // Using package only for invoking initialization.
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	aperLogger "github.com/omec-project/aper/logger"
+	grpcClient "github.com/omec-project/config5g/proto/client"
+	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
 	openapiLogger "github.com/omec-project/openapi/logger"
@@ -36,10 +39,8 @@ import (
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
-	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/omec-project/util/path_util"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -50,7 +51,7 @@ type SMF struct{}
 type (
 	// Config information.
 	Config struct {
-		smfcfg    string
+		cfg       string
 		uerouting string
 	}
 )
@@ -61,16 +62,14 @@ var config Config
 
 var smfCLi = []cli.Flag{
 	cli.StringFlag{
-		Name:  "cfg",
-		Usage: "common config file",
+		Name:     "cfg",
+		Usage:    "smf config file",
+		Required: true,
 	},
 	cli.StringFlag{
-		Name:  "smfcfg",
-		Usage: "config file",
-	},
-	cli.StringFlag{
-		Name:  "uerouting",
-		Usage: "config file",
+		Name:     "uerouting",
+		Usage:    "uerouting config file",
+		Required: true,
 	},
 }
 
@@ -86,10 +85,7 @@ type OneInstance struct {
 
 var nrfRegInProgress OneInstance
 
-var initLog *zap.SugaredLogger
-
 func init() {
-	initLog = logger.InitLog
 	nrfRegInProgress = OneInstance{}
 }
 
@@ -99,30 +95,30 @@ func (*SMF) GetCliCmd() (flags []cli.Flag) {
 
 func (smf *SMF) Initialize(c *cli.Context) error {
 	config = Config{
-		smfcfg:    c.String("smfcfg"),
+		cfg:       c.String("cfg"),
 		uerouting: c.String("uerouting"),
 	}
 
-	if config.smfcfg != "" {
-		if err := factory.InitConfigFactory(config.smfcfg); err != nil {
-			return err
-		}
-	} else {
-		DefaultSmfConfigPath := path_util.Free5gcPath("omec-project/smf/config/smfcfg.yaml")
-		if err := factory.InitConfigFactory(DefaultSmfConfigPath); err != nil {
-			return err
-		}
+	absPath, err := filepath.Abs(config.cfg)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
 	}
 
-	if config.uerouting != "" {
-		if err := factory.InitRoutingConfigFactory(config.uerouting); err != nil {
-			return err
-		}
-	} else {
-		DefaultUERoutingPath := path_util.Free5gcPath("omec-project/smf/config/uerouting.yaml")
-		if err := factory.InitRoutingConfigFactory(DefaultUERoutingPath); err != nil {
-			return err
-		}
+	if err = factory.InitConfigFactory(absPath); err != nil {
+		return err
+	}
+
+	factory.SmfConfig.CfgLocation = absPath
+
+	ueRoutingPath, err := filepath.Abs(config.uerouting)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
+	}
+
+	if err := factory.InitRoutingConfigFactory(ueRoutingPath); err != nil {
+		return err
 	}
 
 	smf.setLogLevel()
@@ -137,32 +133,88 @@ func (smf *SMF) Initialize(c *cli.Context) error {
 		go func() {
 			err := http.ListenAndServe(addr, nil)
 			if err != nil {
-				initLog.Warnf("start profiling server failed: %+v", err)
+				logger.InitLog.Warnf("start profiling server failed: %+v", err)
 			}
 		}()
 	}
 
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infoln("MANAGED_BY_CONFIG_POD is true")
+		go manageGrpcClient(factory.SmfConfig.Configuration.WebuiUri)
+	}
 	return nil
+}
+
+// manageGrpcClient connects the config pod GRPC server and subscribes the config changes.
+// Then it updates SMF configuration.
+func manageGrpcClient(webuiUri string) {
+	var configChannel chan *protos.NetworkSliceResponse
+	var client grpcClient.ConfClient
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
+	count := 0
+	for {
+		if client != nil {
+			if client.CheckGrpcConnectivity() != "ready" {
+				time.Sleep(time.Second * 30)
+				count++
+				if count > 5 {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						logger.InitLog.Infof("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					count = 0
+				}
+				logger.InitLog.Infoln("checking the connectivity readiness")
+				continue
+			}
+
+			if stream == nil {
+				stream, err = client.SubscribeToConfigServer()
+				if err != nil {
+					logger.InitLog.Infof("failing SubscribeToConfigServer: %+v", err)
+					continue
+				}
+			}
+
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				logger.InitLog.Infoln("PublishOnConfigChange is triggered")
+				go factory.SmfConfig.UpdateConfig(configChannel)
+				logger.InitLog.Infoln("SMF updateConfig is triggered")
+			}
+		} else {
+			client, err = grpcClient.ConnectToConfigServer(webuiUri)
+			stream = nil
+			configChannel = nil
+			logger.InitLog.Infoln("connecting to config server")
+			if err != nil {
+				logger.InitLog.Errorf("%+v", err)
+			}
+			continue
+		}
+	}
 }
 
 func (smf *SMF) setLogLevel() {
 	if factory.SmfConfig.Logger == nil {
-		initLog.Warnln("SMF config without log level setting!!!")
+		logger.InitLog.Warnln("SMF config without log level setting")
 		return
 	}
 
 	if factory.SmfConfig.Logger.SMF != nil {
 		if factory.SmfConfig.Logger.SMF.DebugLevel != "" {
 			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.SMF.DebugLevel); err != nil {
-				initLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
+				logger.InitLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.SMF.DebugLevel)
 				logger.SetLogLevel(zap.InfoLevel)
 			} else {
-				initLog.Infof("SMF Log level is set to [%s] level", level)
+				logger.InitLog.Infof("SMF Log level is set to [%s] level", level)
 				logger.SetLogLevel(level)
 			}
 		} else {
-			initLog.Infoln("SMF Log level is default set to [info] level")
+			logger.InitLog.Infoln("SMF Log level is default set to [info] level")
 			logger.SetLogLevel(zap.InfoLevel)
 		}
 	}
@@ -245,7 +297,7 @@ func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
 }
 
 func (smf *SMF) Start() {
-	initLog.Infoln("SMF app initialising...")
+	logger.InitLog.Infoln("SMF app initialising")
 
 	// Initialise channel to stop SMF
 	signalChannel := make(chan os.Signal, 1)
@@ -266,21 +318,20 @@ func (smf *SMF) Start() {
 	context.InitSMFUERouting(&factory.UERoutingConfig)
 
 	// Wait for additional/updated config from config pod
-	roc := os.Getenv("MANAGED_BY_CONFIG_POD")
-	if roc == "true" {
-		initLog.Infof("configuration is managed by Config Pod")
-		initLog.Infof("waiting for initial configuration from config pod")
+	if os.Getenv("MANAGED_BY_CONFIG_POD") == "true" {
+		logger.InitLog.Infof("configuration is managed by Config Pod")
+		logger.InitLog.Infof("waiting for initial configuration from config pod")
 
 		// Main thread should be blocked for config update from ROC
 		// Future config update from ROC can be handled via background go-routine.
 		if <-factory.ConfigPodTrigger {
-			initLog.Infof("minimum configuration from config pod available")
+			logger.InitLog.Infoln("minimum configuration from config pod available")
 			context.ProcessConfigUpdate()
 		}
 
 		// Trigger background goroutine to handle further config updates
 		go func() {
-			initLog.Infof("dynamic config update task initialised")
+			logger.InitLog.Infoln("dynamic config update task initialised")
 			for {
 				if <-factory.ConfigPodTrigger {
 					if context.ProcessConfigUpdate() {
@@ -291,14 +342,14 @@ func (smf *SMF) Start() {
 			}
 		}()
 	} else {
-		initLog.Infof("configuration is managed by Helm")
+		logger.InitLog.Infoln("configuration is managed by Helm")
 	}
 
 	// Send NRF Registration
 	smf.SendNrfRegistration()
 
 	if smfCtxt.EnableNrfCaching {
-		initLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
+		logger.InitLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
@@ -315,19 +366,19 @@ func (smf *SMF) Start() {
 	}
 
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		initLog.Infof("SetupSmfCollection")
+		logger.InitLog.Infoln("SetupSmfCollection")
 		context.SetupSmfCollection()
 		// Init DRSM for unique FSEID/FTEID/IP-Addr
 		if err := smfCtxt.InitDrsm(); err != nil {
-			initLog.Errorf("initialise drsm failed, %v ", err.Error())
+			logger.InitLog.Errorf("initialise drsm failed, %v ", err.Error())
 		}
 	} else {
-		initLog.Infof("DB is disabled, not initialising drsm")
+		logger.InitLog.Infoln("DB is disabled, not initialising drsm")
 	}
 
 	// Init Kafka stream
 	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
-		initLog.Errorf("initialise kafka stream failed, %v ", err.Error())
+		logger.InitLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
 
 	udp.Run(pfcp.Dispatch)
@@ -354,15 +405,16 @@ func (smf *SMF) Start() {
 	time.Sleep(1000 * time.Millisecond)
 
 	HTTPAddr := fmt.Sprintf("%s:%d", context.SMF_Self().BindingIPv4, context.SMF_Self().SBIPort)
-	server, err := http2_util.NewServer(HTTPAddr, util.SmfLogPath, router)
+	sslLog := filepath.Dir(factory.SmfConfig.CfgLocation) + "/sslkey.log"
+	server, err := http2_util.NewServer(HTTPAddr, sslLog, router)
 
 	if server == nil {
-		initLog.Error("initialize HTTP server failed:", err)
+		logger.InitLog.Errorln("initialize HTTP server failed:", err)
 		return
 	}
 
 	if err != nil {
-		initLog.Warnln("initialize HTTP server:", err)
+		logger.InitLog.Warnln("initialize HTTP server:", err)
 	}
 
 	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
@@ -373,12 +425,12 @@ func (smf *SMF) Start() {
 	}
 
 	if err != nil {
-		initLog.Fatalln("HTTP server setup failed:", err)
+		logger.InitLog.Fatalln("HTTP server setup failed:", err)
 	}
 }
 
 func (smf *SMF) Terminate() {
-	logger.InitLog.Infoln("terminating SMF...")
+	logger.InitLog.Infoln("terminating SMF")
 	// deregister with NRF
 	problemDetails, err := consumer.SendDeregisterNFInstance()
 	if problemDetails != nil {
@@ -419,7 +471,7 @@ func UpdateNF() {
 	KeepAliveTimerMutex.Lock()
 	defer KeepAliveTimerMutex.Unlock()
 	if KeepAliveTimer == nil {
-		initLog.Warnf("keepAlive timer has been stopped")
+		logger.InitLog.Warnln("keepAlive timer has been stopped")
 		return
 	}
 	// setting default value 30 sec
@@ -433,21 +485,21 @@ func UpdateNF() {
 	patchItem = append(patchItem, pitem)
 	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
 	if problemDetails != nil {
-		initLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
+		logger.InitLog.Errorf("SMF update to NRF ProblemDetails[%v]", problemDetails)
 		// 5xx response from NRF, 404 Not Found, 400 Bad Request
 		if (problemDetails.Status/100) == 5 ||
 			problemDetails.Status == 404 || problemDetails.Status == 400 {
 			// register with NRF full profile
 			nfProfile, err = consumer.SendNFRegistration()
 			if err != nil {
-				initLog.Errorf("error [%v] when sending NF registration", err)
+				logger.InitLog.Errorf("error [%v] when sending NF registration", err)
 			}
 		}
 	} else if err != nil {
-		initLog.Errorf("SMF update to NRF Error[%s]", err.Error())
+		logger.InitLog.Errorf("SMF update to NRF Error[%s]", err.Error())
 		nfProfile, err = consumer.SendNFRegistration()
 		if err != nil {
-			initLog.Errorf("error [%v] when sending NF registration", err)
+			logger.InitLog.Errorf("error [%v] when sending NF registration", err)
 		}
 	}
 

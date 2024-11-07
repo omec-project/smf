@@ -33,14 +33,18 @@ import (
 // HTTPPostSmContexts - Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Infoln("receive create SM Context Request")
+	var err error
 	var request models.PostSmContextsRequest
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
-	stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
+	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
+	if err != nil {
+		logger.PduSessLog.Errorf("error: %v", err)
+		return
+	}
 
 	request.JsonData = new(models.SmContextCreateData)
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
-	var err error
 	switch s[0] {
 	case "application/json":
 		err = c.ShouldBindJSON(request.JsonData)
@@ -62,7 +66,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	req := httpwrapper.NewRequest(c.Request, request)
-	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.SmfMsgType(svcmsgtypes.CreateSmContext))
+	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.CreateSmContext)
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
@@ -95,7 +99,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	go func(smContext *smf_context.SMContext) {
 		var txn *transaction.Transaction
 		if HTTPResponse.Status == http.StatusCreated {
-			txn = transaction.NewTransaction(nil, nil, svcmsgtypes.SmfMsgType(svcmsgtypes.PfcpSessCreate))
+			txn = transaction.NewTransaction(nil, nil, svcmsgtypes.PfcpSessCreate)
 			txn.Ctxt = smContext
 			go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 			<-txn.Status

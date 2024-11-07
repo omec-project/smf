@@ -33,6 +33,7 @@ type Config struct {
 	Info          *Info              `yaml:"info"`
 	Configuration *Configuration     `yaml:"configuration"`
 	Logger        *utilLogger.Logger `yaml:"logger"`
+	CfgLocation   string
 }
 
 type UpdateSmfConfig struct {
@@ -237,7 +238,7 @@ func (r *RoutingConfig) GetVersion() string {
 	return ""
 }
 
-func (c *Config) updateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
+func (c *Config) UpdateConfig(commChannel chan *protos.NetworkSliceResponse) bool {
 	for {
 		rsp := <-commChannel
 		logger.GrpcLog.Infof("received updateConfig in the smf app: %+v \n", rsp)
