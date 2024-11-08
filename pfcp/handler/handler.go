@@ -381,7 +381,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 	logger.PfcpLog.Infof("handle PFCP Session Establishment Response")
-
 	SEID := rsp.SEID()
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
@@ -401,6 +400,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
 	nodeID := pfcp_message.FetchPfcpTxn(seq)
+	if nodeID == nil {
+		logger.PfcpLog.Errorf("no pending pfcp response for sequence no: %v", seq)
+		return
+	}
 
 	if rsp.UPFSEID != nil {
 		// NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
@@ -416,6 +419,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	// Get N3 interface UPF
+	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil {
+		logger.PfcpLog.Errorln("failed to get default path")
+		return
+	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
 	if rsp.CreatedPDR != nil {
@@ -463,6 +471,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 	rspNodeID := smf_context.NewNodeID(rspNodeIDStr)
+
+	if ANUPF.UPF == nil {
+		logger.PfcpLog.Errorln("failed to get UPF from default path")
+		return
+	}
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		// UPF Accept
