@@ -112,7 +112,7 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 
 	remoteAddress := &net.UDPAddr{
 		IP:   net.ParseIP("1.1.1.1"),
-		Port: factory.DEFAULT_PFCP_PORT,
+		Port: 8810,
 	}
 	udpMessage := udp.Message{
 		RemoteAddr:  remoteAddress,
@@ -186,7 +186,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 	udpMessage := udp.Message{
 		RemoteAddr: &net.UDPAddr{
 			IP:   net.ParseIP("1.1.1.1"),
-			Port: factory.DEFAULT_PFCP_PORT,
+			Port: 8809,
 		},
 		PfcpMessage: rsp,
 	}
