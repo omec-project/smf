@@ -1,6 +1,6 @@
 module github.com/omec-project/smf
 
-go 1.21
+go 1.23
 
 require (
 	github.com/antihax/optional v1.0.0
