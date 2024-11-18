@@ -214,6 +214,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		}
 	}
 	smContext := context.GetSMContextBySEID(SEID)
+	if smContext == nil {
+		logger.PfcpLog.Warnln("PFCP Session Establish Response found SM context nil, response discarded")
+		return
+	}
+	smContext.SMLock.Lock()
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse smContext %+v", smContext)
 

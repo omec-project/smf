@@ -562,7 +562,6 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 
 		DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
 		DLPDR.PDI.UEIPAddress = &ueIpAddr
-		DLPDR.PDI.UEIPAddress = &ueIpAddr
 
 		DLFAR := DLPDR.FAR
 
