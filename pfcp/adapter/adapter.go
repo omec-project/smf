@@ -219,6 +219,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse smContext %+v", smContext)
 
@@ -283,7 +284,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, fteid.IPv4Address)
 		upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
 	}
-	smContext.SMLock.Unlock()
 
 	if rsp.NodeID == nil {
 		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing NodeID")
