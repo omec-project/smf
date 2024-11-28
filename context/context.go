@@ -37,7 +37,6 @@ const (
 var smfContext SMFContext
 
 type DrsmCtxts struct {
-	TeidPool drsm.DrsmInterface
 	SeidPool drsm.DrsmInterface
 	UeIpPool drsm.DrsmInterface
 }
@@ -432,13 +431,6 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	// for local FSEID
 	if drsmCtxt, err := drsm.InitDRSM("fseid", podId, db, opt); err == nil {
 		smfCtxt.DrsmCtxts.SeidPool = drsmCtxt
-	} else {
-		return err
-	}
-
-	// for local FTEID
-	if drsmCtxt, err := drsm.InitDRSM("fteid", podId, db, opt); err == nil {
-		smfCtxt.DrsmCtxts.TeidPool = drsmCtxt
 	} else {
 		return err
 	}

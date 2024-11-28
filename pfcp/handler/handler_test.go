@@ -107,20 +107,12 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 		1,
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
-		ie.NewUserPlaneIPResourceInformation(
-			uint8(0x61),
-			0,
-			"1.2.3.4",
-			"",
-			".internet", // Note the additional character here. This is because the SD-Core UPF sends the network instance with 1 leading character
-			ie.SrcInterfaceAccess,
-		),
 		ie.NewRecoveryTimeStamp(recoveryTimestamp),
 	)
 
 	remoteAddress := &net.UDPAddr{
 		IP:   net.ParseIP("1.1.1.1"),
-		Port: factory.DEFAULT_PFCP_PORT,
+		Port: 8810,
 	}
 	udpMessage := udp.Message{
 		RemoteAddr:  remoteAddress,
@@ -135,13 +127,78 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 	if upf.RecoveryTimeStamp.RecoveryTimeStamp.Truncate(1*time.Second) != recoveryTimestamp.Truncate(1*time.Second) {
 		t.Errorf("Expected RecoveryTimeStamp %v, got %v", recoveryTimestamp.Truncate(1*time.Second), upf.RecoveryTimeStamp.RecoveryTimeStamp.Truncate(1*time.Second))
 	}
-	if upf.UPIPInfo.Ipv4Address.String() != "1.2.3.4" {
-		t.Errorf("Expected IP address %v, got %v", "1.2.3.4", upf.UPIPInfo.Ipv4Address.String())
+}
+
+func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
+	recoveryTimestamp := time.Now()
+	nodeID := context.NewNodeID("1.1.1.1")
+	smContext := context.NewSMContext("imsi-123456789012345", 10)
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode: &context.DataPathNode{
+					UPF: &context.UPF{},
+					UpLinkTunnel: &context.GTPTunnel{
+						TEID: 0,
+					},
+				},
+			},
+		},
+		ANInformation: struct {
+			IPAddress net.IP
+			TEID      uint32
+		}{
+			IPAddress: net.ParseIP("192.168.1.1"),
+			TEID:      0,
+		},
 	}
-	if upf.UPIPInfo.SourceInterface != ie.SrcInterfaceAccess {
-		t.Errorf("Expected Source Interface Access, got %v", upf.UPIPInfo.SourceInterface)
+
+	smContext.PFCPContext = map[string]*context.PFCPSessionContext{
+		nodeID.ResolveNodeIdToIp().String(): {
+			RemoteSEID: 12345,
+		},
 	}
-	if string(upf.UPIPInfo.NetworkInstance) != "internet" {
-		t.Errorf("Expected Network Instance %v, got %v", "internet", upf.UPIPInfo.NetworkInstance)
+
+	datapath := &context.DataPath{
+		FirstDPNode: &context.DataPathNode{
+			UPF: &context.UPF{},
+		},
+	}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+	pfcp_message.InsertPfcpTxn(1, nodeID)
+
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		1,
+		1,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.1", "", ""),
+		ie.NewRecoveryTimeStamp(recoveryTimestamp),
+		ie.NewCreatedPDR(
+			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
+		),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr: &net.UDPAddr{
+			IP:   net.ParseIP("1.1.1.1"),
+			Port: 8809,
+		},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	if smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID != 4321 {
+		t.Errorf("Expected TEID 4321, got %d", smContext.Tunnel.ANInformation.TEID)
+	}
+
+	expectedIP := net.ParseIP("192.168.1.1")
+	if !smContext.Tunnel.ANInformation.IPAddress.Equal(expectedIP) {
+		t.Errorf("Expected ANInformation IP %v, got %v", expectedIP, smContext.Tunnel.ANInformation.IPAddress)
 	}
 }

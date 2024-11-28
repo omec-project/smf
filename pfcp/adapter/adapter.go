@@ -4,12 +4,12 @@
 package adapter
 
 import (
+	"fmt"
 	"net"
 	"sync"
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/pfcp/ies"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -68,6 +68,26 @@ func HandleAdapterPfcpRsp(pfcpMsg message.Message, evtData *udp.PfcpEventData) e
 	return nil
 }
 
+func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {
+	for _, createdPDRIE := range createdPDRIEs {
+		ueIPAddress, err := createdPDRIE.UEIPAddress()
+		if err == nil {
+			return ueIPAddress.IPv4Address
+		}
+	}
+	return nil
+}
+
+func FindFTEID(createdPDRIEs []*ie.IE) (*ie.FTEIDFields, error) {
+	for _, createdPDRIE := range createdPDRIEs {
+		teid, err := createdPDRIE.FTEID()
+		if err == nil {
+			return teid, nil
+		}
+	}
+	return nil, fmt.Errorf("FTEID not found in CreatedPDR")
+}
+
 func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	rsp, ok := msg.PfcpMessage.(*message.AssociationSetupResponse)
 	if !ok {
@@ -100,15 +120,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		return
 	}
 
-	var userPlaneIPResourceInformation *context.UserPlaneIPResourceInformation
-	if len(rsp.UserPlaneIPResourceInformation) != 0 {
-		userPlaneIPResourceInformation, err = ies.UnmarshalUEIPInformationBinary(rsp.UserPlaneIPResourceInformation[0].Payload)
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to get UserPlaneIPResourceInformation: %+v", err)
-			return
-		}
-	}
-
 	if causeValue == ie.CauseRequestAccepted {
 		logger.PfcpLog.Infof("handle PFCP Association Setup Response with NodeID[%s]", nodeID.ResolveNodeIdToIp().String())
 
@@ -116,15 +127,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		if upf == nil {
 			logger.PfcpLog.Errorf("can not find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
-		}
-
-		// validate if DNNs served by UPF matches with the one provided by UPF
-		if userPlaneIPResourceInformation != nil {
-			upfProvidedDnn := string(userPlaneIPResourceInformation.NetworkInstance)
-			if !upf.IsDnnConfigured(upfProvidedDnn) {
-				logger.PfcpLog.Errorf("handle PFCP Association Setup Response, DNN mismatch, [%v] is not configured", upfProvidedDnn)
-				return
-			}
 		}
 
 		upf.UPFStatus = context.AssociatedSetUpSuccess
@@ -141,31 +143,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 			RecoveryTimeStamp: recoveryTimestamp,
 		}
 		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
-
-		if rsp.UserPlaneIPResourceInformation != nil {
-			upf.UPIPInfo = *userPlaneIPResourceInformation
-
-			if upf.UPIPInfo.Assosi && upf.UPIPInfo.Assoni && upf.UPIPInfo.SourceInterface == ie.SrcInterfaceAccess &&
-				upf.UPIPInfo.V4 && !upf.UPIPInfo.Ipv4Address.Equal(net.IPv4zero) {
-				logger.PfcpLog.Infof("UPF[%s] received N3 interface IP[%v], network instance[%v] and TEID[%v]",
-					upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.Ipv4Address,
-					string(upf.UPIPInfo.NetworkInstance), upf.UPIPInfo.TeidRange)
-
-				// reset the N3 interface of UPF
-				upf.N3Interfaces = make([]context.UPFInterfaceInfo, 0)
-
-				// Insert N3 interface info from UPF
-				n3Interface := context.UPFInterfaceInfo{}
-				n3Interface.NetworkInstance = string(upf.UPIPInfo.NetworkInstance)
-				n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, upf.UPIPInfo.Ipv4Address)
-				upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
-			}
-
-			logger.PfcpLog.Infof("UPF(%s)[%s] setup association",
-				upf.NodeID.ResolveNodeIdToIp().String(), upf.UPIPInfo.NetworkInstance)
-		} else {
-			logger.PfcpLog.Errorln("pfcp association setup response has no UserPlane IP Resource Information")
-		}
 	}
 }
 
@@ -237,12 +214,22 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		}
 	}
 	smContext := context.GetSMContextBySEID(SEID)
+	if smContext == nil {
+		logger.PfcpLog.Warnln("PFCP Session Establish Response found SM context nil, response discarded")
+		return
+	}
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse smContext %+v", smContext)
 
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
 	nodeID := FetchPfcpTxn(seq)
+	if nodeID == nil {
+		logger.PfcpLog.Errorf("no pending pfcp session establishment response for sequence no: %v", seq)
+		return
+	}
 
 	if rsp.UPFSEID != nil {
 		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
@@ -257,7 +244,62 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	// Get N3 interface UPF
+	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil {
+		logger.PfcpLog.Errorln("failed to get default path")
+		return
+	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
+
+	if rsp.CreatedPDR != nil {
+		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
+		if ueIPAddress != nil {
+			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
+			// Release previous locally allocated UE IP-Addr
+			err := smContext.ReleaseUeIpAddr()
+			if err != nil {
+				logger.PfcpLog.Errorf("failed to release UE IP-Addr: %+v", err)
+			}
+
+			// Update with one received from UPF
+			smContext.PDUAddress.Ip = ueIPAddress
+			smContext.PDUAddress.UpfProvided = true
+		}
+
+		// Store F-TEID created by UPF
+		fteid, err := FindFTEID(rsp.CreatedPDR)
+		if err != nil {
+			logger.PfcpLog.Errorf("failed to parse TEID IE: %+v", err)
+			return
+		}
+		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		ANUPF.UpLinkTunnel.TEID = fteid.TEID
+		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
+		if upf == nil {
+			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+			return
+		}
+		upf.N3Interfaces = make([]context.UPFInterfaceInfo, 0)
+		n3Interface := context.UPFInterfaceInfo{}
+		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, fteid.IPv4Address)
+		upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
+	}
+
+	if rsp.NodeID == nil {
+		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing NodeID")
+		return
+	}
+	rspNodeIDStr, err := rsp.NodeID.NodeID()
+	if err != nil {
+		logger.PfcpLog.Errorf("failed to parse NodeID IE: %+v", err)
+		return
+	}
+	rspNodeID := context.NewNodeID(rspNodeIDStr)
+
+	if ANUPF.UPF == nil {
+		logger.PfcpLog.Errorln("failed to get UPF from default path")
+		return
+	}
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		if rsp.Cause == nil {
@@ -277,12 +319,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
 			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
-				rspNodeIDStr, err := rsp.NodeID.NodeID()
-				if err != nil {
-					logger.PfcpLog.Errorf("pfcp session establishment response NodeID error: %v", err)
-					return
-				}
-				rspNodeID := context.NewNodeID(rspNodeIDStr)
 				SetUpfInactive(*rspNodeID)
 			}
 		}
