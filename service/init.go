@@ -267,15 +267,30 @@ func (smf *SMF) setLogLevel() {
 	if factory.SmfConfig.Logger.OpenApi != nil {
 		if factory.SmfConfig.Logger.OpenApi.DebugLevel != "" {
 			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				openapiLogger.OpenapiLog.Warnf("Openapi Log level [%s] is invalid, set to [info] level",
+				openapiLogger.OpenapiLog.Warnf("OpenApi Log level [%s] is invalid, set to [info] level",
 					factory.SmfConfig.Logger.OpenApi.DebugLevel)
 				openapiLogger.SetLogLevel(zap.InfoLevel)
 			} else {
 				openapiLogger.SetLogLevel(level)
 			}
 		} else {
-			openapiLogger.OpenapiLog.Warnln("Openapi Log level not set. Default set to [info] level")
+			openapiLogger.OpenapiLog.Warnln("OpenApi Log level not set. Default set to [info] level")
 			openapiLogger.SetLogLevel(zap.InfoLevel)
+		}
+	}
+
+	if factory.SmfConfig.Logger.Util != nil {
+		if factory.SmfConfig.Logger.Util.DebugLevel != "" {
+			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.Util.DebugLevel); err != nil {
+				utilLogger.UtilLog.Warnf("Util (drsm, fsm, etc.) Log level [%s] is invalid, set to [info] level",
+					factory.SmfConfig.Logger.Util.DebugLevel)
+				utilLogger.SetLogLevel(zap.InfoLevel)
+			} else {
+				utilLogger.SetLogLevel(level)
+			}
+		} else {
+			utilLogger.UtilLog.Warnln("Util (drsm, fsm, etc.) Log level not set. Default set to [info] level")
+			utilLogger.SetLogLevel(zap.InfoLevel)
 		}
 	}
 
