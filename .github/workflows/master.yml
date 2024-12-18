@@ -7,10 +7,10 @@ name: Master workflow
 on:
   pull_request:
     branches:
-      - master
+      - rel-*
   push:
     branches:
-      - master
+      - rel-*
 
 jobs:
   build:
