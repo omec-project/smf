@@ -87,7 +87,7 @@ require (
 
 require (
 	github.com/segmentio/kafka-go v0.4.47
-	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver v1.17.2
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 )
 
