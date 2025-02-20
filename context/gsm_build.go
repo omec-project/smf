@@ -14,6 +14,7 @@ import (
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/nas/nasType"
 	"github.com/omec-project/smf/qos"
+	errors "github.com/omec-project/smf/smferrors"
 )
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
