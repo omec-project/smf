@@ -52,41 +52,55 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		switch m.GsmHeader.GetMessageType() {
 		case nas.MsgTypePDUSessionReleaseRequest:
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Request received")
+			pduSessIDRelReq := int32(m.PDUSessionReleaseRequest.PDUSessionID.GetPDUSessionID())
+			smContext.SubPduSessLog.Debug("PDU Session ID in Rel Req: ", pduSessIDRelReq)
+			pduSessIDSmCxt := smContext.PDUSessionID
+			smContext.SubPduSessLog.Debug("PDU Session ID in SM Context: ", pduSessIDSmCxt)
 			if smContext.SMContextState != context.SmStateActive {
 				// Wait till the state becomes SmStateActive again
 				// TODO: implement sleep wait in concurrent architecture
 				smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, SM Context State[%v] should be SmStateActive", smContext.SMContextState.String())
 			}
+			if pduSessIDRelReq == pduSessIDSmCxt {
+				smContext.HandlePDUSessionReleaseRequest(m.PDUSessionReleaseRequest)
+				if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
+					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
+				} else {
+					response.BinaryDataN1SmMessage = buf
+				}
 
-			smContext.HandlePDUSessionReleaseRequest(m.PDUSessionReleaseRequest)
-			if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
+				response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseCommand"}
+
+				response.JsonData.N2SmInfo = &models.RefToBinaryData{ContentId: "PDUResourceReleaseCommand"}
+				response.JsonData.N2SmInfoType = models.N2SmInfoType_PDU_RES_REL_CMD
+
+				if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
+					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
+				} else {
+					response.BinaryDataN2SmInformation = buf
+				}
+
+				if smContext.Tunnel != nil {
+					smContext.ChangeState(context.SmStatePfcpModify)
+					smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
+					// Send release to UPF
+					// releaseTunnel(smContext)
+					pfcpAction.sendPfcpDelete = true
+				} else {
+					smContext.ChangeState(context.SmStateModify)
+					smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
+				}
 			} else {
-				response.BinaryDataN1SmMessage = buf
-			}
-
-			response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseCommand"}
-
-			response.JsonData.N2SmInfo = &models.RefToBinaryData{ContentId: "PDUResourceReleaseCommand"}
-			response.JsonData.N2SmInfoType = models.N2SmInfoType_PDU_RES_REL_CMD
-
-			if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
-			} else {
-				response.BinaryDataN2SmInformation = buf
-			}
-
-			if smContext.Tunnel != nil {
-				smContext.ChangeState(context.SmStatePfcpModify)
-				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
-				// Send release to UPF
-				// releaseTunnel(smContext)
-				pfcpAction.sendPfcpDelete = true
-			} else {
+				smContext.SubPduSessLog.Errorf("Invalid PDU Session ID")
+				if buf, err := context.BuildGSMPDUSessionReleaseRejectWithCause(smContext, pduSessIDRelReq, "InvalidPDUSessionIdentity"); err != nil {
+					smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
+				} else {
+					response.BinaryDataN1SmMessage = buf
+				}
+				response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
-
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
 			if smContext.SMContextState != context.SmStateInActivePending {
