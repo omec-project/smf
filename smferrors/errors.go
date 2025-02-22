@@ -141,4 +141,5 @@ var ErrorCause = map[string]uint8{
 	"ApplySMPolicyFailure":          nasMessage.Cause5GSMRequestRejectedUnspecified,
 	"AMFDiscoveryFailure":           nasMessage.Cause5GSMRequestRejectedUnspecified,
 	"PDUSessionTypeIPv4OnlyAllowed": nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed,
+	"InvalidPDUSessionIdentity":     nasMessage.Cause5GSMInvalidPDUSessionIdentity,
 }
