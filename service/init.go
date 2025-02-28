@@ -155,7 +155,7 @@ func manageGrpcClient(webuiUri string) {
 	count := 0
 	for {
 		if client != nil {
-			if client.CheckGrpcConnectivity() != "ready" {
+			if client.CheckGrpcConnectivity() != "READY" {
 				time.Sleep(time.Second * 30)
 				count++
 				if count > 5 {
@@ -184,6 +184,8 @@ func manageGrpcClient(webuiUri string) {
 				go factory.SmfConfig.UpdateConfig(configChannel)
 				logger.InitLog.Infoln("SMF updateConfig is triggered")
 			}
+
+			time.Sleep(time.Second * 5) // Fixes (avoids) 100% CPU utilization
 		} else {
 			client, err = grpcClient.ConnectToConfigServer(webuiUri)
 			stream = nil
