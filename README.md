@@ -56,13 +56,13 @@ This includes some of the handling as listed below
 
 1. Policy Notify from PCF for QoS update
 
-Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/master/overview/3gpp-compliance-5g.html)
+Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
 
-Design section for SMF is available at [SMF Design](https://docs.sd-core.opennetworking.org/master/design/design-smf.html)
+Design section for SMF is available at [SMF Design](https://docs.sd-core.opennetworking.org/main/design/design-smf.html)
 
 ## How to use SMF
 
-Refer to the [SD-Core documentation](https://docs.sd-core.opennetworking.org/master/index.html)
+Refer to the [SD-Core documentation](https://docs.sd-core.opennetworking.org/main/index.html)
 
 
 ## Reach out to us thorugh
