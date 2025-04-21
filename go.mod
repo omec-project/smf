@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/omec-project/aper v1.2.3
+	github.com/omec-project/aper v1.3.0
 	github.com/omec-project/config5g v1.5.9
 	github.com/omec-project/nas v1.4.6
 	github.com/omec-project/ngap v1.3.2
