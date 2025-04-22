@@ -9,12 +9,12 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.2.3
 	github.com/omec-project/config5g v1.5.9
-	github.com/omec-project/nas v1.4.5
+	github.com/omec-project/nas v1.4.6
 	github.com/omec-project/ngap v1.3.2
 	github.com/omec-project/openapi v1.3.4
 	github.com/omec-project/util v1.2.14
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.21.1
+	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli v1.22.16
 	github.com/wmnsk/go-pfcp v0.0.24
@@ -45,7 +45,7 @@ require (
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.6 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
