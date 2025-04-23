@@ -12,7 +12,7 @@ require (
 	github.com/omec-project/nas v1.4.6
 	github.com/omec-project/ngap v1.4.0
 	github.com/omec-project/openapi v1.4.0
-	github.com/omec-project/util v1.2.14
+	github.com/omec-project/util v1.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.10.0
