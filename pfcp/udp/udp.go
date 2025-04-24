@@ -257,9 +257,11 @@ func removeTransaction(tx *Transaction) error {
 		tx = txTmp
 		switch tx.TxType {
 		case SendingRequest:
-			logger.PfcpLog.Debugf("Remove Request Transaction [%d]\n", tx.SequenceNumber)
+			logger.PfcpLog.Debugf("Remove Request Transaction [%d]", tx.SequenceNumber)
 		case SendingResponse:
-			logger.PfcpLog.Debugf("Remove Response Transaction [%d]\n", tx.SequenceNumber)
+			logger.PfcpLog.Debugf("Remove Response Transaction [%d]", tx.SequenceNumber)
+		default:
+			logger.PfcpLog.Debugf("Remove Transaction [%d]", tx.SequenceNumber)
 		}
 
 		txTable.Delete(tx.SequenceNumber)
