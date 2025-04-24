@@ -81,16 +81,17 @@ func SendNFRegistration() (*models.NfProfile, error) {
 	metrics.IncrementSvcNrfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", http.StatusText(res.StatusCode), "")
 
 	status := res.StatusCode
-	if status == http.StatusOK {
+	switch status {
+	case http.StatusOK:
 		// NFUpdate
 		logger.ConsumerLog.Infof("NRF Registration success, status [%v]", http.StatusText(res.StatusCode))
-	} else if status == http.StatusCreated {
+	case http.StatusCreated:
 		// NFRegister
 		resourceUri := res.Header.Get("Location")
 		// resouceNrfUri := resourceUri[strings.LastIndex(resourceUri, "/"):]
 		smf_context.SMF_Self().NfInstanceID = resourceUri[strings.LastIndex(resourceUri, "/")+1:]
 		logger.ConsumerLog.Infof("NRF Registration success, status [%v]", http.StatusText(res.StatusCode))
-	} else {
+	default:
 		logger.ConsumerLog.Infof("handler returned wrong status code %d", status)
 		logger.ConsumerLog.Errorf("NRF Registration failure, status [%v]", http.StatusText(res.StatusCode))
 		return &rep, fmt.Errorf("NRF Registration failure, [%v]", http.StatusText(res.StatusCode))

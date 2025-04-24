@@ -13,14 +13,14 @@ import (
 
 func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) {
 	// Retrieve PDUSessionID
-	smContext.PDUSessionID = int32(req.PDUSessionID.GetPDUSessionID())
+	smContext.PDUSessionID = int32(req.GetPDUSessionID())
 
 	// Retrieve PTI (Procedure transaction identity)
 	smContext.Pti = req.GetPTI()
 
 	// Handle PDUSessionType
 	if req.PDUSessionType != nil {
-		requestedPDUSessionType := req.PDUSessionType.GetPDUSessionTypeValue()
+		requestedPDUSessionType := req.GetPDUSessionTypeValue()
 		if err := smContext.isAllowedPDUSessionType(requestedPDUSessionType); err != nil {
 			smContext.SubCtxLog.Errorf("%s", err)
 			return
@@ -42,7 +42,7 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 	}
 
 	if req.ExtendedProtocolConfigurationOptions != nil {
-		EPCOContents := req.ExtendedProtocolConfigurationOptions.GetExtendedProtocolConfigurationOptionsContents()
+		EPCOContents := req.GetExtendedProtocolConfigurationOptionsContents()
 		protocolConfigurationOptions := nasConvert.NewProtocolConfigurationOptions()
 		unmarshalErr := protocolConfigurationOptions.UnMarshal(EPCOContents)
 		if unmarshalErr != nil {
