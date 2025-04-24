@@ -94,7 +94,7 @@ func EmptyEventHandler(event SmEvent, eventData *SmEventData) (smf_context.SMCon
 func HandleStateInitEventPduSessCreate(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
 	if err := producer.HandlePDUSessionSMContextCreate(eventData.Txn); err != nil {
 		err := stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_rsp_failure)
-		var errorMessage string = ""
+		errorMessage := ""
 		if err != nil {
 			logger.FsmLog.Errorf("error while publishing pdu session create response failure, %v", err.Error())
 			errorMessage = err.Error()
