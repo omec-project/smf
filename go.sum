@@ -231,8 +231,8 @@ github.com/omec-project/aper v1.3.0 h1:g7YYCImt9zjDKOFqGbnr/WCoMlk+pp661c9NaduWL
 github.com/omec-project/aper v1.3.0/go.mod h1:DITqHfysnusm7tbQtPZZGajmuLoePaPV0x34oZWd/Yo=
 github.com/omec-project/config5g v1.6.0 h1:XIIBVJS5+mngJsPzcwqkaoZel/RqfzUQBJwPd5YYUdA=
 github.com/omec-project/config5g v1.6.0/go.mod h1:c7Hj8uuQ/H56Ut/1HE+w75TnpulhUZigP116Q6AJMuU=
-github.com/omec-project/nas v1.4.6 h1:4dhlN1/3MnlzVprRHruciMiMWtdas2gsDcxmAEeounA=
-github.com/omec-project/nas v1.4.6/go.mod h1:tRg/7ZWRU+LHQwsXDUeZ6LRf7ms3Wjycr+w1wkqSvg0=
+github.com/omec-project/nas v1.5.0 h1:2UchIZu45Wla/vbzIE0DP3GWe2imG9+7p2i1XgnDiE8=
+github.com/omec-project/nas v1.5.0/go.mod h1:7YXhxdG2Zfps0HNyPN0r4zzqE5cTaq+ocwY1pqMFTpI=
 github.com/omec-project/ngap v1.4.0 h1:8GiK7H+X/V3HBgUu1xXRi8BIS5ZTRCnBsoHVT8LfEgw=
 github.com/omec-project/ngap v1.4.0/go.mod h1:MzLDPeoPjhDziumtKxcKhL3MCRH48KZ++ZA5zOEt+Tg=
 github.com/omec-project/openapi v1.4.0 h1:OhTCIjpsKbBKg6Mobnn/oR8lW8F8czwhmmBTJtD2LS0=
