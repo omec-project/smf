@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/antihax/optional v1.0.0
-	github.com/gin-gonic/gin v1.10.0
+	github.com/gin-gonic/gin v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.3.0
