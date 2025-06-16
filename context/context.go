@@ -213,6 +213,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", pfcp.Addr, pfcp.Port))
 		if err != nil {
 			logger.CtxLog.Warnf("PFCP Parse Addr Fail: %v", err)
+			return nil
 		}
 
 		smfContext.PFCPPort = int(pfcp.Port)
