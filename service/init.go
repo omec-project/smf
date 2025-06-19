@@ -41,7 +41,7 @@ import (
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -61,12 +61,12 @@ var refreshNrfRegistration bool
 var config Config
 
 var smfCLi = []cli.Flag{
-	cli.StringFlag{
+	&cli.StringFlag{
 		Name:     "cfg",
 		Usage:    "smf config file",
 		Required: true,
 	},
-	cli.StringFlag{
+	&cli.StringFlag{
 		Name:     "uerouting",
 		Usage:    "uerouting config file",
 		Required: true,
@@ -93,7 +93,7 @@ func (*SMF) GetCliCmd() (flags []cli.Flag) {
 	return smfCLi
 }
 
-func (smf *SMF) Initialize(c *cli.Context) error {
+func (smf *SMF) Initialize(c *cli.Command) error {
 	config = Config{
 		cfg:       c.String("cfg"),
 		uerouting: c.String("uerouting"),
@@ -300,9 +300,9 @@ func (smf *SMF) setLogLevel() {
 	go metrics.InitMetrics()
 }
 
-func (smf *SMF) FilterCli(c *cli.Context) (args []string) {
+func (smf *SMF) FilterCli(c *cli.Command) (args []string) {
 	for _, flag := range smf.GetCliCmd() {
-		name := flag.GetName()
+		name := flag.Names()[0]
 		value := fmt.Sprint(c.Generic(name))
 		if value == "" {
 			continue
@@ -467,7 +467,7 @@ func (smf *SMF) Terminate() {
 	}
 }
 
-func (smf *SMF) Exec(c *cli.Context) error {
+func (smf *SMF) Exec(c *cli.Command) error {
 	return nil
 }
 
