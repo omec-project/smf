@@ -328,6 +328,10 @@ func (smf *SMF) Start() {
 	// Init SMF Service
 	smfCtxt := context.InitSmfContext(&factory.SmfConfig)
 
+	if smfCtxt == nil {
+		logger.InitLog.Fatalln("Failed to init smf context")
+	}
+
 	// allocate id for each upf
 	context.AllocateUPFID()
 
