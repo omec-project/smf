@@ -12,6 +12,7 @@ package factory
 
 import (
 	"fmt"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"os"
 	"reflect"
 	"strconv"
@@ -268,6 +269,148 @@ func (c *Config) UpdateConfig(commChannel chan *protos.NetworkSliceResponse) boo
 // Update level-1 Configuration(Not actual SMF config structure used by SMF)
 func (c *Configuration) parseRocConfig(rsp *protos.NetworkSliceResponse) error {
 	// Reset previous SNSSAI structure
+	if c.SNssaiInfo != nil {
+		c.SNssaiInfo = nil
+	}
+	c.SNssaiInfo = make([]SnssaiInfoItem, 0)
+
+	// Reset existing UP nodes and Links
+	if c.UserPlaneInformation.UPNodes != nil {
+		c.UserPlaneInformation.UPNodes = nil
+	}
+	c.UserPlaneInformation.UPNodes = make(map[string]UPNode)
+
+	if c.UserPlaneInformation.Links != nil {
+		c.UserPlaneInformation.Links = nil
+	}
+	c.UserPlaneInformation.Links = make([]UPLink, 0)
+
+	c.EnterpriseList = make(map[string]string)
+
+	// should be updated to be received from webui.
+	// currently adding port info in webui causes crash.
+	pfcpPortStr := os.Getenv("PFCP_PORT_UPF")
+	pfcpPortVal := DEFAULT_PFCP_PORT
+	if pfcpPortStr != "" {
+		if val, err := strconv.ParseUint(pfcpPortStr, 10, 32); err != nil {
+			return fmt.Errorf("parse pfcp port failed : %v", pfcpPortStr)
+		} else {
+			pfcpPortVal = int(val)
+		}
+	}
+
+	// Iterate through all NS received
+	for _, ns := range rsp.NetworkSlice {
+		// make new SNSSAI Info structure
+		var sNssaiInfoItem SnssaiInfoItem
+
+		// make SNSSAI
+		var sNssai models.Snssai
+		sNssai.Sd = ns.Nssai.Sd
+		numSst, err := strconv.Atoi(ns.Nssai.Sst)
+		if err != nil {
+			logger.CtxLog.Errorf("failed to convert SST to int : %v", ns.Nssai.Sst)
+		}
+		sNssai.Sst = int32(numSst)
+		sNssaiInfoItem.SNssai = &sNssai
+
+		// Add PLMN Id Info
+		if ns.Site.Plmn != nil {
+			sNssaiInfoItem.PlmnId.Mcc = ns.Site.Plmn.Mcc
+			sNssaiInfoItem.PlmnId.Mnc = ns.Site.Plmn.Mnc
+		}
+
+		// Populate enterprise name
+		c.EnterpriseList[ns.Nssai.Sst+ns.Nssai.Sd] = ns.Name
+
+		// make DNN Info structure
+		sNssaiInfoItem.DnnInfos = make([]SnssaiDnnInfoItem, 0)
+		for _, devGrp := range ns.DeviceGroup {
+			var dnnInfo SnssaiDnnInfoItem
+			dnnInfo.Dnn = devGrp.IpDomainDetails.DnnName
+			dnnInfo.DNS.IPv4Addr = devGrp.IpDomainDetails.DnsPrimary
+			dnnInfo.UESubnet = devGrp.IpDomainDetails.UePool
+			dnnInfo.MTU = uint16(devGrp.IpDomainDetails.Mtu)
+
+			// update to Slice structure
+			sNssaiInfoItem.DnnInfos = append(sNssaiInfoItem.DnnInfos, dnnInfo)
+		}
+
+		// Update to SMF config structure
+		c.SNssaiInfo = append(c.SNssaiInfo, sNssaiInfoItem)
+
+		// Check if port number is received as part of UpfName.
+		// If yes, then use it as port number. else use common port number
+		// from environment variable or if that also isn't available
+		// then use default PFCP port 8805.
+		portVal := uint16(pfcpPortVal)
+		portStr := ""
+		nodeStr := ns.Site.Upf.UpfName
+		if strings.Contains(ns.Site.Upf.UpfName, ":") {
+			if strings.LastIndex(ns.Site.Upf.UpfName, ":") < len(ns.Site.Upf.UpfName) {
+				portStr = ns.Site.Upf.UpfName[strings.LastIndex(ns.Site.Upf.UpfName, ":")+1:]
+			}
+		}
+		if portStr != "" {
+			if val, err := strconv.ParseUint(portStr, 10, 32); err != nil {
+				logger.CtxLog.Infoln("Parse Upf port failed : ", portStr)
+			} else {
+				portVal = uint16(val)
+			}
+			nodeStr = ns.Site.Upf.UpfName[:strings.LastIndex(ns.Site.Upf.UpfName, ":")]
+		}
+
+		ns.Site.Upf.UpfName = nodeStr
+		// iterate through UPFs config received
+		upf := UPNode{
+			Type:                 "UPF",
+			NodeID:               ns.Site.Upf.UpfName,
+			Port:                 portVal,
+			SNssaiInfos:          make([]models.SnssaiUpfInfoItem, 0),
+			InterfaceUpfInfoList: make([]InterfaceUpfInfoItem, 0),
+		}
+
+		snsUpfInfoItem := models.SnssaiUpfInfoItem{
+			SNssai:         &sNssai,
+			DnnUpfInfoList: make([]models.DnnUpfInfoItem, 0),
+		}
+
+		// Popoulate DNN names per UPF slice Info
+		for _, devGrp := range ns.DeviceGroup {
+			// DNN Info in UPF per Slice
+			var dnnUpfInfo models.DnnUpfInfoItem
+			dnnUpfInfo.Dnn = devGrp.IpDomainDetails.DnnName
+			snsUpfInfoItem.DnnUpfInfoList = append(snsUpfInfoItem.DnnUpfInfoList, dnnUpfInfo)
+
+			// Populate UPF Interface Info and DNN info in UPF per Interface
+			intfUpfInfoItem := InterfaceUpfInfoItem{
+				InterfaceType: models.UpInterfaceType_N3,
+				Endpoints:     make([]string, 0), NetworkInstance: devGrp.IpDomainDetails.DnnName,
+			}
+			intfUpfInfoItem.Endpoints = append(intfUpfInfoItem.Endpoints, ns.Site.Upf.UpfName)
+			upf.InterfaceUpfInfoList = append(upf.InterfaceUpfInfoList, intfUpfInfoItem)
+		}
+		upf.SNssaiInfos = append(upf.SNssaiInfos, snsUpfInfoItem)
+
+		// Update UPF to SMF Config Structure
+		c.UserPlaneInformation.UPNodes[ns.Site.Upf.UpfName] = upf
+
+		// Update gNB links to UPF(gNB <-> N3_UPF)
+		for _, gNb := range ns.Site.Gnb {
+			upLink := UPLink{A: gNb.Name, B: ns.Site.Upf.UpfName}
+			c.UserPlaneInformation.Links = append(c.UserPlaneInformation.Links, upLink)
+
+			// insert gNb to SMF Config Structure
+			gNbNode := UPNode{Type: "AN", NodeID: gNb.Name}
+			c.UserPlaneInformation.UPNodes[gNb.Name] = gNbNode
+		}
+	}
+	logger.CfgLog.Infof("Parsed SMF config : %+v \n", c)
+	return nil
+}
+
+// Update level-1 Configuration(Not actual SMF config structure used by SMF)
+func (c *Configuration) parseConfig(rsp nfConfigApi.SessionManagement) error {
 	if c.SNssaiInfo != nil {
 		c.SNssaiInfo = nil
 	}
