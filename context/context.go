@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -295,6 +297,218 @@ func SMF_Self() *SMFContext {
 
 func GetUserPlaneInformation() *UserPlaneInformation {
 	return smfContext.UserPlaneInformation
+}
+
+func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
+	logger.CtxLog.Infof("Processing config update from polling service")
+
+	var updatedSnssaiInfos []SnssaiSmfInfo
+
+	for _, sessionMgmt := range newConfig {
+		// Convert PLMN
+		apiPlmnId := sessionMgmt.GetPlmnId()
+		plmnId := models.PlmnId{
+			Mcc: apiPlmnId.GetMcc(),
+			Mnc: apiPlmnId.GetMnc(),
+		}
+
+		apiSnssai := sessionMgmt.GetSnssai()
+		snssaiInfo := SnssaiSmfInfo{
+			PlmnId: plmnId,
+			Snssai: SNssai{
+				Sst: apiSnssai.GetSst(),
+				Sd:  apiSnssai.GetSd(),
+			},
+			DnnInfos: make(map[string]*SnssaiSmfDnnInfo),
+		}
+
+		// Process IP domains (DNNs)
+		if sessionMgmt.HasIpDomain() {
+			for _, ipDomain := range sessionMgmt.GetIpDomain() {
+				dnn := ipDomain.GetDnnName()
+				ueSubnet := ipDomain.GetUeSubnet()
+
+				dnnInfo := &SnssaiSmfDnnInfo{
+					MTU: uint16(ipDomain.GetMtu()),
+				}
+
+				// IP allocation
+				if ueSubnet != "" {
+					allocator, err := NewIPAllocator(ueSubnet)
+					if err != nil {
+						logger.CtxLog.Warnf("IP allocation failed for DNN %s: %v", dnn, err)
+						continue
+					}
+					dnnInfo.UeIPAllocator = allocator
+
+					// Reserve static IPs
+					if smContext.StaticIpInfo != nil {
+						for _, static := range *smContext.StaticIpInfo {
+							if static.Dnn == dnn {
+								allocator.ReserveStaticIps(&static.ImsiIpInfo)
+								logger.CtxLog.Infof("Reserved static IPs for DNN %s", dnn)
+								break
+							}
+						}
+					}
+				}
+
+				// DNS
+				if ipv4 := ipDomain.GetDnsIpv4(); ipv4 != "" {
+					if ip := net.ParseIP(ipv4); ip != nil {
+						dnnInfo.DNS = DNS{IPv4Addr: ip}
+					}
+				}
+
+				snssaiInfo.DnnInfos[dnn] = dnnInfo
+			}
+		}
+
+		// Merge in existing DNNs if needed
+		if existing := findExistingSnssaiInfo(smContext, plmnId, snssaiInfo.Snssai); existing != nil {
+			for dnn, old := range existing.DnnInfos {
+				if _, found := snssaiInfo.DnnInfos[dnn]; !found {
+					snssaiInfo.DnnInfos[dnn] = old
+				}
+			}
+		}
+
+		updatedSnssaiInfos = append(updatedSnssaiInfos, snssaiInfo)
+	}
+
+	// Apply only if there are updates
+	if len(updatedSnssaiInfos) > 0 {
+		logger.CtxLog.Info("SNSSAI configuration changed; applying update")
+		smContext.SnssaiInfos = updatedSnssaiInfos
+
+		for _, sessionMgmt := range newConfig {
+			if sessionMgmt.HasUpf() {
+				upf := sessionMgmt.GetUpf()
+				gnbNames := sessionMgmt.GetGnbNames()
+
+				if err := updateUPFConfiguration(smContext, &upf, gnbNames); err != nil {
+					logger.CtxLog.Warnf("Failed to update UPF configuration: %v", err)
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func resolvePfcpPort(p *int32) uint16 {
+	if p != nil && *p >= 0 && *p <= 65535 {
+		return uint16(*p)
+	}
+	if env := os.Getenv("PFCP_PORT_UPF"); env != "" {
+		if v, err := strconv.Atoi(env); err == nil && v >= 0 && v <= 65535 {
+			return uint16(v)
+		}
+	}
+	return factory.DEFAULT_PFCP_PORT
+}
+
+// updateUPFConfiguration updates (or inserts) the UPF topology information
+// inside smfCtx given a *nfConfigApi.Upf object coming from SessionManagement.
+//
+// Port is optional (*int32) resolved to uint16 with bounds-check
+// Existing UPF nodes are updated in-place, missing ones are inserted
+// Links are recreated from the supplied selection-params
+func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string) error {
+	if apiUpf == nil {
+		return nil
+	}
+
+	hostname := apiUpf.Hostname
+	if hostname == "" {
+		return fmt.Errorf("UPF hostname must not be empty")
+	}
+	port := resolvePfcpPort(apiUpf.Port)
+
+	nodeID := NodeID{
+		NodeIdValue: []byte(hostname),
+		NodeIdType:  0x0F,
+	}
+
+	// ensure UserPlaneInformation is initialized
+	if smfCtx.UserPlaneInformation == nil {
+		smfCtx.UserPlaneInformation = &UserPlaneInformation{
+			UPNodes:              make(map[string]*UPNode),
+			DefaultUserPlanePath: make(map[string][]*UPNode),
+		}
+	}
+
+	// create or update UPF node
+	upNode := &UPNode{
+		UPF: &UPF{
+			NodeID: nodeID,
+			Port:   port,
+		},
+		Type:   UPNodeType("UPF"),
+		NodeID: nodeID,
+		Port:   port,
+		Links:  []*UPNode{},
+	}
+
+	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
+
+	// Handle gNBs and link them
+	for _, gnb := range gnbNames {
+		if gnb == "" {
+			continue
+		}
+
+		anNode, exists := smfCtx.UserPlaneInformation.UPNodes[gnb]
+		if !exists {
+			anNode = &UPNode{
+				Type: UPNodeType("AN"),
+				NodeID: NodeID{
+					NodeIdValue: []byte(gnb),
+					NodeIdType:  0x0F,
+				},
+			}
+
+			smfCtx.UserPlaneInformation.UPNodes[gnb] = anNode
+		}
+
+		anNode.Links = appendIfMissing(anNode.Links, upNode)
+		upNode.Links = appendIfMissing(upNode.Links, anNode)
+	}
+
+	AllocateUPFID()
+	smfCtx.UserPlaneInformation.ResetDefaultUserPlanePath()
+
+	logger.CtxLog.Infof("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
+	return nil
+}
+
+// Find existing S-NSSAI information
+func findExistingSnssaiInfo(smContext *SMFContext, plmnId models.PlmnId, snssai SNssai) *SnssaiSmfInfo {
+	if smContext == nil {
+		return nil
+	}
+
+	for i := range smContext.SnssaiInfos {
+		info := &smContext.SnssaiInfos[i]
+		if info.PlmnId.Mcc == plmnId.Mcc &&
+			info.PlmnId.Mnc == plmnId.Mnc &&
+			info.Snssai.Sst == snssai.Sst &&
+			info.Snssai.Sd == snssai.Sd {
+			return info
+		}
+	}
+
+	return nil
+}
+
+func appendIfMissing(slice []*UPNode, elem *UPNode) []*UPNode {
+	for _, s := range slice {
+		if s == elem {
+			return slice
+		}
+	}
+	return append(slice, elem)
 }
 
 func ProcessConfigUpdate() bool {
