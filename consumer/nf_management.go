@@ -378,7 +378,7 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 	return nil, nil
 }
 
-func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
+func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData, requestNfType models.NfType) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send Create Subscription")
 
 	// Set client and set url
