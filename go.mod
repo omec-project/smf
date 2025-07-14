@@ -12,7 +12,7 @@ require (
 	github.com/omec-project/nas v1.5.3
 	github.com/omec-project/ngap v1.4.2
 	github.com/omec-project/openapi v1.5.0
-	github.com/omec-project/util v1.3.2
+	github.com/omec-project/util v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/segmentio/kafka-go v0.4.48
