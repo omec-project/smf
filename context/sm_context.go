@@ -395,7 +395,7 @@ func (smContext *SMContext) PCFSelection() error {
 	var err error
 
 	if SMF_Self().EnableNrfCaching {
-		rep, err = nrfCache.SearchNFInstances(SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+		rep, err = nrfCache.SearchNFInstances(context.Background(), SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 		if err != nil {
 			return err
 		}
