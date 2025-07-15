@@ -57,8 +57,6 @@ type (
 	}
 )
 
-var refreshNrfRegistration bool
-
 var config Config
 
 var smfCLi = []cli.Flag{
@@ -73,11 +71,6 @@ var smfCLi = []cli.Flag{
 		Required: true,
 	},
 }
-
-var (
-	KeepAliveTimer      *time.Timer
-	KeepAliveTimerMutex sync.Mutex
-)
 
 type OneInstance struct {
 	m    sync.Mutex

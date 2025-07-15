@@ -13,10 +13,6 @@ import (
 	"github.com/omec-project/smf/logger"
 )
 
-func SetupSMFContext(config *factory.Config) error {
-	return nil
-}
-
 func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem) error {
 	logger.InitLog.Infof("Network Slices to be inserted [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*snssaiInfoConfig}))
 
@@ -73,19 +69,6 @@ func (c *SMFContext) insertSmfNssaiInfo(snssaiInfoConfig *factory.SnssaiInfoItem
 	}
 	c.SnssaiInfos = append(c.SnssaiInfos, snssaiInfo)
 
-	return nil
-}
-
-func (c *SMFContext) updateSmfNssaiInfo(modSliceInfo *factory.SnssaiInfoItem) error {
-	// identify slices to be updated
-	logger.InitLog.Infof("Network Slices to be modified [%v] ", factory.PrettyPrintNetworkSlices([]factory.SnssaiInfoItem{*modSliceInfo}))
-	if err := c.deleteSmfNssaiInfo(modSliceInfo); err != nil {
-		return fmt.Errorf("network slice delete error %v", err)
-	}
-
-	if err := c.insertSmfNssaiInfo(modSliceInfo); err != nil {
-		return fmt.Errorf("network slice insert error %v", err)
-	}
 	return nil
 }
 
