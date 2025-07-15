@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/omec-project/smf/factory"
 	"net/http"
 	"strings"
 	"time"
@@ -43,17 +44,20 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 
 	// build SmfInfo
 	var snssaiSmfInfoList []models.SnssaiSmfInfoItem
+	snssaiToPlmn := make(map[string]models.PlmnId)
+	uniqPlmn := make(map[string]struct{})
 
 	for _, sm := range cfgs {
+		uniqKey := sm.PlmnId.Mcc + "-" + sm.PlmnId.Mnc
+		if _, ok := uniqPlmn[uniqKey]; !ok {
+			uniqPlmn[uniqKey] = struct{}{}
+		}
+		snssaiKey := fmt.Sprintf("%d%s", sm.Snssai.Sst, deReferenceStr(sm.Snssai.Sd))
+		snssaiToPlmn[snssaiKey] = models.PlmnId{Mcc: sm.PlmnId.Mcc, Mnc: sm.PlmnId.Mnc}
 		item := models.SnssaiSmfInfoItem{
 			SNssai: &models.Snssai{
 				Sst: sm.Snssai.Sst,
-				Sd: func() string {
-					if sm.Snssai.Sd != nil {
-						return *sm.Snssai.Sd
-					}
-					return ""
-				}(),
+				Sd:  deReferenceStr(sm.Snssai.Sd),
 			},
 		}
 
@@ -66,11 +70,19 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 		}
 		if len(dnnList) > 0 {
 			item.DnnSmfInfoList = &dnnList
-			snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 		}
+		snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 	}
 
 	nfProf.SmfInfo = &models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
+	var plmnList []models.PlmnId
+	for key := range uniqPlmn {
+		parts := strings.Split(key, "-")
+		plmnList = append(plmnList, models.PlmnId{Mcc: parts[0], Mnc: parts[1]})
+	}
+	if len(plmnList) > 0 {
+		nfProf.PlmnList = &plmnList
+	}
 
 	now := time.Now()
 	ver := []models.NfServiceVersion{{
@@ -78,21 +90,35 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 		ApiFullVersion:  fmt.Sprintf("https://%s:%d/nsmf-pdusession/v1", smfCtx.RegisterIPv4, smfCtx.SBIPort),
 		Expiry:          &now,
 	}}
-	nfProf.NfServices = &[]models.NfService{{
-		ServiceInstanceId: smfCtx.NfInstanceID,
-		ServiceName:       models.ServiceName_NSMF_PDUSESSION,
-		Scheme:            models.UriScheme_HTTPS,
-		NfServiceStatus:   models.NfServiceStatus_REGISTERED,
-		ApiPrefix:         fmt.Sprintf("https://%s:%d", smfCtx.RegisterIPv4, smfCtx.SBIPort),
-		Versions:          &ver,
-	}}
+
+	var nfServices []models.NfService
+	for _, svc := range factory.SmfConfig.Configuration.ServiceNameList {
+		nfServices = append(nfServices, models.NfService{
+			ServiceInstanceId: smfCtx.NfInstanceID + svc,
+			ServiceName:       models.ServiceName(svc),
+			Scheme:            models.UriScheme_HTTPS,
+			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
+			ApiPrefix:         fmt.Sprintf("https://%s:%d", smfCtx.RegisterIPv4, smfCtx.SBIPort),
+			Versions:          &ver,
+			AllowedPlmns:      nfProf.PlmnList,
+		})
+	}
+	nfProf.NfServices = &nfServices
 
 	return nfProf, nil
+}
+
+func deReferenceStr(s *string) string {
+	if s != nil {
+		return *s
+	}
+	return ""
 }
 
 var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (prof models.NfProfile, resourceNrfUri string, err error) {
 	self := smfContext.SMF_Self()
 	nfProfile, err := getNfProfile(self, sessionManagementConfig)
+	logger.ConsumerLog.Debugf("Sending registration request with NFProfile %+v", nfProfile)
 	if err != nil {
 		return models.NfProfile{}, "", err
 	}
@@ -269,7 +295,7 @@ func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfTy
 				SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
 				ReqNfType:  requestNfType,
 			}
-			nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData, targetNfType)
+			nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData)
 			if problemDetails != nil {
 				logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)
 			} else if err != nil {
@@ -378,7 +404,7 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 	return nil, nil
 }
 
-func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData, requestNfType models.NfType) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
+func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send Create Subscription")
 
 	// Set client and set url

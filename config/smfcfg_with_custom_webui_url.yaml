@@ -11,5 +11,5 @@ configuration:
   debugProfilePort: 5001
   smfName: SMF # the name of this SMF
   nrfUri: http://nrf:29510 # a valid URI of NRF
-  webuiUri: myspecialwebui:9872 # a valid URI of Webui
+  webuiUri: https://myspecialwebui:5002 # a valid URI of Webui
 

@@ -117,18 +117,6 @@ func AllocateLocalSEID() (uint64, error) {
 	}
 }
 
-func ReleaseLocalSEID(seid uint64) error {
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		seid32 := (int32)(seid)
-		err := smfContext.DrsmCtxts.SeidPool.ReleaseInt32ID(seid32)
-		if err != nil {
-			logger.CtxLog.Errorf("allocate SEID error: %+v", err)
-			return err
-		}
-	}
-	return nil
-}
-
 func InitSmfContext(config *factory.Config) *SMFContext {
 	if config == nil {
 		logger.CtxLog.Error("Config is nil")
@@ -409,9 +397,7 @@ func resolvePfcpPort(p *int32) uint16 {
 	return factory.DEFAULT_PFCP_PORT
 }
 
-// updateUPFConfiguration updates (or inserts) the UPF topology information
-// inside smfCtx given a *nfConfigApi.Upf object coming from SessionManagement.
-//
+// updateUPFConfiguration updates (or inserts) the UPF information
 // Port is optional (*int32) resolved to uint16 with bounds-check
 // Existing UPF nodes are updated in-place, missing ones are inserted
 // Links are recreated from the supplied selection-params
@@ -509,118 +495,6 @@ func appendIfMissing(slice []*UPNode, elem *UPNode) []*UPNode {
 		}
 	}
 	return append(slice, elem)
-}
-
-func ProcessConfigUpdate() bool {
-	logger.CtxLog.Infof("Dynamic config update received [%+v]", factory.UpdatedSmfConfig)
-
-	sendNrfRegistration := false
-	// Lets check updated config
-	updatedCfg := factory.UpdatedSmfConfig
-
-	// Lets parse through network slice configs first
-	if updatedCfg.DelSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.DelSNssaiInfo {
-			err := SMF_Self().deleteSmfNssaiInfo(&slice)
-			if err != nil {
-				logger.CtxLog.Errorf("delete network slice [%v] failed: %v", slice, err)
-			}
-		}
-		factory.UpdatedSmfConfig.DelSNssaiInfo = nil
-		sendNrfRegistration = true
-	}
-
-	if updatedCfg.AddSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.AddSNssaiInfo {
-			err := SMF_Self().insertSmfNssaiInfo(&slice)
-			if err != nil {
-				logger.CtxLog.Errorf("insert network slice [%v] failed: %v", slice, err)
-			}
-		}
-		factory.UpdatedSmfConfig.AddSNssaiInfo = nil
-		sendNrfRegistration = true
-	}
-
-	if updatedCfg.ModSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.ModSNssaiInfo {
-			err := SMF_Self().updateSmfNssaiInfo(&slice)
-			if err != nil {
-				logger.CtxLog.Errorf("update network slice [%v] failed: %v", slice, err)
-			}
-		}
-		factory.UpdatedSmfConfig.ModSNssaiInfo = nil
-		sendNrfRegistration = true
-	}
-
-	// UP Node Links should be deleted before underlying UPFs are deleted
-	if updatedCfg.DelLinks != nil {
-		for _, link := range *updatedCfg.DelLinks {
-			err := GetUserPlaneInformation().DeleteUPNodeLinks(&link)
-			if err != nil {
-				logger.CtxLog.Errorf("delete UP Node Links failed: %v", err)
-			}
-		}
-		factory.UpdatedSmfConfig.DelLinks = nil
-	}
-
-	// Iterate through UserPlane Info
-	if updatedCfg.DelUPNodes != nil {
-		for name, upf := range *updatedCfg.DelUPNodes {
-			err := GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("delete UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.DelUPNodes = nil
-	}
-
-	if updatedCfg.AddUPNodes != nil {
-		for name, upf := range *updatedCfg.AddUPNodes {
-			err := GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("insert UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.AddUPNodes = nil
-		AllocateUPFID()
-		// TODO: allocate UPF ID
-	}
-
-	if updatedCfg.ModUPNodes != nil {
-		for name, upf := range *updatedCfg.ModUPNodes {
-			err := GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("update UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.ModUPNodes = nil
-	}
-
-	// Iterate through add UP Node Links info
-	// UP Links should be added only after underlying UPFs have been added
-	if updatedCfg.AddLinks != nil {
-		for _, link := range *updatedCfg.AddLinks {
-			err := GetUserPlaneInformation().InsertUPNodeLinks(&link)
-			if err != nil {
-				logger.CtxLog.Errorf("insert UP Node Links failed: %v", err)
-			}
-		}
-		factory.UpdatedSmfConfig.AddLinks = nil
-	}
-
-	// Update Enterprise Info
-	SMF_Self().EnterpriseList = updatedCfg.EnterpriseList
-	logger.CtxLog.Infof("Dynamic config update, enterprise info [%v] ", *updatedCfg.EnterpriseList)
-
-	// Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
-	GetUserPlaneInformation().ResetDefaultUserPlanePath()
-
-	// Send NRF Re-register if Slice info got updated
-	if sendNrfRegistration {
-		SetupNFProfile(&factory.SmfConfig)
-	}
-
-	return sendNrfRegistration
 }
 
 func (smfCtxt *SMFContext) InitDrsm() error {

@@ -23,7 +23,7 @@ const (
 	initialPollingInterval = 5 * time.Second
 	pollingMaxBackoff      = 40 * time.Second
 	pollingBackoffFactor   = 2
-	pollingPath            = "/nfconfig/plmn"
+	pollingPath            = "/nfconfig/session-management"
 )
 
 type nfConfigPoller struct {
@@ -49,23 +49,23 @@ func StartPollingService(ctx context.Context, webuiUri string, sessionManagement
 			logger.PollConfigLog.Infoln("Polling service shutting down")
 			return
 		case <-time.After(interval):
-			newSessionManagementConfig, err := fetchPlmnConfig(&poller, pollingEndpoint)
+			newSessionManagementConfig, err := fetchSessionManagementConfig(&poller, pollingEndpoint)
 			if err != nil {
 				interval = minDuration(interval*time.Duration(pollingBackoffFactor), pollingMaxBackoff)
 				logger.PollConfigLog.Errorf("Polling error. Retrying in %v: %+v", interval, err)
 				continue
 			}
 			interval = initialPollingInterval
-			poller.handlePolledPlmnConfig(newSessionManagementConfig)
+			poller.handlePolledSessionManagementConfig(newSessionManagementConfig)
 		}
 	}
 }
 
-var fetchPlmnConfig = func(p *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
-	return p.fetchPlmnConfig(endpoint)
+var fetchSessionManagementConfig = func(p *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
+	return p.fetchSessionManagementConfig(endpoint)
 }
 
-func (p *nfConfigPoller) fetchPlmnConfig(pollingEndpoint string) ([]nfConfigApi.SessionManagement, error) {
+func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([]nfConfigApi.SessionManagement, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), initialPollingInterval)
 	defer cancel()
 
@@ -95,6 +95,7 @@ func (p *nfConfigPoller) fetchPlmnConfig(pollingEndpoint string) ([]nfConfigApi.
 
 		var config []nfConfigApi.SessionManagement
 		if err := json.Unmarshal(body, &config); err != nil {
+			logger.PollConfigLog.Debugf("Session-management raw response: %s", body)
 			return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 		}
 		return config, nil
@@ -106,13 +107,13 @@ func (p *nfConfigPoller) fetchPlmnConfig(pollingEndpoint string) ([]nfConfigApi.
 	}
 }
 
-func (p *nfConfigPoller) handlePolledPlmnConfig(newSessionManagementConfig []nfConfigApi.SessionManagement) {
+func (p *nfConfigPoller) handlePolledSessionManagementConfig(newSessionManagementConfig []nfConfigApi.SessionManagement) {
 	if reflect.DeepEqual(p.currentSessionManagementConfig, newSessionManagementConfig) {
 		logger.PollConfigLog.Debugf("Session management config did not change %+v", newSessionManagementConfig)
 		return
 	}
 	p.currentSessionManagementConfig = newSessionManagementConfig
-	logger.PollConfigLog.Infof("PLMN config changed. New PLMN ID list: %+v", p.currentSessionManagementConfig)
+	logger.PollConfigLog.Infof("Session Management config changed. New Session Management Data: %+v", p.currentSessionManagementConfig)
 	p.sessionManagementConfigChan <- p.currentSessionManagementConfig
 }
 

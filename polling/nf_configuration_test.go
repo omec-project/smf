@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -25,27 +26,27 @@ import (
 
 func TestStartPollingService_Success(t *testing.T) {
 	ctx := t.Context()
-	originalFetchPlmnConfig := fetchPlmnConfig
-	defer func() {
-		fetchPlmnConfig = originalFetchPlmnConfig
-	}()
 
-	expectedConfig := []models.PlmnId{{Mcc: "001", Mnc: "01"}}
-	fetchPlmnConfig = func(poller *nfConfigPoller, pollingEndpoint string) ([]models.PlmnId, error) {
+	originalFetcher := fetchSessionManagementConfig
+	defer func() { fetchSessionManagementConfig = originalFetcher }()
+
+	expectedConfig := []nfConfigApi.SessionManagement{{Mcc: "001", Mnc: "01"}}
+	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 		return expectedConfig, nil
 	}
-	pollingChan := make(chan []models.PlmnId, 1)
 
-	go StartPollingService(ctx, "http://dummy", pollingChan)
+	sessionMgmtChan := make(chan []nfConfigApi.SessionManagement, 1)
+	go StartPollingService(ctx, "http://dummy", sessionMgmtChan)
+
 	time.Sleep(initialPollingInterval)
 
 	select {
-	case result := <-pollingChan:
+	case result := <-sessionMgmtChan:
 		if !reflect.DeepEqual(result, expectedConfig) {
 			t.Errorf("Expected %+v, got %+v", expectedConfig, result)
 		}
-	case <-time.After(100 * time.Millisecond):
-		t.Errorf("Timeout waiting for PLMN config")
+	case <-time.After(200 * time.Millisecond):
+		t.Errorf("Timeout waiting for session management config")
 	}
 }
 
