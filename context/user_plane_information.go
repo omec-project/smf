@@ -184,12 +184,16 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 	destinations = upi.selectMatchUPF(selection)
 
 	if len(destinations) == 0 {
-		logger.CtxLog.Errorf("can not find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
-			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+		for _, dnn := range selection.DnnList {
+			logger.CtxLog.Errorf("Can't find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", dnn,
+				selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+		}
 		return false
 	} else {
-		logger.CtxLog.Debugf("found UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
-			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+		for _, dnn := range selection.DnnList {
+			logger.CtxLog.Infof("Found UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]\n", dnn,
+				selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
+		}
 	}
 
 	// Run DFS
@@ -223,7 +227,7 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 
 func (upi *UserPlaneInformation) selectMatchUPF(selection *UPFSelectionParams) []*UPNode {
 	upList := make([]*UPNode, 0)
-
+	logger.CtxLog.Infof("Selecting matching UPFs for DNNs[%v] and S-NSSAI[sst: %d, sd: %s]", selection.DnnList, selection.SNssai.Sst, selection.SNssai.Sd)
 	for _, upNode := range upi.UPFs {
 		for _, snssaiInfo := range upNode.UPF.SNssaiInfos {
 			currentSnssai := &snssaiInfo.SNssai
@@ -231,9 +235,12 @@ func (upi *UserPlaneInformation) selectMatchUPF(selection *UPFSelectionParams) [
 
 			if currentSnssai.Equal(targetSnssai) {
 				for _, dnnInfo := range snssaiInfo.DnnList {
-					if dnnInfo.Dnn == selection.Dnn && dnnInfo.ContainsDNAI(selection.Dnai) {
-						upList = append(upList, upNode)
-						break
+					for _, dnn := range selection.DnnList {
+						if dnnInfo.Dnn == dnn && dnnInfo.ContainsDNAI(selection.Dnai) {
+							upList = append(upList, upNode)
+							logger.CtxLog.Infof("Matching UPF found: %v for DNN[%s] and DNAI[%s]", upNode, dnn, selection.Dnai)
+							break
+						}
 					}
 				}
 			}

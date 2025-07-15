@@ -5,6 +5,7 @@
 package qos
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -351,7 +352,21 @@ func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 }
 
 func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refQosData string) *models.QosData {
-	return smPolicyDecision.QosDecs[refQosData]
+	if smPolicyDecision == nil {
+		logger.PduSessLog.Errorln("smPolicyDecision is nil")
+		return nil
+	}
+	if smPolicyDecision.QosDecs == nil {
+		logger.PduSessLog.Errorln("QosDecs map is nil")
+		return nil
+	}
+	qos, exists := smPolicyDecision.QosDecs[refQosData]
+	if !exists {
+		logger.PduSessLog.Errorf("QoS Data [%s] not found in QosDecs. Available keys: %v", refQosData, reflect.ValueOf(smPolicyDecision.QosDecs).MapKeys())
+		return nil
+	}
+
+	return qos
 }
 
 func (d *QosFlowDescriptionsAuthorized) AddDefaultQosFlowDescription(sessRule *models.SessionRule) {

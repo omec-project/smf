@@ -8,7 +8,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/aper v1.3.1
-	github.com/omec-project/config5g v1.6.2
 	github.com/omec-project/nas v1.6.0
 	github.com/omec-project/ngap v1.5.0
 	github.com/omec-project/openapi v1.5.0
@@ -22,6 +21,8 @@ require (
 	go.mongodb.org/mongo-driver v1.17.4
 	gopkg.in/yaml.v2 v2.4.0
 )
+
+require github.com/5GC-DEV/config5g-cdac v0.2.1 // indirect
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect

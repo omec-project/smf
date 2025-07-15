@@ -226,7 +226,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	smContext.Tunnel = smf_context.NewUPTunnel()
 	var defaultPath *smf_context.DataPath
 	upfSelectionParams := &smf_context.UPFSelectionParams{
-		Dnn: createData.Dnn,
+		DnnList: []string{createData.Dnn},
 		SNssai: &smf_context.SNssai{
 			Sst: createData.SNssai.Sst,
 			Sd:  createData.SNssai.Sd,
