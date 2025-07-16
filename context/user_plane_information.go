@@ -48,6 +48,15 @@ type UPNode struct {
 type UPPath []*UPNode
 
 func AllocateUPFID() {
+	if smfContext.UserPlaneInformation == nil {
+		logger.InitLog.Errorln("UserPlaneInformation is nil")
+		return
+	}
+
+	if smfContext.UserPlaneInformation.UPFs == nil {
+		logger.InitLog.Errorln("UPFs is nil")
+		return
+	}
 	UPFsID := smfContext.UserPlaneInformation.UPFsID
 	UPFsIPtoID := smfContext.UserPlaneInformation.UPFsIPtoID
 

@@ -212,14 +212,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.CPNodeID.NodeIdValue = addr.IP.To4()
 	}
 
-	// Static config
-	for _, snssaiInfoConfig := range configuration.SNssaiInfo {
-		err := smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
-		if err != nil {
-			logger.CtxLog.Warnln(err)
-		}
-	}
-
 	// Set client and set url
 	ManagementConfig := Nnrf_NFManagement.NewConfiguration()
 	ManagementConfig.SetBasePath(SMF_Self().NrfUri)
@@ -233,8 +225,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.SupportedPDUSessionType = IPV4
 
-	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
-
 	smfContext.EnableNrfCaching = configuration.EnableNrfCaching
 
 	if configuration.EnableNrfCaching {
@@ -246,7 +236,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	}
 
 	smfContext.PodIp = os.Getenv("POD_IP")
-	SetupNFProfile(config)
 
 	return &smfContext
 }
@@ -290,10 +279,37 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
 	logger.CtxLog.Infof("Processing config update from polling service")
 
+	if len(newConfig) == 0 {
+		logger.CtxLog.Warn("Received empty session management config, clearing dynamic SMF context")
+		smContext.SnssaiInfos = nil
+		smContext.UserPlaneInformation = &UserPlaneInformation{
+			UPNodes:              make(map[string]*UPNode),
+			DefaultUserPlanePath: make(map[string][]*UPNode),
+		}
+		return nil
+	}
+
+	existingUPFs := make(map[string]*UPNode)
+	if smContext.UserPlaneInformation != nil {
+		for name, node := range smContext.UserPlaneInformation.UPNodes {
+			if node.Type == UPNodeType("UPF") {
+				existingUPFs[name] = node
+			}
+		}
+	} else {
+		smContext.UserPlaneInformation = &UserPlaneInformation{
+			UPNodes:              make(map[string]*UPNode),
+			DefaultUserPlanePath: make(map[string][]*UPNode),
+		}
+	}
+
+	// track current UPFs and gNBs seen in this update
+	currentUPFs := make(map[string]bool)
+	currentANs := make(map[string]bool)
+
 	var updatedSnssaiInfos []SnssaiSmfInfo
 
 	for _, sessionMgmt := range newConfig {
-		// Convert PLMN
 		apiPlmnId := sessionMgmt.GetPlmnId()
 		plmnId := models.PlmnId{
 			Mcc: apiPlmnId.GetMcc(),
@@ -310,17 +326,12 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			DnnInfos: make(map[string]*SnssaiSmfDnnInfo),
 		}
 
-		// Process IP domains (DNNs)
 		if sessionMgmt.HasIpDomain() {
 			for _, ipDomain := range sessionMgmt.GetIpDomain() {
 				dnn := ipDomain.GetDnnName()
 				ueSubnet := ipDomain.GetUeSubnet()
+				dnnInfo := &SnssaiSmfDnnInfo{MTU: uint16(ipDomain.GetMtu())}
 
-				dnnInfo := &SnssaiSmfDnnInfo{
-					MTU: uint16(ipDomain.GetMtu()),
-				}
-
-				// IP allocation
 				if ueSubnet != "" {
 					allocator, err := NewIPAllocator(ueSubnet)
 					if err != nil {
@@ -329,19 +340,16 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 					}
 					dnnInfo.UeIPAllocator = allocator
 
-					// Reserve static IPs
 					if smContext.StaticIpInfo != nil {
 						for _, static := range *smContext.StaticIpInfo {
 							if static.Dnn == dnn {
 								allocator.ReserveStaticIps(&static.ImsiIpInfo)
-								logger.CtxLog.Infof("Reserved static IPs for DNN %s", dnn)
 								break
 							}
 						}
 					}
 				}
 
-				// DNS
 				if ipv4 := ipDomain.GetDnsIpv4(); ipv4 != "" {
 					if ip := net.ParseIP(ipv4); ip != nil {
 						dnnInfo.DNS = DNS{IPv4Addr: ip}
@@ -352,36 +360,41 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			}
 		}
 
-		// Merge in existing DNNs if needed
-		if existing := findExistingSnssaiInfo(smContext, plmnId, snssaiInfo.Snssai); existing != nil {
-			for dnn, old := range existing.DnnInfos {
-				if _, found := snssaiInfo.DnnInfos[dnn]; !found {
-					snssaiInfo.DnnInfos[dnn] = old
-				}
-			}
-		}
-
 		updatedSnssaiInfos = append(updatedSnssaiInfos, snssaiInfo)
-	}
 
-	// Apply only if there are updates
-	if len(updatedSnssaiInfos) > 0 {
-		logger.CtxLog.Info("SNSSAI configuration changed; applying update")
-		smContext.SnssaiInfos = updatedSnssaiInfos
+		if sessionMgmt.HasUpf() {
+			upf := sessionMgmt.GetUpf()
+			gnbNames := sessionMgmt.GetGnbNames()
+			currentUPFs[upf.Hostname] = true
+			for _, gnb := range gnbNames {
+				currentANs[gnb] = true
+			}
 
-		for _, sessionMgmt := range newConfig {
-			if sessionMgmt.HasUpf() {
-				upf := sessionMgmt.GetUpf()
-				gnbNames := sessionMgmt.GetGnbNames()
-
-				if err := updateUPFConfiguration(smContext, &upf, gnbNames); err != nil {
-					logger.CtxLog.Warnf("Failed to update UPF configuration: %v", err)
-					return err
-				}
+			if err := updateUPFConfiguration(smContext, &upf, gnbNames, existingUPFs); err != nil {
+				logger.CtxLog.Warnf("Failed to update UPF configuration: %v", err)
+				return err
 			}
 		}
 	}
 
+	// Clean up UPFs and gNBs not in current config
+	for name, node := range smContext.UserPlaneInformation.UPNodes {
+		switch node.Type {
+		case UPNodeType("UPF"):
+			if !currentUPFs[name] {
+				delete(smContext.UserPlaneInformation.UPNodes, name)
+			}
+		case UPNodeType("AN"):
+			if !currentANs[name] {
+				delete(smContext.UserPlaneInformation.UPNodes, name)
+			}
+		}
+	}
+
+	smContext.SnssaiInfos = updatedSnssaiInfos
+	smContext.UserPlaneInformation.ResetDefaultUserPlanePath()
+
+	logger.CtxLog.Info("SMF context updated from dynamic session management config")
 	return nil
 }
 
@@ -397,11 +410,7 @@ func resolvePfcpPort(p *int32) uint16 {
 	return factory.DEFAULT_PFCP_PORT
 }
 
-// updateUPFConfiguration updates (or inserts) the UPF information
-// Port is optional (*int32) resolved to uint16 with bounds-check
-// Existing UPF nodes are updated in-place, missing ones are inserted
-// Links are recreated from the supplied selection-params
-func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string) error {
+func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
 	if apiUpf == nil {
 		return nil
 	}
@@ -411,35 +420,27 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 		return fmt.Errorf("UPF hostname must not be empty")
 	}
 	port := resolvePfcpPort(apiUpf.Port)
-
 	nodeID := NodeID{
 		NodeIdValue: []byte(hostname),
-		NodeIdType:  0x0F,
+		NodeIdType:  NodeIdTypeIpv4Address,
 	}
 
-	// ensure UserPlaneInformation is initialized
-	if smfCtx.UserPlaneInformation == nil {
-		smfCtx.UserPlaneInformation = &UserPlaneInformation{
-			UPNodes:              make(map[string]*UPNode),
-			DefaultUserPlanePath: make(map[string][]*UPNode),
-		}
-	}
-
-	// create or update UPF node
-	upNode := &UPNode{
-		UPF: &UPF{
+	upNode, exists := existingUPFs[hostname]
+	if !exists {
+		upNode = &UPNode{
+			UPF: &UPF{
+				NodeID: nodeID,
+				Port:   port,
+			},
+			Type:   UPNodeType("UPF"),
 			NodeID: nodeID,
 			Port:   port,
-		},
-		Type:   UPNodeType("UPF"),
-		NodeID: nodeID,
-		Port:   port,
-		Links:  []*UPNode{},
+			Links:  []*UPNode{},
+		}
 	}
 
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
 
-	// Handle gNBs and link them
 	for _, gnb := range gnbNames {
 		if gnb == "" {
 			continue
@@ -451,10 +452,10 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 				Type: UPNodeType("AN"),
 				NodeID: NodeID{
 					NodeIdValue: []byte(gnb),
-					NodeIdType:  0x0F,
+					NodeIdType:  NodeIdTypeIpv4Address,
 				},
+				Links: []*UPNode{},
 			}
-
 			smfCtx.UserPlaneInformation.UPNodes[gnb] = anNode
 		}
 
@@ -462,29 +463,7 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 		upNode.Links = appendIfMissing(upNode.Links, anNode)
 	}
 
-	AllocateUPFID()
-	smfCtx.UserPlaneInformation.ResetDefaultUserPlanePath()
-
 	logger.CtxLog.Infof("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
-	return nil
-}
-
-// Find existing S-NSSAI information
-func findExistingSnssaiInfo(smContext *SMFContext, plmnId models.PlmnId, snssai SNssai) *SnssaiSmfInfo {
-	if smContext == nil {
-		return nil
-	}
-
-	for i := range smContext.SnssaiInfos {
-		info := &smContext.SnssaiInfos[i]
-		if info.PlmnId.Mcc == plmnId.Mcc &&
-			info.PlmnId.Mnc == plmnId.Mnc &&
-			info.Snssai.Sst == snssai.Sst &&
-			info.Snssai.Sd == snssai.Sd {
-			return info
-		}
-	}
-
 	return nil
 }
 
@@ -527,15 +506,5 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	// for IP-Addr
 	// TODO, use UPF based allocation for now
 
-	return nil
-}
-
-func (smfCtxt *SMFContext) GetDnnStaticIpInfo(dnn string) *factory.StaticIpInfo {
-	for _, info := range *smfCtxt.StaticIpInfo {
-		if info.Dnn == dnn {
-			logger.CfgLog.Debugf("get static ip info for dnn [%s] found [%v]", dnn, info)
-			return &info
-		}
-	}
 	return nil
 }
