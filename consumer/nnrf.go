@@ -185,7 +185,7 @@ func getSvcMsgType(nfType models.NfType) svcmsgtypes.SmfMsgType {
 	return svcMsgType
 }
 
-func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfType,
+func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requestNfType models.NfType,
 	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts,
 ) (models.SearchResult, error) {
 	result, httpResp, localErr := smf_context.SMF_Self().
@@ -257,10 +257,12 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 	var result models.SearchResult
 	var localErr error
 
+	ctx := context.Background()
+
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smf_context.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {
@@ -295,10 +297,12 @@ func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
 	var result models.SearchResult
 	var localErr error
 
+	ctx := context.Background()
+
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smf_context.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {
@@ -324,10 +328,12 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 	var result models.SearchResult
 	var localErr error
 
+	ctx := context.Background()
+
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {

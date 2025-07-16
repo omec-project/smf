@@ -11,7 +11,7 @@ require (
 	github.com/omec-project/config5g v1.6.2
 	github.com/omec-project/nas v1.6.0
 	github.com/omec-project/ngap v1.5.0
-	github.com/omec-project/openapi v1.5.0
+	github.com/omec-project/openapi v1.6.1
 	github.com/omec-project/util v1.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.22.0
