@@ -233,15 +233,17 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		},
 	}
 
-	if smf_context.SMF_Self().ULCLSupport && smf_context.CheckUEHasPreConfig(createData.Supi) {
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, SUPI[%s] has pre-config route", createData.Supi)
-		uePreConfigPaths := smf_context.GetUEPreConfigPaths(createData.Supi)
+	smfCtx := smf_context.SMF_Self()
+	if smfCtx.ULCLSupport && smfCtx.UeRoutingManager != nil && smfCtx.UeRoutingManager.HasPath(createData.Supi) {
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate: SUPI[%s] has pre-configured route", createData.Supi)
+		uePreConfigPaths, _ := smfCtx.UeRoutingManager.GetPath(createData.Supi)
 		smContext.Tunnel.DataPathPool = uePreConfigPaths.DataPathPool
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
 		defaultPath = smContext.Tunnel.DataPathPool.GetDefaultPath()
-		err := defaultPath.ActivateTunnelAndPDR(smContext, 255)
-		if err != nil {
-			smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, data path error: %v", err.Error())
+		if defaultPath == nil {
+			smContext.SubPduSessLog.Warnf("No default path found for SUPI[%s], fallback to default path handling", createData.Supi)
+		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
+			smContext.SubPduSessLog.Errorf("ActivateTunnelAndPDR error for SUPI[%s]: %v", createData.Supi, err)
 		}
 		smContext.BPManager = smf_context.NewBPManager(createData.Supi)
 	} else {

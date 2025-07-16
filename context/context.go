@@ -68,10 +68,10 @@ type SMFContext struct {
 	// Now only "IPv4" supported
 	// TODO: support "IPv6", "IPv4v6", "Ethernet"
 	SupportedPDUSessionType string
-
-	UEPreConfigPathPool map[string]*UEPreConfigPaths
-	DrsmCtxts           DrsmCtxts
-	EnterpriseList      *map[string]string // map to contain slice-name:enterprise-name
+	UeRoutingManager        *UERoutingManager
+	UEPreConfigPathPool     map[string]*UEPreConfigPaths
+	DrsmCtxts               DrsmCtxts
+	EnterpriseList          *map[string]string // map to contain slice-name:enterprise-name
 
 	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
 	PodIp                 string
@@ -240,32 +240,33 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	return &smfContext
 }
 
-func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
+func InitSMFUERouting(routingConfig *factory.RoutingConfig) error {
 	if !smfContext.ULCLSupport {
-		return
+		return nil
 	}
 
 	if routingConfig == nil {
 		logger.CtxLog.Error("configuration needs the routing config")
-		return
+		return nil
 	}
 
 	logger.CtxLog.Infof("ue routing config Info: Version[%s] Description[%s]",
 		routingConfig.Info.Version, routingConfig.Info.Description)
 
-	UERoutingInfo := routingConfig.UERoutingInfo
-	smfContext.UEPreConfigPathPool = make(map[string]*UEPreConfigPaths)
+	routingManager := NewUERoutingManager()
 
-	for _, routingInfo := range UERoutingInfo {
+	for _, routingInfo := range routingConfig.UERoutingInfo {
 		supi := routingInfo.SUPI
 		uePreConfigPaths, err := NewUEPreConfigPaths(supi, routingInfo.PathList)
 		if err != nil {
-			logger.CtxLog.Warnln(err)
+			logger.CtxLog.Warnf("Failed to initialize pre-config paths for SUPI %s: %v", supi, err)
 			continue
 		}
-
-		smfContext.UEPreConfigPathPool[supi] = uePreConfigPaths
+		routingManager.AddPath(supi, uePreConfigPaths)
 	}
+
+	smfContext.UeRoutingManager = routingManager
+	return nil
 }
 
 func SMF_Self() *SMFContext {
