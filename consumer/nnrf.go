@@ -328,10 +328,12 @@ func SendNFDiscoveryServingAMF(smContext *smf_context.SMContext) (*models.Proble
 	var result models.SearchResult
 	var localErr error
 
+	ctx := context.Background()
+
 	if smf_context.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(context.Background(), smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(context.Background(), smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smf_context.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {
