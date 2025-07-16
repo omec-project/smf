@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mohae/deepcopy"
 	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/logger"
 )
@@ -27,22 +28,22 @@ const (
 )
 
 type nfConfigPoller struct {
-	sessionManagementConfigChan    chan<- []nfConfigApi.SessionManagement
 	currentSessionManagementConfig []nfConfigApi.SessionManagement
 	client                         *http.Client
 }
 
-// StartPollingService initializes the polling service and starts it. The polling service
-// continuously makes a HTTP GET request to the webconsole and updates the network configuration
-func StartPollingService(ctx context.Context, webuiUri string, sessionManagementConfigChan chan<- []nfConfigApi.SessionManagement) {
+// StartPollingService initializes the polling service and starts it.
+// The polling service continuously makes HTTP GET request to the webconsole and updates the network configuration
+func StartPollingService(ctx context.Context, webuiUri string, onUpdate func([]nfConfigApi.SessionManagement)) {
 	poller := nfConfigPoller{
-		sessionManagementConfigChan:    sessionManagementConfigChan,
 		currentSessionManagementConfig: []nfConfigApi.SessionManagement{},
 		client:                         &http.Client{Timeout: initialPollingInterval},
 	}
+
 	interval := initialPollingInterval
 	pollingEndpoint := webuiUri + pollingPath
 	logger.PollConfigLog.Infof("Started polling service on %s every %v", pollingEndpoint, initialPollingInterval)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -56,7 +57,15 @@ func StartPollingService(ctx context.Context, webuiUri string, sessionManagement
 				continue
 			}
 			interval = initialPollingInterval
-			poller.handlePolledSessionManagementConfig(newSessionManagementConfig)
+
+			// only trigger callback if config changed
+			if !reflect.DeepEqual(newSessionManagementConfig, poller.currentSessionManagementConfig) {
+				logger.PollConfigLog.Infof("Session Management config changed. New Session Management Data: %+v", newSessionManagementConfig)
+				poller.currentSessionManagementConfig = deepcopy.Copy(newSessionManagementConfig).([]nfConfigApi.SessionManagement)
+				onUpdate(newSessionManagementConfig)
+			} else {
+				logger.PollConfigLog.Debugf("Session management config did not change %+v", newSessionManagementConfig)
+			}
 		}
 	}
 }
@@ -105,16 +114,6 @@ func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-}
-
-func (p *nfConfigPoller) handlePolledSessionManagementConfig(newSessionManagementConfig []nfConfigApi.SessionManagement) {
-	if reflect.DeepEqual(p.currentSessionManagementConfig, newSessionManagementConfig) {
-		logger.PollConfigLog.Debugf("Session management config did not change %+v", newSessionManagementConfig)
-		return
-	}
-	p.currentSessionManagementConfig = newSessionManagementConfig
-	logger.PollConfigLog.Infof("Session Management config changed. New Session Management Data: %+v", p.currentSessionManagementConfig)
-	p.sessionManagementConfigChan <- p.currentSessionManagementConfig
 }
 
 func minDuration(a, b time.Duration) time.Duration {

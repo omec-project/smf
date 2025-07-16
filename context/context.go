@@ -123,7 +123,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		return nil
 	}
 
-	// Acquire master SMF config lock, no one should update it in parallel,
+	// Acquire master SMF config lock, no one should update it in parallel
 	// until SMF is done updating SMF context
 	factory.SmfConfigSyncLock.Lock()
 	defer factory.SmfConfigSyncLock.Unlock()
@@ -292,7 +292,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	existingUPFs := make(map[string]*UPNode)
 	if smContext.UserPlaneInformation != nil {
 		for name, node := range smContext.UserPlaneInformation.UPNodes {
-			if node.Type == UPNodeType("UPF") {
+			if node.Type == UPNODE_UPF {
 				existingUPFs[name] = node
 			}
 		}
@@ -377,14 +377,14 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 		}
 	}
 
-	// Clean up UPFs and gNBs not in current config
+	// Clean up UPFs and gNBs not in the current config
 	for name, node := range smContext.UserPlaneInformation.UPNodes {
 		switch node.Type {
-		case UPNodeType("UPF"):
+		case UPNODE_UPF:
 			if !currentUPFs[name] {
 				delete(smContext.UserPlaneInformation.UPNodes, name)
 			}
-		case UPNodeType("AN"):
+		case UPNODE_AN:
 			if !currentANs[name] {
 				delete(smContext.UserPlaneInformation.UPNodes, name)
 			}
@@ -392,9 +392,29 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	}
 
 	smContext.SnssaiInfos = updatedSnssaiInfos
-	smContext.UserPlaneInformation.ResetDefaultUserPlanePath()
+	upi := smContext.UserPlaneInformation
 
-	logger.CtxLog.Info("SMF context updated from dynamic session management config")
+	// reset before reinitializing
+	upi.ResetDefaultUserPlanePath()
+
+	// initialize maps
+	upi.UPFs = make(map[string]*UPNode)
+	upi.UPFIPToName = make(map[string]string)
+	upi.UPFsID = make(map[string]string)
+	upi.UPFsIPtoID = make(map[string]string)
+
+	for name, node := range upi.UPNodes {
+		if node.Type == UPNODE_UPF {
+			upi.UPFs[name] = node
+
+			nodeID := string(node.NodeID.NodeIdValue)
+			upi.UPFIPToName[nodeID] = name
+			upi.UPFsID[name] = nodeID
+			upi.UPFsIPtoID[nodeID] = name
+		}
+	}
+
+	logger.CtxLog.Info("SMF context updated from dynamic session management config successfully")
 	return nil
 }
 
@@ -432,7 +452,7 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 				NodeID: nodeID,
 				Port:   port,
 			},
-			Type:   UPNodeType("UPF"),
+			Type:   UPNODE_UPF,
 			NodeID: nodeID,
 			Port:   port,
 			Links:  []*UPNode{},
@@ -449,7 +469,7 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 		anNode, exists := smfCtx.UserPlaneInformation.UPNodes[gnb]
 		if !exists {
 			anNode = &UPNode{
-				Type: UPNodeType("AN"),
+				Type: UPNODE_AN,
 				NodeID: NodeID{
 					NodeIdValue: []byte(gnb),
 					NodeIdType:  NodeIdTypeIpv4Address,
