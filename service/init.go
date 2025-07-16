@@ -9,9 +9,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/omec-project/openapi/nfConfigApi"
-	"github.com/omec-project/smf/nfregistration"
-	"github.com/omec-project/smf/polling"
 	"net/http"
 	_ "net/http/pprof" // Using package only for invoking initialization.
 	"os"
@@ -26,6 +23,7 @@ import (
 	ngapLogger "github.com/omec-project/ngap/logger"
 	openapiLogger "github.com/omec-project/openapi/logger"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	nrfCache "github.com/omec-project/openapi/nrfcache"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
@@ -34,12 +32,14 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/nfregistration"
 	"github.com/omec-project/smf/oam"
 	"github.com/omec-project/smf/pdusession"
 	"github.com/omec-project/smf/pfcp"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
+	"github.com/omec-project/smf/polling"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"
@@ -70,17 +70,6 @@ var smfCLi = []cli.Flag{
 		Usage:    "uerouting config file",
 		Required: true,
 	},
-}
-
-type OneInstance struct {
-	m    sync.Mutex
-	done uint32
-}
-
-var nrfRegInProgress OneInstance
-
-func init() {
-	nrfRegInProgress = OneInstance{}
 }
 
 func (*SMF) GetCliCmd() (flags []cli.Flag) {
@@ -266,17 +255,29 @@ func (smf *SMF) Start() {
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
-	sessionManagementConfigChan := make(chan []nfConfigApi.SessionManagement, 1)
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 1)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
 	ctx, cancelServices := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		polling.StartPollingService(ctx, factory.SmfConfig.Configuration.WebuiUri, sessionManagementConfigChan)
+		polling.StartPollingService(ctx, factory.SmfConfig.Configuration.WebuiUri, func(cfg []nfConfigApi.SessionManagement) {
+			select {
+			case registrationChan <- cfg:
+			default:
+				logger.PollConfigLog.Warn("registrationChan full, dropping config")
+			}
+			select {
+			case contextUpdateChan <- cfg:
+			default:
+				logger.PollConfigLog.Warn("contextUpdateChan full, dropping config")
+			}
+		})
 	}()
 	go func() {
 		defer wg.Done()
-		nfregistration.StartNfRegistrationService(ctx, sessionManagementConfigChan)
+		nfregistration.StartNfRegistrationService(ctx, registrationChan)
 	}()
 
 	// Update SMF context using polled config
@@ -285,16 +286,16 @@ func (smf *SMF) Start() {
 			select {
 			case <-ctx.Done():
 				return
-			case cfg := <-sessionManagementConfigChan:
+			case cfg := <-contextUpdateChan:
 				factory.SmfConfigSyncLock.Lock()
 				err := smfContext.UpdateSmfContext(smfContext.SMF_Self(), cfg)
+				factory.SmfConfigSyncLock.Unlock()
 				if err != nil {
 					logger.PollConfigLog.Errorf("SMF context update failed: %v", err)
 				} else {
 					logger.PollConfigLog.Infof("SMF context updated from WebConsole config")
 					smfContext.AllocateUPFID()
 				}
-				factory.SmfConfigSyncLock.Unlock()
 			}
 		}
 	}()
@@ -341,7 +342,7 @@ func (smf *SMF) Start() {
 	userPlaneInfo := smfContext.SMF_Self().UserPlaneInformation
 
 	if userPlaneInfo == nil || userPlaneInfo.UPFs == nil {
-		logger.AppLog.Errorln("UserPlaneInformation or UPFs is nil, skipping PFCP Association Request")
+		logger.AppLog.Warnln("UserPlaneInformation or UPFs is nil, skipping PFCP Association Request")
 	} else {
 		for _, upf := range userPlaneInfo.UPFs {
 			if upf == nil {
@@ -350,7 +351,7 @@ func (smf *SMF) Start() {
 			}
 			nodeID := upf.NodeID.ResolveNodeIdToIp()
 			if nodeID == nil {
-				logger.AppLog.Warnf("Failed to resolve NodeId to IP for UPF %s, skipping PFCP Association Request", upf)
+				logger.AppLog.Warnf("Failed to resolve NodeId to IP for UPF %v, skipping PFCP Association Request", upf)
 				continue
 			}
 
@@ -371,7 +372,7 @@ func (smf *SMF) Start() {
 		if userPlaneInfo != nil {
 			upf.InitPfcpHeartbeatRequest(userPlaneInfo)
 		} else {
-			logger.AppLog.Errorln("UserPlaneInformation is nil, cannot trigger PFCP heartbeat")
+			logger.AppLog.Warnln("UserPlaneInformation is nil, cannot trigger PFCP heartbeat")
 		}
 	}()
 
@@ -379,7 +380,7 @@ func (smf *SMF) Start() {
 		if userPlaneInfo != nil {
 			upf.ProbeInactiveUpfs(userPlaneInfo)
 		} else {
-			logger.AppLog.Errorln("UserPlaneInformation is nil, cannot probe inactive UPFs")
+			logger.AppLog.Warnln("UserPlaneInformation is nil, cannot probe inactive UPFs")
 		}
 	}()
 

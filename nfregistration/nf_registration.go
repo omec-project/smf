@@ -7,11 +7,11 @@ package nfregistration
 
 import (
 	"context"
-	"github.com/omec-project/openapi/nfConfigApi"
 	"sync"
 	"time"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/logger"
 )
@@ -28,9 +28,9 @@ const (
 	retryTime                   = 10 * time.Second
 )
 
-// StartNfRegistrationService starts the registration service. If the new config is empty, the NF
-// deregisters from the NRF. Else, it registers to the NRF. It cancels registerCancel to ensure
-// that only one registration process runs at the time.
+// StartNfRegistrationService starts the registration service.
+// If the new config is empty, the NF deregisters from the NRF. Else, it registers to the NRF.
+// It cancels registerCancel to ensure that only one registration process runs at the time.
 func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan <-chan []nfConfigApi.SessionManagement) {
 	var registerCancel context.CancelFunc
 	var registerCtx context.Context
@@ -51,19 +51,20 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 			}
 
 			if len(newSessionManagementConfig) == 0 {
-				logger.NrfRegistrationLog.Debugln("PLMN config is empty. SMF will deregister")
+				logger.NrfRegistrationLog.Debugln("Session management config is empty. SMF will deregister")
 				DeregisterNF()
 			} else {
-				logger.NrfRegistrationLog.Debugln("PLMN config is not empty. SMF will update registration")
+				logger.NrfRegistrationLog.Debugln("Session management config is not empty. SMF will update registration")
 				registerCtx, registerCancel = context.WithCancel(context.Background())
-				// Create new cancellable context for this registration
+				// Create a new cancellable context for this registration
 				go registerNF(registerCtx, newSessionManagementConfig)
 			}
 		}
 	}
 }
 
-// registerNF sends a RegisterNFInstance. If it fails, it keeps retrying, until the context is cancelled by StartNfRegistrationService
+// registerNF sends a RegisterNFInstance.
+// If it fails, it keeps retrying until the context is cancelled by StartNfRegistrationService
 var registerNF = func(registerCtx context.Context, newSessionManagementConfig []nfConfigApi.SessionManagement) {
 	registerCtxMutex.Lock()
 	defer registerCtxMutex.Unlock()
@@ -88,7 +89,7 @@ var registerNF = func(registerCtx context.Context, newSessionManagementConfig []
 }
 
 // heartbeatNF is the callback function, this is called when keepalivetimer elapsed.
-// It sends a Update NF instance to the NRF. If it fails, it tries to register again.
+// It sends an Update NF instance to the NRF. If it fails, it tries to register again.
 // keepAliveTimer is restarted at the end.
 func heartbeatNF(sessionConfig []nfConfigApi.SessionManagement) {
 	keepAliveTimerMutex.Lock()
@@ -155,7 +156,7 @@ func startKeepAliveTimer(profileHeartbeatTimer int32, sessionConfig []nfConfigAp
 		heartbeatTimer = profileHeartbeatTimer
 	}
 	heartbeatFunction := func() { heartbeatNF(sessionConfig) }
-	// AfterFunc starts timer and waits for keepAliveTimer to elapse and then calls heartbeatNF function
+	// AfterFunc starts a timer and waits for keepAliveTimer to elapse and then calls heartbeatNF function
 	keepAliveTimer = afterFunc(time.Duration(heartbeatTimer)*time.Second, heartbeatFunction)
 	logger.NrfRegistrationLog.Debugf("started heartbeat timer: %v sec", heartbeatTimer)
 }

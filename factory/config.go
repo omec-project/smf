@@ -11,7 +11,6 @@
 package factory
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/omec-project/openapi/models"
@@ -210,23 +209,4 @@ func (r *RoutingConfig) GetVersion() string {
 		return r.Info.Version
 	}
 	return ""
-}
-
-func compareUPLinks(c1, c2 interface{}) bool {
-	return c1.(UPLink).A == c2.(UPLink).A && c1.(UPLink).B == c2.(UPLink).B
-}
-
-func PrettyPrintNetworkSlices(networkSlice []SnssaiInfoItem) (s string) {
-	for _, slice := range networkSlice {
-		s += fmt.Sprintf("\n Slice SST[%v] SD[%v] ", slice.SNssai.Sst, slice.SNssai.Sd)
-		s += PrettyPrintNetworkDnnSlices(slice.DnnInfos)
-	}
-	return
-}
-
-func PrettyPrintNetworkDnnSlices(dnnSlice []SnssaiDnnInfoItem) (s string) {
-	for _, dnn := range dnnSlice {
-		s += fmt.Sprintf("\n DNN name[%v], DNS v4[%v], v6[%v], UE-Pool[%v] ", dnn.Dnn, dnn.DNS.IPv4Addr, dnn.DNS.IPv6Addr, dnn.UESubnet)
-	}
-	return
 }

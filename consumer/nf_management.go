@@ -8,9 +8,7 @@ package consumer
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"github.com/omec-project/smf/factory"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +23,7 @@ import (
 	"github.com/omec-project/openapi/nfConfigApi"
 	nrfCache "github.com/omec-project/openapi/nrfcache"
 	smfContext "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
@@ -43,7 +42,7 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 	nfServices := make([]models.NfService, 0)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
 		nfServices = append(nfServices, models.NfService{
-			ServiceInstanceId: smfCtx.NfInstanceID + "-" + string(serviceName),
+			ServiceInstanceId: smfCtx.NfInstanceID + "-" + serviceName,
 			ServiceName:       models.ServiceName(serviceName),
 			Scheme:            smfCtx.URIScheme,
 			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
@@ -68,7 +67,7 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 		PlmnList:      plmnList,
 		AllowedPlmns:  plmnList,
 	}
-	logger.ConsumerLog.Debugf("NF Profile is created using session management config: %+v", nfProf)
+	logger.ConsumerLog.Debugln("NF Profile is created using session management config")
 	return nfProf, nil
 }
 
@@ -129,11 +128,10 @@ func deref(s *string) string {
 var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (prof models.NfProfile, resourceNrfUri string, err error) {
 	self := smfContext.SMF_Self()
 	nfProfile, err := getNfProfile(self, sessionManagementConfig)
-	logger.ConsumerLog.Debugf("Sending registration request with NFProfile %+v", nfProfile)
 	if err != nil {
 		return models.NfProfile{}, "", err
 	}
-
+	logger.ConsumerLog.Debugf("Sending registration request with NFProfile %+v", nfProfile)
 	configuration := Nnrf_NFManagement.NewConfiguration()
 	configuration.SetBasePath(self.NrfUri)
 	client := Nnrf_NFManagement.NewAPIClient(configuration)
@@ -154,10 +152,10 @@ var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionM
 	metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", http.StatusText(res.StatusCode), "")
 
 	switch res.StatusCode {
-	case http.StatusOK: // NFUpdate
+	case http.StatusOK:
 		logger.ConsumerLog.Debugln("SMF NF profile updated with complete replacement")
 		return receivedNfProfile, "", nil
-	case http.StatusCreated: // NFRegister
+	case http.StatusCreated:
 		resourceUri := res.Header.Get("Location")
 		resourceNrfUri = resourceUri[:strings.Index(resourceUri, "/nnrf-nfm/")]
 		retrieveNfInstanceId := resourceUri[strings.LastIndex(resourceUri, "/")+1:]
@@ -175,14 +173,11 @@ var SendDeregisterNFInstance = func() error {
 	smfSelf := smfContext.SMF_Self()
 	nfId := smfSelf.NfInstanceID
 
-	// Setup NRF API client
 	cfg := Nnrf_NFManagement.NewConfiguration()
 	cfg.SetBasePath(smfSelf.NrfUri)
 	client := Nnrf_NFManagement.NewAPIClient(cfg)
 
-	// OUT metric: Deregister attempted
 	metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "Out", "", "")
-
 	res, err := client.NFInstanceIDDocumentApi.DeregisterNFInstance(context.Background(), nfId)
 	if err != nil {
 		if res != nil {
@@ -208,7 +203,7 @@ var SendDeregisterNFInstance = func() error {
 }
 
 var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile models.NfProfile, problemDetails *models.ProblemDetails, err error) {
-	logger.ConsumerLog.Debugln("send Update NFInstance")
+	logger.ConsumerLog.Debugln("send update NFInstance")
 
 	smfSelf := smfContext.SMF_Self()
 	configuration := Nnrf_NFManagement.NewConfiguration()
@@ -218,8 +213,7 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile
 	var res *http.Response
 	receivedNfProfile, res, err = client.NFInstanceIDDocumentApi.UpdateNFInstance(context.Background(), smfSelf.NfInstanceID, patchItem)
 	if err != nil {
-		var openapiErr openapi.GenericOpenAPIError
-		if errors.As(err, &openapiErr) {
+		if openapiErr, ok := err.(openapi.GenericOpenAPIError); ok {
 			if model := openapiErr.Model(); model != nil {
 				if problem, ok := model.(models.ProblemDetails); ok {
 					return models.NfProfile{}, &problem, nil
@@ -418,7 +412,6 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.NrfSubscriptionData) (nrfSubData models.NrfSubscriptionData, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send Create Subscription")
 
-	// Set client and set url
 	configuration := Nnrf_NFManagement.NewConfiguration()
 	configuration.SetBasePath(nrfUri)
 	client := Nnrf_NFManagement.NewAPIClient(configuration)
@@ -449,7 +442,6 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 	logger.ConsumerLog.Infoln("send Remove Subscription")
 
 	smfSelf := smfContext.SMF_Self()
-	// Set client and set url
 	configuration := Nnrf_NFManagement.NewConfiguration()
 	configuration.SetBasePath(smfSelf.NrfUri)
 	client := Nnrf_NFManagement.NewAPIClient(configuration)
