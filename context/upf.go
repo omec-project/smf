@@ -13,6 +13,7 @@ import (
 	"net"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,9 +91,9 @@ type UPF struct {
 
 // UPFSelectionParams ... parameters for upf selection
 type UPFSelectionParams struct {
-	Dnn    string
-	SNssai *SNssai
-	Dnai   string
+	DnnList []string
+	SNssai  *SNssai
+	Dnai    string
 }
 
 // UPFInterfaceInfo store the UPF interface information
@@ -163,12 +164,20 @@ func (i *UPFInterfaceInfo) IP(pduSessType uint8) (net.IP, error) {
 }
 
 func (upfSelectionParams *UPFSelectionParams) String() string {
-	str := ""
-	Dnn := upfSelectionParams.Dnn
-	if Dnn != "" {
-		str += fmt.Sprintf("Dnn: %s\n", Dnn)
+	if upfSelectionParams == nil {
+		return "UPFSelectionParams is nil"
 	}
-
+	str := ""
+	// Handle the DnnList
+	if len(upfSelectionParams.DnnList) > 0 {
+		str += "Dnn List: "
+		for _, dnn := range upfSelectionParams.DnnList {
+			str += fmt.Sprintf("%s ", dnn)
+		}
+		str += "\n"
+	} else {
+		str += "Dnn List is empty\n"
+	}
 	SNssai := upfSelectionParams.SNssai
 	if SNssai != nil {
 		str += fmt.Sprintf("Sst: %d, Sd: %s\n", int(SNssai.Sst), SNssai.Sd)
@@ -249,14 +258,26 @@ func (upf *UPF) GetInterface(interfaceType models.UpInterfaceType, dnn string) *
 	switch interfaceType {
 	case models.UpInterfaceType_N3:
 		for i, iface := range upf.N3Interfaces {
-			if iface.NetworkInstance == dnn {
-				return &upf.N3Interfaces[i]
+			logger.CtxLog.Infof("Checking UPF N3 Interface: %v", iface.NetworkInstance)
+
+			// Split multiple DNNs and check if dnn exists
+			dnnList := strings.Split(iface.NetworkInstance, ",")
+			for _, d := range dnnList {
+				if strings.TrimSpace(d) == strings.TrimSpace(dnn) {
+					return &upf.N3Interfaces[i]
+				}
 			}
 		}
 	case models.UpInterfaceType_N9:
 		for i, iface := range upf.N9Interfaces {
-			if iface.NetworkInstance == dnn {
-				return &upf.N9Interfaces[i]
+			logger.CtxLog.Infof("Checking UPF N9 Interface: %v", iface.NetworkInstance)
+
+			// Split multiple DNNs and check if dnn exists
+			dnnList := strings.Split(iface.NetworkInstance, ",")
+			for _, d := range dnnList {
+				if strings.TrimSpace(d) == strings.TrimSpace(dnn) {
+					return &upf.N9Interfaces[i]
+				}
 			}
 		}
 	}
