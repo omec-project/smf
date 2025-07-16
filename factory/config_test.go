@@ -31,7 +31,7 @@ func TestGetDefaultWebuiUrl(t *testing.T) {
 		t.Logf("error in InitConfigFactory: %v", err)
 	}
 	got := SmfConfig.Configuration.WebuiUri
-	want := "webui:9876"
+	want := "http://webui:5001"
 	assert.Equal(t, got, want, "The webui URL is not correct.")
 }
 
@@ -41,6 +41,6 @@ func TestGetCustomWebuiUrl(t *testing.T) {
 		t.Logf("error in InitConfigFactory: %v", err)
 	}
 	got := SmfConfig.Configuration.WebuiUri
-	want := "myspecialwebui:9872"
+	want := "https://myspecialwebui:5002"
 	assert.Equal(t, got, want, "The webui URL is not correct.")
 }

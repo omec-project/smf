@@ -35,80 +35,91 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 		return models.NfProfile{}, fmt.Errorf("SMF context is nil")
 	}
 
+	snssais := buildSNssais(cfgs)
+	plmnList := buildPlmnList(cfgs)
+
+	smfInfo := buildSmfInfo(cfgs)
+	now := time.Now()
+	nfServices := make([]models.NfService, 0)
+	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
+		nfServices = append(nfServices, models.NfService{
+			ServiceInstanceId: smfCtx.NfInstanceID + "-" + string(serviceName),
+			ServiceName:       models.ServiceName(serviceName),
+			Scheme:            smfCtx.URIScheme,
+			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
+			ApiPrefix:         fmt.Sprintf("%s://%s:%d", smfCtx.URIScheme, smfCtx.RegisterIPv4, smfCtx.SBIPort),
+			Versions: &[]models.NfServiceVersion{{
+				ApiVersionInUri: "v1",
+				ApiFullVersion:  fmt.Sprintf("%s://%s:%d/nsmf-pdusession/v1", smfCtx.URIScheme, smfCtx.RegisterIPv4, smfCtx.SBIPort),
+				Expiry:          &now,
+			}},
+			AllowedPlmns: plmnList,
+		})
+	}
+
 	nfProf := models.NfProfile{
 		NfInstanceId:  smfCtx.NfInstanceID,
 		NfType:        models.NfType_SMF,
 		NfStatus:      models.NfStatus_REGISTERED,
 		Ipv4Addresses: []string{smfCtx.RegisterIPv4},
+		NfServices:    &nfServices,
+		SmfInfo:       smfInfo,
+		SNssais:       snssais,
+		PlmnList:      plmnList,
+		AllowedPlmns:  plmnList,
 	}
+	logger.ConsumerLog.Debugf("NF Profile is created using session management config: %+v", nfProf)
+	return nfProf, nil
+}
 
-	// build SmfInfo
+func buildSmfInfo(cfgs []nfConfigApi.SessionManagement) *models.SmfInfo {
 	var snssaiSmfInfoList []models.SnssaiSmfInfoItem
-	snssaiToPlmn := make(map[string]models.PlmnId)
-	uniqPlmn := make(map[string]struct{})
-
 	for _, sm := range cfgs {
-		uniqKey := sm.PlmnId.Mcc + "-" + sm.PlmnId.Mnc
-		if _, ok := uniqPlmn[uniqKey]; !ok {
-			uniqPlmn[uniqKey] = struct{}{}
-		}
-		snssaiKey := fmt.Sprintf("%d%s", sm.Snssai.Sst, deReferenceStr(sm.Snssai.Sd))
-		snssaiToPlmn[snssaiKey] = models.PlmnId{Mcc: sm.PlmnId.Mcc, Mnc: sm.PlmnId.Mnc}
 		item := models.SnssaiSmfInfoItem{
 			SNssai: &models.Snssai{
 				Sst: sm.Snssai.Sst,
-				Sd:  deReferenceStr(sm.Snssai.Sd),
+				Sd:  deref(sm.Snssai.Sd),
 			},
 		}
 
 		var dnnList []models.DnnSmfInfoItem
-		for _, ipdom := range sm.IpDomain {
-			if ipdom.DnnName == "" {
-				continue
+		for _, ipdomain := range sm.IpDomain {
+			if ipdomain.DnnName != "" {
+				dnnList = append(dnnList, models.DnnSmfInfoItem{Dnn: ipdomain.DnnName})
 			}
-			dnnList = append(dnnList, models.DnnSmfInfoItem{Dnn: ipdom.DnnName})
 		}
+
 		if len(dnnList) > 0 {
 			item.DnnSmfInfoList = &dnnList
 		}
 		snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 	}
-
-	nfProf.SmfInfo = &models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
-	var plmnList []models.PlmnId
-	for key := range uniqPlmn {
-		parts := strings.Split(key, "-")
-		plmnList = append(plmnList, models.PlmnId{Mcc: parts[0], Mnc: parts[1]})
-	}
-	if len(plmnList) > 0 {
-		nfProf.PlmnList = &plmnList
-	}
-
-	now := time.Now()
-	ver := []models.NfServiceVersion{{
-		ApiVersionInUri: "v1",
-		ApiFullVersion:  fmt.Sprintf("https://%s:%d/nsmf-pdusession/v1", smfCtx.RegisterIPv4, smfCtx.SBIPort),
-		Expiry:          &now,
-	}}
-
-	var nfServices []models.NfService
-	for _, svc := range factory.SmfConfig.Configuration.ServiceNameList {
-		nfServices = append(nfServices, models.NfService{
-			ServiceInstanceId: smfCtx.NfInstanceID + svc,
-			ServiceName:       models.ServiceName(svc),
-			Scheme:            models.UriScheme_HTTPS,
-			NfServiceStatus:   models.NfServiceStatus_REGISTERED,
-			ApiPrefix:         fmt.Sprintf("https://%s:%d", smfCtx.RegisterIPv4, smfCtx.SBIPort),
-			Versions:          &ver,
-			AllowedPlmns:      nfProf.PlmnList,
-		})
-	}
-	nfProf.NfServices = &nfServices
-
-	return nfProf, nil
+	return &models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
 }
 
-func deReferenceStr(s *string) string {
+func buildPlmnList(cfgs []nfConfigApi.SessionManagement) *[]models.PlmnId {
+	var plmns []models.PlmnId
+	for _, sm := range cfgs {
+		plmns = append(plmns, models.PlmnId{
+			Mcc: sm.PlmnId.Mcc,
+			Mnc: sm.PlmnId.Mnc,
+		})
+	}
+	return &plmns
+}
+
+func buildSNssais(cfgs []nfConfigApi.SessionManagement) *[]models.Snssai {
+	var snssais []models.Snssai
+	for _, sm := range cfgs {
+		snssais = append(snssais, models.Snssai{
+			Sst: sm.Snssai.Sst,
+			Sd:  deref(sm.Snssai.Sd),
+		})
+	}
+	return &snssais
+}
+
+func deref(s *string) string {
 	if s != nil {
 		return *s
 	}

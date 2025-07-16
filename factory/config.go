@@ -30,18 +30,6 @@ type Config struct {
 	CfgLocation   string
 }
 
-type UpdateSmfConfig struct {
-	DelSNssaiInfo  *[]SnssaiInfoItem
-	ModSNssaiInfo  *[]SnssaiInfoItem
-	AddSNssaiInfo  *[]SnssaiInfoItem
-	DelUPNodes     *map[string]UPNode
-	ModUPNodes     *map[string]UPNode
-	AddUPNodes     *map[string]UPNode
-	AddLinks       *[]UPLink
-	DelLinks       *[]UPLink
-	EnterpriseList *map[string]string
-}
-
 type Info struct {
 	Version     string `yaml:"version,omitempty"`
 	Description string `yaml:"description,omitempty"`
@@ -68,25 +56,23 @@ type KafkaInfo struct {
 }
 
 type Configuration struct {
-	Mongodb                  *Mongodb             `yaml:"mongodb,omitempty"`
-	PFCP                     *PFCP                `yaml:"pfcp,omitempty"`
-	Sbi                      *Sbi                 `yaml:"sbi,omitempty"`
-	NrfUri                   string               `yaml:"nrfUri,omitempty"`
-	WebuiUri                 string               `yaml:"webuiUri"`
-	SmfName                  string               `yaml:"smfName,omitempty"`
-	SmfDbName                string               `yaml:"smfDBName,omitempty"`
-	SNssaiInfo               []SnssaiInfoItem     `yaml:"snssaiInfos,omitempty"`
-	StaticIpInfo             []StaticIpInfo       `yaml:"staticIpInfo"`
-	ServiceNameList          []string             `yaml:"serviceNameList,omitempty"`
-	EnterpriseList           map[string]string    `yaml:"enterpriseList,omitempty"`
-	KafkaInfo                KafkaInfo            `yaml:"kafkaInfo,omitempty"`
-	UserPlaneInformation     UserPlaneInformation `yaml:"userplane_information"`
-	NrfCacheEvictionInterval int                  `yaml:"nrfCacheEvictionInterval"`
-	DebugProfilePort         int                  `yaml:"debugProfilePort,omitempty"`
-	EnableNrfCaching         bool                 `yaml:"enableNrfCaching"`
-	EnableDbStore            bool                 `yaml:"enableDBStore,omitempty"`
-	EnableUpfAdapter         bool                 `yaml:"enableUPFAdapter,omitempty"`
-	ULCL                     bool                 `yaml:"ulcl,omitempty"`
+	Mongodb                  *Mongodb          `yaml:"mongodb,omitempty"`
+	PFCP                     *PFCP             `yaml:"pfcp,omitempty"`
+	Sbi                      *Sbi              `yaml:"sbi,omitempty"`
+	NrfUri                   string            `yaml:"nrfUri,omitempty"`
+	WebuiUri                 string            `yaml:"webuiUri"`
+	SmfName                  string            `yaml:"smfName,omitempty"`
+	SmfDbName                string            `yaml:"smfDBName,omitempty"`
+	StaticIpInfo             []StaticIpInfo    `yaml:"staticIpInfo"`
+	ServiceNameList          []string          `yaml:"serviceNameList,omitempty"`
+	EnterpriseList           map[string]string `yaml:"enterpriseList,omitempty"`
+	KafkaInfo                KafkaInfo         `yaml:"kafkaInfo,omitempty"`
+	NrfCacheEvictionInterval int               `yaml:"nrfCacheEvictionInterval"`
+	DebugProfilePort         int               `yaml:"debugProfilePort,omitempty"`
+	EnableNrfCaching         bool              `yaml:"enableNrfCaching"`
+	EnableDbStore            bool              `yaml:"enableDBStore,omitempty"`
+	EnableUpfAdapter         bool              `yaml:"enableUPFAdapter,omitempty"`
+	ULCL                     bool              `yaml:"ulcl,omitempty"`
 }
 
 type StaticIpInfo struct {
