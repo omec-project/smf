@@ -4,9 +4,9 @@ package consumer
 
 import (
 	"fmt"
+	"github.com/omec-project/openapi/models"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -15,39 +15,109 @@ import (
 	"github.com/omec-project/smf/factory"
 )
 
-func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
-	sstUint64, err := strconv.ParseUint(sst, 10, 8)
-	if err != nil {
-		panic("invalid SST value: " + sst)
-	}
-	sstint := int32(sstUint64)
+func makeSessionCfg() nfConfigApi.SessionManagement {
+	sd := "010203"
+	port := int32(8805)
 	return nfConfigApi.SessionManagement{
-		SliceName: sliceName,
-		PlmnId: nfConfigApi.PlmnId{
-			Mcc: mcc,
-			Mnc: mnc,
-		},
-		Snssai: nfConfigApi.Snssai{
-			Sst: sstint,
-			Sd:  &sd,
-		},
-		IpDomain: []nfConfigApi.IpDomain{
-			{
-				DnnName:  dnnName,
-				DnsIpv4:  "8.8.8.8",
-				UeSubnet: ueSubnet,
-				Mtu:      1400,
-			},
-		},
-		Upf: &nfConfigApi.Upf{
-			Hostname: hostname,
-			Port:     &port,
-		},
+		SliceName: "slice-internet",
+		PlmnId:    nfConfigApi.PlmnId{Mcc: "001", Mnc: "01"},
+		Snssai:    nfConfigApi.Snssai{Sst: 1, Sd: &sd},
+		IpDomain: []nfConfigApi.IpDomain{{
+			DnnName:  "internet",
+			DnsIpv4:  "8.8.8.8",
+			UeSubnet: "10.10.0.0/16",
+			Mtu:      1400,
+		}},
+		Upf:      &nfConfigApi.Upf{Hostname: "upf-1", Port: &port},
 		GnbNames: []string{"gnb1", "gnb2"},
 	}
 }
 
-func Test_nf_id_updated_and_nrf_url_is_not_overwritten_when_registering(t *testing.T) {
+func makeSMFContext() *smfContext.SMFContext {
+	return &smfContext.SMFContext{
+		NfInstanceID: "test-nf-id",
+		URIScheme:    "http",
+		RegisterIPv4: "127.0.0.1",
+		SBIPort:      8080,
+	}
+}
+
+func validateBasicProfile(profile models.NfProfile, t *testing.T) {
+	if profile.NfInstanceId != "test-nf-id" {
+		t.Errorf("expected NfInstanceId to be 'test-nf-id', got %s", profile.NfInstanceId)
+	}
+	if profile.NfServices == nil || len(*profile.NfServices) == 0 {
+		t.Error("expected non-nil and non-empty NfServices")
+	}
+	if profile.SmfInfo == nil || profile.SmfInfo.SNssaiSmfInfoList == nil {
+		t.Error("expected non-nil SmfInfo and SNssaiSmfInfoList")
+	}
+}
+
+func TestGetNfProfile(t *testing.T) {
+	validCfg := makeSessionCfg()
+	validCtx := makeSMFContext()
+	originalCfg := factory.SmfConfig.Configuration
+	defer func() {
+		factory.SmfConfig.Configuration = originalCfg
+	}()
+	factory.SmfConfig.Configuration = &factory.Configuration{
+		ServiceNameList: []string{"pdusession"},
+	}
+
+	tests := []struct {
+		name      string
+		smfCtx    *smfContext.SMFContext
+		cfgs      []nfConfigApi.SessionManagement
+		expectErr bool
+		errorMsg  string
+		validate  func(models.NfProfile, *testing.T)
+	}{
+		{
+			name:      "Valid config and context",
+			smfCtx:    validCtx,
+			cfgs:      []nfConfigApi.SessionManagement{validCfg},
+			expectErr: false,
+			validate:  validateBasicProfile,
+		},
+		{
+			name:      "Nil SMF context",
+			smfCtx:    nil,
+			cfgs:      []nfConfigApi.SessionManagement{validCfg},
+			expectErr: true,
+			errorMsg:  "SMF context is nil",
+		},
+		{
+			name:      "Empty config",
+			smfCtx:    validCtx,
+			cfgs:      nil,
+			expectErr: true,
+			errorMsg:  "session management config is empty",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, err := getNfProfile(tc.smfCtx, tc.cfgs)
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				} else if !strings.Contains(err.Error(), tc.errorMsg) {
+					t.Errorf("expected error to contain %q, got %v", tc.errorMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("did not expect error, got: %v", err)
+				}
+				if tc.validate != nil {
+					tc.validate(profile, t)
+				}
+			}
+		})
+	}
+}
+
+func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
 	svr := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/nnrf-nfm/v1/nf-instances/") {
 			w.Header().Set("Location", fmt.Sprintf("%s/nnrf-nfm/v1/nf-instances/mocked-id", r.Host))
@@ -67,8 +137,7 @@ func Test_nf_id_updated_and_nrf_url_is_not_overwritten_when_registering(t *testi
 	self.NrfUri = svr.URL
 	self.RegisterIPv4 = "127.0.0.2"
 
-	sessionConfigOne := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "192.168.1.1", 38412)
-	_, _, err := SendRegisterNFInstance([]nfConfigApi.SessionManagement{sessionConfigOne})
+	_, _, err := SendRegisterNFInstance([]nfConfigApi.SessionManagement{makeSessionCfg()})
 	if err != nil {
 		t.Errorf("Got and error %+v", err)
 	}
