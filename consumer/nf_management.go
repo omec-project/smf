@@ -30,6 +30,9 @@ import (
 )
 
 func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManagement) (models.NfProfile, error) {
+	if len(cfgs) == 0 {
+		return models.NfProfile{}, fmt.Errorf("session management config is empty")
+	}
 	if smfCtx == nil {
 		return models.NfProfile{}, fmt.Errorf("SMF context is nil")
 	}

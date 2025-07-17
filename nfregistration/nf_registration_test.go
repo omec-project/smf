@@ -16,8 +16,64 @@ import (
 	"time"
 
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 )
+
+var (
+	sessionConfigs   []nfConfigApi.SessionManagement
+	port             int32 = 8805
+	sd                     = "010203"
+	sessionConfigOne       = nfConfigApi.SessionManagement{
+		SliceName: "slice-internet",
+		PlmnId: nfConfigApi.PlmnId{
+			Mcc: "001",
+			Mnc: "01",
+		},
+		Snssai: nfConfigApi.Snssai{
+			Sst: 1,
+			Sd:  &sd,
+		},
+		IpDomain: []nfConfigApi.IpDomain{
+			{
+				DnnName:  "internet",
+				DnsIpv4:  "8.8.8.8",
+				UeSubnet: "10.10.0.0/16",
+				Mtu:      1400,
+			},
+		},
+		Upf: &nfConfigApi.Upf{
+			Hostname: "upf-1",
+			Port:     &port,
+		},
+		GnbNames: []string{"gnb1", "gnb2"},
+	}
+)
+
+var sessionConfigTwo = nfConfigApi.SessionManagement{
+	SliceName: "slice-fast",
+	PlmnId: nfConfigApi.PlmnId{
+		Mcc: "002",
+		Mnc: "02",
+	},
+	Snssai: nfConfigApi.Snssai{
+		Sst: 2,
+		Sd:  &sd,
+	},
+	IpDomain: []nfConfigApi.IpDomain{
+		{
+			DnnName:  "fast",
+			DnsIpv4:  "8.8.8.8",
+			UeSubnet: "11.10.0.0/16",
+			Mtu:      1400,
+		},
+	},
+	Upf: &nfConfigApi.Upf{
+		Hostname: "upf-2",
+		Port:     &port,
+	},
+	GnbNames: []string{"gnb1", "gnb2"},
+}
 
 func TestNfRegistrationService_WhenEmptyConfig_ThenDeregisterNFAndStopTimer(t *testing.T) {
 	isDeregisterNFCalled := false
@@ -56,14 +112,14 @@ func TestNfRegistrationService_WhenEmptyConfig_ThenDeregisterNFAndStopTimer(t *t
 			}()
 
 			consumer.SendDeregisterNFInstance = tc.sendDeregisterNFInstanceMock
-			registerNF = func(ctx context.Context, newPlmnConfig []models.PlmnId) {
+			registerNF = func(ctx context.Context, newSessionManagementConfig []nfConfigApi.SessionManagement) {
 				isRegisterNFCalled = true
 			}
 
-			ch := make(chan []models.PlmnId, 1)
+			ch := make(chan []nfConfigApi.SessionManagement, 1)
 			ctx := t.Context()
 			go StartNfRegistrationService(ctx, ch)
-			ch <- []models.PlmnId{}
+			ch <- []nfConfigApi.SessionManagement{}
 
 			time.Sleep(100 * time.Millisecond)
 
@@ -90,17 +146,18 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 		}
 	}()
 
-	registrations := []models.PlmnId{}
-	consumer.SendRegisterNFInstance = func(plmnConfig []models.PlmnId) (models.NfProfile, string, error) {
+	registrations := []nfConfigApi.SessionManagement{}
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
 		profile := models.NfProfile{HeartBeatTimer: 60}
-		registrations = append(registrations, plmnConfig...)
+		registrations = append(registrations, sessionManagementConfig...)
 		return profile, "", nil
 	}
 
-	ch := make(chan []models.PlmnId, 1)
+	ch := make(chan []nfConfigApi.SessionManagement, 1)
 	ctx := t.Context()
 	go StartNfRegistrationService(ctx, ch)
-	newConfig := []models.PlmnId{{Mcc: "001", Mnc: "01"}}
+	sessionConfigs = append(sessionConfigs, sessionConfigOne)
+	newConfig := sessionConfigs
 	ch <- newConfig
 
 	time.Sleep(100 * time.Millisecond)
@@ -122,16 +179,17 @@ func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T
 	}()
 
 	called := 0
-	consumer.SendRegisterNFInstance = func(plmnConfig []models.PlmnId) (models.NfProfile, string, error) {
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
 		profile := models.NfProfile{HeartBeatTimer: 60}
 		called++
 		return profile, "", errors.New("mock error")
 	}
 
-	ch := make(chan []models.PlmnId, 1)
+	ch := make(chan []nfConfigApi.SessionManagement, 1)
 	ctx := t.Context()
 	go StartNfRegistrationService(ctx, ch)
-	ch <- []models.PlmnId{{Mcc: "001", Mnc: "01"}}
+	sessionConfigs = append(sessionConfigs, sessionConfigOne)
+	ch <- sessionConfigs
 
 	time.Sleep(2 * retryTime)
 
@@ -152,20 +210,21 @@ func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCance
 
 	var registrations []struct {
 		ctx    context.Context
-		config []models.PlmnId
+		config []nfConfigApi.SessionManagement
 	}
-	registerNF = func(registerCtx context.Context, newPlmnConfig []models.PlmnId) {
+	registerNF = func(registerCtx context.Context, newSessionManagementConfig []nfConfigApi.SessionManagement) {
 		registrations = append(registrations, struct {
 			ctx    context.Context
-			config []models.PlmnId
-		}{registerCtx, newPlmnConfig})
+			config []nfConfigApi.SessionManagement
+		}{registerCtx, newSessionManagementConfig})
 		<-registerCtx.Done() // Wait until registration is cancelled
 	}
 
-	ch := make(chan []models.PlmnId, 1)
+	ch := make(chan []nfConfigApi.SessionManagement, 1)
 	ctx := t.Context()
 	go StartNfRegistrationService(ctx, ch)
-	firstConfig := []models.PlmnId{{Mcc: "001", Mnc: "01"}}
+	sessionConfigs = append(sessionConfigs, sessionConfigOne)
+	firstConfig := sessionConfigs
 	ch <- firstConfig
 
 	time.Sleep(10 * time.Millisecond)
@@ -173,7 +232,8 @@ func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCance
 		t.Error("expected one registration to the NRF")
 	}
 
-	secondConfig := []models.PlmnId{{Mcc: "002", Mnc: "02"}}
+	secondConfig := sessionConfigs
+	sessionConfigs = append(sessionConfigs, sessionConfigTwo)
 	ch <- secondConfig
 	time.Sleep(10 * time.Millisecond)
 	if len(registrations) != 2 {
@@ -218,13 +278,13 @@ func TestHeartbeatNF_Success(t *testing.T) {
 	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (models.NfProfile, *models.ProblemDetails, error) {
 		return models.NfProfile{}, nil, nil
 	}
-	consumer.SendRegisterNFInstance = func(plmnConfig []models.PlmnId) (models.NfProfile, string, error) {
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
 		calledRegister = true
 		profile := models.NfProfile{HeartBeatTimer: 60}
 		return profile, "", nil
 	}
-	plmnConfig := []models.PlmnId{}
-	heartbeatNF(plmnConfig)
+	sessionManagementConfig := []nfConfigApi.SessionManagement{}
+	heartbeatNF(sessionManagementConfig)
 
 	if calledRegister {
 		t.Errorf("expected registerNF to be called on error")
@@ -251,14 +311,14 @@ func TestHeartbeatNF_WhenNfUpdateFails_ThenNfRegistersIsCalled(t *testing.T) {
 		return models.NfProfile{}, nil, errors.New("mock error")
 	}
 
-	consumer.SendRegisterNFInstance = func(plmnConfig []models.PlmnId) (models.NfProfile, string, error) {
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
 		profile := models.NfProfile{HeartBeatTimer: 60}
 		calledRegister = true
 		return profile, "", nil
 	}
 
-	plmnConfig := []models.PlmnId{}
-	heartbeatNF(plmnConfig)
+	sessionManagementConfig := []nfConfigApi.SessionManagement{}
+	heartbeatNF(sessionManagementConfig)
 
 	if !calledRegister {
 		t.Errorf("expected registerNF to be called on error")
