@@ -64,19 +64,19 @@ func NewUEPreConfigPaths(supi string, paths []factory.Path) (*UEPreConfigPaths, 
 		dataPath.Destination.DestinationPort = pathCfg.DestinationPort
 		var parentNode *DataPathNode
 		for upfIdx, nodeName := range pathCfg.UPF {
-			node, err := NewUEDataPathNode(nodeName)
+			newUeNode, err := NewUEDataPathNode(nodeName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create DataPathNode %s for SUPI %s: %w", nodeName, supi, err)
 			}
 
 			if upfIdx == 0 {
-				dataPath.FirstDPNode = node
+				dataPath.FirstDPNode = newUeNode
 			}
 			if parentNode != nil {
-				node.AddPrev(parentNode)
-				parentNode.AddNext(node)
+				newUeNode.AddPrev(parentNode)
+				parentNode.AddNext(newUeNode)
 			}
-			parentNode = node
+			parentNode = newUeNode
 		}
 
 		logger.CtxLog.Debugf("Added preconfig data path (pathID=%d) for SUPI %s: %s", pathID, supi, dataPath.String())

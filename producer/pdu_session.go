@@ -241,7 +241,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
 		defaultPath = smContext.Tunnel.DataPathPool.GetDefaultPath()
 		if defaultPath == nil {
-			smContext.SubPduSessLog.Warnf("No default path found for SUPI[%s], fallback to default path handling", createData.Supi)
+			smContext.SubPduSessLog.Warnf("No default path found for SUPI[%s]", createData.Supi)
 		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
 			smContext.SubPduSessLog.Errorf("ActivateTunnelAndPDR error for SUPI[%s]: %v", createData.Supi, err)
 		}

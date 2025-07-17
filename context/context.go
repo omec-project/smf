@@ -69,7 +69,6 @@ type SMFContext struct {
 	// TODO: support "IPv6", "IPv4v6", "Ethernet"
 	SupportedPDUSessionType string
 	UeRoutingManager        *UERoutingManager
-	UEPreConfigPathPool     map[string]*UEPreConfigPaths
 	DrsmCtxts               DrsmCtxts
 	EnterpriseList          *map[string]string // map to contain slice-name:enterprise-name
 
@@ -240,14 +239,15 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	return &smfContext
 }
 
-func InitSMFUERouting(routingConfig *factory.RoutingConfig) error {
+func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 	if !smfContext.ULCLSupport {
-		return nil
+		logger.CtxLog.Errorln("ULCL is not enabled, skip initializing UERoutingManager")
+		return
 	}
 
 	if routingConfig == nil {
-		logger.CtxLog.Error("configuration needs the routing config")
-		return nil
+		logger.CtxLog.Errorln("configuration needs the routing config")
+		return
 	}
 
 	logger.CtxLog.Infof("ue routing config Info: Version[%s] Description[%s]",
@@ -266,7 +266,7 @@ func InitSMFUERouting(routingConfig *factory.RoutingConfig) error {
 	}
 
 	smfContext.UeRoutingManager = routingManager
-	return nil
+	return
 }
 
 func SMF_Self() *SMFContext {
