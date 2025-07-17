@@ -277,143 +277,127 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 	return smfContext.UserPlaneInformation
 }
 
-func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
-	logger.CtxLog.Infof("Processing config update from polling service")
-
-	if len(newConfig) == 0 {
-		logger.CtxLog.Warn("Received empty session management config, clearing dynamic SMF context")
-		smContext.SnssaiInfos = nil
-		smContext.UserPlaneInformation = &UserPlaneInformation{
-			UPNodes:              make(map[string]*UPNode),
-			DefaultUserPlanePath: make(map[string][]*UPNode),
-		}
-		return nil
+func clearSmfContext(ctx *SMFContext) {
+	ctx.SnssaiInfos = nil
+	ctx.UserPlaneInformation = &UserPlaneInformation{
+		UPNodes:              make(map[string]*UPNode),
+		DefaultUserPlanePath: make(map[string][]*UPNode),
 	}
+}
 
-	existingUPFs := make(map[string]*UPNode)
-	if smContext.UserPlaneInformation != nil {
-		for name, node := range smContext.UserPlaneInformation.UPNodes {
+func extractExistingUPFs(ctx *SMFContext) map[string]*UPNode {
+	existing := map[string]*UPNode{}
+	if ctx.UserPlaneInformation != nil {
+		for name, node := range ctx.UserPlaneInformation.UPNodes {
 			if node.Type == UPNODE_UPF {
-				existingUPFs[name] = node
-			}
-		}
-	} else {
-		smContext.UserPlaneInformation = &UserPlaneInformation{
-			UPNodes:              make(map[string]*UPNode),
-			DefaultUserPlanePath: make(map[string][]*UPNode),
-		}
-	}
-
-	// track current UPFs and gNBs seen in this update
-	currentUPFs := make(map[string]bool)
-	currentANs := make(map[string]bool)
-
-	var updatedSnssaiInfos []SnssaiSmfInfo
-
-	for _, sessionMgmt := range newConfig {
-		apiPlmnId := sessionMgmt.GetPlmnId()
-		plmnId := models.PlmnId{
-			Mcc: apiPlmnId.GetMcc(),
-			Mnc: apiPlmnId.GetMnc(),
-		}
-
-		apiSnssai := sessionMgmt.GetSnssai()
-		snssaiInfo := SnssaiSmfInfo{
-			PlmnId: plmnId,
-			Snssai: SNssai{
-				Sst: apiSnssai.GetSst(),
-				Sd:  apiSnssai.GetSd(),
-			},
-			DnnInfos: make(map[string]*SnssaiSmfDnnInfo),
-		}
-
-		if sessionMgmt.HasIpDomain() {
-			for _, ipDomain := range sessionMgmt.GetIpDomain() {
-				dnn := ipDomain.GetDnnName()
-				ueSubnet := ipDomain.GetUeSubnet()
-				dnnInfo := &SnssaiSmfDnnInfo{MTU: uint16(ipDomain.GetMtu())}
-
-				if ueSubnet != "" {
-					allocator, err := NewIPAllocator(ueSubnet)
-					if err != nil {
-						logger.CtxLog.Warnf("IP allocation failed for DNN %s: %v", dnn, err)
-						continue
-					}
-					dnnInfo.UeIPAllocator = allocator
-
-					if smContext.StaticIpInfo != nil {
-						for _, static := range *smContext.StaticIpInfo {
-							if static.Dnn == dnn {
-								allocator.ReserveStaticIps(&static.ImsiIpInfo)
-								break
-							}
-						}
-					}
-				}
-
-				if ipv4 := ipDomain.GetDnsIpv4(); ipv4 != "" {
-					if ip := net.ParseIP(ipv4); ip != nil {
-						dnnInfo.DNS = DNS{IPv4Addr: ip}
-					}
-				}
-
-				snssaiInfo.DnnInfos[dnn] = dnnInfo
-			}
-		}
-
-		updatedSnssaiInfos = append(updatedSnssaiInfos, snssaiInfo)
-
-		if sessionMgmt.HasUpf() {
-			upf := sessionMgmt.GetUpf()
-			gnbNames := sessionMgmt.GetGnbNames()
-			currentUPFs[upf.Hostname] = true
-			for _, gnb := range gnbNames {
-				currentANs[gnb] = true
-			}
-
-			if err := updateUPFConfiguration(smContext, &upf, gnbNames, existingUPFs); err != nil {
-				logger.CtxLog.Warnf("Failed to update UPF configuration: %v", err)
-				return err
+				existing[name] = node
 			}
 		}
 	}
+	return existing
+}
 
-	// Clean up UPFs and gNBs not in the current config
-	for name, node := range smContext.UserPlaneInformation.UPNodes {
+func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo *[]factory.StaticIpInfo) SnssaiSmfInfo {
+	apiPlmnId := sm.GetPlmnId()
+	apiSnssai := sm.GetSnssai()
+	info := SnssaiSmfInfo{
+		PlmnId:   models.PlmnId{Mcc: apiPlmnId.Mcc, Mnc: apiPlmnId.Mnc},
+		Snssai:   SNssai{Sst: apiSnssai.Sst, Sd: *apiSnssai.Sd},
+		DnnInfos: map[string]*SnssaiSmfDnnInfo{},
+	}
+
+	for _, ipdomain := range sm.GetIpDomain() {
+		dnnInfo := &SnssaiSmfDnnInfo{MTU: uint16(ipdomain.GetMtu())}
+		if ip := net.ParseIP(ipdomain.GetDnsIpv4()); ip != nil {
+			dnnInfo.DNS.IPv4Addr = ip
+		}
+		if subnet := ipdomain.GetUeSubnet(); subnet != "" {
+			if allocator, err := NewIPAllocator(subnet); err == nil {
+				dnnInfo.UeIPAllocator = allocator
+				reserveStaticIpsIfNeeded(allocator, staticIpInfo, ipdomain.DnnName)
+			}
+		}
+		info.DnnInfos[ipdomain.DnnName] = dnnInfo
+	}
+	return info
+}
+
+func reserveStaticIpsIfNeeded(allocator *IPAllocator, static *[]factory.StaticIpInfo, dnn string) {
+	if static == nil {
+		return
+	}
+	for _, s := range *static {
+		if s.Dnn == dnn {
+			allocator.ReserveStaticIps(&s.ImsiIpInfo)
+		}
+	}
+}
+
+func removeInactiveUPNodes(upnodes map[string]*UPNode, currentUPFs, currentANs map[string]bool) {
+	for name, node := range upnodes {
 		switch node.Type {
 		case UPNODE_UPF:
 			if !currentUPFs[name] {
-				delete(smContext.UserPlaneInformation.UPNodes, name)
+				delete(upnodes, name)
 			}
 		case UPNODE_AN:
 			if !currentANs[name] {
-				delete(smContext.UserPlaneInformation.UPNodes, name)
+				delete(upnodes, name)
 			}
 		}
 	}
+}
 
-	smContext.SnssaiInfos = updatedSnssaiInfos
-	upi := smContext.UserPlaneInformation
-
-	// reset before reinitializing
+func rebuildUPFMaps(upi *UserPlaneInformation) {
 	upi.ResetDefaultUserPlanePath()
-
-	// initialize maps
-	upi.UPFs = make(map[string]*UPNode)
-	upi.UPFIPToName = make(map[string]string)
-	upi.UPFsID = make(map[string]string)
-	upi.UPFsIPtoID = make(map[string]string)
+	upi.UPFs = map[string]*UPNode{}
+	upi.UPFIPToName = map[string]string{}
+	upi.UPFsID = map[string]string{}
+	upi.UPFsIPtoID = map[string]string{}
 
 	for name, node := range upi.UPNodes {
 		if node.Type == UPNODE_UPF {
-			upi.UPFs[name] = node
-
 			nodeID := string(node.NodeID.NodeIdValue)
+			upi.UPFs[name] = node
 			upi.UPFIPToName[nodeID] = name
 			upi.UPFsID[name] = nodeID
 			upi.UPFsIPtoID[nodeID] = name
 		}
 	}
+}
+
+func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
+	logger.CtxLog.Infof("Processing config update from polling service")
+	if len(newConfig) == 0 {
+		logger.CtxLog.Warn("Received empty session management config, clearing dynamic SMF context")
+		clearSmfContext(smContext)
+		return nil
+	}
+	existingUPFs := extractExistingUPFs(smContext)
+	// track current UPFs and gNBs seen in this update
+	currentUPFs := make(map[string]bool)
+	currentANs := make(map[string]bool)
+
+	var snssaiInfos []SnssaiSmfInfo
+	for _, sm := range newConfig {
+		info := buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo)
+		snssaiInfos = append(snssaiInfos, info)
+		if sm.HasUpf() {
+			upf := sm.GetUpf()
+			currentUPFs[upf.Hostname] = true
+			for _, gnb := range sm.GetGnbNames() {
+				currentANs[gnb] = true
+			}
+			if err := updateUPFConfiguration(smContext, &upf, sm.GnbNames, existingUPFs); err != nil {
+				return fmt.Errorf("update UPF config failed: %w", err)
+			}
+		}
+	}
+
+	// clean up UPFs and gNBs not in the current config
+	removeInactiveUPNodes(smContext.UserPlaneInformation.UPNodes, currentUPFs, currentANs)
+	smContext.SnssaiInfos = snssaiInfos
+	rebuildUPFMaps(smContext.UserPlaneInformation)
 
 	logger.CtxLog.Info("SMF context updated from dynamic session management config successfully")
 	return nil
@@ -431,43 +415,28 @@ func resolvePfcpPort(p *int32) uint16 {
 	return factory.DEFAULT_PFCP_PORT
 }
 
-func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
-	if apiUpf == nil {
-		return nil
+func getOrCreateUpfNode(hostname string, port uint16, nodeID NodeID, existingUPFs map[string]*UPNode) *UPNode {
+	if node, exists := existingUPFs[hostname]; exists {
+		return node
 	}
-
-	hostname := apiUpf.Hostname
-	if hostname == "" {
-		return fmt.Errorf("UPF hostname must not be empty")
-	}
-	port := resolvePfcpPort(apiUpf.Port)
-	nodeID := NodeID{
-		NodeIdValue: []byte(hostname),
-		NodeIdType:  NodeIdTypeIpv4Address,
-	}
-
-	upNode, exists := existingUPFs[hostname]
-	if !exists {
-		upNode = &UPNode{
-			UPF: &UPF{
-				NodeID: nodeID,
-				Port:   port,
-			},
-			Type:   UPNODE_UPF,
+	return &UPNode{
+		UPF: &UPF{
 			NodeID: nodeID,
 			Port:   port,
-			Links:  []*UPNode{},
-		}
+		},
+		Type:   UPNODE_UPF,
+		NodeID: nodeID,
+		Port:   port,
+		Links:  []*UPNode{},
 	}
+}
 
-	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
-
+func linkUpfToGnbNodes(upNodes map[string]*UPNode, upNode *UPNode, gnbNames []string) {
 	for _, gnb := range gnbNames {
 		if gnb == "" {
 			continue
 		}
-
-		anNode, exists := smfCtx.UserPlaneInformation.UPNodes[gnb]
+		anNode, exists := upNodes[gnb]
 		if !exists {
 			anNode = &UPNode{
 				Type: UPNODE_AN,
@@ -477,13 +446,30 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 				},
 				Links: []*UPNode{},
 			}
-			smfCtx.UserPlaneInformation.UPNodes[gnb] = anNode
+			upNodes[gnb] = anNode
 		}
-
 		anNode.Links = appendIfMissing(anNode.Links, upNode)
 		upNode.Links = appendIfMissing(upNode.Links, anNode)
 	}
+}
 
+func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
+	if apiUpf == nil {
+		return nil
+	}
+	hostname := apiUpf.Hostname
+	if hostname == "" {
+		return fmt.Errorf("UPF hostname must not be empty")
+	}
+	port := resolvePfcpPort(apiUpf.Port)
+	nodeID := NodeID{
+		NodeIdValue: []byte(hostname),
+		NodeIdType:  NodeIdTypeIpv4Address,
+	}
+	upNode := getOrCreateUpfNode(hostname, port, nodeID, existingUPFs)
+	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
+
+	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
 	logger.CtxLog.Infof("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
 	return nil
 }
