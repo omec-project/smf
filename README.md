@@ -65,17 +65,23 @@ Check the official guide for installing root CA certificates on Ubuntu:
 
 ## SMF supports wide range of error handling
 
-This includes some of the handling as listed below
-1. UPF Reconnect if UPF restarts
-2. PFCP Heartbeat handling towards UPF
-3. PFCP Transaction timeout and not to wait forever
-4. SBI message timeout handling and handling timeouts
-5. Registration towards NRF with updated configuration
-6. Retrying NRF registration if NRF is not available
-
-## Upcoming features in SMF
-
-1. Policy Notify from PCF for QoS update
+This includes some of the handling as listed below:
+1. UPF Connection Management:
+- Implements automatic UPF reconnection mechanism when UPF restarts
+- Maintains PFCP heartbeat monitoring towards UPF for connection health checks
+2. PFCP Protocol Handling:
+- Implements transaction timeout controls to prevent indefinite wait states
+- Manages PFCP session lifecycle and termination
+3. Service-Based Interface (SBI) Management:
+- Handles SBI message timeouts with proper error recovery
+- Implements retry mechanisms for failed operations
+4. NRF Integration:
+- Supports dynamic registration updates with NRF
+- Implements automatic retry logic for NRF registration when service is unavailable
+- Maintains NRF connection through heartbeat service
+5. Configuration Management:
+- Implements resilient configuration polling for Webconsole config server
+- Includes automatic retry mechanism for configuration service availability
 
 ## How to use SMF
 

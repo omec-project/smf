@@ -74,13 +74,15 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 func buildSmfInfo(cfgs []nfConfigApi.SessionManagement) *models.SmfInfo {
 	var snssaiSmfInfoList []models.SnssaiSmfInfoItem
 	for _, sm := range cfgs {
-		item := models.SnssaiSmfInfoItem{
-			SNssai: &models.Snssai{
-				Sst: sm.Snssai.Sst,
-				Sd:  deref(sm.Snssai.Sd),
-			},
+		snssai := &models.Snssai{
+			Sst: sm.Snssai.Sst,
 		}
-
+		if sm.Snssai.Sd != nil && *sm.Snssai.Sd != "" {
+			snssai.Sd = *sm.Snssai.Sd
+		}
+		item := models.SnssaiSmfInfoItem{
+			SNssai: snssai,
+		}
 		var dnnList []models.DnnSmfInfoItem
 		for _, ipdomain := range sm.IpDomain {
 			if ipdomain.DnnName != "" {
@@ -110,19 +112,15 @@ func buildPlmnList(cfgs []nfConfigApi.SessionManagement) *[]models.PlmnId {
 func buildSNssais(cfgs []nfConfigApi.SessionManagement) *[]models.Snssai {
 	var snssais []models.Snssai
 	for _, sm := range cfgs {
-		snssais = append(snssais, models.Snssai{
+		snssai := models.Snssai{
 			Sst: sm.Snssai.Sst,
-			Sd:  deref(sm.Snssai.Sd),
-		})
+		}
+		if sm.Snssai.Sd != nil && *sm.Snssai.Sd != "" {
+			snssai.Sd = *sm.Snssai.Sd
+		}
+		snssais = append(snssais, snssai)
 	}
 	return &snssais
-}
-
-func deref(s *string) string {
-	if s != nil {
-		return *s
-	}
-	return ""
 }
 
 var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (prof models.NfProfile, resourceNrfUri string, err error) {
@@ -348,33 +346,6 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 		return nil, localErr
 	}
 	return nil, nil
-}
-
-func SendNFDiscoveryPCF() (problemDetails *models.ProblemDetails, err error) {
-	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
-
-	var result models.SearchResult
-	var localErr error
-
-	if smfContext.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smfContext.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
-	} else {
-		result, localErr = SendNrfForNfInstance(smfContext.SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
-	}
-
-	if localErr == nil {
-		logger.ConsumerLog.Debugln(result.NfInstances)
-	} else {
-		apiError, ok := localErr.(openapi.GenericOpenAPIError)
-		if ok {
-			problem := apiError.Model().(models.ProblemDetails)
-			return &problem, nil
-		}
-
-		return nil, localErr
-	}
-
-	return problemDetails, err
 }
 
 func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.ProblemDetails, error) {

@@ -240,7 +240,7 @@ func (smf *SMF) FilterCli(c *cli.Command) (args []string) {
 func (smf *SMF) Start() {
 	logger.InitLog.Infoln("SMF app initialising")
 
-	// Init SMF Service
+	// Init SMF Context
 	smfCtxt := smfContext.InitSmfContext(&factory.SmfConfig)
 
 	if smfCtxt == nil {
