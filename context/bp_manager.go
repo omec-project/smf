@@ -5,6 +5,7 @@
 package context
 
 import (
+	"encoding/json"
 	"reflect"
 )
 
@@ -100,10 +101,25 @@ func (bpMGR *BPManager) FindULCL(smContext *SMContext) error {
 	return nil
 }
 
-func (pendingUPF PendingUPF) IsEmpty() bool {
-	if len(pendingUPF) == 0 {
-		return true
-	} else {
-		return false
+func (p PendingUPF) IsEmpty() bool {
+	return len(p) == 0
+}
+
+func (bpMGR *BPManager) MarshalJSON() ([]byte, error) {
+	type Alias BPManager
+	serializable := &struct {
+		UpdatedBranchingPoint map[string]int `json:"updatedBranchingPoint"`
+		*Alias
+	}{
+		UpdatedBranchingPoint: make(map[string]int),
+		Alias:                 (*Alias)(bpMGR),
 	}
+
+	for upf, val := range bpMGR.UpdatedBranchingPoint {
+		if upf != nil {
+			serializable.UpdatedBranchingPoint[string(upf.NodeID.NodeIdValue)] = val
+		}
+	}
+
+	return json.Marshal(serializable)
 }
