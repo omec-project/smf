@@ -117,7 +117,7 @@ func (upi *UserPlaneInformation) GetUPFIDByIP(ip string) string {
 }
 
 func (upi *UserPlaneInformation) ResetDefaultUserPlanePath() {
-	logger.UPNodeLog.Infof("resetting the default user plane paths [%v]", upi.DefaultUserPlanePath)
+	logger.UPNodeLog.Debugf("resetting the default user plane paths [%v]", upi.DefaultUserPlanePath)
 	upi.DefaultUserPlanePath = make(map[string][]*UPNode)
 }
 

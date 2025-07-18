@@ -4,12 +4,12 @@ package consumer
 
 import (
 	"fmt"
-	"github.com/omec-project/openapi/models"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/openapi/nfConfigApi"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"

@@ -373,6 +373,12 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 		clearSmfContext(smContext)
 		return nil
 	}
+	if smContext.UserPlaneInformation == nil {
+		smContext.UserPlaneInformation = &UserPlaneInformation{
+			UPNodes:              make(map[string]*UPNode),
+			DefaultUserPlanePath: make(map[string][]*UPNode),
+		}
+	}
 	existingUPFs := extractExistingUPFs(smContext)
 	// track current UPFs and gNBs seen in this update
 	currentUPFs := make(map[string]bool)
@@ -388,7 +394,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			for _, gnb := range sm.GetGnbNames() {
 				currentANs[gnb] = true
 			}
-			if err := updateUPFConfiguration(smContext, &upf, sm.GnbNames, existingUPFs); err != nil {
+			if err := updateUPFConfiguration(smContext, upf, sm.GnbNames, existingUPFs); err != nil {
 				return fmt.Errorf("update UPF config failed: %w", err)
 			}
 		}
@@ -399,7 +405,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	smContext.SnssaiInfos = snssaiInfos
 	rebuildUPFMaps(smContext.UserPlaneInformation)
 
-	logger.CtxLog.Info("SMF context updated from dynamic session management config successfully")
+	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
 	return nil
 }
 
@@ -453,10 +459,7 @@ func linkUpfToGnbNodes(upNodes map[string]*UPNode, upNode *UPNode, gnbNames []st
 	}
 }
 
-func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
-	if apiUpf == nil {
-		return nil
-	}
+func updateUPFConfiguration(smfCtx *SMFContext, apiUpf nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
 	hostname := apiUpf.Hostname
 	if hostname == "" {
 		return fmt.Errorf("UPF hostname must not be empty")
@@ -470,7 +473,7 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf *nfConfigApi.Upf, gnbName
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
 
 	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
-	logger.CtxLog.Infof("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
+	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
 	return nil
 }
 
