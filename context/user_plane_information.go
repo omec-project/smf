@@ -48,6 +48,15 @@ type UPNode struct {
 type UPPath []*UPNode
 
 func AllocateUPFID() {
+	if smfContext.UserPlaneInformation == nil {
+		logger.InitLog.Errorln("UserPlaneInformation is nil")
+		return
+	}
+
+	if smfContext.UserPlaneInformation.UPFs == nil {
+		logger.InitLog.Errorln("UPFs is nil")
+		return
+	}
 	UPFsID := smfContext.UserPlaneInformation.UPFsID
 	UPFsIPtoID := smfContext.UserPlaneInformation.UPFsIPtoID
 
@@ -108,7 +117,7 @@ func (upi *UserPlaneInformation) GetUPFIDByIP(ip string) string {
 }
 
 func (upi *UserPlaneInformation) ResetDefaultUserPlanePath() {
-	logger.UPNodeLog.Infof("resetting the default user plane paths [%v]", upi.DefaultUserPlanePath)
+	logger.UPNodeLog.Debugf("resetting the default user plane paths [%v]", upi.DefaultUserPlanePath)
 	upi.DefaultUserPlanePath = make(map[string][]*UPNode)
 }
 
@@ -430,63 +439,6 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 	upi.UPFIPToName[ipStr] = name
 
 	logger.CtxLog.Infof("UPNode [%s] updated successfully", name)
-	return nil
-}
-
-// delete UPF
-func (upi *UserPlaneInformation) DeleteSmfUserPlaneNode(name string, node *factory.UPNode) error {
-	logger.UPNodeLog.Infof("UPNode[%v] to delete, content[%v]", name, node)
-	logger.UPNodeLog.Debugf("content of map[UPNodes] %v", upi.UPNodes)
-	// Find UPF node
-	upNode := upi.UPNodes[name]
-
-	if upNode == nil {
-		upNode = upi.UPNodes[node.NodeID]
-		name = node.NodeID
-	}
-
-	if upNode != nil {
-		switch upNode.Type {
-		case UPNODE_AN:
-			// Remove from ANPOOL
-			logger.UPNodeLog.Debugf("content of map[AccessNetwork] %v", upi.AccessNetwork)
-			delete(upi.AccessNetwork, name)
-		case UPNODE_UPF:
-			// remove from UPF pool
-			logger.UPNodeLog.Debugf("content of map[UPFs] %v", upi.UPFs)
-			logger.UPNodeLog.Debugf("content of map[UPFsID] %v", upi.UPFsID)
-			delete(upi.UPFs, name)
-			delete(upi.UPFsID, name)
-			// IP to ID map(Host may not be resolvable to IP, so iterate through all entries)
-			logger.UPNodeLog.Debugf("content of map[UPFsIPtoID] %v", upi.UPFsIPtoID)
-			for ipStr, nodeId := range upi.UPFsIPtoID {
-				if nodeId == upNode.UPF.UUID() {
-					delete(upi.UPFsIPtoID, ipStr)
-				}
-			}
-			// UserPlane UPF pool
-			RemoveUPFNodeByNodeID(upNode.NodeID)
-			logger.UPNodeLog.Infof("UPNode[%v] deleted from UP-Pool", name)
-		default:
-			panic("invalid UP Node type")
-		}
-
-		// name to upNode map(//Common maps for gNB and UPF)
-		logger.UPNodeLog.Debugf("content of map[UPNodes] %v", upi.UPNodes)
-		delete(upi.UPNodes, name)
-		logger.UPNodeLog.Infof("UPNode[%v] deleted from table[UPNodes]", name)
-
-		// IP to name map(Host may not be resolvable to IP, so iterate through all entries)
-		logger.UPNodeLog.Debugf("content of map[UPFIPToName] %v", upi.UPFIPToName)
-		for ipStr, nodeName := range upi.UPFIPToName {
-			if nodeName == name {
-				delete(upi.UPFIPToName, ipStr)
-				logger.UPNodeLog.Infof("UPNode[%v] deleted from table[UPFIPToName]", name)
-			}
-		}
-	}
-
-	// also clean up default paths to UPFs
 	return nil
 }
 

@@ -12,25 +12,26 @@ import (
 )
 
 var (
-	log         *zap.Logger
-	AppLog      *zap.SugaredLogger
-	InitLog     *zap.SugaredLogger
-	CfgLog      *zap.SugaredLogger
-	DataRepoLog *zap.SugaredLogger
-	GsmLog      *zap.SugaredLogger
-	PfcpLog     *zap.SugaredLogger
-	PduSessLog  *zap.SugaredLogger
-	CtxLog      *zap.SugaredLogger
-	ConsumerLog *zap.SugaredLogger
-	GinLog      *zap.SugaredLogger
-	GrpcLog     *zap.SugaredLogger
-	ProducerLog *zap.SugaredLogger
-	UPNodeLog   *zap.SugaredLogger
-	FsmLog      *zap.SugaredLogger
-	TxnFsmLog   *zap.SugaredLogger
-	QosLog      *zap.SugaredLogger
-	KafkaLog    *zap.SugaredLogger
-	atomicLevel zap.AtomicLevel
+	log                *zap.Logger
+	AppLog             *zap.SugaredLogger
+	InitLog            *zap.SugaredLogger
+	CfgLog             *zap.SugaredLogger
+	DataRepoLog        *zap.SugaredLogger
+	GsmLog             *zap.SugaredLogger
+	PfcpLog            *zap.SugaredLogger
+	PduSessLog         *zap.SugaredLogger
+	CtxLog             *zap.SugaredLogger
+	ConsumerLog        *zap.SugaredLogger
+	GinLog             *zap.SugaredLogger
+	ProducerLog        *zap.SugaredLogger
+	UPNodeLog          *zap.SugaredLogger
+	FsmLog             *zap.SugaredLogger
+	TxnFsmLog          *zap.SugaredLogger
+	QosLog             *zap.SugaredLogger
+	KafkaLog           *zap.SugaredLogger
+	atomicLevel        zap.AtomicLevel
+	PollConfigLog      *zap.SugaredLogger
+	NrfRegistrationLog *zap.SugaredLogger
 )
 
 func init() {
@@ -69,13 +70,14 @@ func init() {
 	CtxLog = log.Sugar().With("component", "SMF", "category", "CTX")
 	ConsumerLog = log.Sugar().With("component", "SMF", "category", "Consumer")
 	GinLog = log.Sugar().With("component", "SMF", "category", "GIN")
-	GrpcLog = log.Sugar().With("component", "SMF", "category", "GRPC")
 	ProducerLog = log.Sugar().With("component", "SMF", "category", "Producer")
 	UPNodeLog = log.Sugar().With("component", "SMF", "category", "UPNode")
 	FsmLog = log.Sugar().With("component", "SMF", "category", "Fsm")
 	TxnFsmLog = log.Sugar().With("component", "SMF", "category", "TxnFsm")
 	QosLog = log.Sugar().With("component", "SMF", "category", "QosFsm")
 	KafkaLog = log.Sugar().With("component", "SMF", "category", "Kafka")
+	PollConfigLog = log.Sugar().With("component", "SMF", "category", "PollConfig")
+	NrfRegistrationLog = log.Sugar().With("component", "SMF", "category", "NrfRegistration")
 }
 
 func GetLogger() *zap.Logger {

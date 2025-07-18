@@ -13,6 +13,7 @@ import (
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/consumer"
+	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/util/httpwrapper"
@@ -62,6 +63,25 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody)
-		consumer.SendRemoveSubscriptionProcedure(nfSubscriptionStatusNotification)
+		if nfSubscriptionStatusNotification.Event != models.NotificationEventType_DEREGISTERED {
+			return
+		}
+		nfID := nfSubscriptionStatusNotification.NfProfile.NfInstanceId
+		value, found := smfContext.SMF_Self().NfStatusSubscriptions.Load(nfID)
+		if !found {
+			logger.ConsumerLog.Warnf("no subscriptionId found for NF instance %s", nfID)
+			return
+		}
+		subID := value.(string)
+		problem, err := consumer.SendRemoveSubscription(subID)
+		if err != nil {
+			logger.ConsumerLog.Errorf("failed to remove NRF subscription %s: %+v", subID, err)
+			return
+		}
+		if problem != nil {
+			logger.ConsumerLog.Warnf("NRF responded with problem while removing %s: %+v", subID, problem)
+			return
+		}
+		smfContext.SMF_Self().NfStatusSubscriptions.Delete(nfID)
 	}
 }
