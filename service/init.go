@@ -293,7 +293,7 @@ func (smf *SMF) Start() {
 				if err != nil {
 					logger.PollConfigLog.Errorf("SMF context update failed: %v", err)
 				} else {
-					logger.PollConfigLog.Infof("SMF context updated from WebConsole config")
+					logger.PollConfigLog.Debugf("SMF context updated from WebConsole config")
 					smfContext.AllocateUPFID()
 				}
 			}
