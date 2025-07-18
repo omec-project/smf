@@ -106,20 +106,30 @@ func (p PendingUPF) IsEmpty() bool {
 }
 
 func (bpMGR *BPManager) MarshalJSON() ([]byte, error) {
-	type Alias BPManager
-	serializable := &struct {
-		UpdatedBranchingPoint map[string]int `json:"updatedBranchingPoint"`
-		*Alias
-	}{
-		UpdatedBranchingPoint: make(map[string]int),
-		Alias:                 (*Alias)(bpMGR),
+	type SimpleBPManager struct {
+		ULCL                  *UPF           `json:"ulcl,omitempty"`
+		ActivatingPath        *DataPath      `json:"activatingPath,omitempty"`
+		UpdatedBranchingPoint map[string]int `json:"updatedBranchingPoint,omitempty"`
+		PendingUPF            PendingUPF     `json:"pendingUpf,omitempty"`
+		ActivatedPaths        []*DataPath    `json:"activatedPaths,omitempty"`
+		BPStatus              BPStatus       `json:"bpStatus"`
+		AddingPSAState        AddingPSAState `json:"addingPsaState"`
 	}
 
+	converted := make(map[string]int)
 	for upf, val := range bpMGR.UpdatedBranchingPoint {
 		if upf != nil {
-			serializable.UpdatedBranchingPoint[string(upf.NodeID.NodeIdValue)] = val
+			converted[string(upf.NodeID.NodeIdValue)] = val
 		}
 	}
 
-	return json.Marshal(serializable)
+	return json.Marshal(&SimpleBPManager{
+		ULCL:                  bpMGR.ULCL,
+		ActivatingPath:        bpMGR.ActivatingPath,
+		UpdatedBranchingPoint: converted,
+		PendingUPF:            bpMGR.PendingUPF,
+		ActivatedPaths:        bpMGR.ActivatedPaths,
+		BPStatus:              bpMGR.BPStatus,
+		AddingPSAState:        bpMGR.AddingPSAState,
+	})
 }
