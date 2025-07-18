@@ -35,7 +35,7 @@ configuration:
   ...
 ```
 The scheme (http:// or https://) must be explicitly specified. If no parameter is specified,
-UDM will use `http://webui:5001` by default.
+SMF will use `http://webui:5001` by default.
 
 ### HTTPS Support
 
@@ -90,5 +90,5 @@ Refer to the [SD-Core documentation](https://docs.sd-core.opennetworking.org/mai
 ## Reach out to us through
 
 1. #sdcore-dev channel in [Aether Community Slack](https://aether5g-project.slack.com)
-2. Raise Github [issues](https://github.com/omec-project/udm/issues/new)
+2. Raise Github [issues](https://github.com/omec-project/smf/issues/new)
 
