@@ -63,19 +63,25 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody)
-		if nfSubscriptionStatusNotification.Event == models.NotificationEventType_DEREGISTERED {
-			nfID := nfSubscriptionStatusNotification.NfProfile.NfInstanceId
-			if subID, ok := smfContext.SMF_Self().NfStatusSubscriptions.Load(nfID); ok {
-				if problem, err := consumer.SendRemoveSubscription(subID.(string)); err != nil {
-					logger.ConsumerLog.Errorf("failed to remove NRF subscription %s: %v", subID, err)
-				} else if problem != nil {
-					logger.ConsumerLog.Warnf("NRF responded with problem while removing %s: %+v", subID, problem)
-				} else {
-					smfContext.SMF_Self().NfStatusSubscriptions.Delete(nfID)
-				}
-			} else {
-				logger.ConsumerLog.Warnf("no subscriptionId found for NF instance %s", nfID)
-			}
+		if nfSubscriptionStatusNotification.Event != models.NotificationEventType_DEREGISTERED {
+			return
 		}
+		nfID := nfSubscriptionStatusNotification.NfProfile.NfInstanceId
+		value, found := smfContext.SMF_Self().NfStatusSubscriptions.Load(nfID)
+		if !found {
+			logger.ConsumerLog.Warnf("no subscriptionId found for NF instance %s", nfID)
+			return
+		}
+		subID := value.(string)
+		problem, err := consumer.SendRemoveSubscription(subID)
+		if err != nil {
+			logger.ConsumerLog.Errorf("failed to remove NRF subscription %s: %+v", subID, err)
+			return
+		}
+		if problem != nil {
+			logger.ConsumerLog.Warnf("NRF responded with problem while removing %s: %+v", subID, problem)
+			return
+		}
+		smfContext.SMF_Self().NfStatusSubscriptions.Delete(nfID)
 	}
 }
