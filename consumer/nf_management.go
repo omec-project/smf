@@ -247,7 +247,7 @@ func getSvcMsgType(nfType models.NfType) svcmsgtypes.SmfMsgType {
 	return svcMsgType
 }
 
-func SendNrfForNfInstance(nrfUri string, targetNfType, requestNfType models.NfType,
+func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requestNfType models.NfType,
 	param *Nnrf_NFDiscovery.SearchNFInstancesParamOpts,
 ) (models.SearchResult, error) {
 	result, httpResp, localErr := smfContext.SMF_Self().
@@ -318,11 +318,12 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 
 	var result models.SearchResult
 	var localErr error
+	ctx := context.Background()
 
 	if smfContext.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smfContext.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smfContext.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(smfContext.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NfType_UDM, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {
@@ -358,11 +359,11 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 
 	var result models.SearchResult
 	var localErr error
-
+	ctx := context.Background()
 	if smfContext.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(smfContext.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = nrfCache.SearchNFInstances(ctx, smfContext.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(smfContext.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NfType_AMF, models.NfType_SMF, &localVarOptionals)
 	}
 
 	if localErr == nil {
