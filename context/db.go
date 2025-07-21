@@ -124,14 +124,11 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 		PFCPContextVal[key] = pfcpSessionContextInDB
 	}
 
-	var bpManager interface{}
+	var bpJSON json.RawMessage
 	if smContext.BPManager != nil {
 		var err error
-		bpJSON, err := json.Marshal(smContext.BPManager)
+		bpJSON, err = json.Marshal(smContext.BPManager)
 		if err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(bpJSON, &bpManager); err != nil {
 			return nil, err
 		}
 	}
@@ -140,12 +137,12 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 		*Alias
 		PFCPContext PFCPContextInDB `json:"pfcpContext"`
 		Tunnel      UPTunnelInDB    `json:"tunnel"`
-		BPManager   interface{}     `json:"bpManager,omitempty"`
+		BPManager   json.RawMessage `json:"bpManager,omitempty"`
 	}{
 		Alias:       (*Alias)(smContext),
 		PFCPContext: PFCPContextVal,
 		Tunnel:      upTunnelVal,
-		BPManager:   bpManager,
+		BPManager:   bpJSON,
 	})
 }
 

@@ -12,12 +12,13 @@ package polling
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,31 +58,46 @@ func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSu
 }
 
 func TestStartPollingService_Success(t *testing.T) {
-	ctx := t.Context()
-	sessionConfigOne := makeSessionConfig("slice1", "222", "03", "2", "2", "internet", "192.168.1.0/24", "192.168.1.1", 38414)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sessionConfigOne := makeSessionConfig(
+		"slice1",
+		"222",
+		"03",
+		"2",
+		"2",
+		"internet",
+		"192.168.1.0/24",
+		"192.168.1.1",
+		38414,
+	)
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
-
 	expectedConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 		return expectedConfig, nil
 	}
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 1)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	sessionMgmtChan := make(chan []nfConfigApi.SessionManagement, 1)
-	go StartPollingService(ctx, "http://dummy", func(cfg []nfConfigApi.SessionManagement) {
-		sessionMgmtChan <- cfg
-	})
-
-	time.Sleep(initialPollingInterval)
-
-	select {
-	case result := <-sessionMgmtChan:
-		if !reflect.DeepEqual(result, expectedConfig) {
-			t.Errorf("Expected %+v, got %+v", expectedConfig, result)
+	go func() {
+		if result := <-registrationChan; !reflect.DeepEqual(result, expectedConfig) {
+			t.Errorf("registrationChan: expected %+v, got %+v", expectedConfig, result)
 		}
-	case <-time.After(200 * time.Millisecond):
-		t.Errorf("Timeout waiting for session management config")
-	}
+		wg.Done()
+	}()
+
+	go func() {
+		if result := <-contextUpdateChan; !reflect.DeepEqual(result, expectedConfig) {
+			t.Errorf("contextUpdateChan: expected %+v, got %+v", expectedConfig, result)
+		}
+		wg.Done()
+	}()
+
+	go StartPollingService(ctx, "http://dummy", registrationChan, contextUpdateChan)
+	wg.Wait()
 }
 
 func TestStartPollingService_RetryAfterFailure(t *testing.T) {
@@ -92,45 +108,75 @@ func TestStartPollingService_RetryAfterFailure(t *testing.T) {
 	callCount := 0
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, pollingEndpoint string) ([]nfConfigApi.SessionManagement, error) {
 		callCount++
-		return nil, errors.New("mock failure")
+		currentCount := callCount
+		return nil, fmt.Errorf("mock failure %d", currentCount)
 	}
-	// fetch always fails
-	go StartPollingService(ctx, "http://dummy", func([]nfConfigApi.SessionManagement) {})
-
-	time.Sleep(4 * initialPollingInterval)
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 1)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		StartPollingService(ctx, "http://dummy", registrationChan, contextUpdateChan)
+	}()
+	time.Sleep(3 * initialPollingInterval)
 	cancel()
-	<-ctx.Done()
-
+	wg.Wait()
 	if callCount < 2 {
-		t.Error("Expected to retry after failure")
+		t.Errorf("Expected at least 2 retry attempts, got %d", callCount)
 	}
-	t.Logf("Tried %v times", callCount)
 }
 
 func TestStartPollingService_NoUpdateOnIdenticalConfig(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	updateCount := 0
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
-	sessionConfigOne := makeSessionConfig("slice1", "222", "02", "1", "2", "internet", "192.168.1.0/24", "192.168.2.1", 38422)
-	callCount := 0
+	sessionConfigOne := makeSessionConfig(
+		"slice1",
+		"222",
+		"02",
+		"1",
+		"2",
+		"internet",
+		"192.168.1.0/24",
+		"192.168.2.1",
+		38422,
+	)
 	expectedConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 		return expectedConfig, nil
 	}
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 1)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		config := <-registrationChan
+		if !reflect.DeepEqual(config, expectedConfig) {
+			t.Errorf("registrationChan: expected %+v, got %+v", expectedConfig, config)
+		}
+		updateCount += 1
+	}()
 
-	ch := make(chan struct{}, 1)
-	go StartPollingService(ctx, "http://dummy", func(_ []nfConfigApi.SessionManagement) {
-		callCount++
-		ch <- struct{}{}
-	})
+	go func() {
+		defer wg.Done()
+		config := <-contextUpdateChan
+		if !reflect.DeepEqual(config, expectedConfig) {
+			t.Errorf("contextUpdateChan: expected %+v, got %+v", expectedConfig, config)
+		}
+		updateCount += 1
+	}()
+	go StartPollingService(ctx, "http://dummy", registrationChan, contextUpdateChan)
+	time.Sleep(4 * initialPollingInterval)
 
-	time.Sleep(2 * initialPollingInterval)
 	cancel()
-	<-ctx.Done()
+	wg.Wait()
 
-	if callCount != 1 {
-		t.Errorf("Expected callback to be called once for new config, got %d", callCount)
+	if updateCount != 2 {
+		t.Errorf("Expected exactly 2 updates, got %d", updateCount)
 	}
 }
 
@@ -139,44 +185,128 @@ func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
 	defer cancel()
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
-	sessionConfigOne := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "192.168.1.1", 38412)
-	sessionConfigTwo := makeSessionConfig("slice2", "111", "01", "1", "1", "fast", "192.168.2.0/24", "192.168.2.1", 38412)
-	callCount := 0
-
+	sessionConfigOne := makeSessionConfig(
+		"slice1",
+		"111",
+		"01",
+		"1",
+		"1",
+		"internet",
+		"192.168.1.0/24",
+		"192.168.1.1",
+		38412,
+	)
+	sessionConfigTwo := makeSessionConfig(
+		"slice2",
+		"111",
+		"01",
+		"1",
+		"1",
+		"fast",
+		"192.168.2.0/24",
+		"192.168.2.1",
+		38412,
+	)
+	fetchCount := 0
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
-		if callCount == 0 {
+		if fetchCount == 0 {
+			fetchCount++
 			return []nfConfigApi.SessionManagement{sessionConfigOne}, nil
 		}
 		return []nfConfigApi.SessionManagement{sessionConfigTwo}, nil
 	}
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 2)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 2)
+	type update struct {
+		config []nfConfigApi.SessionManagement
+		source string
+	}
 
-	ch := make(chan struct{}, 2)
-	go StartPollingService(ctx, "http://dummy", func(_ []nfConfigApi.SessionManagement) {
-		callCount++
-		ch <- struct{}{}
-	})
+	updates := make(chan update, 4)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
+	go func() {
+		defer wg.Done()
+		for config := range registrationChan {
+			updates <- update{config: config, source: "registration"}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for config := range contextUpdateChan {
+			updates <- update{config: config, source: "context"}
+		}
+	}()
+
+	go StartPollingService(ctx, "http://dummy", registrationChan, contextUpdateChan)
+
+	configOneCount := 0
+	configTwoCount := 0
+	registrationCount := 0
+	contextCount := 0
 	timeout := time.After(5 * initialPollingInterval)
-	for i := 0; i < 2; i++ {
+	// 4 updates are expected in total
+	for i := 0; i < 4; i++ {
 		select {
-		case <-ch:
-			// expected update
+		case received := <-updates:
+			if reflect.DeepEqual(received.config, []nfConfigApi.SessionManagement{sessionConfigOne}) {
+				configOneCount++
+			} else if reflect.DeepEqual(received.config, []nfConfigApi.SessionManagement{sessionConfigTwo}) {
+				configTwoCount++
+			} else {
+				t.Errorf("Received unexpected configuration: %+v", received.config)
+			}
+
+			switch received.source {
+			case "registration":
+				registrationCount++
+			case "context":
+				contextCount++
+			}
 		case <-timeout:
-			t.Fatalf("Timed out waiting for config update #%d", i+1)
+			t.Fatalf("Timed out waiting for update %d", i+1)
 		}
 	}
-
-	cancel()
-	<-ctx.Done()
-
-	if callCount != 2 {
-		t.Errorf("Expected callback to be called twice for different configs, got %d", callCount)
+	if configOneCount != 2 {
+		t.Errorf("Expected 2 updates with first config, got %d", configOneCount)
 	}
+	if configTwoCount != 2 {
+		t.Errorf("Expected 2 updates with second config, got %d", configTwoCount)
+	}
+	if registrationCount != 2 {
+		t.Errorf("Expected 2 updates on registration channel, got %d", registrationCount)
+	}
+	if contextCount != 2 {
+		t.Errorf("Expected 2 updates on context channel, got %d", contextCount)
+	}
+
+	select {
+	case extra := <-updates:
+		t.Errorf("Received unexpected update: %+v", extra)
+	case <-time.After(initialPollingInterval):
+		// this is expected
+	}
+	cancel()
+	close(registrationChan)
+	close(contextUpdateChan)
+	wg.Wait()
 }
 
 func TestFetchSessionManagementConfig(t *testing.T) {
 	var sessionConfigs []nfConfigApi.SessionManagement
-	sessionConfigOne := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "192.168.1.1", 38412)
+	sessionConfigOne := makeSessionConfig(
+		"slice1",
+		"111",
+		"01",
+		"1",
+		"1",
+		"internet",
+		"192.168.1.0/24",
+		"192.168.1.1",
+		38412,
+	)
 	sessionConfigs = append(sessionConfigs, sessionConfigOne)
 	validJson, err := json.Marshal(sessionConfigs)
 	if err != nil {

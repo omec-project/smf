@@ -122,11 +122,7 @@ func TestUERoutingManager(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(mgr)
 			}
-			got, ok := mgr.GetPath(tc.querySUPI)
-			if ok != tc.expectOK {
-				t.Errorf("expected ok=%v, got %v", tc.expectOK, ok)
-			}
-
+			got := mgr.GetPath(tc.querySUPI)
 			if !pathsEqual(got, tc.expectPath) {
 				t.Errorf("expected path %+v, got %+v", tc.expectPath, got)
 			}

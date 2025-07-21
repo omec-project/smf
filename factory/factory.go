@@ -37,8 +37,8 @@ func InitConfigFactory(f string) error {
 	}
 	SmfConfig = Config{}
 
-	if yamlErr := yaml.Unmarshal(content, &SmfConfig); yamlErr != nil {
-		return yamlErr
+	if err = yaml.Unmarshal(content, &SmfConfig); err != nil {
+		return err
 	}
 
 	if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {

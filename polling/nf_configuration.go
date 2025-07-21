@@ -34,7 +34,7 @@ type nfConfigPoller struct {
 
 // StartPollingService initializes the polling service and starts it.
 // The polling service continuously makes HTTP GET request to the webconsole and updates the network configuration
-func StartPollingService(ctx context.Context, webuiUri string, onUpdate func([]nfConfigApi.SessionManagement)) {
+func StartPollingService(ctx context.Context, webuiUri string, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement) {
 	poller := nfConfigPoller{
 		currentSessionManagementConfig: []nfConfigApi.SessionManagement{},
 		client:                         &http.Client{Timeout: initialPollingInterval},
@@ -42,12 +42,25 @@ func StartPollingService(ctx context.Context, webuiUri string, onUpdate func([]n
 
 	interval := initialPollingInterval
 	pollingEndpoint := webuiUri + pollingPath
-	logger.PollConfigLog.Infof("Started polling service on %s every %v", pollingEndpoint, initialPollingInterval)
+	logger.PollConfigLog.Infof("started polling service on %s every %v", pollingEndpoint, initialPollingInterval)
+
+	handleUpdate := func(cfg []nfConfigApi.SessionManagement) {
+		select {
+		case registrationChan <- cfg:
+		default:
+			logger.PollConfigLog.Warn("registrationChan full, dropping config")
+		}
+		select {
+		case contextUpdateChan <- cfg:
+		default:
+			logger.PollConfigLog.Warn("contextUpdateChan full, dropping config")
+		}
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.PollConfigLog.Infoln("Polling service shutting down")
+			logger.PollConfigLog.Infoln("polling service shutting down")
 			return
 		case <-time.After(interval):
 			newSessionManagementConfig, err := fetchSessionManagementConfig(&poller, pollingEndpoint)
@@ -62,7 +75,7 @@ func StartPollingService(ctx context.Context, webuiUri string, onUpdate func([]n
 			if !reflect.DeepEqual(newSessionManagementConfig, poller.currentSessionManagementConfig) {
 				logger.PollConfigLog.Infof("Session Management config changed. New Session Management Data: %+v", newSessionManagementConfig)
 				poller.currentSessionManagementConfig = deepcopy.Copy(newSessionManagementConfig).([]nfConfigApi.SessionManagement)
-				onUpdate(newSessionManagementConfig)
+				handleUpdate(newSessionManagementConfig)
 			} else {
 				logger.PollConfigLog.Debugf("Session management config did not change %+v", newSessionManagementConfig)
 			}

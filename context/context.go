@@ -266,7 +266,6 @@ func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 	}
 
 	smfContext.UeRoutingManager = routingManager
-	return
 }
 
 func SMF_Self() *SMFContext {
@@ -301,8 +300,8 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo *[]facto
 	apiPlmnId := sm.GetPlmnId()
 	apiSnssai := sm.GetSnssai()
 	info := SnssaiSmfInfo{
-		PlmnId:   models.PlmnId{Mcc: apiPlmnId.Mcc, Mnc: apiPlmnId.Mnc},
-		Snssai:   SNssai{Sst: apiSnssai.Sst, Sd: *apiSnssai.Sd},
+		PlmnId:   models.PlmnId{Mcc: apiPlmnId.GetMcc(), Mnc: apiPlmnId.GetMnc()},
+		Snssai:   SNssai{Sst: apiSnssai.GetSst(), Sd: apiSnssai.GetSd()},
 		DnnInfos: map[string]*SnssaiSmfDnnInfo{},
 	}
 

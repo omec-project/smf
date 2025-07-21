@@ -26,11 +26,11 @@ func (m *UERoutingManager) AddPath(supi string, paths *UEPreConfigPaths) {
 	m.pathPool[supi] = paths
 }
 
-func (m *UERoutingManager) GetPath(supi string) (*UEPreConfigPaths, bool) {
+func (m *UERoutingManager) GetPath(supi string) *UEPreConfigPaths {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	p, ok := m.pathPool[supi]
-	return p, ok
+	p := m.pathPool[supi]
+	return p
 }
 
 func (m *UERoutingManager) HasPath(supi string) bool {

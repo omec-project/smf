@@ -29,18 +29,17 @@ import (
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 )
 
-func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManagement) (models.NfProfile, error) {
-	if len(cfgs) == 0 {
+func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.SessionManagement) (models.NfProfile, error) {
+	if len(sessionCfgs) == 0 {
 		return models.NfProfile{}, fmt.Errorf("session management config is empty")
 	}
 	if smfCtx == nil {
 		return models.NfProfile{}, fmt.Errorf("SMF context is nil")
 	}
 
-	snssais := buildSNssais(cfgs)
-	plmnList := buildPlmnList(cfgs)
-
-	smfInfo := buildSmfInfo(cfgs)
+	snssais := buildSNssais(sessionCfgs)
+	plmnList := buildPlmnList(sessionCfgs)
+	smfInfo := buildSmfInfo(sessionCfgs)
 	now := time.Now()
 	nfServices := make([]models.NfService, 0)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
@@ -55,7 +54,7 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 				ApiFullVersion:  fmt.Sprintf("%s://%s:%d/nsmf-pdusession/v1", smfCtx.URIScheme, smfCtx.RegisterIPv4, smfCtx.SBIPort),
 				Expiry:          &now,
 			}},
-			AllowedPlmns: plmnList,
+			AllowedPlmns: &plmnList,
 		})
 	}
 
@@ -65,29 +64,29 @@ func getNfProfile(smfCtx *smfContext.SMFContext, cfgs []nfConfigApi.SessionManag
 		NfStatus:      models.NfStatus_REGISTERED,
 		Ipv4Addresses: []string{smfCtx.RegisterIPv4},
 		NfServices:    &nfServices,
-		SmfInfo:       smfInfo,
-		SNssais:       snssais,
-		PlmnList:      plmnList,
-		AllowedPlmns:  plmnList,
+		SmfInfo:       &smfInfo,
+		SNssais:       &snssais,
+		PlmnList:      &plmnList,
+		AllowedPlmns:  &plmnList,
 	}
 	logger.ConsumerLog.Debugln("NF Profile is created using session management config")
 	return nfProf, nil
 }
 
-func buildSmfInfo(cfgs []nfConfigApi.SessionManagement) *models.SmfInfo {
-	var snssaiSmfInfoList []models.SnssaiSmfInfoItem
-	for _, sm := range cfgs {
+func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
+	snssaiSmfInfoList := []models.SnssaiSmfInfoItem{}
+	for _, sessionCfg := range sessionCfgs {
 		snssai := &models.Snssai{
-			Sst: sm.Snssai.Sst,
+			Sst: sessionCfg.Snssai.Sst,
 		}
-		if sm.Snssai.Sd != nil && *sm.Snssai.Sd != "" {
-			snssai.Sd = *sm.Snssai.Sd
+		if sd, ok := sessionCfg.Snssai.GetSdOk(); ok {
+			snssai.Sd = *sd
 		}
 		item := models.SnssaiSmfInfoItem{
 			SNssai: snssai,
 		}
-		var dnnList []models.DnnSmfInfoItem
-		for _, ipdomain := range sm.IpDomain {
+		dnnList := []models.DnnSmfInfoItem{}
+		for _, ipdomain := range sessionCfg.IpDomain {
 			if ipdomain.DnnName != "" {
 				dnnList = append(dnnList, models.DnnSmfInfoItem{Dnn: ipdomain.DnnName})
 			}
@@ -98,32 +97,32 @@ func buildSmfInfo(cfgs []nfConfigApi.SessionManagement) *models.SmfInfo {
 		}
 		snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 	}
-	return &models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
+	return models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
 }
 
-func buildPlmnList(cfgs []nfConfigApi.SessionManagement) *[]models.PlmnId {
-	var plmns []models.PlmnId
-	for _, sm := range cfgs {
+func buildPlmnList(sessionCfgs []nfConfigApi.SessionManagement) []models.PlmnId {
+	plmns := []models.PlmnId{}
+	for _, sessionCfg := range sessionCfgs {
 		plmns = append(plmns, models.PlmnId{
-			Mcc: sm.PlmnId.Mcc,
-			Mnc: sm.PlmnId.Mnc,
+			Mcc: sessionCfg.PlmnId.GetMcc(),
+			Mnc: sessionCfg.PlmnId.GetMnc(),
 		})
 	}
-	return &plmns
+	return plmns
 }
 
-func buildSNssais(cfgs []nfConfigApi.SessionManagement) *[]models.Snssai {
-	var snssais []models.Snssai
-	for _, sm := range cfgs {
+func buildSNssais(sessionCfgs []nfConfigApi.SessionManagement) []models.Snssai {
+	snssais := []models.Snssai{}
+	for _, sessionCfg := range sessionCfgs {
 		snssai := models.Snssai{
-			Sst: sm.Snssai.Sst,
+			Sst: sessionCfg.Snssai.Sst,
 		}
-		if sm.Snssai.Sd != nil && *sm.Snssai.Sd != "" {
-			snssai.Sd = *sm.Snssai.Sd
+		if sd, ok := sessionCfg.Snssai.GetSdOk(); ok {
+			snssai.Sd = *sd
 		}
 		snssais = append(snssais, snssai)
 	}
-	return &snssais
+	return snssais
 }
 
 var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (prof models.NfProfile, resourceNrfUri string, err error) {

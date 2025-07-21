@@ -58,10 +58,10 @@ func TestUpdateSmfContext(t *testing.T) {
 					return false, err.Error()
 				}
 				if len(smCtx.SnssaiInfos) != 0 {
-					return false, fmt.Sprintf("expected SnssaiInfos to be cleared")
+					return false, "expected SnssaiInfos to be cleared"
 				}
 				if len(smCtx.UserPlaneInformation.UPNodes) != 0 {
-					return false, fmt.Sprintf("expected UPNodes to be cleared")
+					return false, "expected UPNodes to be cleared"
 				}
 				return true, ""
 			},
@@ -79,7 +79,7 @@ func TestUpdateSmfContext(t *testing.T) {
 					return false, fmt.Sprintf("expected 1 SnssaiInfo, got %d", len(smCtx.SnssaiInfos))
 				}
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-1"]; !ok {
-					return false, fmt.Sprintf("expected UPNode for upf-1 to exist")
+					return false, "expected UPNode for upf-1 to exist"
 				}
 				return true, ""
 			},

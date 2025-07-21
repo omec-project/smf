@@ -255,25 +255,19 @@ func (smf *SMF) Start() {
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
 	}
 
-	registrationChan := make(chan []nfConfigApi.SessionManagement, 1)
-	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 100)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 100)
 	ctx, cancelServices := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		polling.StartPollingService(ctx, factory.SmfConfig.Configuration.WebuiUri, func(cfg []nfConfigApi.SessionManagement) {
-			select {
-			case registrationChan <- cfg:
-			default:
-				logger.PollConfigLog.Warn("registrationChan full, dropping config")
-			}
-			select {
-			case contextUpdateChan <- cfg:
-			default:
-				logger.PollConfigLog.Warn("contextUpdateChan full, dropping config")
-			}
-		})
+		polling.StartPollingService(
+			ctx,
+			factory.SmfConfig.Configuration.WebuiUri,
+			registrationChan,
+			contextUpdateChan,
+		)
 	}()
 	go func() {
 		defer wg.Done()
@@ -282,6 +276,7 @@ func (smf *SMF) Start() {
 
 	// Update SMF context using polled config
 	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case <-ctx.Done():

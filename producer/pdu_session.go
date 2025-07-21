@@ -236,7 +236,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	smfCtx := smf_context.SMF_Self()
 	if smfCtx.ULCLSupport && smfCtx.UeRoutingManager != nil && smfCtx.UeRoutingManager.HasPath(createData.Supi) {
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate: SUPI[%s] has pre-configured route", createData.Supi)
-		uePreConfigPaths, _ := smfCtx.UeRoutingManager.GetPath(createData.Supi)
+		uePreConfigPaths := smfCtx.UeRoutingManager.GetPath(createData.Supi)
 		smContext.Tunnel.DataPathPool = uePreConfigPaths.DataPathPool
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
 		defaultPath = smContext.Tunnel.DataPathPool.GetDefaultPath()
