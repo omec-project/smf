@@ -47,6 +47,5 @@ func action(ctx context.Context, c *cli.Command) error {
 	}
 
 	SMF.Start()
-
 	return nil
 }

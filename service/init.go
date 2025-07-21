@@ -244,7 +244,8 @@ func (smf *SMF) Start() {
 	smfCtxt := smfContext.InitSmfContext(&factory.SmfConfig)
 
 	if smfCtxt == nil {
-		logger.InitLog.Fatalln("Failed to init smf context")
+		logger.InitLog.Errorln("SMF context init failed")
+		return
 	}
 
 	// Init UE Specific Config
