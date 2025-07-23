@@ -141,6 +141,36 @@ func (upi *UserPlaneInformation) ExistDefaultPath(dnn string) bool {
 	return exist
 }
 
+// Reset clears all internal state of the UserPlaneInformation structure.
+// This is useful when rebuilding from scratch (on dynamic config reload).
+func (upi *UserPlaneInformation) Reset() {
+	upi.UPNodes = make(map[string]*UPNode)
+	upi.UPFs = make(map[string]*UPNode)
+	upi.AccessNetwork = make(map[string]*UPNode)
+	upi.UPFIPToName = make(map[string]string)
+	upi.UPFsID = make(map[string]string)
+	upi.UPFsIPtoID = make(map[string]string)
+	upi.DefaultUserPlanePath = make(map[string][]*UPNode)
+}
+
+func (upi *UserPlaneInformation) RebuildUPFMaps() {
+	upi.ResetDefaultUserPlanePath()
+	upi.UPFs = make(map[string]*UPNode)
+	upi.UPFIPToName = make(map[string]string)
+	upi.UPFsID = make(map[string]string)
+	upi.UPFsIPtoID = make(map[string]string)
+
+	for name, node := range upi.UPNodes {
+		if node.Type == UPNODE_UPF {
+			nodeID := string(node.NodeID.NodeIdValue)
+			upi.UPFs[name] = node
+			upi.UPFIPToName[nodeID] = name
+			upi.UPFsID[name] = nodeID
+			upi.UPFsIPtoID[nodeID] = name
+		}
+	}
+}
+
 func GenerateDataPath(upPath UPPath, smContext *SMContext) *DataPath {
 	if len(upPath) < 1 {
 		logger.CtxLog.Errorf("Invalid data path")

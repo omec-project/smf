@@ -36,6 +36,8 @@ const (
 	IPV4 = "IPv4"
 )
 
+var DefaultPfcpPort uint16 = factory.DEFAULT_PFCP_PORT
+
 var smfContext SMFContext
 
 type DrsmCtxts struct {
@@ -75,7 +77,7 @@ type SMFContext struct {
 	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
 	PodIp                 string
 
-	StaticIpInfo             *[]factory.StaticIpInfo
+	StaticIpInfo             []factory.StaticIpInfo
 	CPNodeID                 NodeID
 	PFCPPort                 int
 	UDMProfile               models.NfProfile
@@ -133,8 +135,16 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.Name = configuration.SmfName
 	}
 
-	// copy static UE IP Addr config
-	smfContext.StaticIpInfo = &configuration.StaticIpInfo
+	if env := os.Getenv("PFCP_PORT_UPF"); env != "" {
+		if v, err := strconv.Atoi(env); err == nil && v >= 0 && v <= 65535 {
+			DefaultPfcpPort = uint16(v)
+			logger.CtxLog.Infof("Using PFCP_PORT_UPF from environment variables: %d", DefaultPfcpPort)
+		} else {
+			logger.CtxLog.Warnf("Invalid PFCP_PORT_UPF value %q: %v. Using default value: %d", env, err, DefaultPfcpPort)
+		}
+	}
+
+	smfContext.StaticIpInfo = configuration.StaticIpInfo
 
 	sbi := configuration.Sbi
 	localIp := GetLocalIP()
@@ -276,27 +286,28 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 	return smfContext.UserPlaneInformation
 }
 
-func clearSmfContext(ctx *SMFContext) {
-	ctx.SnssaiInfos = nil
-	ctx.UserPlaneInformation = &UserPlaneInformation{
-		UPNodes:              make(map[string]*UPNode),
-		DefaultUserPlanePath: make(map[string][]*UPNode),
+func (smfCtxt *SMFContext) Clear() {
+	smfCtxt.SnssaiInfos = nil
+	if smfCtxt.UserPlaneInformation == nil {
+		smfCtxt.UserPlaneInformation = &UserPlaneInformation{}
 	}
+	smfCtxt.UserPlaneInformation.Reset()
 }
 
-func extractExistingUPFs(ctx *SMFContext) map[string]*UPNode {
-	existing := map[string]*UPNode{}
-	if ctx.UserPlaneInformation != nil {
-		for name, node := range ctx.UserPlaneInformation.UPNodes {
-			if node.Type == UPNODE_UPF {
-				existing[name] = node
-			}
+func (smfCtxt *SMFContext) ExtractExistingUPFs() map[string]*UPNode {
+	existing := make(map[string]*UPNode)
+	if smfCtxt.UserPlaneInformation == nil {
+		return existing
+	}
+	for name, node := range smfCtxt.UserPlaneInformation.UPNodes {
+		if node.Type == UPNODE_UPF {
+			existing[name] = node
 		}
 	}
 	return existing
 }
 
-func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo *[]factory.StaticIpInfo) SnssaiSmfInfo {
+func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factory.StaticIpInfo) SnssaiSmfInfo {
 	apiPlmnId := sm.GetPlmnId()
 	apiSnssai := sm.GetSnssai()
 	info := SnssaiSmfInfo{
@@ -321,11 +332,11 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo *[]facto
 	return info
 }
 
-func reserveStaticIpsIfNeeded(allocator *IPAllocator, static *[]factory.StaticIpInfo, dnn string) {
+func reserveStaticIpsIfNeeded(allocator *IPAllocator, static []factory.StaticIpInfo, dnn string) {
 	if static == nil {
 		return
 	}
-	for _, s := range *static {
+	for _, s := range static {
 		if s.Dnn == dnn {
 			allocator.ReserveStaticIps(&s.ImsiIpInfo)
 		}
@@ -347,29 +358,11 @@ func removeInactiveUPNodes(upnodes map[string]*UPNode, currentUPFs, currentANs m
 	}
 }
 
-func rebuildUPFMaps(upi *UserPlaneInformation) {
-	upi.ResetDefaultUserPlanePath()
-	upi.UPFs = map[string]*UPNode{}
-	upi.UPFIPToName = map[string]string{}
-	upi.UPFsID = map[string]string{}
-	upi.UPFsIPtoID = map[string]string{}
-
-	for name, node := range upi.UPNodes {
-		if node.Type == UPNODE_UPF {
-			nodeID := string(node.NodeID.NodeIdValue)
-			upi.UPFs[name] = node
-			upi.UPFIPToName[nodeID] = name
-			upi.UPFsID[name] = nodeID
-			upi.UPFsIPtoID[nodeID] = name
-		}
-	}
-}
-
 func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
 	logger.CtxLog.Infof("Processing config update from polling service")
 	if len(newConfig) == 0 {
 		logger.CtxLog.Warn("Received empty session management config, clearing dynamic SMF context")
-		clearSmfContext(smContext)
+		smContext.Clear()
 		return nil
 	}
 	if smContext.UserPlaneInformation == nil {
@@ -378,7 +371,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			DefaultUserPlanePath: make(map[string][]*UPNode),
 		}
 	}
-	existingUPFs := extractExistingUPFs(smContext)
+	existingUPFs := smContext.ExtractExistingUPFs()
 	// track current UPFs and gNBs seen in this update
 	currentUPFs := make(map[string]bool)
 	currentANs := make(map[string]bool)
@@ -402,7 +395,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	// clean up UPFs and gNBs not in the current config
 	removeInactiveUPNodes(smContext.UserPlaneInformation.UPNodes, currentUPFs, currentANs)
 	smContext.SnssaiInfos = snssaiInfos
-	rebuildUPFMaps(smContext.UserPlaneInformation)
+	smContext.UserPlaneInformation.RebuildUPFMaps()
 
 	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
 	return nil
@@ -412,12 +405,7 @@ func resolvePfcpPort(p *int32) uint16 {
 	if p != nil && *p >= 0 && *p <= 65535 {
 		return uint16(*p)
 	}
-	if env := os.Getenv("PFCP_PORT_UPF"); env != "" {
-		if v, err := strconv.Atoi(env); err == nil && v >= 0 && v <= 65535 {
-			return uint16(v)
-		}
-	}
-	return factory.DEFAULT_PFCP_PORT
+	return DefaultPfcpPort
 }
 
 func getOrCreateUpfNode(hostname string, port uint16, nodeID NodeID, existingUPFs map[string]*UPNode) *UPNode {
