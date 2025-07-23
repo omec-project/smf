@@ -49,18 +49,33 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 				logger.NrfRegistrationLog.Infoln("NF registration context cancelled")
 				registerCancel()
 			}
-
-			if len(newSessionManagementConfig) == 0 {
-				logger.NrfRegistrationLog.Debugln("Session management config is empty. SMF will deregister")
-				DeregisterNF()
-			} else {
-				logger.NrfRegistrationLog.Debugln("Session management config is not empty. SMF will update registration")
+			if IsRegistrationRequired(newSessionManagementConfig) {
+				logger.NrfRegistrationLog.Debugln("Session management config includes NF profile fields. Registering...")
 				registerCtx, registerCancel = context.WithCancel(context.Background())
-				// Create a new cancellable context for this registration
 				go registerNF(registerCtx, newSessionManagementConfig)
+			} else {
+				logger.NrfRegistrationLog.Debugln("Session management config lacks required NF profile fields. Deregistering...")
+				DeregisterNF()
 			}
 		}
 	}
+}
+
+func IsRegistrationRequired(configs []nfConfigApi.SessionManagement) bool {
+	for _, cfg := range configs {
+		if cfg.PlmnId.GetMcc() == "" || cfg.PlmnId.GetMnc() == "" {
+			continue
+		}
+		if cfg.Snssai.GetSst() == 0 {
+			continue
+		}
+		for _, ipDomain := range cfg.IpDomain {
+			if ipDomain.GetDnnName() != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // registerNF sends a RegisterNFInstance.
