@@ -45,20 +45,17 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 			}
 			logger.NrfRegistrationLog.Infoln("NF registration service shutting down")
 			return
-		case newSessionManagementConfig := <-sessionManagementConfigChan:
-			// Cancel current sync if running
-			if registerCancel != nil {
-				logger.NrfRegistrationLog.Infoln("NF registration context cancelled")
-				registerCancel()
-			}
 
-			if IsRegistrationRequired(newSessionManagementConfig, lastRegisteredConfig) {
+		case newConfig := <-sessionManagementConfigChan:
+			if IsRegistrationRequired(newConfig, lastRegisteredConfig) {
 				logger.NrfRegistrationLog.Debugln("Detected changes in NF profile relevant config. Registering...")
+
+				if registerCancel != nil {
+					registerCancel()
+				}
 				registerCtx, registerCancel = context.WithCancel(context.Background())
-				go registerNF(registerCtx, newSessionManagementConfig)
-
-				lastRegisteredConfig = deepCopySessionManagement(newSessionManagementConfig)
-
+				go registerNF(registerCtx, newConfig)
+				lastRegisteredConfig = deepCopySessionManagement(newConfig)
 			} else {
 				logger.NrfRegistrationLog.Debugln("No changes in NF profile relevant config. Skipping re-registration...")
 			}
