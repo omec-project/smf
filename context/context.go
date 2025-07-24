@@ -382,7 +382,6 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	for _, sm := range newConfig {
 		info := buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo)
 		snssaiInfos = append(snssaiInfos, info)
-
 		if sm.HasUpf() {
 			upf := sm.GetUpf()
 			currentUPFs[upf.Hostname] = true
@@ -406,7 +405,6 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	removeInactiveUPNodes(smContext.UserPlaneInformation.UPNodes, currentUPFs, currentANs)
 	smContext.SnssaiInfos = snssaiInfos
 	smContext.UserPlaneInformation.RebuildUPFMaps()
-
 	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
 	return nil
 }
