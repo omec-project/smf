@@ -371,7 +371,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			DefaultUserPlanePath: make(map[string][]*UPNode),
 		}
 	}
-	// no outdated paths from previous configuration remain in memory
+	// all outdated paths from previous configuration should be removed from memory
 	smContext.UserPlaneInformation.ResetDefaultUserPlanePath()
 	existingUPFs := smContext.ExtractExistingUPFs()
 	// track current UPFs and gNBs seen in this update
@@ -479,10 +479,8 @@ func updateUPFConfiguration(
 		NodeIdValue: []byte(hostname),
 		NodeIdType:  NodeIdTypeIpv4Address,
 	}
-	// reuse or create a UPF node
 	upNode := getOrCreateUpfNode(hostname, port, nodeID, existingUPFs)
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
-	// link UPF to gnb node
 	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
 	for _, gnb := range gnbNames {
 		if gnb == "" {
@@ -525,7 +523,7 @@ func updateUPFConfiguration(
 		})
 	}
 
-	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs, default path set for SNSSAI %+v, DNN: %s",
+	logger.CtxLog.Debugf("updated UPF node: %s (port: %d), linked to %d gNBs, default path set for SNSSAI %+v, DNN: %s",
 		hostname, port, len(gnbNames), snssai, dnn)
 
 	return nil
