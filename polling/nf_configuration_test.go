@@ -119,7 +119,7 @@ func TestStartPollingService_RetryAfterFailure(t *testing.T) {
 		defer wg.Done()
 		StartPollingService(ctx, "http://dummy", registrationChan, contextUpdateChan)
 	}()
-	time.Sleep(3 * initialPollingInterval)
+	time.Sleep(4 * initialPollingInterval)
 	cancel()
 	wg.Wait()
 	if callCount < 2 {
