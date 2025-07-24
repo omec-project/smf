@@ -8,6 +8,7 @@ package nfregistration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -47,6 +48,12 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 			return
 
 		case newConfig := <-sessionManagementConfigChan:
+			if len(newConfig) == 0 {
+				logger.NrfRegistrationLog.Debugln("Session management config is empty. SMF will deregister")
+				DeregisterNF()
+				lastRegisteredConfig = nil
+				continue
+			}
 			if IsRegistrationRequired(newConfig, lastRegisteredConfig) {
 				logger.NrfRegistrationLog.Debugln("Detected changes in NF profile relevant config. Registering...")
 
@@ -55,7 +62,12 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 				}
 				registerCtx, registerCancel = context.WithCancel(context.Background())
 				go registerNF(registerCtx, newConfig)
-				lastRegisteredConfig = deepCopySessionManagement(newConfig)
+				copyConfig, err := deepCopySessionManagement(newConfig)
+				if err != nil {
+					logger.NrfRegistrationLog.Errorf("Deep copy failed: %v", err)
+					continue
+				}
+				lastRegisteredConfig = copyConfig
 			} else {
 				logger.NrfRegistrationLog.Debugln("No changes in NF profile relevant config. Skipping re-registration...")
 			}
@@ -63,11 +75,18 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 	}
 }
 
-func deepCopySessionManagement(input []nfConfigApi.SessionManagement) []nfConfigApi.SessionManagement {
-	b, _ := json.Marshal(input)
+func deepCopySessionManagement(input []nfConfigApi.SessionManagement) ([]nfConfigApi.SessionManagement, error) {
+	b, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session management config: %w", err)
+	}
+
 	copy := []nfConfigApi.SessionManagement{}
-	_ = json.Unmarshal(b, &copy)
-	return copy
+	if err := json.Unmarshal(b, &copy); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal session management config: %w", err)
+	}
+
+	return copy, nil
 }
 
 func IsRegistrationRequired(newConfigs, oldConfigs []nfConfigApi.SessionManagement) bool {

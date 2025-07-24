@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -50,29 +51,36 @@ var (
 	}
 )
 
-var sessionConfigTwo = nfConfigApi.SessionManagement{
-	SliceName: "slice-fast",
-	PlmnId: nfConfigApi.PlmnId{
-		Mcc: "002",
-		Mnc: "02",
-	},
-	Snssai: nfConfigApi.Snssai{
-		Sst: 2,
-		Sd:  &sd,
-	},
-	IpDomain: []nfConfigApi.IpDomain{
-		{
-			DnnName:  "fast",
-			DnsIpv4:  "8.8.8.8",
-			UeSubnet: "11.10.0.0/16",
-			Mtu:      1400,
+func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
+	sstUint64, err := strconv.ParseUint(sst, 10, 8)
+	if err != nil {
+		panic("invalid SST value: " + sst)
+	}
+	sstint := int32(sstUint64)
+	return nfConfigApi.SessionManagement{
+		SliceName: sliceName,
+		PlmnId: nfConfigApi.PlmnId{
+			Mcc: mcc,
+			Mnc: mnc,
 		},
-	},
-	Upf: &nfConfigApi.Upf{
-		Hostname: "upf-2",
-		Port:     &port,
-	},
-	GnbNames: []string{"gnb1", "gnb2"},
+		Snssai: nfConfigApi.Snssai{
+			Sst: sstint,
+			Sd:  &sd,
+		},
+		IpDomain: []nfConfigApi.IpDomain{
+			{
+				DnnName:  dnnName,
+				DnsIpv4:  "8.8.8.8",
+				UeSubnet: ueSubnet,
+				Mtu:      1400,
+			},
+		},
+		Upf: &nfConfigApi.Upf{
+			Hostname: hostname,
+			Port:     &port,
+		},
+		GnbNames: []string{"gnb1", "gnb2"},
+	}
 }
 
 func TestNfRegistrationService_WhenEmptyConfig_ThenDeregisterNFAndStopTimer(t *testing.T) {
@@ -199,7 +207,7 @@ func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T
 	t.Logf("Tried %v times", called)
 }
 
-func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCancelled(t *testing.T) {
+func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfConfigUsedInNFProfileIsUpdated_OtherwiseSameRegistrationUsed(t *testing.T) {
 	originalRegisterNf := registerNF
 	defer func() {
 		registerNF = originalRegisterNf
@@ -220,26 +228,37 @@ func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCance
 		<-registerCtx.Done() // Wait until registration is cancelled
 	}
 
-	ch := make(chan []nfConfigApi.SessionManagement, 1)
-	ctx := t.Context()
+	ch := make(chan []nfConfigApi.SessionManagement, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go StartNfRegistrationService(ctx, ch)
-	sessionConfigs = append(sessionConfigs, sessionConfigOne)
-	firstConfig := sessionConfigs
+
+	firstConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "01", "1", "000001", "internet", "10.0.0.0/24", "upf1", 8805)}
 	ch <- firstConfig
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+
 	if len(registrations) != 1 {
-		t.Error("expected one registration to the NRF")
+		t.Fatalf("expected 1 registration, got %d", len(registrations))
 	}
 
-	secondConfig := sessionConfigs
-	sessionConfigs = append(sessionConfigs, sessionConfigTwo)
+	secondConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 8805)}
 	ch <- secondConfig
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+
 	if len(registrations) != 2 {
-		t.Error("expected 2 registrations to the NRF")
+		t.Fatalf("expected 2 registrations, got %d", len(registrations))
+	}
+	thirdConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 9905)}
+	ch <- thirdConfig
+	time.Sleep(50 * time.Millisecond)
+
+	if len(registrations) != 2 {
+		t.Fatalf("expected 2 registrations, got %d", len(registrations))
 	}
 
+	// check first context is cancelled
 	select {
 	case <-registrations[0].ctx.Done():
 		// expected
@@ -247,6 +266,7 @@ func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCance
 		t.Error("expected first registration context to be cancelled")
 	}
 
+	// check second context is NOT cancelled
 	select {
 	case <-registrations[1].ctx.Done():
 		t.Error("second registration context should not be cancelled")
@@ -255,10 +275,10 @@ func TestNfRegistrationService_WhenConfigChanged_ThenPreviousRegistrationIsCance
 	}
 
 	if !reflect.DeepEqual(registrations[0].config, firstConfig) {
-		t.Errorf("Expected %+v config, received %+v", firstConfig, registrations)
+		t.Errorf("Expected first config %+v, got %+v", firstConfig, registrations[0].config)
 	}
 	if !reflect.DeepEqual(registrations[1].config, secondConfig) {
-		t.Errorf("Expected %+v config, received %+v", secondConfig, registrations)
+		t.Errorf("Expected second config %+v, got %+v", secondConfig, registrations[1].config)
 	}
 }
 
