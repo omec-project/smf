@@ -484,8 +484,16 @@ func updateUPFConfiguration(
 		if anNode == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s.%02x%06x", dnn, snssai.Sst, snssai.Sd)
-		smfCtx.UserPlaneInformation.DefaultUserPlanePath[key] = []*UPNode{anNode, upNode}
+		selection := &UPFSelectionParams{
+			Dnn: dnn,
+			SNssai: &SNssai{
+				Sst: snssai.Sst,
+				Sd:  *snssai.Sd,
+			},
+			// Dnai can be set here if needed
+		}
+
+		smfCtx.UserPlaneInformation.DefaultUserPlanePath[selection.String()] = []*UPNode{anNode, upNode}
 	}
 
 	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs, default path set for DNN: %s", hostname, port, len(gnbNames), dnn)
