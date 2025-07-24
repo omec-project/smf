@@ -7,6 +7,7 @@ package nfregistration
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ const (
 func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan <-chan []nfConfigApi.SessionManagement) {
 	var registerCancel context.CancelFunc
 	var registerCtx context.Context
+	lastRegisteredConfig := []nfConfigApi.SessionManagement{}
 	logger.NrfRegistrationLog.Infoln("Started NF registration to NRF service")
 	for {
 		select {
@@ -49,30 +51,53 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 				logger.NrfRegistrationLog.Infoln("NF registration context cancelled")
 				registerCancel()
 			}
-			if IsRegistrationRequired(newSessionManagementConfig) {
-				logger.NrfRegistrationLog.Debugln("Session management config includes NF profile fields. Registering...")
+
+			if IsRegistrationRequired(newSessionManagementConfig, lastRegisteredConfig) {
+				logger.NrfRegistrationLog.Debugln("Detected changes in NF profile relevant config. Registering...")
 				registerCtx, registerCancel = context.WithCancel(context.Background())
 				go registerNF(registerCtx, newSessionManagementConfig)
+
+				lastRegisteredConfig = deepCopySessionManagement(newSessionManagementConfig)
+
 			} else {
-				logger.NrfRegistrationLog.Debugln("Session management config lacks required NF profile fields. Deregistering...")
-				DeregisterNF()
+				logger.NrfRegistrationLog.Debugln("No changes in NF profile relevant config. Skipping re-registration...")
 			}
 		}
 	}
 }
 
-func IsRegistrationRequired(configs []nfConfigApi.SessionManagement) bool {
-	for _, cfg := range configs {
-		if cfg.PlmnId.GetMcc() != "" || cfg.PlmnId.GetMnc() != "" {
+func deepCopySessionManagement(input []nfConfigApi.SessionManagement) []nfConfigApi.SessionManagement {
+	b, _ := json.Marshal(input)
+	copy := []nfConfigApi.SessionManagement{}
+	_ = json.Unmarshal(b, &copy)
+	return copy
+}
+
+func IsRegistrationRequired(newConfigs, oldConfigs []nfConfigApi.SessionManagement) bool {
+	if len(newConfigs) != len(oldConfigs) {
+		return true
+	}
+
+	for i := range newConfigs {
+		newCfg := newConfigs[i]
+		oldCfg := oldConfigs[i]
+		if newCfg.PlmnId.GetMcc() != oldCfg.PlmnId.GetMcc() || newCfg.PlmnId.GetMnc() != oldCfg.PlmnId.GetMnc() {
 			return true
 		}
-		if cfg.Snssai.GetSst() != 0 {
+		if newCfg.Snssai.GetSst() != oldCfg.Snssai.GetSst() || newCfg.Snssai.GetSd() != oldCfg.Snssai.GetSd() {
 			return true
 		}
-		for _, ipDomain := range cfg.IpDomain {
-			if ipDomain.GetDnnName() != "" {
+		newDnnSet := make(map[string]struct{})
+		for _, d := range newCfg.IpDomain {
+			newDnnSet[d.GetDnnName()] = struct{}{}
+		}
+		for _, d := range oldCfg.IpDomain {
+			if _, exists := newDnnSet[d.GetDnnName()]; !exists {
 				return true
 			}
+		}
+		if len(newDnnSet) != len(oldCfg.IpDomain) {
+			return true
 		}
 	}
 	return false
