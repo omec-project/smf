@@ -386,8 +386,11 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			for _, gnb := range sm.GetGnbNames() {
 				currentANs[gnb] = true
 			}
-			if err := updateUPFConfiguration(smContext, upf, sm.GnbNames, existingUPFs); err != nil {
-				return fmt.Errorf("update UPF config failed: %w", err)
+			for _, ipdomain := range sm.IpDomain {
+				dnn := ipdomain.DnnName
+				if err := updateUPFConfiguration(smContext, upf, sm.GnbNames, existingUPFs, sm.Snssai, dnn); err != nil {
+					return fmt.Errorf("update UPF config failed for DNN %s: %w", dnn, err)
+				}
 			}
 		}
 	}
@@ -452,7 +455,14 @@ func linkUpfToGnbNodes(upNodes map[string]*UPNode, upNode *UPNode, gnbNames []st
 	}
 }
 
-func updateUPFConfiguration(smfCtx *SMFContext, apiUpf nfConfigApi.Upf, gnbNames []string, existingUPFs map[string]*UPNode) error {
+func updateUPFConfiguration(
+	smfCtx *SMFContext,
+	apiUpf nfConfigApi.Upf,
+	gnbNames []string,
+	existingUPFs map[string]*UPNode,
+	snssai nfConfigApi.Snssai,
+	dnn string,
+) error {
 	hostname := apiUpf.Hostname
 	if hostname == "" {
 		return fmt.Errorf("UPF hostname must not be empty")
@@ -466,7 +476,19 @@ func updateUPFConfiguration(smfCtx *SMFContext, apiUpf nfConfigApi.Upf, gnbNames
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
 
 	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
-	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs", hostname, port, len(gnbNames))
+	for _, gnb := range gnbNames {
+		if gnb == "" {
+			continue
+		}
+		anNode := smfCtx.UserPlaneInformation.UPNodes[gnb]
+		if anNode == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s.%02x%06x", dnn, snssai.Sst, snssai.Sd)
+		smfCtx.UserPlaneInformation.DefaultUserPlanePath[key] = []*UPNode{anNode, upNode}
+	}
+
+	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs, default path set for DNN: %s", hostname, port, len(gnbNames), dnn)
 	return nil
 }
 

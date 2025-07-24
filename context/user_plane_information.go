@@ -167,6 +167,12 @@ func (upi *UserPlaneInformation) RebuildUPFMaps() {
 			upi.UPFIPToName[nodeID] = name
 			upi.UPFsID[name] = nodeID
 			upi.UPFsIPtoID[nodeID] = name
+			for _, an := range node.Links {
+				if an.Type == UPNODE_AN {
+					key := fmt.Sprintf("%s-%s", an.NodeID.NodeIdValue, name)
+					upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
+				}
+			}
 		}
 	}
 }
