@@ -137,10 +137,11 @@ func TestUpdateUPFConfiguration(t *testing.T) {
 	}{
 		{
 			name: "missing hostname should return error",
-			smfCtx: &SMFContext{UserPlaneInformation: &UserPlaneInformation{
-				UPNodes:              map[string]*UPNode{},
-				DefaultUserPlanePath: map[string][]*UPNode{},
-			},
+			smfCtx: &SMFContext{
+				UserPlaneInformation: &UserPlaneInformation{
+					UPNodes:              map[string]*UPNode{},
+					DefaultUserPlanePath: map[string][]*UPNode{},
+				},
 			},
 			upf:       nfConfigApi.Upf{},
 			gnbNames:  nil,
@@ -154,10 +155,11 @@ func TestUpdateUPFConfiguration(t *testing.T) {
 		},
 		{
 			name: "valid UPF with gNB links",
-			smfCtx: &SMFContext{UserPlaneInformation: &UserPlaneInformation{
-				UPNodes:              map[string]*UPNode{},
-				DefaultUserPlanePath: map[string][]*UPNode{},
-			},
+			smfCtx: &SMFContext{
+				UserPlaneInformation: &UserPlaneInformation{
+					UPNodes:              map[string]*UPNode{},
+					DefaultUserPlanePath: map[string][]*UPNode{},
+				},
 			},
 			upf:       upf,
 			gnbNames:  []string{"gnbA", "gnbB"},
@@ -183,7 +185,7 @@ func TestUpdateUPFConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sd := "23"
-			snssai := nfConfigApi.Snssai{121, &sd}
+			snssai := nfConfigApi.Snssai{Sst: 121, Sd: &sd}
 			err := updateUPFConfiguration(tt.smfCtx, tt.upf, tt.gnbNames, tt.existing, snssai, "internet")
 			if (err != nil) != tt.expectErr {
 				t.Fatalf("unexpected error: %v", err)
