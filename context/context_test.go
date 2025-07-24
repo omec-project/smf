@@ -171,7 +171,9 @@ func TestUpdateUPFConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := updateUPFConfiguration(tt.smfCtx, tt.upf, tt.gnbNames, tt.existing)
+			sd := "23"
+			snssai := nfConfigApi.Snssai{121, &sd}
+			err := updateUPFConfiguration(tt.smfCtx, tt.upf, tt.gnbNames, tt.existing, snssai, "internet")
 			if (err != nil) != tt.expectErr {
 				t.Fatalf("unexpected error: %v", err)
 			}
