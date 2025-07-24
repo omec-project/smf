@@ -371,6 +371,8 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			DefaultUserPlanePath: make(map[string][]*UPNode),
 		}
 	}
+	// no outdated paths from previous configuration remain in memory
+	smContext.UserPlaneInformation.ResetDefaultUserPlanePath()
 	existingUPFs := smContext.ExtractExistingUPFs()
 	// track current UPFs and gNBs seen in this update
 	currentUPFs := make(map[string]bool)
@@ -380,6 +382,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	for _, sm := range newConfig {
 		info := buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo)
 		snssaiInfos = append(snssaiInfos, info)
+
 		if sm.HasUpf() {
 			upf := sm.GetUpf()
 			currentUPFs[upf.Hostname] = true
@@ -388,6 +391,10 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 			}
 			for _, ipdomain := range sm.IpDomain {
 				dnn := ipdomain.DnnName
+				if dnn == "" {
+					logger.CtxLog.Warnf("Skipping empty DNN in UPF %s", upf.Hostname)
+					continue
+				}
 				if err := updateUPFConfiguration(smContext, upf, sm.GnbNames, existingUPFs, sm.Snssai, dnn); err != nil {
 					return fmt.Errorf("update UPF config failed for DNN %s: %w", dnn, err)
 				}
@@ -472,9 +479,10 @@ func updateUPFConfiguration(
 		NodeIdValue: []byte(hostname),
 		NodeIdType:  NodeIdTypeIpv4Address,
 	}
+	// reuse or create a UPF node
 	upNode := getOrCreateUpfNode(hostname, port, nodeID, existingUPFs)
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
-
+	// link UPF to gnb node
 	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
 	for _, gnb := range gnbNames {
 		if gnb == "" {
@@ -490,14 +498,46 @@ func updateUPFConfiguration(
 				Sst: snssai.Sst,
 				Sd:  *snssai.Sd,
 			},
-			// Dnai can be set here if needed
 		}
-
 		smfCtx.UserPlaneInformation.DefaultUserPlanePath[selection.String()] = []*UPNode{anNode, upNode}
 	}
 
-	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs, default path set for DNN: %s", hostname, port, len(gnbNames), dnn)
+	if upNode.UPF.SNssaiInfos == nil {
+		upNode.UPF.SNssaiInfos = []SnssaiUPFInfo{}
+	}
+	found := false
+	for i, s := range upNode.UPF.SNssaiInfos {
+		if snssai.Sd != nil && s.SNssai.Sd == *snssai.Sd && s.SNssai.Sst == snssai.Sst {
+			upNode.UPF.SNssaiInfos[i].DnnList = appendIfMissingDNNItem(upNode.UPF.SNssaiInfos[i].DnnList, dnn)
+			found = true
+			break
+		}
+	}
+	if !found {
+		upNode.UPF.SNssaiInfos = append(upNode.UPF.SNssaiInfos, SnssaiUPFInfo{
+			SNssai: SNssai{
+				Sst: snssai.Sst,
+				Sd:  *snssai.Sd,
+			},
+			DnnList: []DnnUPFInfoItem{
+				{Dnn: dnn},
+			},
+		})
+	}
+
+	logger.CtxLog.Debugf("Updated UPF node: %s (port: %d), linked to %d gNBs, default path set for SNSSAI %+v, DNN: %s",
+		hostname, port, len(gnbNames), snssai, dnn)
+
 	return nil
+}
+
+func appendIfMissingDNNItem(slice []DnnUPFInfoItem, dnn string) []DnnUPFInfoItem {
+	for _, item := range slice {
+		if item.Dnn == dnn {
+			return slice
+		}
+	}
+	return append(slice, DnnUPFInfoItem{Dnn: dnn})
 }
 
 func appendIfMissing(slice []*UPNode, elem *UPNode) []*UPNode {

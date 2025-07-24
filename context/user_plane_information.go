@@ -167,10 +167,28 @@ func (upi *UserPlaneInformation) RebuildUPFMaps() {
 			upi.UPFIPToName[nodeID] = name
 			upi.UPFsID[name] = nodeID
 			upi.UPFsIPtoID[nodeID] = name
-			for _, an := range node.Links {
-				if an.Type == UPNODE_AN {
-					key := fmt.Sprintf("%s-%s", an.NodeID.NodeIdValue, name)
-					upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
+
+			// create a default path from AN to UPF
+			for _, snssaiInfo := range node.UPF.SNssaiInfos {
+				for _, dnnInfo := range snssaiInfo.DnnList {
+					dnn := dnnInfo.Dnn
+					selection := &UPFSelectionParams{
+						Dnn: dnn,
+						SNssai: &SNssai{
+							Sst: snssaiInfo.SNssai.Sst,
+							Sd:  snssaiInfo.SNssai.Sd,
+						},
+					}
+					key := selection.String()
+
+					for _, an := range node.Links {
+						if an.Type == UPNODE_AN {
+							// Set only if not already present
+							if _, exists := upi.DefaultUserPlanePath[key]; !exists {
+								upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
+							}
+						}
+					}
 				}
 			}
 		}
