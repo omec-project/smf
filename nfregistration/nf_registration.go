@@ -63,11 +63,11 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 
 func IsRegistrationRequired(configs []nfConfigApi.SessionManagement) bool {
 	for _, cfg := range configs {
-		if cfg.PlmnId.GetMcc() == "" || cfg.PlmnId.GetMnc() == "" {
-			continue
+		if cfg.PlmnId.GetMcc() != "" || cfg.PlmnId.GetMnc() != "" {
+			return true
 		}
-		if cfg.Snssai.GetSst() == 0 {
-			continue
+		if cfg.Snssai.GetSst() != 0 {
+			return true
 		}
 		for _, ipDomain := range cfg.IpDomain {
 			if ipDomain.GetDnnName() != "" {
