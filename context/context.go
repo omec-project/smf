@@ -410,6 +410,12 @@ func resolvePfcpPort(p *int32) uint16 {
 
 func getOrCreateUpfNode(hostname string, port uint16, nodeID NodeID, existingUPFs map[string]*UPNode) *UPNode {
 	if node, exists := existingUPFs[hostname]; exists {
+		if node.UPF == nil {
+			node.UPF = &UPF{}
+		}
+		node.UPF.Port = port
+		node.Port = port
+
 		return node
 	}
 	return &UPNode{
