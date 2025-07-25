@@ -180,6 +180,22 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 		if len(sm.GnbNames) == 0 {
 			logger.CtxLog.Warnf("No gNBs provided for UPF %s, no AN-UPF link created", upfName)
 		}
+		for _, gnbName := range sm.GnbNames {
+			if _, exists := existing.UPNodes[gnbName]; !exists {
+				anNode := &UPNode{
+					Type: UPNODE_AN,
+					NodeID: NodeID{
+						NodeIdType:  NodeIdTypeFqdn,
+						NodeIdValue: []byte(gnbName),
+					},
+					Links: []*UPNode{},
+				}
+				existing.UPNodes[gnbName] = anNode
+				existing.AccessNetwork[gnbName] = anNode
+				logger.CtxLog.Infof("created AN node: %s", gnbName)
+			}
+		}
+
 		linkUpfToGnbNodes(existing, upfNode, sm.GnbNames)
 		for _, gnbName := range sm.GnbNames {
 			currentANs[gnbName] = true
@@ -187,6 +203,14 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 	}
 
 	existing.RebuildUPFMaps()
+	for key, path := range existing.DefaultUserPlanePath {
+		var nodes []string
+		for _, n := range path {
+			nodes = append(nodes, string(n.NodeID.NodeIdValue))
+		}
+		logger.CtxLog.Infof("default path for [%s]: %v", key, nodes)
+	}
+
 	removeInactiveUPNodes(existing.UPNodes, currentUPFs, currentANs)
 
 	return existing
@@ -232,12 +256,8 @@ func linkUpfToGnbNodes(upi *UserPlaneInformation, upNode *UPNode, gnbNames []str
 	for _, gnbName := range gnbNames {
 		gnbNode, ok := upi.UPNodes[gnbName]
 		if !ok {
-			gnbNode = &UPNode{
-				Type: UPNODE_AN,
-				ANIP: net.ParseIP("127.0.0.1"),
-			}
-			upi.UPNodes[gnbName] = gnbNode
-			upi.AccessNetwork[gnbName] = gnbNode
+			logger.CtxLog.Warnf("GNB node %s not found, skipping", gnbName)
+			continue
 		}
 
 		if !nodeInLinks(upNode.Links, gnbNode) {
