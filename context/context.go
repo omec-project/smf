@@ -138,9 +138,9 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	if env := os.Getenv("PFCP_PORT_UPF"); env != "" {
 		if v, err := strconv.Atoi(env); err == nil && v >= 0 && v <= 65535 {
 			DefaultPfcpPort = uint16(v)
-			logger.CtxLog.Infof("Using PFCP_PORT_UPF from environment variables: %d", DefaultPfcpPort)
+			logger.CtxLog.Infof("using PFCP_PORT_UPF from environment variables: %d", DefaultPfcpPort)
 		} else {
-			logger.CtxLog.Warnf("Invalid PFCP_PORT_UPF value %q: %v. Using default value: %d", env, err, DefaultPfcpPort)
+			logger.CtxLog.Warnf("invalid PFCP_PORT_UPF value %q: %v. Using default value: %d", env, err, DefaultPfcpPort)
 		}
 	}
 
@@ -251,7 +251,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 	if !smfContext.ULCLSupport {
-		logger.CtxLog.Errorln("ULCL is not enabled, skip initializing UERoutingManager")
+		logger.CtxLog.Warnln("ULCL is not enabled, skip initializing UERoutingManager")
 		return
 	}
 
@@ -269,7 +269,7 @@ func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 		supi := routingInfo.SUPI
 		uePreConfigPaths, err := NewUEPreConfigPaths(supi, routingInfo.PathList)
 		if err != nil {
-			logger.CtxLog.Warnf("Failed to initialize pre-config paths for SUPI %s: %v", supi, err)
+			logger.CtxLog.Warnf("failed to initialize pre-config paths for SUPI %s: %v", supi, err)
 			continue
 		}
 		routingManager.AddPath(supi, uePreConfigPaths)
@@ -344,9 +344,9 @@ func reserveStaticIpsIfNeeded(allocator *IPAllocator, static []factory.StaticIpI
 }
 
 func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
-	logger.CtxLog.Infof("Processing config update from polling service")
+	logger.CtxLog.Infoln("processing config update from polling service")
 	if len(newConfig) == 0 {
-		logger.CtxLog.Warn("Received empty session management config, skipping update")
+		logger.CtxLog.Warnln("received empty session management config, skipping update")
 		smContext.Clear()
 		return nil
 	}

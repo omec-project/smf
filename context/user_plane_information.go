@@ -101,17 +101,6 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 	return userplaneInformation
 }
 
-// For each session management config in smConfigs:
-// validate UPF config
-// construct NodeID (IP/FQDN) for the UPF
-// build SnssaiUPFInfo using slice info and DNNs (from IpDomain)
-// create or update the UPF node
-// add to UPFs, UPNodes, and IP-to-name maps
-// link gNBs to the UPF
-// record which UPFs/ANs are still active
-// prune removed UPFs/ANs from previous config
-// rebuild UPF-to-AN topology maps
-// return updated UserPlaneInformation
 func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformation, smConfigs []nfConfigApi.SessionManagement) *UserPlaneInformation {
 	if existing == nil {
 		existing = &UserPlaneInformation{
@@ -168,7 +157,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 
 		upfNode := getOrCreateUpfNode(
 			upfName,
-			resolvePfcpPort(sm.GetUpf().Port),
+			resolvePfcpPort(*sm.GetUpf().Port),
 			nodeID,
 			existing.UPFs,
 			snssaiInfo,
@@ -304,9 +293,9 @@ func getOrCreateUpfNode(
 	return node
 }
 
-func resolvePfcpPort(p *int32) uint16 {
-	if p != nil && *p >= 0 && *p <= 65535 {
-		return uint16(*p)
+func resolvePfcpPort(p int32) uint16 {
+	if p >= 0 && p <= 65535 {
+		return uint16(p)
 	}
 	return DefaultPfcpPort
 }
