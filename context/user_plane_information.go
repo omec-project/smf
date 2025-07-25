@@ -8,11 +8,11 @@ package context
 import (
 	"bytes"
 	"fmt"
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
 	"net"
 	"reflect"
 
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 )
