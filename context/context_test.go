@@ -78,11 +78,20 @@ func TestUpdateSmfContext(t *testing.T) {
 				if len(smCtx.SnssaiInfos) != 1 {
 					return false, fmt.Sprintf("expected 1 SnssaiInfo, got %d", len(smCtx.SnssaiInfos))
 				}
-				if smCtx.UserPlaneInformation == nil {
-					return false, "UserPlaneInformation is nil"
+				if smCtx.UserPlaneInformation == nil || smCtx.UserPlaneInformation.DefaultUserPlanePath == nil {
+					return false, "UserPlaneInformation or DataPaths is nil"
 				}
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-1"]; !ok {
 					return false, "expected UPNode for upf-1 to exist"
+				}
+				if _, ok := smCtx.UserPlaneInformation.AccessNetwork["gnb1"]; !ok {
+					return false, "expected gnb1 in AccessNetwork"
+				}
+				if _, ok := smCtx.UserPlaneInformation.AccessNetwork["gnb2"]; !ok {
+					return false, "expected gnb2 in AccessNetwork"
+				}
+				if len(smCtx.UserPlaneInformation.UPFIPToName) == 0 {
+					return false, "expected UPFIPToName to be populated"
 				}
 				return true, ""
 			},
