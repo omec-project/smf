@@ -155,9 +155,10 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			DnnList: dnnList,
 		}
 
+		upf := sm.GetUpf()
 		upfNode := getOrCreateUpfNode(
 			upfName,
-			resolvePfcpPort(*sm.GetUpf().Port),
+			resolvePfcpPort(upf.GetPort()),
 			nodeID,
 			existing.UPFs,
 			snssaiInfo,
