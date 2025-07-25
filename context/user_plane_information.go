@@ -162,6 +162,9 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			existing.UPFs,
 			snssaiInfo,
 		)
+		if upfNode.UPF == nil {
+			logger.CtxLog.Errorf("UPF node %s has nil UPF after creation", upfName)
+		}
 		existing.UPFs[upfName] = upfNode
 		existing.UPNodes[upfName] = upfNode
 		currentUPFs[upfName] = true
@@ -275,6 +278,7 @@ func getOrCreateUpfNode(
 			Port:   port,
 			Links:  []*UPNode{},
 		}
+		existingUPFs[hostname] = node
 		return node
 	}
 
@@ -289,6 +293,7 @@ func getOrCreateUpfNode(
 	node.UPF.NodeID = nodeID
 	node.Port = port
 	node.UPF.Port = port
+
 	updateSNssaiInfo(node, snssaiInfo)
 	return node
 }
