@@ -405,6 +405,7 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	removeInactiveUPNodes(smContext.UserPlaneInformation.UPNodes, currentUPFs, currentANs)
 	smContext.SnssaiInfos = snssaiInfos
 	smContext.UserPlaneInformation.RebuildUPFMaps()
+
 	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
 	return nil
 }
@@ -479,23 +480,13 @@ func updateUPFConfiguration(
 	}
 	upNode := getOrCreateUpfNode(hostname, port, nodeID, existingUPFs)
 	smfCtx.UserPlaneInformation.UPNodes[hostname] = upNode
+	logger.CtxLog.Debugf("registered UPF node: %s (PFCP port: %d)", hostname, port)
 	linkUpfToGnbNodes(smfCtx.UserPlaneInformation.UPNodes, upNode, gnbNames)
+	logger.CtxLog.Debugf("linked UPF %s to gNBs: %v", hostname, gnbNames)
 	for _, gnb := range gnbNames {
 		if gnb == "" {
 			continue
 		}
-		anNode := smfCtx.UserPlaneInformation.UPNodes[gnb]
-		if anNode == nil {
-			continue
-		}
-		selection := &UPFSelectionParams{
-			Dnn: dnn,
-			SNssai: &SNssai{
-				Sst: snssai.Sst,
-				Sd:  *snssai.Sd,
-			},
-		}
-		smfCtx.UserPlaneInformation.DefaultUserPlanePath[selection.String()] = []*UPNode{anNode, upNode}
 	}
 
 	if upNode.UPF.SNssaiInfos == nil {
@@ -519,10 +510,10 @@ func updateUPFConfiguration(
 				{Dnn: dnn},
 			},
 		})
+		logger.CtxLog.Debugf("added new SNssaiInfo for UPF %s: S-NSSAI (%d, %s), DNN: %s", hostname, snssai.Sst, *snssai.Sd, dnn)
+	} else {
+		logger.CtxLog.Debugf("updated existing SNssaiInfo for UPF %s with DNN: %s", hostname, dnn)
 	}
-
-	logger.CtxLog.Debugf("updated UPF node: %s (port: %d), linked to %d gNBs, default path set for SNSSAI %+v, DNN: %s",
-		hostname, port, len(gnbNames), snssai, dnn)
 
 	return nil
 }

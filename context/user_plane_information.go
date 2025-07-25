@@ -154,45 +154,58 @@ func (upi *UserPlaneInformation) Reset() {
 }
 
 func (upi *UserPlaneInformation) RebuildUPFMaps() {
+	logger.CtxLog.Infoln("rebuilding UPF maps and default user plane paths")
 	upi.ResetDefaultUserPlanePath()
+	upi.DefaultUserPlanePath = make(map[string][]*UPNode)
 	upi.UPFs = make(map[string]*UPNode)
 	upi.UPFIPToName = make(map[string]string)
 	upi.UPFsID = make(map[string]string)
 	upi.UPFsIPtoID = make(map[string]string)
 
 	for name, node := range upi.UPNodes {
-		if node.Type == UPNODE_UPF {
-			nodeID := string(node.NodeID.NodeIdValue)
-			upi.UPFs[name] = node
-			upi.UPFIPToName[nodeID] = name
-			upi.UPFsID[name] = nodeID
-			upi.UPFsIPtoID[nodeID] = name
+		if node.Type != UPNODE_UPF {
+			continue
+		}
+		if node.UPF == nil {
+			logger.CtxLog.Warnf("UPF node %s missing UPF config, skipping", name)
+			continue
+		}
+		nodeID := string(node.NodeID.NodeIdValue)
+		upi.UPFs[name] = node
+		upi.UPFIPToName[nodeID] = name
+		upi.UPFsID[name] = nodeID
+		upi.UPFsIPtoID[nodeID] = name
+		logger.CtxLog.Infof("registered UPF %s with NodeID %s", name, nodeID)
 
-			// create a default path from AN to UPF
-			for _, snssaiInfo := range node.UPF.SNssaiInfos {
-				for _, dnnInfo := range snssaiInfo.DnnList {
-					dnn := dnnInfo.Dnn
-					selection := &UPFSelectionParams{
-						Dnn: dnn,
-						SNssai: &SNssai{
-							Sst: snssaiInfo.SNssai.Sst,
-							Sd:  snssaiInfo.SNssai.Sd,
-						},
-					}
-					key := selection.String()
-
-					for _, an := range node.Links {
-						if an.Type == UPNODE_AN {
-							// Set only if not already present
-							if _, exists := upi.DefaultUserPlanePath[key]; !exists {
-								upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
-							}
+		// create a default path from AN to UPF
+		for _, snssaiInfo := range node.UPF.SNssaiInfos {
+			for _, dnnInfo := range snssaiInfo.DnnList {
+				dnn := dnnInfo.Dnn
+				selection := &UPFSelectionParams{
+					Dnn: dnn,
+					SNssai: &SNssai{
+						Sst: snssaiInfo.SNssai.Sst,
+						Sd:  snssaiInfo.SNssai.Sd,
+					},
+				}
+				key := selection.String()
+				foundLink := false
+				for _, an := range node.Links {
+					if an.Type == UPNODE_AN {
+						if _, exists := upi.DefaultUserPlanePath[key]; !exists {
+							upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
+							logger.CtxLog.Debugf("default path added: AN %s -> UPF %s for key %s", string(an.NodeID.NodeIdValue), name, key)
 						}
+						foundLink = true
 					}
+				}
+				if !foundLink {
+					logger.CtxLog.Warnf("no AN linked to UPF %s for SNSSAI %+v and DNN %s — default path not created", name, snssaiInfo.SNssai, dnn)
 				}
 			}
 		}
 	}
+	logger.CtxLog.Debugln("finished rebuilding UPF maps")
 }
 
 func GenerateDataPath(upPath UPPath, smContext *SMContext) *DataPath {
