@@ -368,11 +368,23 @@ func (dataPath *DataPath) String() string {
 func (dataPath *DataPath) validateDataPathUpfStatus() error {
 	firstDPNode := dataPath.FirstDPNode
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]",
-			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus.String())
+		if curDataPathNode.UPF == nil {
+			logger.PduSessLog.Errorf("DataPathNode missing UPF configuration")
+			return errors.New("UPF not configured in DataPath")
+		}
+
+		var nodeIdStr, statusStr string
+		if curDataPathNode.UPF.NodeID.NodeIdValue != nil {
+			nodeIdStr = curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
+		} else {
+			nodeIdStr = "<nil>"
+		}
+
+		statusStr = curDataPathNode.UPF.UPFStatus.String()
+		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]", nodeIdStr, statusStr)
+
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
-			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
-				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
+			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated", nodeIdStr)
 			return errors.New("UPF not associated in DataPath")
 		}
 	}

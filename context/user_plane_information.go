@@ -176,13 +176,17 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 		existing.UPFs[upfName] = upfNode
 		existing.UPNodes[upfName] = upfNode
 		currentUPFs[upfName] = true
-		ipStr := upfNode.NodeID.ResolveNodeIdToIp().String()
-		if ipStr != "<nil>" {
+		if ip = upfNode.NodeID.ResolveNodeIdToIp(); ip != nil {
+			ipStr := ip.String()
 			existing.UPFIPToName[ipStr] = upfName
 			existing.UPFsID[upfName] = string(upfNode.NodeID.NodeIdValue)
 			existing.UPFsIPtoID[ipStr] = string(upfNode.NodeID.NodeIdValue)
+		} else {
+			logger.CtxLog.Warnf("invalid NodeID for UPF %s, skipping IP indexing", upfName)
 		}
-
+		if len(sm.GnbNames) == 0 {
+			logger.CtxLog.Warnf("No gNBs provided for UPF %s, no AN-UPF link created", upfName)
+		}
 		linkUpfToGnbNodes(existing, upfNode, sm.GnbNames)
 		for _, gnbName := range sm.GnbNames {
 			currentANs[gnbName] = true
@@ -201,7 +205,6 @@ func updateSNssaiInfo(upfNode *UPNode, newInfo SnssaiUPFInfo) {
 		if existing.SNssai.Sst == newInfo.SNssai.Sst &&
 			existing.SNssai.Sd != "" && newInfo.SNssai.Sd != "" &&
 			existing.SNssai.Sd == newInfo.SNssai.Sd {
-
 			upfNode.UPF.SNssaiInfos[i].DnnList = appendIfMissingDNNItems(
 				existing.DnnList,
 				newInfo.DnnList,
@@ -238,6 +241,7 @@ func linkUpfToGnbNodes(upi *UserPlaneInformation, upNode *UPNode, gnbNames []str
 		if !ok {
 			gnbNode = &UPNode{
 				Type: UPNODE_AN,
+				ANIP: net.ParseIP("127.0.0.1"),
 			}
 			upi.UPNodes[gnbName] = gnbNode
 			upi.AccessNetwork[gnbName] = gnbNode
@@ -253,8 +257,9 @@ func linkUpfToGnbNodes(upi *UserPlaneInformation, upNode *UPNode, gnbNames []str
 }
 
 func nodeInLinks(links []*UPNode, node *UPNode) bool {
+	targetIP := node.NodeID.ResolveNodeIdToIp().String()
 	for _, l := range links {
-		if bytes.Equal(l.NodeID.NodeIdValue, node.NodeID.NodeIdValue) {
+		if l.NodeID.ResolveNodeIdToIp().String() == targetIP {
 			return true
 		}
 	}
@@ -283,6 +288,7 @@ func getOrCreateUpfNode(
 		}
 		return node
 	}
+
 	if node.UPF == nil {
 		node.UPF = &UPF{
 			NodeID:      nodeID,
@@ -290,6 +296,9 @@ func getOrCreateUpfNode(
 			SNssaiInfos: []SnssaiUPFInfo{},
 		}
 	}
+	node.NodeID = nodeID
+	node.UPF.NodeID = nodeID
+	node.Port = port
 	node.UPF.Port = port
 	updateSNssaiInfo(node, snssaiInfo)
 	return node
@@ -350,17 +359,18 @@ func (upi *UserPlaneInformation) ResetDefaultUserPlanePath() {
 }
 
 func (upi *UserPlaneInformation) GetDefaultUserPlanePathByDNN(selection *UPFSelectionParams) (path UPPath) {
-	path, pathExist := upi.DefaultUserPlanePath[selection.String()]
 	logger.CtxLog.Debugln("in GetDefaultUserPlanePathByDNN")
 	logger.CtxLog.Debugln("selection:", selection.String())
+
+	path, pathExist := upi.DefaultUserPlanePath[selection.String()]
 	if pathExist {
-		return
-	} else {
-		pathExist = upi.GenerateDefaultPath(selection)
-		if pathExist {
-			return upi.DefaultUserPlanePath[selection.String()]
-		}
+		return path
 	}
+
+	if upi.GenerateDefaultPath(selection) {
+		return upi.DefaultUserPlanePath[selection.String()]
+	}
+
 	return nil
 }
 
@@ -419,13 +429,14 @@ func (upi *UserPlaneInformation) RebuildUPFMaps() {
 				key := selection.String()
 				foundLink := false
 				for _, an := range node.Links {
-					if an.Type == UPNODE_AN {
-						if _, exists := upi.DefaultUserPlanePath[key]; !exists {
-							upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
-							logger.CtxLog.Debugf("default path added: AN %s -> UPF %s for key %s", string(an.NodeID.NodeIdValue), name, key)
-						}
-						foundLink = true
+					if an == nil || an.Type != UPNODE_AN {
+						continue
 					}
+					if _, exists := upi.DefaultUserPlanePath[key]; !exists {
+						upi.DefaultUserPlanePath[key] = []*UPNode{an, node}
+						logger.CtxLog.Debugf("default path added: AN %s -> UPF %s for key %s", string(an.NodeID.NodeIdValue), name, key)
+					}
+					foundLink = true
 				}
 				if !foundLink {
 					logger.CtxLog.Warnf("no AN linked to UPF %s for SNSSAI %+v and DNN %s — default path not created", name, snssaiInfo.SNssai, dnn)
