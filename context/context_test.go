@@ -78,6 +78,9 @@ func TestUpdateSmfContext(t *testing.T) {
 				if len(smCtx.SnssaiInfos) != 1 {
 					return false, fmt.Sprintf("expected 1 SnssaiInfo, got %d", len(smCtx.SnssaiInfos))
 				}
+				if smCtx.UserPlaneInformation == nil {
+					return false, "UserPlaneInformation is nil"
+				}
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-1"]; !ok {
 					return false, "expected UPNode for upf-1 to exist"
 				}
@@ -115,82 +118,6 @@ func TestUpdateSmfContext(t *testing.T) {
 			if ok, msg := tt.validate(smCtx, err); !ok {
 				t.Errorf("validation failed: %s", msg)
 			}
-		})
-	}
-}
-
-func TestUpdateUPFConfiguration(t *testing.T) {
-	port := int32(38412)
-	upf := nfConfigApi.Upf{
-		Hostname: "upf-test",
-		Port:     &port,
-	}
-
-	tests := []struct {
-		name      string
-		smfCtx    *SMFContext
-		upf       nfConfigApi.Upf
-		gnbNames  []string
-		existing  map[string]*UPNode
-		expectErr bool
-		validate  func(t *testing.T, ctx *SMFContext)
-	}{
-		{
-			name: "missing hostname should return error",
-			smfCtx: &SMFContext{
-				UserPlaneInformation: &UserPlaneInformation{
-					UPNodes:              map[string]*UPNode{},
-					DefaultUserPlanePath: map[string][]*UPNode{},
-				},
-			},
-			upf:       nfConfigApi.Upf{},
-			gnbNames:  nil,
-			existing:  map[string]*UPNode{},
-			expectErr: true,
-			validate: func(t *testing.T, ctx *SMFContext) {
-				if len(ctx.UserPlaneInformation.UPNodes) != 0 {
-					t.Errorf("expected no UPNodes to be added when hostname is missing, got %d", len(ctx.UserPlaneInformation.UPNodes))
-				}
-			},
-		},
-		{
-			name: "valid UPF with gNB links",
-			smfCtx: &SMFContext{
-				UserPlaneInformation: &UserPlaneInformation{
-					UPNodes:              map[string]*UPNode{},
-					DefaultUserPlanePath: map[string][]*UPNode{},
-				},
-			},
-			upf:       upf,
-			gnbNames:  []string{"gnbA", "gnbB"},
-			existing:  map[string]*UPNode{},
-			expectErr: false,
-			validate: func(t *testing.T, ctx *SMFContext) {
-				if _, ok := ctx.UserPlaneInformation.UPNodes["upf-test"]; !ok {
-					t.Errorf("expected UPNode upf-test to exist")
-				}
-				for _, gnb := range []string{"gnbA", "gnbB"} {
-					if _, ok := ctx.UserPlaneInformation.UPNodes[gnb]; !ok {
-						t.Errorf("expected AN node %s to exist", gnb)
-					}
-				}
-				upfNode := ctx.UserPlaneInformation.UPNodes["upf-test"]
-				if len(upfNode.Links) != 2 {
-					t.Errorf("expected UPF node to link to 2 gNBs, got %d", len(upfNode.Links))
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sd := "23"
-			snssai := nfConfigApi.Snssai{Sst: 121, Sd: &sd}
-			err := updateUPFConfiguration(tt.smfCtx, tt.upf, tt.gnbNames, tt.existing, snssai, "internet")
-			if (err != nil) != tt.expectErr {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			tt.validate(t, tt.smfCtx)
 		})
 	}
 }

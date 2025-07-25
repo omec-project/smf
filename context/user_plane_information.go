@@ -8,6 +8,8 @@ package context
 import (
 	"bytes"
 	"fmt"
+	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"net"
 	"reflect"
 
@@ -97,6 +99,164 @@ func NewUserPlaneInformation(upTopology *factory.UserPlaneInformation) *UserPlan
 		}
 	}
 	return userplaneInformation
+}
+
+func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformation, smConfigs []nfConfigApi.SessionManagement) *UserPlaneInformation {
+	if existing == nil {
+		existing = &UserPlaneInformation{
+			UPNodes:              make(map[string]*UPNode),
+			UPFs:                 make(map[string]*UPNode),
+			AccessNetwork:        make(map[string]*UPNode),
+			UPFIPToName:          make(map[string]string),
+			UPFsID:               make(map[string]string),
+			UPFsIPtoID:           make(map[string]string),
+			DefaultUserPlanePath: make(map[string][]*UPNode),
+		}
+	}
+
+	currentUPFs := make(map[string]bool)
+	currentANs := make(map[string]bool)
+	for _, sm := range smConfigs {
+		if sm.Upf == nil {
+			continue
+		}
+		upfName := sm.Upf.Hostname
+		pfcpPort := resolvePfcpPort(sm.Upf.Port)
+		nodeID := NodeID{NodeIdValue: net.ParseIP(upfName)}
+		upNode := getOrCreateUpfNode(upfName, pfcpPort, nodeID, existing.UPNodes)
+		existing.UPNodes[upfName] = upNode
+		currentUPFs[upfName] = true
+
+		apiSnssai := sm.GetSnssai()
+		found := false
+		for i, info := range upNode.UPF.SNssaiInfos {
+			if info.SNssai.Sst == apiSnssai.GetSst() && info.SNssai.Sd != "" && apiSnssai.GetSd() != "" && info.SNssai.Sd == apiSnssai.GetSd() {
+				upNode.UPF.SNssaiInfos[i].DnnList = appendIfMissingDNNItems(info.DnnList, convertIpDomainsToDnnList(sm.IpDomain))
+				found = true
+				break
+			}
+		}
+		if !found {
+			upNode.UPF.SNssaiInfos = append(upNode.UPF.SNssaiInfos, SnssaiUPFInfo{
+				SNssai: SNssai{
+					Sst: apiSnssai.GetSst(),
+					Sd:  apiSnssai.GetSd(),
+				},
+				DnnList: convertIpDomainsToDnnList(sm.IpDomain),
+			})
+		}
+
+		linkUpfToGnbNodes(existing, upNode, sm.GnbNames)
+		for _, gnb := range sm.GnbNames {
+			currentANs[gnb] = true
+		}
+	}
+	removeInactiveUPNodes(existing.UPNodes, currentUPFs, currentANs)
+	existing.RebuildUPFMaps()
+	return existing
+}
+
+func removeInactiveUPNodes(upnodes map[string]*UPNode, currentUPFs, currentANs map[string]bool) {
+	for name, node := range upnodes {
+		switch node.Type {
+		case UPNODE_UPF:
+			if _, stillActive := currentUPFs[name]; !stillActive {
+				logger.CtxLog.Debugf("removing inactive UPF node: %s", name)
+				delete(upnodes, name)
+			}
+		case UPNODE_AN:
+			if _, stillActive := currentANs[name]; !stillActive {
+				logger.CtxLog.Debugf("removing inactive AN node: %s", name)
+				delete(upnodes, name)
+			}
+		}
+	}
+}
+
+func linkUpfToGnbNodes(upi *UserPlaneInformation, upNode *UPNode, gnbNames []string) {
+	for _, gnb := range gnbNames {
+		if gnb == "" {
+			continue
+		}
+		anNode, exists := upi.UPNodes[gnb]
+		if !exists {
+			anNode = &UPNode{
+				Type: UPNODE_AN,
+				NodeID: NodeID{
+					NodeIdValue: []byte(gnb),
+					NodeIdType:  NodeIdTypeIpv4Address,
+				},
+				Links: []*UPNode{},
+			}
+			upi.UPNodes[gnb] = anNode
+		}
+		anNode.Links = appendIfMissing(anNode.Links, upNode)
+		upNode.Links = appendIfMissing(upNode.Links, anNode)
+		upi.AccessNetwork[gnb] = anNode
+	}
+}
+
+func appendIfMissing(slice []*UPNode, elem *UPNode) []*UPNode {
+	for _, s := range slice {
+		if s == elem {
+			return slice
+		}
+	}
+	return append(slice, elem)
+}
+
+func getOrCreateUpfNode(hostname string, port uint16, nodeID NodeID, existingUPFs map[string]*UPNode) *UPNode {
+	if node, exists := existingUPFs[hostname]; exists {
+		if node.UPF == nil {
+			node.UPF = &UPF{}
+		}
+		node.UPF.Port = port
+		node.Port = port
+
+		return node
+	}
+	return &UPNode{
+		UPF: &UPF{
+			NodeID: nodeID,
+			Port:   port,
+		},
+		Type:   UPNODE_UPF,
+		NodeID: nodeID,
+		Port:   port,
+		Links:  []*UPNode{},
+	}
+}
+
+func resolvePfcpPort(p *int32) uint16 {
+	if p != nil && *p >= 0 && *p <= 65535 {
+		return uint16(*p)
+	}
+	return DefaultPfcpPort
+}
+
+func convertIpDomainsToDnnList(ipDomains []nfConfigApi.IpDomain) []DnnUPFInfoItem {
+	var dnnList []DnnUPFInfoItem
+	for _, domain := range ipDomains {
+		dnnList = append(dnnList, DnnUPFInfoItem{
+			Dnn:             domain.DnnName,
+			DnaiList:        []string{domain.DnnName}, // or use appropriate value
+			PduSessionTypes: []models.PduSessionType{models.PduSessionType_IPV4},
+		})
+	}
+	return dnnList
+}
+
+func appendIfMissingDNNItems(existing, newItems []DnnUPFInfoItem) []DnnUPFInfoItem {
+	existingMap := make(map[string]bool)
+	for _, item := range existing {
+		existingMap[item.Dnn] = true
+	}
+	for _, item := range newItems {
+		if !existingMap[item.Dnn] {
+			existing = append(existing, item)
+		}
+	}
+	return existing
 }
 
 func (upi *UserPlaneInformation) GetUPFNameByIp(ip string) string {
