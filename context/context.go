@@ -317,18 +317,26 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factor
 	}
 
 	for _, ipdomain := range sm.GetIpDomain() {
+		dnn := ipdomain.DnnName
+		if _, exists := info.DnnInfos[dnn]; exists {
+			logger.CtxLog.Warnf("duplicate DNN %s in IP domain config; overriding", dnn)
+		}
 		dnnInfo := &SnssaiSmfDnnInfo{MTU: uint16(ipdomain.GetMtu())}
 		if ip := net.ParseIP(ipdomain.GetDnsIpv4()); ip != nil {
 			dnnInfo.DNS.IPv4Addr = ip
 		}
 		if subnet := ipdomain.GetUeSubnet(); subnet != "" {
-			if allocator, err := NewIPAllocator(subnet); err == nil {
+			allocator, err := NewIPAllocator(subnet)
+			if err != nil {
+				logger.CtxLog.Warnf("Invalid subnet %s for DNN %s: %v", subnet, dnn, err)
+			} else {
 				dnnInfo.UeIPAllocator = allocator
-				reserveStaticIpsIfNeeded(allocator, staticIpInfo, ipdomain.DnnName)
+				reserveStaticIpsIfNeeded(allocator, staticIpInfo, dnn)
 			}
 		}
-		info.DnnInfos[ipdomain.DnnName] = dnnInfo
+		info.DnnInfos[dnn] = dnnInfo
 	}
+
 	return info
 }
 

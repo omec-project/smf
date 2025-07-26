@@ -154,6 +154,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			},
 			DnnList: dnnList,
 		}
+		logger.CtxLog.Infof("Creating UPF node: %s, SNSSAI: %+v, DNNs: %+v", upfName, snssai, dnnList)
 
 		upf := sm.GetUpf()
 		upfNode := getOrCreateUpfNode(
@@ -217,22 +218,20 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 }
 
 func updateSNssaiInfo(upfNode *UPNode, newInfo SnssaiUPFInfo) {
-	updated := false
 	for i, existing := range upfNode.UPF.SNssaiInfos {
-		if existing.SNssai.Sst == newInfo.SNssai.Sst &&
-			existing.SNssai.Sd != "" && newInfo.SNssai.Sd != "" &&
-			existing.SNssai.Sd == newInfo.SNssai.Sd {
+		// allow empty SD match if both sides are empty
+		sdMatch := (existing.SNssai.Sd == newInfo.SNssai.Sd)
+		if existing.SNssai.Sst == newInfo.SNssai.Sst && sdMatch {
 			upfNode.UPF.SNssaiInfos[i].DnnList = appendIfMissingDNNItems(
 				existing.DnnList,
 				newInfo.DnnList,
 			)
-			updated = true
-			break
+			return
 		}
 	}
-	if !updated {
-		upfNode.UPF.SNssaiInfos = append(upfNode.UPF.SNssaiInfos, newInfo)
-	}
+
+	// add new SNssaiUPFInfo
+	upfNode.UPF.SNssaiInfos = append(upfNode.UPF.SNssaiInfos, newInfo)
 }
 
 func removeInactiveUPNodes(upnodes map[string]*UPNode, currentUPFs, currentANs map[string]bool) {
@@ -339,13 +338,16 @@ func convertIpDomainsToDnnList(ipDomains []nfConfigApi.IpDomain) []DnnUPFInfoIte
 }
 
 func appendIfMissingDNNItems(existing, newItems []DnnUPFInfoItem) []DnnUPFInfoItem {
-	existingMap := make(map[string]bool)
-	for _, item := range existing {
-		existingMap[item.Dnn] = true
-	}
-	for _, item := range newItems {
-		if !existingMap[item.Dnn] {
-			existing = append(existing, item)
+	for _, newItem := range newItems {
+		found := false
+		for _, existingItem := range existing {
+			if existingItem.Dnn == newItem.Dnn {
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, newItem)
 		}
 	}
 	return existing

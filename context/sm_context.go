@@ -297,8 +297,16 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // *** add unit test ***//
 func RemoveSMContext(ref string) {
 	var smContext *SMContext
-	if value, ok := smContextPool.Load(ref); ok {
-		smContext = value.(*SMContext)
+	value, ok := smContextPool.Load(ref)
+	if !ok {
+		logger.CtxLog.Warnf("RemoveSMContext: no SMContext found for ref %s", ref)
+		return
+	}
+
+	smContext, ok = value.(*SMContext)
+	if !ok || smContext == nil {
+		logger.CtxLog.Warnf("removeSMContext: invalid SMContext type or nil for ref %s", ref)
+		return
 	}
 
 	smContext.SubCtxLog.Infof("RemoveSMContext, SM context released ")
@@ -341,6 +349,10 @@ func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 }
 
 func (smContext *SMContext) ReleaseUeIpAddr() error {
+	if smContext.PDUAddress == nil {
+		logger.CtxLog.Warnf("ReleaseUeIpAddr: PduSessionUeAddress is nil, skipping release")
+		return nil
+	}
 	if ip := smContext.PDUAddress.Ip; ip != nil && !smContext.PDUAddress.UpfProvided {
 		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.Ip.String())
 		smContext.DNNInfo.UeIPAllocator.Release(smContext.Supi, ip)
