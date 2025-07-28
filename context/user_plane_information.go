@@ -451,7 +451,7 @@ func GenerateDataPath(upPath UPPath) *DataPath {
 
 	for _, upNode := range upPath {
 		if upNode.Type != UPNODE_UPF || upNode.UPF == nil {
-			logger.CtxLog.Debugf("GenerateDataPath: skipping non-UPF node: %v", upNode.NodeID)
+			logger.CtxLog.Debugf("generateDataPath: skipping non-UPF node: %v", upNode.NodeID)
 			continue
 		}
 		curDataPathNode = NewDataPathNode()
