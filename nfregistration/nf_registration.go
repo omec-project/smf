@@ -37,7 +37,7 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 	var registerCancel context.CancelFunc
 	var registerCtx context.Context
 	lastRegisteredConfig := []nfConfigApi.SessionManagement{}
-	logger.NrfRegistrationLog.Infoln("Started NF registration to NRF service")
+	logger.NrfRegistrationLog.Infoln("started NF registration to NRF service")
 	for {
 		select {
 		case <-ctx.Done():
@@ -49,13 +49,13 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 
 		case newConfig := <-sessionManagementConfigChan:
 			if len(newConfig) == 0 {
-				logger.NrfRegistrationLog.Debugln("Session management config is empty. SMF will deregister")
+				logger.NrfRegistrationLog.Debugln("session management config is empty. SMF will deregister")
 				DeregisterNF()
 				lastRegisteredConfig = nil
 				continue
 			}
 			if IsRegistrationRequired(newConfig, lastRegisteredConfig) {
-				logger.NrfRegistrationLog.Debugln("Detected changes in NF profile relevant config. Registering...")
+				logger.NrfRegistrationLog.Debugln("detected changes in NF profile relevant config. Registering...")
 
 				if registerCancel != nil {
 					registerCancel()
@@ -64,12 +64,12 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 				go registerNF(registerCtx, newConfig)
 				copyConfig, err := deepCopySessionManagement(newConfig)
 				if err != nil {
-					logger.NrfRegistrationLog.Errorf("Deep copy failed: %v", err)
+					logger.NrfRegistrationLog.Errorf("deep copy failed: %v", err)
 					continue
 				}
 				lastRegisteredConfig = copyConfig
 			} else {
-				logger.NrfRegistrationLog.Debugln("No changes in NF profile relevant config. Skipping re-registration...")
+				logger.NrfRegistrationLog.Debugln("no changes in NF profile relevant config. Skipping re-registration...")
 			}
 		}
 	}

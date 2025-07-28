@@ -42,7 +42,7 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 
 	interval := initialPollingInterval
 	pollingEndpoint := webuiUri + pollingPath
-	logger.PollConfigLog.Infof("started polling service on %s every %v", pollingEndpoint, initialPollingInterval)
+	logger.PollConfigLog.Infof("started polling service on %s every %s", pollingEndpoint, initialPollingInterval.String())
 
 	handleUpdate := func(cfg []nfConfigApi.SessionManagement) {
 		select {

@@ -11,6 +11,7 @@ package nfregistration
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
@@ -51,12 +52,13 @@ var (
 	}
 )
 
-func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
+func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) (nfConfigApi.SessionManagement, error) {
 	sstUint64, err := strconv.ParseUint(sst, 10, 8)
 	if err != nil {
-		panic("invalid SST value: " + sst)
+		return nfConfigApi.SessionManagement{}, fmt.Errorf("invalid SST value: %s, error: %w", sst, err)
 	}
 	sstint := int32(sstUint64)
+
 	return nfConfigApi.SessionManagement{
 		SliceName: sliceName,
 		PlmnId: nfConfigApi.PlmnId{
@@ -80,7 +82,7 @@ func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSu
 			Port:     &port,
 		},
 		GnbNames: []string{"gnb1", "gnb2"},
-	}
+	}, nil
 }
 
 func TestNfRegistrationService_WhenEmptyConfig_ThenDeregisterNFAndStopTimer(t *testing.T) {
@@ -173,7 +175,7 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 		t.Error("expected keepAliveTimer to be initialized by startKeepAliveTimer")
 	}
 	if !reflect.DeepEqual(registrations, newConfig) {
-		t.Errorf("Expected %+v config, received %+v", newConfig, registrations)
+		t.Errorf("expected %+v config, received %+v", newConfig, registrations)
 	}
 }
 
@@ -202,7 +204,7 @@ func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T
 	time.Sleep(2 * retryTime)
 
 	if called < 2 {
-		t.Error("Expected to retry register to NRF")
+		t.Error("expected to retry register to NRF")
 	}
 	t.Logf("Tried %v times", called)
 }
@@ -220,6 +222,7 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		ctx    context.Context
 		config []nfConfigApi.SessionManagement
 	}
+
 	registerNF = func(registerCtx context.Context, newSessionManagementConfig []nfConfigApi.SessionManagement) {
 		registrations = append(registrations, struct {
 			ctx    context.Context
@@ -234,24 +237,33 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 
 	go StartNfRegistrationService(ctx, ch)
 
-	firstConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "01", "1", "000001", "internet", "10.0.0.0/24", "upf1", 8805)}
-	ch <- firstConfig
-
+	firstConfig, err := makeSessionConfig("sliceA", "001", "01", "1", "000001", "internet", "10.0.0.0/24", "upf1", 8805)
+	if err != nil {
+		t.Fatalf("failed to create first config: %v", err)
+	}
+	ch <- []nfConfigApi.SessionManagement{firstConfig}
 	time.Sleep(50 * time.Millisecond)
 
 	if len(registrations) != 1 {
 		t.Fatalf("expected 1 registration, got %d", len(registrations))
 	}
 
-	secondConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 8805)}
-	ch <- secondConfig
+	secondConfig, err := makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 8805)
+	if err != nil {
+		t.Fatalf("failed to create second config: %v", err)
+	}
+	ch <- []nfConfigApi.SessionManagement{secondConfig}
 	time.Sleep(50 * time.Millisecond)
 
 	if len(registrations) != 2 {
 		t.Fatalf("expected 2 registrations, got %d", len(registrations))
 	}
-	thirdConfig := []nfConfigApi.SessionManagement{makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 9905)}
-	ch <- thirdConfig
+
+	thirdConfig, err := makeSessionConfig("sliceA", "001", "09", "1", "000002", "internet", "10.0.0.0/24", "upf1", 9905)
+	if err != nil {
+		t.Fatalf("failed to create third config: %v", err)
+	}
+	ch <- []nfConfigApi.SessionManagement{thirdConfig}
 	time.Sleep(50 * time.Millisecond)
 
 	if len(registrations) != 2 {
@@ -274,11 +286,11 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		// expected
 	}
 
-	if !reflect.DeepEqual(registrations[0].config, firstConfig) {
-		t.Errorf("Expected first config %+v, got %+v", firstConfig, registrations[0].config)
+	if !reflect.DeepEqual(registrations[0].config, []nfConfigApi.SessionManagement{firstConfig}) {
+		t.Errorf("expected first config %+v, got %+v", firstConfig, registrations[0].config)
 	}
-	if !reflect.DeepEqual(registrations[1].config, secondConfig) {
-		t.Errorf("Expected second config %+v, got %+v", secondConfig, registrations[1].config)
+	if !reflect.DeepEqual(registrations[1].config, []nfConfigApi.SessionManagement{secondConfig}) {
+		t.Errorf("expected second config %+v, got %+v", secondConfig, registrations[1].config)
 	}
 }
 
@@ -393,7 +405,7 @@ func TestStartKeepAliveTimer_UsesProfileTimerOnlyWhenGreaterThanZero(t *testing.
 
 			startKeepAliveTimer(tc.profileTime, nil)
 			if tc.expectedDuration != capturedDuration {
-				t.Errorf("Expected %v duration, got %v", tc.expectedDuration, capturedDuration)
+				t.Errorf("expected %v duration, got %v", tc.expectedDuration, capturedDuration)
 			}
 		})
 	}

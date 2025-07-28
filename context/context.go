@@ -312,7 +312,7 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factor
 	apiSnssai := sm.GetSnssai()
 	info := SnssaiSmfInfo{
 		PlmnId:   models.PlmnId{Mcc: apiPlmnId.GetMcc(), Mnc: apiPlmnId.GetMnc()},
-		Snssai:   SNssai{Sst: apiSnssai.GetSst(), Sd: apiSnssai.GetSd()},
+		Snssai:   SNssai{Sst: apiSnssai.GetSst(), Sd: *apiSnssai.Sd},
 		DnnInfos: map[string]*SnssaiSmfDnnInfo{},
 	}
 

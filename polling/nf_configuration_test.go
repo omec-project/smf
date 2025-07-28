@@ -25,10 +25,10 @@ import (
 	"github.com/omec-project/openapi/nfConfigApi"
 )
 
-func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
+func makeSessionConfig(sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname string, port int32) (nfConfigApi.SessionManagement, error) {
 	sstUint64, err := strconv.ParseUint(sst, 10, 8)
 	if err != nil {
-		panic("invalid SST value: " + sst)
+		return nfConfigApi.SessionManagement{}, fmt.Errorf("invalid SST value '%s': %w", sst, err)
 	}
 	sstint := int32(sstUint64)
 	return nfConfigApi.SessionManagement{
@@ -54,13 +54,13 @@ func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSu
 			Port:     &port,
 		},
 		GnbNames: []string{"gnb1", "gnb2"},
-	}
+	}, nil
 }
 
 func TestStartPollingService_Success(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	sessionConfigOne := makeSessionConfig(
+	sessionConfigOne, err := makeSessionConfig(
 		"slice1",
 		"222",
 		"03",
@@ -71,6 +71,9 @@ func TestStartPollingService_Success(t *testing.T) {
 		"192.168.1.1",
 		38414,
 	)
+	if err != nil {
+		t.Fatalf("failed to create sessionConfigOne: %v", err)
+	}
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
 	expectedConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
@@ -101,7 +104,7 @@ func TestStartPollingService_Success(t *testing.T) {
 }
 
 func TestStartPollingService_RetryAfterFailure(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
@@ -128,12 +131,12 @@ func TestStartPollingService_RetryAfterFailure(t *testing.T) {
 }
 
 func TestStartPollingService_NoUpdateOnIdenticalConfig(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	updateCount := 0
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
-	sessionConfigOne := makeSessionConfig(
+	sessionConfigOne, err := makeSessionConfig(
 		"slice1",
 		"222",
 		"02",
@@ -144,6 +147,9 @@ func TestStartPollingService_NoUpdateOnIdenticalConfig(t *testing.T) {
 		"192.168.2.1",
 		38422,
 	)
+	if err != nil {
+		t.Fatalf("failed to create sessionConfigOne: %v", err)
+	}
 	expectedConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 		return expectedConfig, nil
@@ -181,11 +187,11 @@ func TestStartPollingService_NoUpdateOnIdenticalConfig(t *testing.T) {
 }
 
 func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	originalFetcher := fetchSessionManagementConfig
 	defer func() { fetchSessionManagementConfig = originalFetcher }()
-	sessionConfigOne := makeSessionConfig(
+	sessionConfigOne, err := makeSessionConfig(
 		"slice1",
 		"111",
 		"01",
@@ -196,7 +202,10 @@ func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
 		"192.168.1.1",
 		38412,
 	)
-	sessionConfigTwo := makeSessionConfig(
+	if err != nil {
+		t.Fatalf("failed to create sessionConfigOne: %v", err)
+	}
+	sessionConfigTwo, err := makeSessionConfig(
 		"slice2",
 		"111",
 		"01",
@@ -207,6 +216,9 @@ func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
 		"192.168.2.1",
 		38412,
 	)
+	if err != nil {
+		t.Fatalf("failed to create sessionConfigTwo: %v", err)
+	}
 	fetchCount := 0
 	fetchSessionManagementConfig = func(poller *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 		if fetchCount == 0 {
@@ -296,7 +308,7 @@ func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
 
 func TestFetchSessionManagementConfig(t *testing.T) {
 	var sessionConfigs []nfConfigApi.SessionManagement
-	sessionConfigOne := makeSessionConfig(
+	sessionConfigOne, err := makeSessionConfig(
 		"slice1",
 		"111",
 		"01",
@@ -307,6 +319,9 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		"192.168.1.1",
 		38412,
 	)
+	if err != nil {
+		t.Fatalf("failed to create sessionConfigOne: %v", err)
+	}
 	sessionConfigs = append(sessionConfigs, sessionConfigOne)
 	validJson, err := json.Marshal(sessionConfigs)
 	if err != nil {

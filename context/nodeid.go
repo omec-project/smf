@@ -53,8 +53,7 @@ func (n *NodeID) ResolveNodeIdToIp() net.IP {
 		if ip, err := getDnsHostIp(string(n.NodeIdValue)); err != nil {
 			logger.CtxLog.Warnf("host [%v] not found in smf dns cache ", string(n.NodeIdValue))
 			resolver := net.Resolver{}
-			ctx := context.Background()
-			ns, err := resolver.LookupHost(ctx, string(n.NodeIdValue))
+			ns, err := resolver.LookupHost(context.Background(), string(n.NodeIdValue))
 			if err != nil {
 				logger.CtxLog.Warnf("host lookup failed: %+v", err)
 				return net.IPv4zero
@@ -88,8 +87,7 @@ func RefreshDnsHostIpCache() {
 	for hostName := range dnsHostIpCache {
 		logger.CtxLog.Debugf("refreshing DNS for host [%v] ", hostName)
 		resolver := net.Resolver{}
-		ctx := context.Background()
-		ns, err := resolver.LookupHost(ctx, hostName)
+		ns, err := resolver.LookupHost(context.Background(), hostName)
 		if err != nil {
 			logger.CtxLog.Warnf("host lookup failed: %+v", err)
 			deleteDnsHost(hostName)

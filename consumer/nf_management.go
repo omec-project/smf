@@ -8,6 +8,7 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -97,7 +98,15 @@ func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
 		}
 		snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 	}
-	return models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
+	smfInfo := models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
+
+	if b, err := json.MarshalIndent(smfInfo, "", "  "); err == nil {
+		logger.CtxLog.Infof("Returning SmfInfo:\n%s", string(b))
+	} else {
+		logger.CtxLog.Errorf("Failed to marshal SmfInfo: %v", err)
+	}
+
+	return smfInfo
 }
 
 func buildPlmnList(sessionCfgs []nfConfigApi.SessionManagement) []models.PlmnId {
@@ -131,7 +140,7 @@ var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionM
 	if err != nil {
 		return models.NfProfile{}, "", err
 	}
-	logger.ConsumerLog.Debugf("Sending registration request with NFProfile %+v", nfProfile)
+	logger.ConsumerLog.Debugf("sending registration request with NFProfile %+v", nfProfile)
 	configuration := Nnrf_NFManagement.NewConfiguration()
 	configuration.SetBasePath(self.NrfUri)
 	client := Nnrf_NFManagement.NewAPIClient(configuration)

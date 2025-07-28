@@ -12,12 +12,16 @@ import (
 	"github.com/omec-project/openapi/nfConfigApi"
 )
 
-func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
+func makeSessionConfig(
+	sliceName, mcc, mnc, sst string,
+	sd string, dnnName, ueSubnet, hostname string, port int32,
+) (nfConfigApi.SessionManagement, error) {
 	sstUint64, err := strconv.ParseUint(sst, 10, 8)
 	if err != nil {
-		panic("invalid SST value: " + sst)
+		return nfConfigApi.SessionManagement{}, fmt.Errorf("invalid SST value '%s': %w", sst, err)
 	}
 	sstint := int32(sstUint64)
+
 	return nfConfigApi.SessionManagement{
 		SliceName: sliceName,
 		PlmnId: nfConfigApi.PlmnId{
@@ -41,10 +45,20 @@ func makeSessionConfig(sliceName, mcc, mnc, sst string, sd string, dnnName, ueSu
 			Port:     &port,
 		},
 		GnbNames: []string{"gnb1", "gnb2"},
-	}
+	}, nil
 }
 
 func TestUpdateSmfContext(t *testing.T) {
+	validSingleSliceConfig, err := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412)
+	if err != nil {
+		t.Fatalf("failed to create session config: %v", err)
+	}
+
+	multiSliceConfig := []nfConfigApi.SessionManagement{
+		mustMakeSessionConfig(t, "slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
+		mustMakeSessionConfig(t, "slice2", "111", "01", "1", "1", "fast", "192.168.2.0/24", "upf-2", 38412),
+	}
+
 	tests := []struct {
 		name     string
 		config   []nfConfigApi.SessionManagement
@@ -60,17 +74,15 @@ func TestUpdateSmfContext(t *testing.T) {
 				if len(smCtx.SnssaiInfos) != 0 {
 					return false, "expected SnssaiInfos to be cleared"
 				}
-				if len(smCtx.UserPlaneInformation.UPNodes) != 0 {
+				if smCtx.UserPlaneInformation != nil && len(smCtx.UserPlaneInformation.UPNodes) != 0 {
 					return false, "expected UPNodes to be cleared"
 				}
 				return true, ""
 			},
 		},
 		{
-			name: "Valid single slice config",
-			config: []nfConfigApi.SessionManagement{
-				makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
-			},
+			name:   "Valid single slice config",
+			config: []nfConfigApi.SessionManagement{validSingleSliceConfig},
 			validate: func(smCtx *SMFContext, err error) (bool, string) {
 				if err != nil {
 					return false, err.Error()
@@ -79,7 +91,7 @@ func TestUpdateSmfContext(t *testing.T) {
 					return false, fmt.Sprintf("expected 1 SnssaiInfo, got %d", len(smCtx.SnssaiInfos))
 				}
 				if smCtx.UserPlaneInformation == nil || smCtx.UserPlaneInformation.DefaultUserPlanePath == nil {
-					return false, "UserPlaneInformation or DataPaths is nil"
+					return false, "UserPlaneInformation or DefaultUserPlanePath is nil"
 				}
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-1"]; !ok {
 					return false, "expected UPNode for upf-1 to exist"
@@ -97,11 +109,8 @@ func TestUpdateSmfContext(t *testing.T) {
 			},
 		},
 		{
-			name: "Multiple slice config",
-			config: []nfConfigApi.SessionManagement{
-				makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
-				makeSessionConfig("slice2", "111", "01", "1", "1", "fast", "192.168.2.0/24", "upf-2", 38412),
-			},
+			name:   "Multiple slice config",
+			config: multiSliceConfig,
 			validate: func(smCtx *SMFContext, err error) (bool, string) {
 				if err != nil {
 					return false, err.Error()
@@ -129,4 +138,13 @@ func TestUpdateSmfContext(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustMakeSessionConfig(t *testing.T, sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
+	t.Helper()
+	cfg, err := makeSessionConfig(sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname, port)
+	if err != nil {
+		t.Fatalf("failed to create config for %s: %v", sliceName, err)
+	}
+	return cfg
 }

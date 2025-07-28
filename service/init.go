@@ -275,6 +275,7 @@ func (smf *SMF) Start() {
 		nfregistration.StartNfRegistrationService(ctx, registrationChan)
 	}()
 
+	smfSelf := smfContext.SMF_Self()
 	// Update SMF context using polled config
 	go func() {
 		defer wg.Done()
@@ -284,12 +285,12 @@ func (smf *SMF) Start() {
 				return
 			case cfg := <-contextUpdateChan:
 				factory.SmfConfigSyncLock.Lock()
-				err := smfContext.UpdateSmfContext(smfContext.SMF_Self(), cfg)
+				err := smfContext.UpdateSmfContext(smfSelf, cfg)
 				factory.SmfConfigSyncLock.Unlock()
 				if err != nil {
 					logger.PollConfigLog.Errorf("SMF context update failed: %v", err)
 				} else {
-					logger.PollConfigLog.Debugf("SMF context updated from WebConsole config")
+					logger.PollConfigLog.Debugln("SMF context updated from WebConsole config")
 					smfContext.AllocateUPFID()
 				}
 			}
@@ -335,7 +336,7 @@ func (smf *SMF) Start() {
 
 	udp.Run(pfcp.Dispatch)
 
-	userPlaneInfo := smfContext.SMF_Self().UserPlaneInformation
+	userPlaneInfo := smfSelf.UserPlaneInformation
 
 	if userPlaneInfo == nil || userPlaneInfo.UPFs == nil {
 		logger.AppLog.Warnln("UserPlaneInformation or UPFs is nil, skipping PFCP Association Request")
@@ -382,7 +383,7 @@ func (smf *SMF) Start() {
 
 	time.Sleep(1000 * time.Millisecond)
 
-	HTTPAddr := fmt.Sprintf("%s:%d", smfContext.SMF_Self().BindingIPv4, smfContext.SMF_Self().SBIPort)
+	HTTPAddr := fmt.Sprintf("%s:%d", smfSelf.BindingIPv4, smfSelf.SBIPort)
 	sslLog := filepath.Dir(factory.SmfConfig.CfgLocation) + "/sslkey.log"
 	server, err := http2_util.NewServer(HTTPAddr, sslLog, router)
 
@@ -400,7 +401,7 @@ func (smf *SMF) Start() {
 	case "http":
 		err = server.ListenAndServe()
 	case "https":
-		err = server.ListenAndServeTLS(smfContext.SMF_Self().PEM, smfContext.SMF_Self().Key)
+		err = server.ListenAndServeTLS(smfSelf.PEM, smfSelf.Key)
 	default:
 		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
 		return
@@ -412,7 +413,7 @@ func (smf *SMF) Start() {
 }
 
 func (smf *SMF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup) {
-	logger.InitLog.Infof("terminating SMF")
+	logger.InitLog.Infoln("terminating SMF")
 	cancelServices()
 	nfregistration.DeregisterNF()
 	wg.Wait()

@@ -149,14 +149,14 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		PlmnId:      optional.NewInterface(smPlmnID.Mcc + smPlmnID.Mnc),
 		SingleNssai: optional.NewInterface(openapi.MarshToJsonString(smContext.Snssai)),
 	}
-
-	SubscriberDataManagementClient := smf_context.SMF_Self().SubscriberDataManagementClient
-	metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "Out", "", "")
+	smfCtx := smf_context.SMF_Self()
+	SubscriberDataManagementClient := smfCtx.SubscriberDataManagementClient
+	metrics.IncrementSvcUdmMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "Out", "", "")
 
 	if sessSubData, rsp, err := SubscriberDataManagementClient.
 		SessionManagementSubscriptionDataRetrievalApi.
 		GetSmData(context.Background(), smContext.Supi, smDataParams); err != nil {
-		metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), err.Error())
+		metrics.IncrementSvcUdmMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), err.Error())
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, get SessionManagementSubscriptionData error: ", err)
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("SubscriptionDataFetchError")
 		return fmt.Errorf("SubscriptionError")
@@ -167,11 +167,11 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 			}
 		}()
 		if len(sessSubData) > 0 {
-			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "")
+			metrics.IncrementSvcUdmMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "")
 			smContext.DnnConfiguration = sessSubData[0].DnnConfigurations[smContext.Dnn]
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, subscription data retrieved from UDM")
 		} else {
-			metrics.IncrementSvcUdmMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
+			metrics.IncrementSvcUdmMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SessionManagementSubscriptionData from UDM is nil")
 			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("SubscriptionDataLenError")
 			return fmt.Errorf("NoSubscriptionError")
@@ -197,14 +197,14 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 
 	// PCF Policy Association
 	var smPolicyDecision *models.SmPolicyDecision
-	metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "Out", "", "")
+	metrics.IncrementSvcPcfMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "Out", "", "")
 	if smPolicyDecisionRsp, httpStatus, err := consumer.SendSMPolicyAssociationCreate(smContext); err != nil {
-		metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), err.Error())
+		metrics.IncrementSvcPcfMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), err.Error())
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate error: ", err)
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFPolicyCreateFailure")
 		return fmt.Errorf("PcfAssoError")
 	} else if httpStatus != http.StatusCreated {
-		metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), "error")
+		metrics.IncrementSvcPcfMsgStats(smfCtx.NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), "error")
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate http status: ", http.StatusText(httpStatus))
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFPolicyCreateFailure")
 		return fmt.Errorf("PcfAssoError")
@@ -233,7 +233,6 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		},
 	}
 
-	smfCtx := smf_context.SMF_Self()
 	if smfCtx.ULCLSupport && smfCtx.UeRoutingManager != nil && smfCtx.UeRoutingManager.HasPath(createData.Supi) {
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate: SUPI[%s] has pre-configured route", createData.Supi)
 		uePreConfigPaths := smfCtx.UeRoutingManager.GetPath(createData.Supi)
@@ -241,7 +240,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
 		defaultPath = smContext.Tunnel.DataPathPool.GetDefaultPath()
 		if defaultPath == nil {
-			smContext.SubPduSessLog.Warnf("No default path found for SUPI[%s]", createData.Supi)
+			smContext.SubPduSessLog.Warnf("no default path found for SUPI[%s]", createData.Supi)
 		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
 			smContext.SubPduSessLog.Errorf("ActivateTunnelAndPDR error for SUPI[%s]: %v", createData.Supi, err)
 		}

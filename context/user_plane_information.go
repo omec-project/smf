@@ -122,7 +122,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			continue
 		}
 
-		upfName := sm.Upf.Hostname
+		upfName := sm.Upf.GetHostname()
 		if upfName == "" {
 			logger.CtxLog.Warn("Empty UPF hostname in config, skipping")
 			continue
@@ -150,7 +150,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 		snssaiInfo := SnssaiUPFInfo{
 			SNssai: SNssai{
 				Sst: snssai.GetSst(),
-				Sd:  snssai.GetSd(),
+				Sd:  *sm.GetSnssai().Sd,
 			},
 			DnnList: dnnList,
 		}
@@ -219,8 +219,9 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 
 func updateSNssaiInfo(upfNode *UPNode, newInfo SnssaiUPFInfo) {
 	for i, existing := range upfNode.UPF.SNssaiInfos {
-		// allow empty SD match if both sides are empty
-		sdMatch := (existing.SNssai.Sd == newInfo.SNssai.Sd)
+		existingSd := existing.SNssai.Sd
+		newSd := newInfo.SNssai.Sd
+		sdMatch := (existingSd == newSd) || (existingSd == "" && newSd == "")
 		if existing.SNssai.Sst == newInfo.SNssai.Sst && sdMatch {
 			upfNode.UPF.SNssaiInfos[i].DnnList = appendIfMissingDNNItems(
 				existing.DnnList,
