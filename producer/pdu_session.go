@@ -250,7 +250,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		// Use default route
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, no pre-config route")
 		defaultUPPath := smf_context.GetUserPlaneInformation().GetDefaultUserPlanePathByDNN(upfSelectionParams)
-		defaultPath = smf_context.GenerateDataPath(defaultUPPath, smContext)
+		defaultPath = smf_context.GenerateDataPath(defaultUPPath)
 		if defaultPath != nil {
 			defaultPath.IsDefaultPath = true
 			smContext.Tunnel.AddDataPath(defaultPath)

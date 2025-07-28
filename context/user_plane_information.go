@@ -118,33 +118,12 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 
 	for _, sm := range smConfigs {
 		if sm.Upf == nil {
-			logger.CtxLog.Warn("Session management config contains nil UPF, skipping")
+			logger.CtxLog.Warn("session management config contains nil UPF, skipping")
 			continue
 		}
 
 		upfName := sm.Upf.GetHostname()
-		if upfName == "" {
-			logger.CtxLog.Warn("Empty UPF hostname in config, skipping")
-			continue
-		}
-		ip := net.ParseIP(upfName)
-		var nodeIdType uint8
-		var nodeIdValue []byte
-		if ip == nil {
-			nodeIdType = NodeIdTypeFqdn
-			nodeIdValue = []byte(upfName)
-		} else if ip.To4() != nil {
-			nodeIdType = NodeIdTypeIpv4Address
-			nodeIdValue = ip.To4()
-		} else {
-			nodeIdType = NodeIdTypeIpv6Address
-			nodeIdValue = ip.To16()
-		}
-		nodeID := NodeID{
-			NodeIdType:  nodeIdType,
-			NodeIdValue: nodeIdValue,
-		}
-
+		nodeID := CreateNodeIDFromHostname(upfName)
 		snssai := sm.GetSnssai()
 		dnnList := convertIpDomainsToDnnList(sm.IpDomain)
 		snssaiInfo := SnssaiUPFInfo{
@@ -154,33 +133,33 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			},
 			DnnList: dnnList,
 		}
-		logger.CtxLog.Infof("Creating UPF node: %s, SNSSAI: %+v, DNNs: %+v", upfName, snssai, dnnList)
+		logger.CtxLog.Infof("creating UPF node: %s, SNSSAI: %+v, DNNs: %+v", upfName, snssai, dnnList)
 
-		upf := sm.GetUpf()
 		upfNode := getOrCreateUpfNode(
 			upfName,
-			resolvePfcpPort(upf.GetPort()),
+			resolvePfcpPort(sm.Upf.GetPort()),
 			nodeID,
 			existing.UPFs,
 			snssaiInfo,
 		)
-		if upfNode.UPF == nil {
-			logger.CtxLog.Errorf("UPF node %s has nil UPF after creation", upfName)
-		}
 		existing.UPFs[upfName] = upfNode
 		existing.UPNodes[upfName] = upfNode
 		currentUPFs[upfName] = true
-		if ip = upfNode.NodeID.ResolveNodeIdToIp(); ip != nil {
+
+		ip := nodeID.ResolveNodeIdToIp()
+		if ip != nil {
 			ipStr := ip.String()
 			existing.UPFIPToName[ipStr] = upfName
-			existing.UPFsID[upfName] = string(upfNode.NodeID.NodeIdValue)
-			existing.UPFsIPtoID[ipStr] = string(upfNode.NodeID.NodeIdValue)
+			existing.UPFsID[upfName] = string(nodeID.NodeIdValue)
+			existing.UPFsIPtoID[ipStr] = string(nodeID.NodeIdValue)
 		} else {
-			logger.CtxLog.Warnf("invalid NodeID for UPF %s, skipping IP indexing", upfName)
+			logger.CtxLog.Warnf("invalid IP for UPF node %s", upfName)
 		}
+
 		if len(sm.GnbNames) == 0 {
-			logger.CtxLog.Warnf("No gNBs provided for UPF %s, no AN-UPF link created", upfName)
+			logger.CtxLog.Warnf("no gNBs provided for UPF %s, no AN-UPF link created", upfName)
 		}
+
 		for _, gnbName := range sm.GnbNames {
 			if _, exists := existing.UPNodes[gnbName]; !exists {
 				anNode := &UPNode{
@@ -194,26 +173,24 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 				existing.UPNodes[gnbName] = anNode
 				existing.AccessNetwork[gnbName] = anNode
 			}
-		}
-
-		linkUpfToGnbNodes(existing, upfNode, sm.GnbNames)
-		for _, gnbName := range sm.GnbNames {
+			linkUpfToGnbNodes(existing, upfNode, []string{gnbName})
 			currentANs[gnbName] = true
 		}
 	}
-
 	existing.RebuildUPFMaps()
-	for key, path := range existing.DefaultUserPlanePath {
-		var nodes []string
-		for _, n := range path {
-			nodes = append(nodes, string(n.NodeID.NodeIdValue))
-		}
-		logger.CtxLog.Infof("default path for [%s]: %v", key, nodes)
-	}
-
 	removeInactiveUPNodes(existing.UPNodes, currentUPFs, currentANs)
-
 	return existing
+}
+
+func CreateNodeIDFromHostname(hostname string) NodeID {
+	ip := net.ParseIP(hostname)
+	if ip == nil {
+		return NodeID{NodeIdType: NodeIdTypeFqdn, NodeIdValue: []byte(hostname)}
+	} else if ip.To4() != nil {
+		return NodeID{NodeIdType: NodeIdTypeIpv4Address, NodeIdValue: ip.To4()}
+	} else {
+		return NodeID{NodeIdType: NodeIdTypeIpv6Address, NodeIdValue: ip.To16()}
+	}
 }
 
 func updateSNssaiInfo(upfNode *UPNode, newInfo SnssaiUPFInfo) {
@@ -313,7 +290,6 @@ func getOrCreateUpfNode(
 	node.UPF.NodeID = nodeID
 	node.Port = port
 	node.UPF.Port = port
-
 	updateSNssaiInfo(node, snssaiInfo)
 	return node
 }
@@ -464,44 +440,44 @@ func (upi *UserPlaneInformation) RebuildUPFMaps() {
 	logger.CtxLog.Debugln("finished rebuilding UPF maps")
 }
 
-func GenerateDataPath(upPath UPPath, smContext *SMContext) *DataPath {
+func GenerateDataPath(upPath UPPath) *DataPath {
 	if len(upPath) < 1 {
 		logger.CtxLog.Errorf("Invalid data path")
 		return nil
 	}
-	lowerBound := 0
-	upperBound := len(upPath) - 1
 	var root *DataPathNode
 	var curDataPathNode *DataPathNode
 	var prevDataPathNode *DataPathNode
 
-	for idx, upNode := range upPath {
+	for _, upNode := range upPath {
+		if upNode.UPF == nil {
+			logger.CtxLog.Errorf("generateDataPath: skipping node %v with nil UPF", upNode.NodeID)
+			continue
+		}
 		curDataPathNode = NewDataPathNode()
 		curDataPathNode.UPF = upNode.UPF
 
-		if idx == lowerBound {
+		if root == nil {
 			root = curDataPathNode
 			root.AddPrev(nil)
-		}
-		if idx == upperBound {
-			curDataPathNode.AddNext(nil)
-		}
-		if prevDataPathNode != nil {
+		} else {
 			prevDataPathNode.AddNext(curDataPathNode)
 			curDataPathNode.AddPrev(prevDataPathNode)
 		}
 		prevDataPathNode = curDataPathNode
 	}
 
-	dataPath := &DataPath{
-		Destination: Destination{
-			DestinationIP:   "",
-			DestinationPort: "",
-			Url:             "",
-		},
-		FirstDPNode: root,
+	if root == nil {
+		logger.CtxLog.Error("GenerateDataPath: failed to generate root datapath node (all nodes skipped)")
+		return nil
 	}
-	return dataPath
+
+	return &DataPath{
+		Destination:   Destination{},
+		FirstDPNode:   root,
+		Activated:     false,
+		IsDefaultPath: false,
+	}
 }
 
 func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionParams) (pathExist bool) {
