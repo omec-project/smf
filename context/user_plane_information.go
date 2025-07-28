@@ -150,7 +150,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 		snssaiInfo := SnssaiUPFInfo{
 			SNssai: SNssai{
 				Sst: snssai.GetSst(),
-				Sd:  *sm.GetSnssai().Sd,
+				Sd:  snssai.GetSd(),
 			},
 			DnnList: dnnList,
 		}
