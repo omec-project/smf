@@ -193,7 +193,6 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 				}
 				existing.UPNodes[gnbName] = anNode
 				existing.AccessNetwork[gnbName] = anNode
-				logger.CtxLog.Infof("created AN node: %s", gnbName)
 			}
 		}
 

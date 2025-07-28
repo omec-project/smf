@@ -90,13 +90,16 @@ type SMFContext struct {
 	ULCLSupport bool
 }
 
-// RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
-func RetrieveDnnInformation(Snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
+func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
+	lookup := SNssai{Sst: snssai.Sst, Sd: snssai.Sd}
 	for _, snssaiInfo := range SMF_Self().SnssaiInfos {
-		if snssaiInfo.Snssai.Sst == Snssai.Sst && snssaiInfo.Snssai.Sd == Snssai.Sd {
-			return snssaiInfo.DnnInfos[dnn]
+		if snssaiInfo.Snssai.Equal(&lookup) {
+			if info, ok := snssaiInfo.DnnInfos[dnn]; ok {
+				return info
+			}
 		}
 	}
+	logger.CtxLog.Warnf("No match found for Snssai: %+v and DNN: %s", lookup, dnn)
 	return nil
 }
 
