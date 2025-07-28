@@ -292,6 +292,27 @@ func (smf *SMF) Start() {
 				} else {
 					logger.PollConfigLog.Debugln("SMF context updated from WebConsole config")
 					smfContext.AllocateUPFID()
+					userPlaneInfo := smfSelf.UserPlaneInformation
+					if userPlaneInfo != nil && userPlaneInfo.UPFs != nil {
+						for _, upf := range userPlaneInfo.UPFs {
+							if upf == nil {
+								continue
+							}
+							nodeID := upf.NodeID.ResolveNodeIdToIp()
+							if nodeID == nil {
+								logger.AppLog.Warnf("failed to resolve NodeId for UPF %v", upf)
+								continue
+							}
+							err = message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+							if err != nil {
+								logger.AppLog.Warnf("failed to send PFCP Association Setup Request to UPF %v: %v", upf, err)
+							}
+						}
+						go upf.InitPfcpHeartbeatRequest(userPlaneInfo)
+						go upf.ProbeInactiveUpfs(userPlaneInfo)
+					} else {
+						logger.AppLog.Warnln("UserPlaneInformation is nil, skipping PFCP association")
+					}
 				}
 			}
 		}
@@ -335,52 +356,6 @@ func (smf *SMF) Start() {
 	}
 
 	udp.Run(pfcp.Dispatch)
-
-	userPlaneInfo := smfSelf.UserPlaneInformation
-
-	if userPlaneInfo == nil || userPlaneInfo.UPFs == nil {
-		logger.AppLog.Warnln("UserPlaneInformation or UPFs is nil, skipping PFCP Association Request")
-	} else {
-		for _, upf := range userPlaneInfo.UPFs {
-			if upf == nil {
-				logger.AppLog.Warnln("UPF node is nil, skipping PFCP Association Request")
-				continue
-			}
-			nodeID := upf.NodeID.ResolveNodeIdToIp()
-			if nodeID == nil {
-				logger.AppLog.Warnf("Failed to resolve NodeId to IP for UPF %v, skipping PFCP Association Request", upf)
-				continue
-			}
-
-			if upf.NodeID.NodeIdType == smfContext.NodeIdTypeFqdn {
-				logger.AppLog.Infof("send PFCP Association Request to UPF[%s](%s)", upf.NodeID.NodeIdValue, nodeID.String())
-			} else {
-				logger.AppLog.Infof("send PFCP Association Request to UPF[%s]", nodeID.String())
-			}
-
-			err := message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
-			if err != nil {
-				logger.AppLog.Errorf("send PFCP Association Request failed: %v", err)
-			}
-		}
-	}
-
-	go func() {
-		if userPlaneInfo != nil {
-			upf.InitPfcpHeartbeatRequest(userPlaneInfo)
-		} else {
-			logger.AppLog.Warnln("UserPlaneInformation is nil, cannot trigger PFCP heartbeat")
-		}
-	}()
-
-	go func() {
-		if userPlaneInfo != nil {
-			upf.ProbeInactiveUpfs(userPlaneInfo)
-		} else {
-			logger.AppLog.Warnln("UserPlaneInformation is nil, cannot probe inactive UPFs")
-		}
-	}()
-
 	time.Sleep(1000 * time.Millisecond)
 
 	HTTPAddr := fmt.Sprintf("%s:%d", smfSelf.BindingIPv4, smfSelf.SBIPort)
