@@ -295,7 +295,7 @@ func getOrCreateUpfNode(
 }
 
 func resolvePfcpPort(p int32) uint16 {
-	if p >= 0 && p <= 65535 {
+	if p > 0 && p <= 65535 {
 		return uint16(p)
 	}
 	return DefaultPfcpPort
