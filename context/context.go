@@ -339,6 +339,9 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factor
 		}
 		info.DnnInfos[dnn] = dnnInfo
 	}
+	if len(info.DnnInfos) == 0 {
+		logger.CtxLog.Warnf("no DNN info available for SNSSAI: %+v", info.Snssai)
+	}
 
 	return info
 }
@@ -361,13 +364,21 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 		smContext.Clear()
 		return nil
 	}
-	smContext.UserPlaneInformation = BuildUserPlaneInformationFromSessionManagement(smContext.UserPlaneInformation, newConfig)
+	updatedUserPlaneInfo := BuildUserPlaneInformationFromSessionManagement(smContext.UserPlaneInformation, newConfig)
+	if updatedUserPlaneInfo == nil {
+		return fmt.Errorf("failed to build updated UserPlaneInformation from session management config")
+	}
+	smContext.UserPlaneInformation = updatedUserPlaneInfo
 
 	var snssaiInfos []SnssaiSmfInfo
 	for _, sm := range newConfig {
-		snssaiInfos = append(snssaiInfos, buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo))
+		snssaiInfo := buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo)
+		if len(snssaiInfo.DnnInfos) == 0 {
+			logger.CtxLog.Warnf("DnnInfos is empty for SnssaiSmfInfo config: %+v", sm)
+			continue
+		}
+		snssaiInfos = append(snssaiInfos, snssaiInfo)
 	}
-
 	smContext.SnssaiInfos = snssaiInfos
 	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
 	return nil

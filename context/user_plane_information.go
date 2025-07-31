@@ -495,14 +495,11 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 		logger.CtxLog.Errorf("can not find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
 			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
 		return false
-	} else {
-		logger.CtxLog.Debugf("found UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
-			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
 	}
+	logger.CtxLog.Debugf("found UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
+		selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
 
-	// Run DFS
 	visited := make(map[*UPNode]bool)
-
 	for _, upNode := range upi.UPNodes {
 		visited[upNode] = false
 	}
@@ -610,6 +607,7 @@ func (upi *UserPlaneInformation) InsertSmfUserPlaneNode(name string, node *facto
 
 		// Find IP
 		if ip = net.ParseIP(node.NodeID); ip != nil {
+			logger.UPNodeLog.Debugf("parsed IP: %s", ip)
 			// v4 or v6
 			if ip.To4() != nil {
 				// IPv4
@@ -675,6 +673,7 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 
 	existingNode, exists := upi.UPNodes[name]
 	if !exists {
+		logger.UPNodeLog.Errorf("UPNode [%s] does not exist", name)
 		return fmt.Errorf("UPNode [%s] does not exist", name)
 	}
 

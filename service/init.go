@@ -261,6 +261,7 @@ func (smf *SMF) Start() {
 	ctx, cancelServices := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(3)
+
 	go func() {
 		defer wg.Done()
 		polling.StartPollingService(
@@ -270,6 +271,7 @@ func (smf *SMF) Start() {
 			contextUpdateChan,
 		)
 	}()
+
 	go func() {
 		defer wg.Done()
 		nfregistration.StartNfRegistrationService(ctx, registrationChan)
@@ -282,6 +284,7 @@ func (smf *SMF) Start() {
 		for {
 			select {
 			case <-ctx.Done():
+				logger.InitLog.Info("received cancellation signal. Shutting down context update routine.")
 				return
 			case cfg := <-contextUpdateChan:
 				factory.SmfConfigSyncLock.Lock()
@@ -289,30 +292,30 @@ func (smf *SMF) Start() {
 				factory.SmfConfigSyncLock.Unlock()
 				if err != nil {
 					logger.PollConfigLog.Errorf("SMF context update failed: %v", err)
-				} else {
-					logger.PollConfigLog.Debugln("SMF context updated from WebConsole config")
-					smfContext.AllocateUPFID()
-					userPlaneInfo := smfSelf.UserPlaneInformation
-					if userPlaneInfo != nil && userPlaneInfo.UPFs != nil {
-						for _, upf := range userPlaneInfo.UPFs {
-							if upf == nil {
-								continue
-							}
-							nodeID := upf.NodeID.ResolveNodeIdToIp()
-							if nodeID == nil {
-								logger.AppLog.Warnf("failed to resolve NodeId for UPF %v", upf)
-								continue
-							}
-							err = message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
-							if err != nil {
-								logger.AppLog.Warnf("failed to send PFCP Association Setup Request to UPF %v: %v", upf, err)
-							}
+					continue
+				}
+				logger.PollConfigLog.Debugln("SMF context updated from WebConsole config")
+				smfContext.AllocateUPFID()
+				userPlaneInfo := smfSelf.UserPlaneInformation
+				if userPlaneInfo != nil && userPlaneInfo.UPFs != nil {
+					for _, upf := range userPlaneInfo.UPFs {
+						if upf == nil {
+							continue
 						}
-						go upf.InitPfcpHeartbeatRequest(userPlaneInfo)
-						go upf.ProbeInactiveUpfs(userPlaneInfo)
-					} else {
-						logger.AppLog.Warnln("UserPlaneInformation is nil, skipping PFCP association")
+						nodeID := upf.NodeID.ResolveNodeIdToIp()
+						if nodeID == nil {
+							logger.AppLog.Warnf("failed to resolve NodeId for UPF %v", upf)
+							continue
+						}
+						err = message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
+						if err != nil {
+							logger.AppLog.Warnf("failed to send PFCP Association Setup Request to UPF %v: %v", upf, err)
+						}
 					}
+					go upf.InitPfcpHeartbeatRequest(userPlaneInfo)
+					go upf.ProbeInactiveUpfs(userPlaneInfo)
+				} else {
+					logger.AppLog.Warnln("UserPlaneInformation is nil, skipping PFCP association")
 				}
 			}
 		}
@@ -362,13 +365,9 @@ func (smf *SMF) Start() {
 	sslLog := filepath.Dir(factory.SmfConfig.CfgLocation) + "/sslkey.log"
 	server, err := http2_util.NewServer(HTTPAddr, sslLog, router)
 
-	if server == nil {
-		logger.InitLog.Errorln("initialize HTTP server failed:", err)
+	if server == nil || err != nil {
+		logger.InitLog.Errorf("initialize HTTP server failed: %v", err)
 		return
-	}
-
-	if err != nil {
-		logger.InitLog.Warnln("initialize HTTP server:", err)
 	}
 
 	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
