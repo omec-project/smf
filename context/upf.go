@@ -249,12 +249,14 @@ func (upf *UPF) GetInterface(interfaceType models.UpInterfaceType, dnn string) *
 	switch interfaceType {
 	case models.UpInterfaceType_N3:
 		for i, iface := range upf.N3Interfaces {
+			logger.CtxLog.Debugf("Checking N3 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
 				return &upf.N3Interfaces[i]
 			}
 		}
 	case models.UpInterfaceType_N9:
 		for i, iface := range upf.N9Interfaces {
+			logger.CtxLog.Debugf("Checking N9 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
 				return &upf.N9Interfaces[i]
 			}

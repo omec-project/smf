@@ -259,7 +259,6 @@ func (smf *SMF) Start() {
 	registrationChan := make(chan []nfConfigApi.SessionManagement, 100)
 	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 100)
 	ctx, cancelServices := context.WithCancel(context.Background())
-	// Initialise channel to stop SMF
 	var wg sync.WaitGroup
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
@@ -325,7 +324,6 @@ func (smf *SMF) Start() {
 							} else {
 								logger.AppLog.Infof("PFCP Association Setup Request sent to UPF %v", upfNode)
 							}
-							// After sending, update UPF status to associated
 							upfNode.UPF.UpfLock.Lock()
 							upfNode.UPF.UPFStatus = smfContext.AssociatedSetUpSuccess
 							upfNode.UPF.UpfLock.Unlock()
