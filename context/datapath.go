@@ -116,14 +116,36 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 	var pdr *PDR
 	var flowQer *QER
 	logger.CtxLog.Debugln("in ActivateUpLinkTunnel")
-	node.UpLinkTunnel.SrcEndPoint = node.Prev()
-	node.UpLinkTunnel.DestEndPoint = node
+
+	if node.UPF == nil {
+		logger.CtxLog.Errorln("UPF is nil, cannot proceed with tunnel activation")
+		return fmt.Errorf("UPF is nil for node: %v", node)
+	}
+
+	if node.UpLinkTunnel == nil {
+		node.UpLinkTunnel = &GTPTunnel{PDR: make(map[string]*PDR)}
+	}
+
+	if node.UpLinkTunnel.SrcEndPoint == nil {
+		// If Prev() is nil, log it, and use the current node as the SrcEndPoint
+		if node.Prev() == nil {
+			logger.CtxLog.Warnln("Prev node is nil, using current node as SrcEndPoint")
+		}
+		node.UpLinkTunnel.SrcEndPoint = node.Prev()
+	}
+	if node.UpLinkTunnel.DestEndPoint == nil {
+		node.UpLinkTunnel.DestEndPoint = node
+	}
+
+	if node.UpLinkTunnel.SrcEndPoint == nil || node.UpLinkTunnel.DestEndPoint == nil {
+		logger.CtxLog.Errorln("After assignment, UpLinkTunnel endpoints are still nil")
+		return fmt.Errorf("invalid UpLinkTunnel endpoints after assignment for node: %v", node)
+	}
 
 	destUPF := node.UPF
 
 	// Iterate through PCC Rules to install PDRs
 	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
-
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 
@@ -160,10 +182,36 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	var err error
 	var pdr *PDR
 	var flowQer *QER
-	node.DownLinkTunnel.SrcEndPoint = node.Next()
-	node.DownLinkTunnel.DestEndPoint = node
+	logger.CtxLog.Debugln("in ActivateDownLinkTunnel")
+
+	if node.DownLinkTunnel == nil {
+		logger.CtxLog.Errorln("DownLinkTunnel is nil")
+		return fmt.Errorf("DownLinkTunnel is nil for node: %v", node)
+	}
+
+	// Initialize the UpLinkTunnel if it's nil
+	if node.UpLinkTunnel == nil {
+		node.UpLinkTunnel = &GTPTunnel{PDR: make(map[string]*PDR)}
+	}
+	// Ensure the SrcEndPoint and DestEndPoint for the UpLinkTunnel are set
+	if node.UpLinkTunnel.SrcEndPoint == nil {
+		// If Prev() is nil, log it, and use the current node as the SrcEndPoint
+		if node.Prev() == nil {
+			logger.CtxLog.Warnln("Prev node is nil, using current node as SrcEndPoint")
+		}
+		node.UpLinkTunnel.SrcEndPoint = node.Prev()
+	}
+	if node.UpLinkTunnel.DestEndPoint == nil {
+		node.UpLinkTunnel.DestEndPoint = node
+	}
+
+	if node.DownLinkTunnel.SrcEndPoint == nil || node.DownLinkTunnel.DestEndPoint == nil {
+		logger.CtxLog.Errorln("Source or Destination endpoint for DownLinkTunnel is nil")
+		return fmt.Errorf("invalid DownLinkTunnel endpoints for node: %v", node)
+	}
 
 	destUPF := node.UPF
+
 	// Iterate through PCC Rules to install PDRs
 	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
 	if pccRuleUpdate != nil {
@@ -192,9 +240,9 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	// Put PDRs in PFCP session
 	if err = smContext.PutPDRtoPFCPSession(destUPF.NodeID, node.DownLinkTunnel.PDR); err != nil {
 		logger.CtxLog.Errorln("put PDR error:", err)
-		return err
+		return fmt.Errorf("failed to put PDR in PFCP session: %v", err)
 	}
-
+	logger.CtxLog.Debugln("DownLinkTunnel successfully activated for node:", node)
 	return nil
 }
 
@@ -373,14 +421,12 @@ func (dataPath *DataPath) validateDataPathUpfStatus() error {
 			return errors.New("UPF not configured in DataPath")
 		}
 
-		var nodeIdStr, statusStr string
+		var nodeIdStr string
 		if curDataPathNode.UPF.NodeID.NodeIdValue != nil {
 			nodeIdStr = curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
-		} else {
-			nodeIdStr = "<nil>"
 		}
 
-		statusStr = curDataPathNode.UPF.UPFStatus.String()
+		statusStr := curDataPathNode.UPF.UPFStatus.String()
 		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]", nodeIdStr, statusStr)
 
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {

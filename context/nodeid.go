@@ -4,6 +4,7 @@
 package context
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -43,6 +44,13 @@ func NewNodeID(nodeID string) *NodeID {
 			NodeIdValue: ip.To16(),
 		}
 	}
+}
+
+func (n *NodeID) Equal(other NodeID) bool {
+	if n.NodeIdType != other.NodeIdType {
+		return false
+	}
+	return bytes.Equal(n.NodeIdValue, other.NodeIdValue)
 }
 
 func (n *NodeID) ResolveNodeIdToIp() net.IP {

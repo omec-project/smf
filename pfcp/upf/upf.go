@@ -26,6 +26,9 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 	// Iterate through all UPFs and send heartbeat to active UPFs
 	for {
 		time.Sleep(maxHeartbeatInterval * time.Second)
+		if userplane == nil {
+			continue
+		}
 		for _, upf := range userplane.UPFs {
 			upf.UPF.UpfLock.Lock()
 			if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
@@ -51,6 +54,9 @@ func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
 	// Iterate through all UPFs and send PFCP request to inactive UPFs
 	for {
 		time.Sleep(maxUpfProbeRetryInterval * time.Second)
+		if upfs == nil {
+			continue
+		}
 		for _, upf := range upfs.UPFs {
 			upf.UPF.UpfLock.Lock()
 			if upf.UPF.UPFStatus == context.NotAssociated {

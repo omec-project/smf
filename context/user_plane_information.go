@@ -279,6 +279,11 @@ func getOrCreateUpfNode(
 		return node
 	}
 
+	if !node.NodeID.Equal(nodeID) {
+		logger.CtxLog.Warnf("NodeID mismatch for UPF node '%s'. Existing NodeID: %v, New NodeID: %v", hostname, node.NodeID, nodeID)
+		return node
+	}
+
 	if node.UPF == nil {
 		node.UPF = &UPF{
 			NodeID:      nodeID,
@@ -286,11 +291,10 @@ func getOrCreateUpfNode(
 			SNssaiInfos: []SnssaiUPFInfo{},
 		}
 	}
-	node.NodeID = nodeID
-	node.UPF.NodeID = nodeID
 	node.Port = port
 	node.UPF.Port = port
 	updateSNssaiInfo(node, snssaiInfo)
+
 	return node
 }
 
@@ -352,18 +356,17 @@ func (upi *UserPlaneInformation) ResetDefaultUserPlanePath() {
 }
 
 func (upi *UserPlaneInformation) GetDefaultUserPlanePathByDNN(selection *UPFSelectionParams) (path UPPath) {
+	path, pathExist := upi.DefaultUserPlanePath[selection.String()]
 	logger.CtxLog.Debugln("in GetDefaultUserPlanePathByDNN")
 	logger.CtxLog.Debugln("selection:", selection.String())
-
-	path, pathExist := upi.DefaultUserPlanePath[selection.String()]
 	if pathExist {
-		return path
+		return
+	} else {
+		pathExist = upi.GenerateDefaultPath(selection)
+		if pathExist {
+			return upi.DefaultUserPlanePath[selection.String()]
+		}
 	}
-
-	if upi.GenerateDefaultPath(selection) {
-		return upi.DefaultUserPlanePath[selection.String()]
-	}
-
 	return nil
 }
 
@@ -450,6 +453,7 @@ func GenerateDataPath(upPath UPPath) *DataPath {
 	var prevDataPathNode *DataPathNode
 
 	for _, upNode := range upPath {
+		logger.CtxLog.Debugf("GenerateDataPath: processing node %+v", upNode)
 		if upNode.Type != UPNODE_UPF || upNode.UPF == nil {
 			logger.CtxLog.Debugf("generateDataPath: skipping non-UPF node: %v", upNode.NodeID)
 			continue
@@ -490,7 +494,8 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 	}
 
 	destinations = upi.selectMatchUPF(selection)
-
+	logger.CtxLog.Debugf("destinations: %+v", destinations)
+	logger.CtxLog.Debugf("selectionParams: %+v, count: %d", selection, len(destinations))
 	if len(destinations) == 0 {
 		logger.CtxLog.Errorf("can not find UPF with DNN[%s] S-NSSAI[sst: %d sd: %s] DNAI[%s]", selection.Dnn,
 			selection.SNssai.Sst, selection.SNssai.Sd, selection.Dnai)
@@ -515,6 +520,8 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 					path = path[1:]
 				}
 				upi.DefaultUserPlanePath[selection.String()] = path
+				logger.CtxLog.Debugf("path successfully generated:")
+				logger.CtxLog.Debugf("path: %+v, upf: %s, anName: %s", path, string(destinations[0].NodeID.NodeIdValue), anName)
 				break
 			} else {
 				logger.CtxLog.Debugf("no path between an-node[%v] and upf[%v]", anName, string(destinations[0].NodeID.NodeIdValue))
@@ -673,7 +680,6 @@ func (upi *UserPlaneInformation) UpdateSmfUserPlaneNode(name string, newNode *fa
 
 	existingNode, exists := upi.UPNodes[name]
 	if !exists {
-		logger.UPNodeLog.Errorf("UPNode [%s] does not exist", name)
 		return fmt.Errorf("UPNode [%s] does not exist", name)
 	}
 

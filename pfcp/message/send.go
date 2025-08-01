@@ -153,6 +153,7 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, addr, nil, UPFAdapterURL); err != nil {
+			logger.PfcpLog.Errorf("send pfcp association msg to upf-adapter error [%v]", err.Error())
 			return err
 		} else {
 			logger.PfcpLog.Debugf("send pfcp association response [%v]", rsp)

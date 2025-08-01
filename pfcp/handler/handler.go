@@ -203,9 +203,10 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	logger.PfcpLog.Infoln("handle PFCP Association Setup Response")
 
 	nodeIDIE := rsp.NodeID
+	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with NodeID[%+v]", nodeIDIE)
 
 	if nodeIDIE == nil {
-		logger.PfcpLog.Errorln("pfcp association needs NodeID")
+		logger.PfcpLog.Errorln("pfcp association setup response has no NodeID")
 		return
 	}
 
@@ -220,9 +221,8 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
 		return
 	}
+	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with Cause[%v]", causeValue)
 	if causeValue == ie.CauseRequestAccepted {
-		logger.PfcpLog.Infof("handle PFCP Association Setup Response with NodeID[%s]", nodeIDStr)
-
 		// Get NodeId from Seq:NodeId Map
 		seq := rsp.Sequence()
 		nodeID := pfcp_message.FetchPfcpTxn(seq)
@@ -234,14 +234,18 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		}
 
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
+		logger.PfcpLog.Debugf("handle PFCP Association Setup Response with UPF[%+v]", upf)
 		if upf == nil {
-			logger.PfcpLog.Errorf("can not find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+			logger.PfcpLog.Errorf("cannot find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
 		}
 
 		upf.UpfLock.Lock()
 		defer upf.UpfLock.Unlock()
+
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
+		logger.PfcpLog.Infof("UPF status updated to %v for NodeID[%s]", upf.UPFStatus, nodeIDStr)
+
 		recoveryTimestamp, err := rsp.RecoveryTimeStamp.RecoveryTimeStamp()
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
@@ -250,15 +254,15 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		upf.RecoveryTimeStamp = smf_context.RecoveryTimeStamp{
 			RecoveryTimeStamp: recoveryTimestamp,
 		}
-		upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
+		upf.NHeartBeat = 0
 
 		if *factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
-			// Send Metric event
 			upfStatus := mi.MetricEvent{
 				EventType: mi.CNfStatusEvt,
 				NfStatusData: mi.CNfStatus{
 					NfType:   mi.NfTypeUPF,
-					NfStatus: mi.NfStatusConnected, NfName: string(upf.NodeID.NodeIdValue),
+					NfStatus: mi.NfStatusConnected,
+					NfName:   string(upf.NodeID.NodeIdValue),
 				},
 			}
 			err := metrics.StatWriter.PublishNfStatusEvent(upfStatus)
@@ -267,7 +271,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 			}
 		}
 
-		// Supported Features of UPF
 		if rsp.UPFunctionFeatures != nil {
 			UPFunctionFeatures, err := ies.UnmarshallUserPlaneFunctionFeatures(rsp.UPFunctionFeatures.Payload)
 			if err != nil {

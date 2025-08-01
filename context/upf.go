@@ -290,7 +290,7 @@ func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 		}
 		return true
 	})
-
+	logger.CtxLog.Debugf("retrieveUPF - targetUPF:[%+v]", targetUPF)
 	return targetUPF
 }
 
