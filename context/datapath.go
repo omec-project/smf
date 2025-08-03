@@ -599,26 +599,17 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 
 		if nextULDest := dpNode.Next(); nextULDest != nil {
 			nextULTunnel := nextULDest.UpLinkTunnel
-			if nextULTunnel.DestEndPoint == nil {
-				logger.CtxLog.Errorf("nextULDest's DestEndPoint is nil for UpLink PDR[%v]", name)
-				return fmt.Errorf("nextULDest's DestEndPoint is nil for UpLink PDR[%v]", name)
-			}
+			iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 
-			if iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn); iface != nil {
-				upIP, err := iface.IP(smContext.SelectedPDUSessionType)
-				if err != nil {
-					logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)
-					return err
-				}
-
+			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
+				logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)
+				return err
+			} else {
 				ULFAR.ForwardingParameters.OuterHeaderCreation = &OuterHeaderCreation{
 					OuterHeaderCreationDescription: OuterHeaderCreationGtpUUdpIpv4,
 					Ipv4Address:                    upIP,
 					Teid:                           nextULTunnel.TEID,
 				}
-			} else {
-				logger.CtxLog.Errorf("No interface found for UPF in next destination for UpLink PDR[%v]", name)
-				return fmt.Errorf("No interface found for UPF in next destination for UpLink PDR[%v]", name)
 			}
 		}
 		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ULPDR)
@@ -679,10 +670,6 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 			}
 
 			iface = nextDLDest.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
-			if iface == nil {
-				logger.CtxLog.Errorf("Failed to get interface for UPF %v, DNN: %v", nextDLDest.UPF.NodeID.ResolveNodeIdToIp().String(), smContext.Dnn)
-				return fmt.Errorf("failed to get interface for UPF %v, DNN: %v", nextDLDest.UPF.NodeID.ResolveNodeIdToIp().String(), smContext.Dnn)
-			}
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v", name, err)
@@ -711,8 +698,6 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = OuterHeaderCreationGtpUUdpIpv4
 				dlOuterHeaderCreation.Teid = smContext.Tunnel.ANInformation.TEID
 				dlOuterHeaderCreation.Ipv4Address = smContext.Tunnel.ANInformation.IPAddress.To4()
-			} else {
-				logger.CtxLog.Warnln("ANInformation IPAddress is nil, skipping Downlink PDR creation for DNN:", smContext.Dnn)
 			}
 		}
 		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v]", name, DLPDR)
