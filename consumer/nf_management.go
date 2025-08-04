@@ -309,6 +309,7 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 				SubscrCond: &models.NfInstanceIdCond{NfInstanceId: nfProfile.NfInstanceId},
 				ReqNfType:  requestNfType,
 			}
+			logger.ConsumerLog.Debugf("Preparing NRF Subscription to %s with payload: %+v", nrfUri, nrfSubscriptionData)
 			nrfSubData, problemDetails, err := SendCreateSubscription(nrfUri, nrfSubscriptionData)
 			if problemDetails != nil {
 				logger.ConsumerLog.Errorf("SendCreateSubscription to NRF, Problem[%+v]", problemDetails)

@@ -9,14 +9,12 @@ package context
 import (
 	"errors"
 	"fmt"
-	"strconv"
-	"sync"
-
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/util_3gpp"
+	"strconv"
 )
 
 // GTPTunnel represents the GTP tunnel information
@@ -369,21 +367,11 @@ func (dataPath *DataPath) String() string {
 func (dataPath *DataPath) validateDataPathUpfStatus() error {
 	firstDPNode := dataPath.FirstDPNode
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-		if curDataPathNode.UPF == nil {
-			logger.PduSessLog.Errorf("DataPathNode missing UPF configuration")
-			return errors.New("UPF not configured in DataPath")
-		}
-
-		var nodeIdStr string
-		if curDataPathNode.UPF.NodeID.NodeIdValue != nil {
-			nodeIdStr = curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
-		}
-
-		statusStr := curDataPathNode.UPF.UPFStatus.String()
-		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]", nodeIdStr, statusStr)
-
+		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]",
+			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus.String())
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
-			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated", nodeIdStr)
+			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
+				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
 			return errors.New("UPF not associated in DataPath")
 		}
 	}
@@ -394,33 +382,17 @@ func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
 	firstDPNode := dataPath.FirstDPNode
 	logger.PduSessLog.Debugln("in ActivateTunnelAndPDR")
 	logger.PduSessLog.Debugln(dataPath.String())
-
-	var wg sync.WaitGroup
-	var err error
-
+	// Activate Tunnels
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-		wg.Add(1)
-		go func(node *DataPathNode) {
-			defer wg.Done()
-
-			logger.PduSessLog.Debugln("current DP Node IP:", node.UPF.NodeID.ResolveNodeIdToIp())
-
-			if err := node.ActivateUpLinkTunnel(smContext); err != nil {
-				logger.CtxLog.Warnln("Error activating UpLinkTunnel:", err)
-				return
-			}
-
-			if err := node.ActivateDownLinkTunnel(smContext); err != nil {
-				logger.CtxLog.Warnln("Error activating DownLinkTunnel:", err)
-				return
-			}
-		}(curDataPathNode)
-	}
-
-	wg.Wait()
-
-	if err != nil {
-		return fmt.Errorf("failed to activate tunnels for data path: %v", err)
+		logger.PduSessLog.Debugln("current DP Node IP:", curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
+		if err := curDataPathNode.ActivateUpLinkTunnel(smContext); err != nil {
+			logger.CtxLog.Warnln(err)
+			return err
+		}
+		if err := curDataPathNode.ActivateDownLinkTunnel(smContext); err != nil {
+			logger.CtxLog.Warnln(err)
+			return err
+		}
 	}
 	return nil
 }

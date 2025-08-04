@@ -177,6 +177,12 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 				Endpoints:       []string{ipStr},
 			}
 			interfaceInfoList = append(interfaceInfoList, n3)
+			n9 := factory.InterfaceUpfInfoItem{
+				InterfaceType:   models.UpInterfaceType_N9,
+				NetworkInstance: ipDomain.DnnName,
+				Endpoints:       []string{ipStr},
+			}
+			interfaceInfoList = append(interfaceInfoList, n9)
 		}
 		if sm.Upf.Port != nil {
 			node.Port = resolvePfcpPort(*sm.Upf.Port)
