@@ -256,7 +256,6 @@ func (upf *UPF) GetInterface(interfaceType models.UpInterfaceType, dnn string) *
 		}
 	case models.UpInterfaceType_N9:
 		for i, iface := range upf.N9Interfaces {
-			logger.CtxLog.Debugf("Available N9 interface: %+v", iface)
 			logger.CtxLog.Debugf("Checking N9 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
 				return &upf.N9Interfaces[i]

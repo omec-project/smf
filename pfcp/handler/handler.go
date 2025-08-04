@@ -9,6 +9,8 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net"
+
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -21,7 +23,6 @@ import (
 	mi "github.com/omec-project/util/metricinfo"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
-	"net"
 )
 
 func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {
@@ -243,7 +244,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		defer upf.UpfLock.Unlock()
 
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
-		logger.PfcpLog.Infof("UPF status updated to %v for NodeID[%s]", upf.UPFStatus, nodeIDStr)
+		logger.PfcpLog.Infof("upf status updated to %v for NodeID[%s]", upf.UPFStatus, nodeIDStr)
 
 		recoveryTimestamp, err := rsp.RecoveryTimeStamp.RecoveryTimeStamp()
 		if err != nil {

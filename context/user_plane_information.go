@@ -107,7 +107,7 @@ func convertSnssaiInfoToModel(snssaiInfo SnssaiUPFInfo) models.SnssaiUpfInfoItem
 			Sst: snssaiInfo.SNssai.Sst,
 			Sd:  snssaiInfo.SNssai.Sd,
 		},
-		DnnUpfInfoList: convertDnnUpfInfoToModel(snssaiInfo.DnnList), // Assuming a similar conversion for DNNs
+		DnnUpfInfoList: convertDnnUpfInfoToModel(snssaiInfo.DnnList),
 	}
 }
 
@@ -144,13 +144,10 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			continue
 		}
 		upfName := sm.Upf.GetHostname()
-		logger.CtxLog.Infof("creating UPF node: %s", upfName)
 		nodeID := CreateNodeIDFromHostname(upfName)
-		logger.CtxLog.Infof("creating UPF node: %s, IP: %s", upfName, nodeID.ResolveNodeIdToIp().String())
 		snssai := sm.GetSnssai()
-		logger.CtxLog.Infof("creating UPF node: %s, SNSSAI: %+v", upfName, snssai)
 		dnnList := convertIpDomainsToDnnList(sm.IpDomain)
-		logger.CtxLog.Infof("creating UPF node: %s, DNNs: %+v", upfName, dnnList)
+		logger.CtxLog.Infof("creating UPF node: %s, nodeID: %+v, DNNs: %+v, SNSSAI: %+v", upfName, nodeID, dnnList, snssai)
 		snssaiInfo := SnssaiUPFInfo{
 			SNssai: SNssai{
 				Sst: snssai.GetSst(),
@@ -159,10 +156,7 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			DnnList: dnnList,
 		}
 		snssaiInfoModel := convertSnssaiInfoToModel(snssaiInfo)
-
-		logger.CtxLog.Infof("creating UPF node: %s, SNSSAI: %+v, DNNs: %+v", upfName, snssai, dnnList)
 		nodeIDStr := string(nodeID.NodeIdValue)
-		logger.CtxLog.Infof("creating UPF node: %s, IP: %s, ID: %s", upfName, nodeID.ResolveNodeIdToIp().String(), nodeIDStr)
 		node := &factory.UPNode{
 			NodeID:      nodeIDStr,
 			SNssaiInfos: []models.SnssaiUpfInfoItem{snssaiInfoModel},
@@ -190,12 +184,8 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 			node.Port = DefaultPfcpPort
 		}
 		node.InterfaceUpfInfoList = interfaceInfoList
-		upfNode, err := getOrCreateUpfNode(existing, upfName, node)
-		if err != nil {
-			logger.CtxLog.Errorf("Error creating or getting UPF node: %v", err)
-			return nil
-		}
-		logger.CtxLog.Infof("creating UPF node: %s, IP: %s, ID: %s, UPF: %+v", upfName, nodeID.ResolveNodeIdToIp().String(), nodeIDStr, upfNode.UPF)
+		upfNode := getOrCreateUpfNode(existing, upfName, node)
+		logger.CtxLog.Infof("UPF node details: %s, IP: %s, ID: %s, UPF: %+v", upfName, nodeID.ResolveNodeIdToIp().String(), nodeIDStr, upfNode.UPF)
 
 		existing.UPFs[upfName] = upfNode
 		existing.UPNodes[upfName] = upfNode
@@ -326,13 +316,13 @@ func nodeInLinks(links []*UPNode, node *UPNode) bool {
 	return false
 }
 
-func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *factory.UPNode) (*UPNode, error) {
+func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *factory.UPNode) *UPNode {
 	upNode, exists := existing.UPNodes[name]
 	if exists {
 		for _, newSnssaiInfo := range node.SNssaiInfos {
 			updateSNssaiInfo(upNode, newSnssaiInfo)
 		}
-		return upNode, nil
+		return upNode
 	}
 
 	upNode = new(UPNode)
@@ -418,7 +408,7 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 	ipStr := upNode.NodeID.ResolveNodeIdToIp().String()
 	existing.UPFIPToName[ipStr] = name
 
-	return upNode, nil
+	return upNode
 }
 
 func resolvePfcpPort(p int32) uint16 {
@@ -499,7 +489,6 @@ func (upi *UserPlaneInformation) ExistDefaultPath(dnn string) bool {
 }
 
 // Reset clears all internal state of the UserPlaneInformation structure.
-// This is useful when rebuilding from scratch (on dynamic config reload).
 func (upi *UserPlaneInformation) Reset() {
 	upi.UPNodes = make(map[string]*UPNode)
 	upi.UPFs = make(map[string]*UPNode)
@@ -576,7 +565,7 @@ func GenerateDataPath(upPath UPPath) *DataPath {
 	var prevDataPathNode *DataPathNode
 
 	for _, upNode := range upPath {
-		logger.CtxLog.Debugf("GenerateDataPath: processing node %+v", upNode)
+		logger.CtxLog.Debugf("generateDataPath: processing node %+v", upNode)
 		if upNode.Type != UPNODE_UPF || upNode.UPF == nil {
 			logger.CtxLog.Debugf("generateDataPath: skipping non-UPF node: %v", upNode.NodeID)
 			continue
@@ -616,7 +605,7 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 		return false
 	}
 	logger.CtxLog.Infof("UPFs registered: %v", upi.UPFs)
-	logger.CtxLog.Infof("AccessNetworks registered: %v", upi.AccessNetwork)
+	logger.CtxLog.Infof("accessNetworks registered: %v", upi.AccessNetwork)
 	destinations = upi.selectMatchUPF(selection)
 	logger.CtxLog.Debugf("destinations: %+v", destinations)
 	logger.CtxLog.Debugf("selectionParams: %+v, count: %d", selection, len(destinations))
@@ -644,8 +633,7 @@ func (upi *UserPlaneInformation) GenerateDefaultPath(selection *UPFSelectionPara
 					path = path[1:]
 				}
 				upi.DefaultUserPlanePath[selection.String()] = path
-				logger.CtxLog.Debugf("path successfully generated:")
-				logger.CtxLog.Debugf("path: %+v, upf: %s, anName: %s", path, string(destinations[0].NodeID.NodeIdValue), anName)
+				logger.CtxLog.Debugf("path successfully generated: path: %+v, upf: %s, anName: %s", path, string(destinations[0].NodeID.NodeIdValue), anName)
 				break
 			} else {
 				logger.CtxLog.Debugf("no path between an-node[%v] and upf[%v]", anName, string(destinations[0].NodeID.NodeIdValue))
@@ -661,7 +649,7 @@ func (upi *UserPlaneInformation) selectMatchUPF(selection *UPFSelectionParams) [
 	upList := make([]*UPNode, 0)
 
 	for _, upNode := range upi.UPFs {
-		logger.CtxLog.Debugf("Checking UPF: %+v", upNode)
+		logger.CtxLog.Debugf("checking UPF: %+v", upNode)
 		for _, snssaiInfo := range upNode.UPF.SNssaiInfos {
 			logger.CtxLog.Debugf("SNssai: %+v", snssaiInfo.SNssai)
 			currentSnssai := &snssaiInfo.SNssai

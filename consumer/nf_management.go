@@ -261,7 +261,7 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 	result, httpResp, localErr := smfContext.SMF_Self().
 		NFDiscoveryClient.
 		NFInstancesStoreApi.
-		SearchNFInstances(context.TODO(), targetNfType, requestNfType, param)
+		SearchNFInstances(ctx, targetNfType, requestNfType, param)
 
 	svcMsgType := getSvcMsgType(targetNfType)
 

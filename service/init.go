@@ -332,7 +332,6 @@ func (smf *SMF) Start() {
 						} else {
 							logger.AppLog.Debugf("UPF %v already associated, skipping PFCP request", upfNode)
 						}
-
 					}
 				} else {
 					logger.AppLog.Warnln("UserPlaneInformation is nil, skipping PFCP association")

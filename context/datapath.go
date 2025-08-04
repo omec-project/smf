@@ -7,14 +7,14 @@
 package context
 
 import (
-	"errors"
 	"fmt"
+	"strconv"
+
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/util_3gpp"
-	"strconv"
 )
 
 // GTPTunnel represents the GTP tunnel information
@@ -372,7 +372,7 @@ func (dataPath *DataPath) validateDataPathUpfStatus() error {
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
 			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
 				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
-			return errors.New("UPF not associated in DataPath")
+			return fmt.Errorf("UPF not associated in DataPath")
 		}
 	}
 	return nil
@@ -566,7 +566,6 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 
 		logger.PduSessLog.Debugln("current DP Node IP:", dpNode.UPF.NodeID.ResolveNodeIdToIp().String())
 		logger.PduSessLog.Debugln("before DLPDR OuterHeaderCreation")
-
 		if nextDLDest := dpNode.Prev(); nextDLDest != nil {
 			logger.PduSessLog.Debugln("in DLPDR OuterHeaderCreation")
 			nextDLTunnel := nextDLDest.DownLinkTunnel

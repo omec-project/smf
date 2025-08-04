@@ -270,7 +270,6 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		t.Fatalf("expected 2 registrations, got %d", len(registrations))
 	}
 
-	// check first context is cancelled
 	select {
 	case <-registrations[0].ctx.Done():
 		// expected
@@ -278,7 +277,6 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		t.Error("expected first registration context to be cancelled")
 	}
 
-	// check second context is NOT cancelled
 	select {
 	case <-registrations[1].ctx.Done():
 		t.Error("second registration context should not be cancelled")

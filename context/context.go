@@ -90,6 +90,7 @@ type SMFContext struct {
 	ULCLSupport bool
 }
 
+// RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
 func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
 	lookup := SNssai{Sst: snssai.Sst, Sd: snssai.Sd}
 	for _, snssaiInfo := range SMF_Self().SnssaiInfos {
