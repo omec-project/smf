@@ -341,10 +341,9 @@ func (smf *SMF) Start() {
 		}
 	}()
 	go func() {
-		if smfSelf.UserPlaneInformation != nil {
-			go upf.InitPfcpHeartbeatRequest(smfSelf.UserPlaneInformation)
-			go upf.ProbeInactiveUpfs(smfSelf.UserPlaneInformation)
-		}
+		logger.InitLog.Infoln("InitPfcpAssociationRequest")
+		go upf.InitPfcpHeartbeatRequest()
+		go upf.ProbeInactiveUpfs()
 	}()
 	router := utilLogger.NewGinWithZap(logger.GinLog)
 	oam.AddService(router)

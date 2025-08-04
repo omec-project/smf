@@ -9,8 +9,6 @@ package handler
 import (
 	"context"
 	"fmt"
-	"net"
-
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -23,6 +21,7 @@ import (
 	mi "github.com/omec-project/util/metricinfo"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
+	"net"
 )
 
 func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {

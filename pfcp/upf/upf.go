@@ -22,10 +22,11 @@ const (
 	maxUpfProbeRetryInterval = 10 // sec
 )
 
-func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
+func InitPfcpHeartbeatRequest() {
 	// Iterate through all UPFs and send heartbeat to active UPFs
 	for {
 		time.Sleep(maxHeartbeatInterval * time.Second)
+		userplane := context.SMF_Self().UserPlaneInformation
 		if userplane == nil {
 			continue
 		}
@@ -50,10 +51,11 @@ func InitPfcpHeartbeatRequest(userplane *context.UserPlaneInformation) {
 	}
 }
 
-func ProbeInactiveUpfs(upfs *context.UserPlaneInformation) {
+func ProbeInactiveUpfs() {
 	// Iterate through all UPFs and send PFCP request to inactive UPFs
 	for {
 		time.Sleep(maxUpfProbeRetryInterval * time.Second)
+		upfs := context.SMF_Self().UserPlaneInformation
 		if upfs == nil {
 			continue
 		}
