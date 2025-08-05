@@ -79,7 +79,7 @@ func NewUEPreConfigPaths(supi string, paths []factory.Path) (*UEPreConfigPaths, 
 			parentNode = newUeNode
 		}
 
-		logger.CtxLog.Debugf("Added preconfig data path (pathID=%d) for SUPI %s: %s", pathID, supi, dataPath.String())
+		logger.CtxLog.Debugf("added preconfig data path (pathID=%d) for SUPI %s: %s", pathID, supi, dataPath.String())
 		dataPathPool[pathID] = dataPath
 	}
 

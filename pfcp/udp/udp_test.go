@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -124,11 +123,11 @@ func TestRun(t *testing.T) {
 func TestServerSendPfcp(t *testing.T) {
 	localAddress := &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
-		Port: factory.DEFAULT_PFCP_PORT,
+		Port: int(context.DefaultPfcpPort),
 	}
 	remoteAddress := &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
-		Port: factory.DEFAULT_PFCP_PORT,
+		Port: int(context.DefaultPfcpPort),
 	}
 
 	msg := message.NewAssociationSetupResponse(1)
@@ -158,7 +157,7 @@ func TestServerNotSetSendPfcp(t *testing.T) {
 	udp.Server = nil
 	remoteAddress := &net.UDPAddr{
 		IP:   net.ParseIP("127.0.0.1"),
-		Port: factory.DEFAULT_PFCP_PORT,
+		Port: int(context.DefaultPfcpPort),
 	}
 
 	msg := message.NewAssociationSetupResponse(1)

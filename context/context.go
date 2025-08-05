@@ -88,10 +88,18 @@ type SMFContext struct {
 
 	// For ULCL
 	ULCLSupport bool
+	mu          sync.RWMutex
 }
+
+func (s *SMFContext) Lock()    { s.mu.Lock() }
+func (s *SMFContext) Unlock()  { s.mu.Unlock() }
+func (s *SMFContext) RLock()   { s.mu.RLock() }
+func (s *SMFContext) RUnlock() { s.mu.RUnlock() }
 
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
 func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
 	lookup := SNssai{Sst: snssai.Sst, Sd: snssai.Sd}
 	for _, snssaiInfo := range SMF_Self().SnssaiInfos {
 		if snssaiInfo.Snssai.Equal(&lookup) {
@@ -117,6 +125,8 @@ func AllocateLocalSEID() (uint64, error) {
 
 		return uint64(seid32), nil
 	} else {
+		smfContext.Lock()
+		defer smfContext.Unlock()
 		atomic.AddUint64(&smfContext.LocalSEIDCount, 1)
 		return smfContext.LocalSEIDCount, nil
 	}
@@ -127,11 +137,12 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		logger.CtxLog.Error("Config is nil")
 		return nil
 	}
-
 	// Acquire master SMF config lock, no one should update it in parallel
 	// until SMF is done updating SMF context
 	factory.SmfConfigSyncLock.Lock()
 	defer factory.SmfConfigSyncLock.Unlock()
+	smfContext.Lock()
+	defer smfContext.Unlock()
 
 	logger.CtxLog.Infof("smfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
@@ -202,7 +213,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	if pfcp := configuration.PFCP; pfcp != nil {
 		if pfcp.Port == 0 {
-			pfcp.Port = factory.DEFAULT_PFCP_PORT
+			pfcp.Port = DefaultPfcpPort
 		}
 		pfcpAddrEnv := os.Getenv(pfcp.Addr)
 		if pfcpAddrEnv != "" {
@@ -287,10 +298,14 @@ func SMF_Self() *SMFContext {
 }
 
 func GetUserPlaneInformation() *UserPlaneInformation {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
 	return smfContext.UserPlaneInformation
 }
 
 func (smfCtxt *SMFContext) Clear() {
+	smfContext.Lock()
+	defer smfContext.Unlock()
 	smfCtxt.SnssaiInfos = nil
 	if smfCtxt.UserPlaneInformation == nil {
 		smfCtxt.UserPlaneInformation = &UserPlaneInformation{}
@@ -299,6 +314,8 @@ func (smfCtxt *SMFContext) Clear() {
 }
 
 func (smfCtxt *SMFContext) ExtractExistingUPFs() map[string]*UPNode {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
 	existing := make(map[string]*UPNode)
 	if smfCtxt.UserPlaneInformation == nil {
 		return existing
@@ -332,7 +349,7 @@ func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factor
 		if subnet := ipdomain.GetUeSubnet(); subnet != "" {
 			allocator, err := NewIPAllocator(subnet)
 			if err != nil {
-				logger.CtxLog.Warnf("Invalid subnet %s for DNN %s: %v", subnet, dnn, err)
+				logger.CtxLog.Warnf("invalid subnet %s for DNN %s: %v", subnet, dnn, err)
 			} else {
 				dnnInfo.UeIPAllocator = allocator
 				reserveStaticIpsIfNeeded(allocator, staticIpInfo, dnn)
@@ -359,6 +376,8 @@ func reserveStaticIpsIfNeeded(allocator *IPAllocator, static []factory.StaticIpI
 }
 
 func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
+	smContext.Lock()
+	defer smContext.Unlock()
 	logger.CtxLog.Infoln("processing config update from polling service")
 	if len(newConfig) == 0 {
 		logger.CtxLog.Warnln("received empty session management config, skipping update")

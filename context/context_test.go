@@ -15,10 +15,10 @@ import (
 func makeSessionConfig(
 	sliceName, mcc, mnc, sst string,
 	sd string, dnnName, ueSubnet, hostname string, port int32,
-) (nfConfigApi.SessionManagement, error) {
+) nfConfigApi.SessionManagement {
 	sstUint64, err := strconv.ParseUint(sst, 10, 8)
 	if err != nil {
-		return nfConfigApi.SessionManagement{}, fmt.Errorf("invalid SST value '%s': %w", sst, err)
+		sstUint64 = 0
 	}
 	sstint := int32(sstUint64)
 
@@ -45,18 +45,15 @@ func makeSessionConfig(
 			Port:     &port,
 		},
 		GnbNames: []string{"gnb1", "gnb2"},
-	}, nil
+	}
 }
 
 func TestUpdateSmfContext(t *testing.T) {
-	validSingleSliceConfig, err := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412)
-	if err != nil {
-		t.Fatalf("failed to create session config: %v", err)
-	}
+	validSingleSliceConfig := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412)
 
 	multiSliceConfig := []nfConfigApi.SessionManagement{
-		mustMakeSessionConfig(t, "slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
-		mustMakeSessionConfig(t, "slice2", "111", "01", "1", "1", "fast", "192.168.2.0/24", "upf-2", 38412),
+		makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
+		makeSessionConfig("slice2", "111", "01", "1", "1", "fast", "192.168.2.0/24", "upf-2", 38412),
 	}
 
 	tests := []struct {
@@ -138,13 +135,4 @@ func TestUpdateSmfContext(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustMakeSessionConfig(t *testing.T, sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname string, port int32) nfConfigApi.SessionManagement {
-	t.Helper()
-	cfg, err := makeSessionConfig(sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname, port)
-	if err != nil {
-		t.Fatalf("failed to create config for %s: %v", sliceName, err)
-	}
-	return cfg
 }

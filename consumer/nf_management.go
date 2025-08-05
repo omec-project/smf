@@ -101,7 +101,7 @@ func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
 	smfInfo := models.SmfInfo{SNssaiSmfInfoList: &snssaiSmfInfoList}
 
 	if b, err := json.MarshalIndent(smfInfo, "", "  "); err == nil {
-		logger.CtxLog.Debugf("Returning SmfInfo:\n%s", string(b))
+		logger.CtxLog.Debugf("Returning SmfInfo: %s", string(b))
 	} else {
 		logger.CtxLog.Errorf("Failed to marshal SmfInfo: %v", err)
 	}

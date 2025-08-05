@@ -130,7 +130,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		}
 
 		upf.UPFStatus = context.AssociatedSetUpSuccess
-		logger.PfcpLog.Debugln("upf status updated to associated: %v+", upf.UPFStatus)
+		logger.PfcpLog.Debugln("upf status updated to associated: %+v", upf.UPFStatus)
 		if rsp.RecoveryTimeStamp == nil {
 			logger.PfcpLog.Errorln("pfcp association setup response has no RecoveryTimeStamp")
 			return

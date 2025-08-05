@@ -15,6 +15,7 @@ import (
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
+	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 )
 
@@ -37,26 +38,26 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 	var registerCancel context.CancelFunc
 	var registerCtx context.Context
 	lastRegisteredConfig := []nfConfigApi.SessionManagement{}
-	logger.NrfRegistrationLog.Infoln("started NF registration to NRF service")
+	nfInstanceID := smf_context.SMF_Self().NfInstanceID
+	logger.NrfRegistrationLog.Infof("SMF[%s]: register to NRF service started", nfInstanceID)
 	for {
 		select {
 		case <-ctx.Done():
 			if registerCancel != nil {
 				registerCancel()
 			}
-			logger.NrfRegistrationLog.Infoln("NF registration service shutting down")
+			logger.NrfRegistrationLog.Infof("SMF[%s]: NF registration service shutting down", nfInstanceID)
 			return
 
 		case newConfig := <-sessionManagementConfigChan:
 			if len(newConfig) == 0 {
-				logger.NrfRegistrationLog.Debugln("session management config is empty. SMF will deregister")
+				logger.NrfRegistrationLog.Debugf("SMF[%s]: session management config is empty. SMF will deregister", nfInstanceID)
 				DeregisterNF()
 				lastRegisteredConfig = nil
 				continue
 			}
 			if IsRegistrationRequired(newConfig, lastRegisteredConfig) {
-				logger.NrfRegistrationLog.Debugln("detected changes in NF profile relevant config. Registering...")
-
+				logger.NrfRegistrationLog.Debugf("SMF[%s]: detected changes in NF profile relevant config. Registering...", nfInstanceID)
 				if registerCancel != nil {
 					registerCancel()
 				}
@@ -69,7 +70,7 @@ func StartNfRegistrationService(ctx context.Context, sessionManagementConfigChan
 				}
 				lastRegisteredConfig = copyConfig
 			} else {
-				logger.NrfRegistrationLog.Debugln("no changes in NF profile relevant config. Skipping re-registration...")
+				logger.NrfRegistrationLog.Debugf("SMF[%s]: no changes in NF profile relevant config. Skipping re-registration.", nfInstanceID)
 			}
 		}
 	}
@@ -125,12 +126,17 @@ var registerNF = func(registerCtx context.Context, newSessionManagementConfig []
 	registerCtxMutex.Lock()
 	defer registerCtxMutex.Unlock()
 	interval := 0 * time.Millisecond
+	nfInstanceID := smf_context.SMF_Self().NfInstanceID
 	for {
 		select {
 		case <-registerCtx.Done():
 			logger.NrfRegistrationLog.Infoln("no-op. Registration context was cancelled")
 			return
 		case <-time.After(interval):
+			if registerCtx.Err() != nil {
+				logger.NrfRegistrationLog.Infof("SMF[%s]: registration aborted just before sending RegisterNFInstance", nfInstanceID)
+				return
+			}
 			nfProfile, _, err := consumer.SendRegisterNFInstance(newSessionManagementConfig)
 			if err != nil {
 				logger.NrfRegistrationLog.Errorln("register SMF instance to NRF failed. Will retry.", err.Error())

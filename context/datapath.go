@@ -650,7 +650,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		// Setup UpLink PDR
 		if curDataPathNode.UpLinkTunnel != nil {
 			if err := curDataPathNode.ActivateUpLinkPdr(smContext, defQER, precedence); err != nil {
-				logger.CtxLog.Errorf("failed to activate UpLink PDR for node %v: %v", curDataPathNode.GetNodeIP(), err)
+				logger.CtxLog.Errorf("failed to activate UpLink PDR for node %v: %+v", curDataPathNode.GetNodeIP(), err)
 			}
 		}
 
@@ -681,7 +681,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	}
 
 	dataPath.Activated = true
-	logger.CtxLog.Debugln("DataPath successfully activated")
+	logger.CtxLog.Debugln("dataPath successfully activated.")
 	return nil
 }
 
