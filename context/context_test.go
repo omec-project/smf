@@ -49,7 +49,7 @@ func makeSessionConfig(
 }
 
 func TestUpdateSmfContext(t *testing.T) {
-	validSingleSliceConfig := makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412)
+	validSingleSliceConfig := makeSessionConfig("slice1", "222", "02", "2", "1", "internet", "192.168.1.0/24", "upf-1", 38415)
 
 	multiSliceConfig := []nfConfigApi.SessionManagement{
 		makeSessionConfig("slice1", "111", "01", "1", "1", "internet", "192.168.1.0/24", "upf-1", 38412),
@@ -120,6 +120,35 @@ func TestUpdateSmfContext(t *testing.T) {
 				}
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-2"]; !ok {
 					return false, "expected UPNode for upf-2"
+				}
+				return true, ""
+			},
+		},
+		{
+			name: "Duplicate UPF should merge DNNs",
+			config: []nfConfigApi.SessionManagement{
+				makeSessionConfig("slice1", "111", "01", "1", "010101", "internet", "192.168.1.0/24", "upf-1", 38412),
+				makeSessionConfig("slice1", "112", "01", "1", "010101", "iot", "192.168.2.0/24", "upf-1", 38412),
+			},
+			validate: func(smCtx *SMFContext, err error) (bool, string) {
+				if len(smCtx.UserPlaneInformation.UPFs) != 1 {
+					return false, "expected 1 UPF for duplicate hostname"
+				}
+				if len(smCtx.SnssaiInfos) != 2 {
+					return false, "expected 1 SnssaiInfo for same slice"
+				}
+				return true, ""
+			},
+		},
+		{
+			name: "Invalid UPF IP should fallback to FQDN",
+			config: []nfConfigApi.SessionManagement{
+				makeSessionConfig("slice1", "112", "01", "1", "010101", "internet", "192.168.1.0/24", "bad:ip", 38412),
+			},
+			validate: func(smCtx *SMFContext, err error) (bool, string) {
+				upf := smCtx.UserPlaneInformation.UPFs["bad:ip"]
+				if upf == nil {
+					return false, "expected UPF to be created with bad IP hostname"
 				}
 				return true, ""
 			},

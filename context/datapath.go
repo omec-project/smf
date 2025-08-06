@@ -681,7 +681,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	}
 
 	dataPath.Activated = true
-	logger.CtxLog.Debugln("dataPath successfully activated.")
+	logger.CtxLog.Debugln("dataPath successfully activated")
 	return nil
 }
 
