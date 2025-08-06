@@ -20,10 +20,10 @@ jobs:
     with:
       branch_name: ${{ github.ref }}
 
-  #static-analysis:
-  #  uses: omec-project/.github/.github/workflows/static-analysis.yml@main
-  #  with:
-  #    branch_name: ${{ github.ref }}
+  static-analysis:
+    uses: omec-project/.github/.github/workflows/static-analysis.yml@main
+    with:
+      branch_name: ${{ github.ref }}
 
   lint:
     uses: omec-project/.github/.github/workflows/lint.yml@main

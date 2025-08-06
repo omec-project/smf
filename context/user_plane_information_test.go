@@ -1,309 +1,141 @@
-// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
-// Copyright 2019 free5GC.org
-//
+// SPDX-FileCopyrightText: 2025 Canonical Ltd
 // SPDX-License-Identifier: Apache-2.0
+//
 
-package context_test
+package context
 
 import (
-	"net"
+	"strconv"
 	"testing"
 
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/factory"
-	"github.com/stretchr/testify/require"
+	"github.com/omec-project/openapi/nfConfigApi"
 )
 
-var configuration = &factory.UserPlaneInformation{
-	UPNodes: map[string]factory.UPNode{
-		"GNodeB": {
-			Type:   "AN",
-			NodeID: "192.168.179.100",
-		},
-		"UPF1": {
-			Type:   "UPF",
-			NodeID: "192.168.179.1",
-			SNssaiInfos: []models.SnssaiUpfInfoItem{
-				{
-					SNssai: &models.Snssai{
-						Sst: 1,
-						Sd:  "112232",
-					},
-					DnnUpfInfoList: []models.DnnUpfInfoItem{
-						{Dnn: "internet"},
-					},
-				},
-				{
-					SNssai: &models.Snssai{
-						Sst: 1,
-						Sd:  "112235",
-					},
-					DnnUpfInfoList: []models.DnnUpfInfoItem{
-						{Dnn: "internet"},
-					},
-				},
-			},
-		},
-		"UPF2": {
-			Type:   "UPF",
-			NodeID: "192.168.179.2",
-			SNssaiInfos: []models.SnssaiUpfInfoItem{
-				{
-					SNssai: &models.Snssai{
-						Sst: 2,
-						Sd:  "112233",
-					},
-					DnnUpfInfoList: []models.DnnUpfInfoItem{
-						{Dnn: "internet"},
-					},
-				},
-			},
-		},
-		"UPF3": {
-			Type:   "UPF",
-			NodeID: "192.168.179.3",
-			SNssaiInfos: []models.SnssaiUpfInfoItem{
-				{
-					SNssai: &models.Snssai{
-						Sst: 3,
-						Sd:  "112234",
-					},
-					DnnUpfInfoList: []models.DnnUpfInfoItem{
-						{Dnn: "internet"},
-					},
-				},
-			},
-		},
-		"UPF4": {
-			Type:   "UPF",
-			NodeID: "192.168.179.4",
-			SNssaiInfos: []models.SnssaiUpfInfoItem{
-				{
-					SNssai: &models.Snssai{
-						Sst: 1,
-						Sd:  "112235",
-					},
-					DnnUpfInfoList: []models.DnnUpfInfoItem{
-						{Dnn: "internet"},
-					},
-				},
-			},
-		},
-	},
-	Links: []factory.UPLink{
-		{
-			A: "GNodeB",
-			B: "UPF1",
-		},
-		{
-			A: "UPF1",
-			B: "UPF2",
-		},
-		{
-			A: "UPF2",
-			B: "UPF3",
-		},
-		{
-			A: "UPF3",
-			B: "UPF4",
-		},
-	},
-}
-
-func TestNewUserPlaneInformation(t *testing.T) {
-	userplaneInformation := context.NewUserPlaneInformation(configuration)
-
-	require.NotNil(t, userplaneInformation.AccessNetwork["GNodeB"])
-
-	require.NotNil(t, userplaneInformation.UPFs["UPF1"])
-	require.NotNil(t, userplaneInformation.UPFs["UPF2"])
-	require.NotNil(t, userplaneInformation.UPFs["UPF3"])
-	require.NotNil(t, userplaneInformation.UPFs["UPF4"])
-
-	// check links
-	require.Contains(t, userplaneInformation.AccessNetwork["GNodeB"].Links, userplaneInformation.UPFs["UPF1"])
-	require.Contains(t, userplaneInformation.UPFs["UPF1"].Links, userplaneInformation.UPFs["UPF2"])
-	require.Contains(t, userplaneInformation.UPFs["UPF2"].Links, userplaneInformation.UPFs["UPF3"])
-	require.Contains(t, userplaneInformation.UPFs["UPF3"].Links, userplaneInformation.UPFs["UPF4"])
-}
-
-func TestGenerateDefaultPath(t *testing.T) {
-	configuration.Links = []factory.UPLink{
-		{
-			A: "GNodeB",
-			B: "UPF1",
-		},
-		{
-			A: "GNodeB",
-			B: "UPF2",
-		},
-		{
-			A: "GNodeB",
-			B: "UPF3",
-		},
-		{
-			A: "UPF1",
-			B: "UPF4",
-		},
+func makeTestSessionConfig(sliceName, mcc, mnc, sst, sd, dnn, ueSubnet, upfName string, gnbNames []string) nfConfigApi.SessionManagement {
+	sstParsed, err := strconv.ParseInt(sst, 10, 32)
+	if err != nil {
+		sstParsed = 1
 	}
+	sstUint := int32(sstParsed)
+	return nfConfigApi.SessionManagement{
+		SliceName: sliceName,
+		PlmnId:    nfConfigApi.PlmnId{Mcc: mcc, Mnc: mnc},
+		Snssai:    nfConfigApi.Snssai{Sst: sstUint, Sd: &sd},
+		IpDomain: []nfConfigApi.IpDomain{
+			{
+				DnnName:  dnn,
+				DnsIpv4:  "8.8.8.8",
+				UeSubnet: ueSubnet,
+				Mtu:      1400,
+			},
+		},
+		Upf: &nfConfigApi.Upf{
+			Hostname: upfName,
+			Port:     func() *int32 { p := int32(8805); return &p }(),
+		},
+		GnbNames: gnbNames,
+	}
+}
 
-	testCases := []struct {
-		param    *context.UPFSelectionParams
-		name     string
-		expected bool
+func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
+	tests := []struct {
+		name       string
+		existing   *UserPlaneInformation
+		config     []nfConfigApi.SessionManagement
+		assertions func(t *testing.T, upi *UserPlaneInformation)
 	}{
 		{
-			name: "S-NSSAI 01112232 and DNN internet ok",
-			param: &context.UPFSelectionParams{
-				SNssai: &context.SNssai{
-					Sst: 1,
-					Sd:  "112232",
-				},
-				Dnn: "internet",
+			name:     "Single slice basic default path",
+			existing: nil,
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "001", "02", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
 			},
-			expected: true,
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				if len(upi.DefaultUserPlanePath) == 0 {
+					t.Error("expected default user plane path to be set")
+				}
+			},
 		},
 		{
-			name: "S-NSSAI 02112233 and DNN internet ok",
-			param: &context.UPFSelectionParams{
-				SNssai: &context.SNssai{
-					Sst: 2,
-					Sd:  "112233",
-				},
-				Dnn: "internet",
+			name:     "No AN nodes in config",
+			existing: nil,
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "002", "01", "2", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{}),
 			},
-			expected: true,
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				if len(upi.AccessNetwork) != 0 {
+					t.Error("expected no AN nodes")
+				}
+			},
 		},
 		{
-			name: "S-NSSAI 03112234 and DNN internet ok",
-			param: &context.UPFSelectionParams{
-				SNssai: &context.SNssai{
-					Sst: 3,
-					Sd:  "112234",
-				},
-				Dnn: "internet",
+			name:     "Multiple slices with overlapping gNBs",
+			existing: nil,
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1", "gnb2"}),
+				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{"gnb1"}),
 			},
-			expected: true,
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				if _, ok := upi.AccessNetwork["gnb1"]; !ok {
+					t.Error("expected gnb1 to be in AccessNetwork")
+				}
+				if len(upi.UPFs) != 2 {
+					t.Errorf("expected 2 UPFs, got %d", len(upi.UPFs))
+				}
+			},
 		},
 		{
-			name: "S-NSSAI 01112235 and DNN internet ok",
-			param: &context.UPFSelectionParams{
-				SNssai: &context.SNssai{
-					Sst: 1,
-					Sd:  "112235",
-				},
-				Dnn: "internet",
+			name:     "DNNs are merged into the same SNSSAI entry",
+			existing: nil,
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "iot", "10.0.2.0/24", "10.1.1.1", []string{"gnb2"}),
 			},
-			expected: true,
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				if len(upi.UPFs) != 1 {
+					t.Errorf("expected 1 UPF, got %d", len(upi.UPFs))
+				}
+				if len(upi.UPFs["10.1.1.1"].UPF.SNssaiInfos[0].DnnList) != 2 {
+					t.Errorf("expected 2 DNN entries for merged SNSSAI")
+				}
+			},
 		},
 		{
-			name: "S-NSSAI 01010203 and DNN internet fail",
-			param: &context.UPFSelectionParams{
-				SNssai: &context.SNssai{
-					Sst: 1,
-					Sd:  "010203",
-				},
-				Dnn: "internet",
+			name:     "Invalid UPF hostname",
+			existing: nil,
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "invalid_host*name", []string{"gnb1"}),
 			},
-			expected: false,
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				upf := upi.UPFs["invalid_host*name"]
+				if upf == nil || upf.NodeID.NodeIdType != NodeIdTypeFqdn {
+					t.Error("expected UPF NodeIdType to be FQDN for invalid hostname")
+				}
+			},
+		},
+		{
+			name: "Reusing existing UserPlaneInformation",
+			existing: BuildUserPlaneInformationFromSessionManagement(nil, []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
+			}),
+			config: []nfConfigApi.SessionManagement{
+				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{"gnb2"}),
+			},
+			assertions: func(t *testing.T, upi *UserPlaneInformation) {
+				if len(upi.UPFs) != 2 {
+					t.Errorf("expected 2 UPFs, got %d", len(upi.UPFs))
+				}
+				if _, ok := upi.UPFs["10.1.1.1"]; !ok {
+					t.Error("original UPF should still exist")
+				}
+			},
 		},
 	}
 
-	userplaneInformation := context.NewUserPlaneInformation(configuration)
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			pathExist := userplaneInformation.GenerateDefaultPath(tc.param)
-			require.Equal(t, tc.expected, pathExist)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upi := BuildUserPlaneInformationFromSessionManagement(tt.existing, tt.config)
+			tt.assertions(t, upi)
 		})
-	}
-}
-
-func TestUpdateSmfUserPlaneNode_NodeIDChange(t *testing.T) {
-	upi := &context.UserPlaneInformation{
-		UPNodes:              make(map[string]*context.UPNode),
-		UPFs:                 make(map[string]*context.UPNode),
-		AccessNetwork:        make(map[string]*context.UPNode),
-		UPFIPToName:          make(map[string]string),
-		UPFsID:               make(map[string]string),
-		UPFsIPtoID:           make(map[string]string),
-		DefaultUserPlanePath: make(map[string][]*context.UPNode),
-	}
-
-	nodeID := context.NodeID{
-		NodeIdType:  context.NodeIdTypeIpv4Address,
-		NodeIdValue: []byte(net.ParseIP("1.2.3.4").To4()),
-	}
-
-	// Create an existing UPNode with a specific UPF instance
-	originalUPF := context.NewUPF(&nodeID, nil)
-	existingNode := &context.UPNode{
-		Type:   "UPF",
-		NodeID: nodeID,
-		Port:   1234,
-		UPF:    originalUPF,
-		Links: []*context.UPNode{
-			{
-				Type: context.UPNODE_AN,
-				NodeID: context.NodeID{
-					NodeIdType:  context.NodeIdTypeIpv4Address,
-					NodeIdValue: []byte(net.ParseIP("5.6.7.8").To4()),
-				},
-				Port: 0,
-			},
-		},
-	}
-
-	upi.UPNodes["testNode"] = existingNode
-
-	// Create a new UPNode with the same NodeID
-	newNode := &factory.UPNode{
-		Type:   "UPF",
-		NodeID: "1.2.3.4",
-		Port:   4321,
-		SNssaiInfos: []models.SnssaiUpfInfoItem{
-			{
-				SNssai: &models.Snssai{
-					Sst: 1,
-					Sd:  "112235",
-				},
-				DnnUpfInfoList: []models.DnnUpfInfoItem{
-					{Dnn: "internet2"},
-				},
-			},
-		},
-	}
-
-	err := upi.UpdateSmfUserPlaneNode("testNode", newNode)
-	if err != nil {
-		t.Fatalf("Update failed: %v", err)
-	}
-
-	updatedUPF := upi.UPNodes["testNode"].UPF
-	if updatedUPF != originalUPF {
-		t.Errorf("Expected UPF instance to remain unchanged, but it was recreated")
-	}
-
-	_, upfExists := upi.UPFs["testNode"]
-	require.True(t, upfExists)
-	if upi.UPFs["testNode"].UPF.SNssaiInfos[0].DnnList[0].Dnn != "internet2" {
-		t.Errorf("Expected UPF DNN to be updated")
-	}
-
-	updatedUPNode, exists := upi.UPNodes["testNode"]
-	if !exists {
-		t.Errorf("Expected UPNode to exist")
-	}
-
-	if updatedUPNode.Port != 4321 {
-		t.Errorf("Expected UPNode port to be updated")
-	}
-
-	if updatedUPNode.NodeID.ResolveNodeIdToIp().String() != "1.2.3.4" {
-		t.Errorf("Expected UPNode NodeID to be updated")
-	}
-
-	if updatedUPNode.Links[0].NodeID.ResolveNodeIdToIp().String() != "5.6.7.8" {
-		t.Errorf("Expected UPNode NodeID to be updated")
 	}
 }

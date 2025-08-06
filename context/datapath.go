@@ -7,7 +7,6 @@
 package context
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -373,7 +372,7 @@ func (dataPath *DataPath) validateDataPathUpfStatus() error {
 		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
 			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
 				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
-			return errors.New("UPF not associated in DataPath")
+			return fmt.Errorf("UPF not associated in DataPath")
 		}
 	}
 	return nil
@@ -579,6 +578,11 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 				Nocp: true,
 			}
 
+			if nextDLDest.UPF == nil {
+				logger.CtxLog.Errorf("nextDLDest.UPF is nil, cannot proceed with Downlink PDR setup for node: %v", nextDLDest)
+				return fmt.Errorf("nextDLDest.UPF is nil")
+			}
+
 			iface = nextDLDest.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
@@ -637,6 +641,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		// Add flow QER
 		defQER, err := curDataPathNode.CreateSessRuleQer(smContext)
 		if err != nil {
+			logger.CtxLog.Errorf("failed to create session rule QER: %v", err)
 			return err
 		}
 
@@ -645,7 +650,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		// Setup UpLink PDR
 		if curDataPathNode.UpLinkTunnel != nil {
 			if err := curDataPathNode.ActivateUpLinkPdr(smContext, defQER, precedence); err != nil {
-				logger.CtxLog.Errorf("activate UpLink PDR error %v", err.Error())
+				logger.CtxLog.Errorf("failed to activate UpLink PDR for node %v: %+v", curDataPathNode.GetNodeIP(), err)
 			}
 		}
 
@@ -676,6 +681,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	}
 
 	dataPath.Activated = true
+	logger.CtxLog.Debugln("dataPath successfully activated")
 	return nil
 }
 

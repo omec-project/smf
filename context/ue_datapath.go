@@ -37,40 +37,39 @@ func NewUEDataPathNode(name string) (node *DataPathNode, err error) {
 	return
 }
 
-func NewUEPreConfigPaths(SUPI string, paths []factory.Path) (*UEPreConfigPaths, error) {
-	var uePreConfigPaths *UEPreConfigPaths
-	ueDataPathPool := NewDataPathPool()
-	lowerBound := 0
+func NewUEPreConfigPaths(supi string, paths []factory.Path) (*UEPreConfigPaths, error) {
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no paths provided for SUPI: %s", supi)
+	}
+
+	logger.PduSessLog.Infof("Initializing UEPreConfigPaths for SUPI: %s", supi)
+
+	// create a new path ID generator
 	pathIDGenerator := idgenerator.NewGenerator(1, math.MaxInt32)
 
-	logger.PduSessLog.Infoln("in NewUEPreConfigPaths")
+	dataPathPool := NewDataPathPool()
 
-	for idx, path := range paths {
+	for idx, pathCfg := range paths {
 		dataPath := NewDataPath()
 
 		if idx == 0 {
 			dataPath.IsDefaultPath = true
 		}
-
-		var pathID int64
-		if allocPathID, err := pathIDGenerator.Allocate(); err != nil {
-			logger.CtxLog.Warnf("allocate pathID error: %+v", err)
-			return nil, err
-		} else {
-			pathID = allocPathID
+		// allocate a unique path ID
+		pathID, err := pathIDGenerator.Allocate()
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate path ID for SUPI %s: %w", supi, err)
 		}
-
-		dataPath.Destination.DestinationIP = path.DestinationIP
-		dataPath.Destination.DestinationPort = path.DestinationPort
-		ueDataPathPool[pathID] = dataPath
-		var parentNode *DataPathNode = nil
-		for idx, nodeName := range path.UPF {
+		dataPath.Destination.DestinationIP = pathCfg.DestinationIP
+		dataPath.Destination.DestinationPort = pathCfg.DestinationPort
+		var parentNode *DataPathNode
+		for upfIdx, nodeName := range pathCfg.UPF {
 			newUeNode, err := NewUEDataPathNode(nodeName)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to create DataPathNode %s for SUPI %s: %w", nodeName, supi, err)
 			}
 
-			if idx == lowerBound {
+			if upfIdx == 0 {
 				dataPath.FirstDPNode = newUeNode
 			}
 			if parentNode != nil {
@@ -80,23 +79,12 @@ func NewUEPreConfigPaths(SUPI string, paths []factory.Path) (*UEPreConfigPaths, 
 			parentNode = newUeNode
 		}
 
-		logger.CtxLog.Debugln("new data path added:", dataPath.String())
+		logger.CtxLog.Debugf("added preconfig data path (pathID=%d) for SUPI %s: %s", pathID, supi, dataPath.String())
+		dataPathPool[pathID] = dataPath
 	}
 
-	uePreConfigPaths = &UEPreConfigPaths{
-		DataPathPool:    ueDataPathPool,
+	return &UEPreConfigPaths{
+		DataPathPool:    dataPathPool,
 		PathIDGenerator: pathIDGenerator,
-	}
-	return uePreConfigPaths, nil
-}
-
-func GetUEPreConfigPaths(SUPI string) *UEPreConfigPaths {
-	return smfContext.UEPreConfigPathPool[SUPI]
-}
-
-func CheckUEHasPreConfig(SUPI string) (exist bool) {
-	_, exist = smfContext.UEPreConfigPathPool[SUPI]
-	logger.CtxLog.Infoln("CheckUEHasPreConfig")
-	logger.CtxLog.Infoln(smfContext.UEPreConfigPathPool)
-	return
+	}, nil
 }

@@ -5,6 +5,7 @@
 package context
 
 import (
+	"encoding/json"
 	"reflect"
 )
 
@@ -100,10 +101,35 @@ func (bpMGR *BPManager) FindULCL(smContext *SMContext) error {
 	return nil
 }
 
-func (pendingUPF PendingUPF) IsEmpty() bool {
-	if len(pendingUPF) == 0 {
-		return true
-	} else {
-		return false
+func (p PendingUPF) IsEmpty() bool {
+	return len(p) == 0
+}
+
+func (bpMGR *BPManager) MarshalJSON() ([]byte, error) {
+	type SimpleBPManager struct {
+		ULCL                  *UPF           `json:"ulcl,omitempty"`
+		ActivatingPath        *DataPath      `json:"activatingPath,omitempty"`
+		UpdatedBranchingPoint map[string]int `json:"updatedBranchingPoint,omitempty"`
+		PendingUPF            PendingUPF     `json:"pendingUpf,omitempty"`
+		ActivatedPaths        []*DataPath    `json:"activatedPaths,omitempty"`
+		BPStatus              BPStatus       `json:"bpStatus"`
+		AddingPSAState        AddingPSAState `json:"addingPsaState"`
 	}
+
+	converted := make(map[string]int)
+	for upf, val := range bpMGR.UpdatedBranchingPoint {
+		if upf != nil {
+			converted[string(upf.NodeID.NodeIdValue)] = val
+		}
+	}
+
+	return json.Marshal(&SimpleBPManager{
+		ULCL:                  bpMGR.ULCL,
+		ActivatingPath:        bpMGR.ActivatingPath,
+		UpdatedBranchingPoint: converted,
+		PendingUPF:            bpMGR.PendingUPF,
+		ActivatedPaths:        bpMGR.ActivatedPaths,
+		BPStatus:              bpMGR.BPStatus,
+		AddingPSAState:        bpMGR.AddingPSAState,
+	})
 }

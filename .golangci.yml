@@ -27,7 +27,6 @@ linters:
     - unconvert
     - unparam
     - whitespace
-  disable:
     - staticcheck
   settings:
     errcheck:

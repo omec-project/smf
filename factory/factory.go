@@ -11,6 +11,7 @@ package factory
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sync"
 
@@ -21,7 +22,6 @@ import (
 var (
 	SmfConfig         Config
 	UERoutingConfig   RoutingConfig
-	UpdatedSmfConfig  UpdateSmfConfig
 	SmfConfigSyncLock sync.Mutex
 )
 
@@ -31,23 +31,40 @@ var (
 // If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
 // then it closes the existing client start a new client.
 func InitConfigFactory(f string) error {
-	if content, err := os.ReadFile(f); err != nil {
+	content, err := os.ReadFile(f)
+	if err != nil {
 		return err
-	} else {
-		SmfConfig = Config{}
+	}
+	SmfConfig = Config{}
 
-		if yamlErr := yaml.Unmarshal(content, &SmfConfig); yamlErr != nil {
-			return yamlErr
-		}
+	if err = yaml.Unmarshal(content, &SmfConfig); err != nil {
+		return err
+	}
 
-		if SmfConfig.Configuration.WebuiUri == "" {
-			SmfConfig.Configuration.WebuiUri = "webui:9876"
-		}
+	if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {
+		enableKafka := true
+		SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
+	}
 
-		if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {
-			enableKafka := true
-			SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
-		}
+	if SmfConfig.Configuration.WebuiUri == "" {
+		SmfConfig.Configuration.WebuiUri = "http://webui:5001"
+		logger.CfgLog.Infof("webuiUri not set in configuration file. Using %v", SmfConfig.Configuration.WebuiUri)
+		return nil
+	}
+	err = validateWebuiUri(SmfConfig.Configuration.WebuiUri)
+	return err
+}
+
+func validateWebuiUri(uri string) error {
+	parsedUrl, err := url.ParseRequestURI(uri)
+	if err != nil {
+		return err
+	}
+	if parsedUrl.Scheme != "http" && parsedUrl.Scheme != "https" {
+		return fmt.Errorf("unsupported scheme for webuiUri: %s", parsedUrl.Scheme)
+	}
+	if parsedUrl.Hostname() == "" {
+		return fmt.Errorf("missing host in webuiUri")
 	}
 	return nil
 }

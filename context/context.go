@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/omec-project/openapi/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -33,6 +35,8 @@ func init() {
 const (
 	IPV4 = "IPv4"
 )
+
+var DefaultPfcpPort uint16 = factory.DEFAULT_PFCP_PORT
 
 var smfContext SMFContext
 
@@ -66,15 +70,14 @@ type SMFContext struct {
 	// Now only "IPv4" supported
 	// TODO: support "IPv6", "IPv4v6", "Ethernet"
 	SupportedPDUSessionType string
-
-	UEPreConfigPathPool map[string]*UEPreConfigPaths
-	DrsmCtxts           DrsmCtxts
-	EnterpriseList      *map[string]string // map to contain slice-name:enterprise-name
+	UeRoutingManager        *UERoutingManager
+	DrsmCtxts               DrsmCtxts
+	EnterpriseList          *map[string]string // map to contain slice-name:enterprise-name
 
 	NfStatusSubscriptions sync.Map // map[NfInstanceID]models.NrfSubscriptionData.SubscriptionId
 	PodIp                 string
 
-	StaticIpInfo             *[]factory.StaticIpInfo
+	StaticIpInfo             []factory.StaticIpInfo
 	CPNodeID                 NodeID
 	PFCPPort                 int
 	UDMProfile               models.NfProfile
@@ -85,15 +88,27 @@ type SMFContext struct {
 
 	// For ULCL
 	ULCLSupport bool
+	mu          sync.RWMutex
 }
 
+func (s *SMFContext) Lock()    { s.mu.Lock() }
+func (s *SMFContext) Unlock()  { s.mu.Unlock() }
+func (s *SMFContext) RLock()   { s.mu.RLock() }
+func (s *SMFContext) RUnlock() { s.mu.RUnlock() }
+
 // RetrieveDnnInformation gets the corresponding dnn info from S-NSSAI and DNN
-func RetrieveDnnInformation(Snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
+func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
+	lookup := SNssai{Sst: snssai.Sst, Sd: snssai.Sd}
 	for _, snssaiInfo := range SMF_Self().SnssaiInfos {
-		if snssaiInfo.Snssai.Sst == Snssai.Sst && snssaiInfo.Snssai.Sd == Snssai.Sd {
-			return snssaiInfo.DnnInfos[dnn]
+		if snssaiInfo.Snssai.Equal(&lookup) {
+			if info, ok := snssaiInfo.DnnInfos[dnn]; ok {
+				return info
+			}
 		}
 	}
+	logger.CtxLog.Warnf("No match found for Snssai: %+v and DNN: %s", lookup, dnn)
 	return nil
 }
 
@@ -110,21 +125,11 @@ func AllocateLocalSEID() (uint64, error) {
 
 		return uint64(seid32), nil
 	} else {
+		smfContext.Lock()
+		defer smfContext.Unlock()
 		atomic.AddUint64(&smfContext.LocalSEIDCount, 1)
 		return smfContext.LocalSEIDCount, nil
 	}
-}
-
-func ReleaseLocalSEID(seid uint64) error {
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		seid32 := (int32)(seid)
-		err := smfContext.DrsmCtxts.SeidPool.ReleaseInt32ID(seid32)
-		if err != nil {
-			logger.CtxLog.Errorf("allocate SEID error: %+v", err)
-			return err
-		}
-	}
-	return nil
 }
 
 func InitSmfContext(config *factory.Config) *SMFContext {
@@ -132,11 +137,12 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		logger.CtxLog.Error("Config is nil")
 		return nil
 	}
-
-	// Acquire master SMF config lock, no one should update it in parallel,
+	// Acquire master SMF config lock, no one should update it in parallel
 	// until SMF is done updating SMF context
 	factory.SmfConfigSyncLock.Lock()
 	defer factory.SmfConfigSyncLock.Unlock()
+	smfContext.Lock()
+	defer smfContext.Unlock()
 
 	logger.CtxLog.Infof("smfconfig Info: Version[%s] Description[%s]", config.Info.Version, config.Info.Description)
 	configuration := config.Configuration
@@ -144,8 +150,16 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.Name = configuration.SmfName
 	}
 
-	// copy static UE IP Addr config
-	smfContext.StaticIpInfo = &configuration.StaticIpInfo
+	if env := os.Getenv("PFCP_PORT_UPF"); env != "" {
+		if v, err := strconv.Atoi(env); err == nil && v >= 0 && v <= 65535 {
+			DefaultPfcpPort = uint16(v)
+			logger.CtxLog.Infof("using PFCP_PORT_UPF from environment variables: %d", DefaultPfcpPort)
+		} else {
+			logger.CtxLog.Warnf("invalid PFCP_PORT_UPF value %q: %v. Using default value: %d", env, err, DefaultPfcpPort)
+		}
+	}
+
+	smfContext.StaticIpInfo = configuration.StaticIpInfo
 
 	sbi := configuration.Sbi
 	localIp := GetLocalIP()
@@ -199,7 +213,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	if pfcp := configuration.PFCP; pfcp != nil {
 		if pfcp.Port == 0 {
-			pfcp.Port = factory.DEFAULT_PFCP_PORT
+			pfcp.Port = DefaultPfcpPort
 		}
 		pfcpAddrEnv := os.Getenv(pfcp.Addr)
 		if pfcpAddrEnv != "" {
@@ -222,14 +236,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.CPNodeID.NodeIdValue = addr.IP.To4()
 	}
 
-	// Static config
-	for _, snssaiInfoConfig := range configuration.SNssaiInfo {
-		err := smfContext.insertSmfNssaiInfo(&snssaiInfoConfig)
-		if err != nil {
-			logger.CtxLog.Warnln(err)
-		}
-	}
-
 	// Set client and set url
 	ManagementConfig := Nnrf_NFManagement.NewConfiguration()
 	ManagementConfig.SetBasePath(SMF_Self().NrfUri)
@@ -243,8 +249,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.SupportedPDUSessionType = IPV4
 
-	smfContext.UserPlaneInformation = NewUserPlaneInformation(&configuration.UserPlaneInformation)
-
 	smfContext.EnableNrfCaching = configuration.EnableNrfCaching
 
 	if configuration.EnableNrfCaching {
@@ -256,37 +260,37 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	}
 
 	smfContext.PodIp = os.Getenv("POD_IP")
-	SetupNFProfile(config)
 
 	return &smfContext
 }
 
 func InitSMFUERouting(routingConfig *factory.RoutingConfig) {
 	if !smfContext.ULCLSupport {
+		logger.CtxLog.Warnln("ULCL is not enabled, skip initializing UERoutingManager")
 		return
 	}
 
 	if routingConfig == nil {
-		logger.CtxLog.Error("configuration needs the routing config")
+		logger.CtxLog.Errorln("configuration needs the routing config")
 		return
 	}
 
 	logger.CtxLog.Infof("ue routing config Info: Version[%s] Description[%s]",
 		routingConfig.Info.Version, routingConfig.Info.Description)
 
-	UERoutingInfo := routingConfig.UERoutingInfo
-	smfContext.UEPreConfigPathPool = make(map[string]*UEPreConfigPaths)
+	routingManager := NewUERoutingManager()
 
-	for _, routingInfo := range UERoutingInfo {
+	for _, routingInfo := range routingConfig.UERoutingInfo {
 		supi := routingInfo.SUPI
 		uePreConfigPaths, err := NewUEPreConfigPaths(supi, routingInfo.PathList)
 		if err != nil {
-			logger.CtxLog.Warnln(err)
+			logger.CtxLog.Warnf("failed to initialize pre-config paths for SUPI %s: %v", supi, err)
 			continue
 		}
-
-		smfContext.UEPreConfigPathPool[supi] = uePreConfigPaths
+		routingManager.AddPath(supi, uePreConfigPaths)
 	}
+
+	smfContext.UeRoutingManager = routingManager
 }
 
 func SMF_Self() *SMFContext {
@@ -294,119 +298,110 @@ func SMF_Self() *SMFContext {
 }
 
 func GetUserPlaneInformation() *UserPlaneInformation {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
 	return smfContext.UserPlaneInformation
 }
 
-func ProcessConfigUpdate() bool {
-	logger.CtxLog.Infof("Dynamic config update received [%+v]", factory.UpdatedSmfConfig)
+func (smfCtxt *SMFContext) Clear() {
+	smfContext.Lock()
+	defer smfContext.Unlock()
+	smfCtxt.SnssaiInfos = nil
+	if smfCtxt.UserPlaneInformation == nil {
+		smfCtxt.UserPlaneInformation = &UserPlaneInformation{}
+	}
+	smfCtxt.UserPlaneInformation.Reset()
+}
 
-	sendNrfRegistration := false
-	// Lets check updated config
-	updatedCfg := factory.UpdatedSmfConfig
+func (smfCtxt *SMFContext) ExtractExistingUPFs() map[string]*UPNode {
+	smfContext.RLock()
+	defer smfContext.RUnlock()
+	existing := make(map[string]*UPNode)
+	if smfCtxt.UserPlaneInformation == nil {
+		return existing
+	}
+	for name, node := range smfCtxt.UserPlaneInformation.UPNodes {
+		if node.Type == UPNODE_UPF {
+			existing[name] = node
+		}
+	}
+	return existing
+}
 
-	// Lets parse through network slice configs first
-	if updatedCfg.DelSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.DelSNssaiInfo {
-			err := SMF_Self().deleteSmfNssaiInfo(&slice)
+func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factory.StaticIpInfo) SnssaiSmfInfo {
+	apiPlmnId := sm.GetPlmnId()
+	apiSnssai := sm.GetSnssai()
+	info := SnssaiSmfInfo{
+		PlmnId:   models.PlmnId{Mcc: apiPlmnId.GetMcc(), Mnc: apiPlmnId.GetMnc()},
+		Snssai:   SNssai{Sst: apiSnssai.GetSst(), Sd: apiSnssai.GetSd()},
+		DnnInfos: map[string]*SnssaiSmfDnnInfo{},
+	}
+
+	for _, ipdomain := range sm.GetIpDomain() {
+		dnn := ipdomain.DnnName
+		if _, exists := info.DnnInfos[dnn]; exists {
+			logger.CtxLog.Warnf("duplicate DNN %s in IP domain config; overriding", dnn)
+		}
+		dnnInfo := &SnssaiSmfDnnInfo{MTU: uint16(ipdomain.GetMtu())}
+		if ip := net.ParseIP(ipdomain.GetDnsIpv4()); ip != nil {
+			dnnInfo.DNS.IPv4Addr = ip
+		}
+		if subnet := ipdomain.GetUeSubnet(); subnet != "" {
+			allocator, err := NewIPAllocator(subnet)
 			if err != nil {
-				logger.CtxLog.Errorf("delete network slice [%v] failed: %v", slice, err)
+				logger.CtxLog.Warnf("invalid subnet %s for DNN %s: %v", subnet, dnn, err)
+			} else {
+				dnnInfo.UeIPAllocator = allocator
+				reserveStaticIpsIfNeeded(allocator, staticIpInfo, dnn)
 			}
 		}
-		factory.UpdatedSmfConfig.DelSNssaiInfo = nil
-		sendNrfRegistration = true
+		info.DnnInfos[dnn] = dnnInfo
+	}
+	if len(info.DnnInfos) == 0 {
+		logger.CtxLog.Warnf("no DNN info available for SNSSAI: %+v", info.Snssai)
 	}
 
-	if updatedCfg.AddSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.AddSNssaiInfo {
-			err := SMF_Self().insertSmfNssaiInfo(&slice)
-			if err != nil {
-				logger.CtxLog.Errorf("insert network slice [%v] failed: %v", slice, err)
-			}
+	return info
+}
+
+func reserveStaticIpsIfNeeded(allocator *IPAllocator, static []factory.StaticIpInfo, dnn string) {
+	if static == nil {
+		return
+	}
+	for _, s := range static {
+		if s.Dnn == dnn {
+			allocator.ReserveStaticIps(&s.ImsiIpInfo)
 		}
-		factory.UpdatedSmfConfig.AddSNssaiInfo = nil
-		sendNrfRegistration = true
 	}
+}
 
-	if updatedCfg.ModSNssaiInfo != nil {
-		for _, slice := range *updatedCfg.ModSNssaiInfo {
-			err := SMF_Self().updateSmfNssaiInfo(&slice)
-			if err != nil {
-				logger.CtxLog.Errorf("update network slice [%v] failed: %v", slice, err)
-			}
+func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionManagement) error {
+	smContext.Lock()
+	defer smContext.Unlock()
+	logger.CtxLog.Infoln("processing config update from polling service")
+	if len(newConfig) == 0 {
+		logger.CtxLog.Warnln("received empty session management config, skipping update")
+		smContext.Clear()
+		return nil
+	}
+	updatedUserPlaneInfo := BuildUserPlaneInformationFromSessionManagement(smContext.UserPlaneInformation, newConfig)
+	if updatedUserPlaneInfo == nil {
+		return fmt.Errorf("failed to build updated UserPlaneInformation from session management config")
+	}
+	smContext.UserPlaneInformation = updatedUserPlaneInfo
+
+	var snssaiInfos []SnssaiSmfInfo
+	for _, sm := range newConfig {
+		snssaiInfo := buildSnssaiSmfInfo(&sm, smContext.StaticIpInfo)
+		if len(snssaiInfo.DnnInfos) == 0 {
+			logger.CtxLog.Warnf("DnnInfos is empty for SnssaiSmfInfo config: %+v", sm)
+			continue
 		}
-		factory.UpdatedSmfConfig.ModSNssaiInfo = nil
-		sendNrfRegistration = true
+		snssaiInfos = append(snssaiInfos, snssaiInfo)
 	}
-
-	// UP Node Links should be deleted before underlying UPFs are deleted
-	if updatedCfg.DelLinks != nil {
-		for _, link := range *updatedCfg.DelLinks {
-			err := GetUserPlaneInformation().DeleteUPNodeLinks(&link)
-			if err != nil {
-				logger.CtxLog.Errorf("delete UP Node Links failed: %v", err)
-			}
-		}
-		factory.UpdatedSmfConfig.DelLinks = nil
-	}
-
-	// Iterate through UserPlane Info
-	if updatedCfg.DelUPNodes != nil {
-		for name, upf := range *updatedCfg.DelUPNodes {
-			err := GetUserPlaneInformation().DeleteSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("delete UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.DelUPNodes = nil
-	}
-
-	if updatedCfg.AddUPNodes != nil {
-		for name, upf := range *updatedCfg.AddUPNodes {
-			err := GetUserPlaneInformation().InsertSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("insert UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.AddUPNodes = nil
-		AllocateUPFID()
-		// TODO: allocate UPF ID
-	}
-
-	if updatedCfg.ModUPNodes != nil {
-		for name, upf := range *updatedCfg.ModUPNodes {
-			err := GetUserPlaneInformation().UpdateSmfUserPlaneNode(name, &upf)
-			if err != nil {
-				logger.CtxLog.Errorf("update UP Node [%s] failed: %v", name, err)
-			}
-		}
-		factory.UpdatedSmfConfig.ModUPNodes = nil
-	}
-
-	// Iterate through add UP Node Links info
-	// UP Links should be added only after underlying UPFs have been added
-	if updatedCfg.AddLinks != nil {
-		for _, link := range *updatedCfg.AddLinks {
-			err := GetUserPlaneInformation().InsertUPNodeLinks(&link)
-			if err != nil {
-				logger.CtxLog.Errorf("insert UP Node Links failed: %v", err)
-			}
-		}
-		factory.UpdatedSmfConfig.AddLinks = nil
-	}
-
-	// Update Enterprise Info
-	SMF_Self().EnterpriseList = updatedCfg.EnterpriseList
-	logger.CtxLog.Infof("Dynamic config update, enterprise info [%v] ", *updatedCfg.EnterpriseList)
-
-	// Any time config changes(Slices/UPFs/Links) then reset Default path(Key= nssai+Dnn)
-	GetUserPlaneInformation().ResetDefaultUserPlanePath()
-
-	// Send NRF Re-register if Slice info got updated
-	if sendNrfRegistration {
-		SetupNFProfile(&factory.SmfConfig)
-	}
-
-	return sendNrfRegistration
+	smContext.SnssaiInfos = snssaiInfos
+	logger.CtxLog.Debugf("SMF context updated from dynamic session management config successfully")
+	return nil
 }
 
 func (smfCtxt *SMFContext) InitDrsm() error {
@@ -439,15 +434,5 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	// for IP-Addr
 	// TODO, use UPF based allocation for now
 
-	return nil
-}
-
-func (smfCtxt *SMFContext) GetDnnStaticIpInfo(dnn string) *factory.StaticIpInfo {
-	for _, info := range *smfCtxt.StaticIpInfo {
-		if info.Dnn == dnn {
-			logger.CfgLog.Debugf("get static ip info for dnn [%s] found [%v]", dnn, info)
-			return &info
-		}
-	}
 	return nil
 }
