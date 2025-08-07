@@ -17,9 +17,9 @@ configuration, removal and modification.
 
 Compliance of the 5G Network functions can be found at [5G Compliance](https://docs.sd-core.opennetworking.org/main/overview/3gpp-compliance-5g.html)
 
-## SMF Block diagram
+## SMF flow diagram
 
-![SMF Architecture](/docs/images/README-SMF.png)
+![SMF Flow Diagram](/docs/images/README-SMF.png)
 
 ## Dynamic Network configuration (via webconsole)
 
