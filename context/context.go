@@ -42,7 +42,6 @@ var smfContext SMFContext
 
 type DrsmCtxts struct {
 	SeidPool drsm.DrsmInterface
-	UeIpPool drsm.DrsmInterface
 }
 
 type SMFContext struct {
@@ -430,9 +429,6 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	} else {
 		return err
 	}
-
-	// for IP-Addr
-	// TODO, use UPF based allocation for now
 
 	return nil
 }
