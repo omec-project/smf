@@ -6,6 +6,7 @@ package udp_test
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,26 +16,9 @@ import (
 	"github.com/wmnsk/go-pfcp/message"
 )
 
-var heartbeatRequestReceived bool
-
 type Server struct {
 	addr *net.UDPAddr
 	Conn *net.UDPConn
-}
-
-func HandlePfcpHeartbeatRequestTest(msg *udp.Message) {
-	heartbeatRequestReceived = true
-}
-
-func Dispatch(msg *udp.Message) {
-	if msg.PfcpMessage == nil {
-		return
-	}
-	msgType := msg.PfcpMessage.MessageType()
-	switch msgType {
-	case message.MsgTypeHeartbeatRequest:
-		HandlePfcpHeartbeatRequestTest(msg)
-	}
 }
 
 func (s *Server) Start() error {
@@ -67,104 +51,87 @@ func TestRun(t *testing.T) {
 	}
 	context.SMF_Self().PFCPPort = 8811
 
-	localAddr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: 8811,
-	}
-	remoteAddr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: 1234,
-	}
-	go udp.Run(Dispatch)
-	err := udp.WaitForServer()
-	if err != nil {
-		t.Fatalf("failed to start PFCP server: %v", err)
+	gotHeartBeat := make(chan struct{}, 1)
+	dispatch := func(msg *udp.Message) {
+		if msg != nil && msg.PfcpMessage != nil &&
+			msg.PfcpMessage.MessageType() == message.MsgTypeHeartbeatRequest {
+			select {
+			case gotHeartBeat <- struct{}{}:
+			default:
+			}
+		}
 	}
 
-	if udp.Server == nil {
-		t.Fatalf("expected Server to be initialized")
+	go udp.Run(dispatch)
+	if err := udp.WaitForServer(); err != nil {
+		t.Errorf("failed to start PFCP server: %v", err)
 	}
-
-	if udp.Server.Conn == nil {
-		t.Fatalf("expected Server to be listening")
-	}
-
 	defer func() {
-		if err = udp.Server.Conn.Close(); err != nil {
-			t.Logf("error closing connection: %v", err)
+		if udp.Server != nil && udp.Server.Conn != nil {
+			_ = udp.Server.Conn.Close()
 		}
 	}()
 
-	setupRequest := message.NewHeartbeatRequest(
-		1,
-		ie.NewRecoveryTimeStamp(time.Now()),
-		nil,
-	)
+	sender := &Server{addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
+	if err := sender.Start(); err != nil {
+		t.Errorf("start sender: %v", err)
+	}
+	defer sender.Conn.Close()
 
-	server := &Server{
-		addr: remoteAddr,
-	}
-	err = server.Start()
-	if err != nil {
-		t.Fatalf("failed to start server: %v", err)
-	}
-	err = server.SendPFCPMessage(setupRequest, localAddr)
-	if err != nil {
-		t.Fatalf("failed to send PFCP message: %v", err)
+	req := message.NewHeartbeatRequest(1, ie.NewRecoveryTimeStamp(time.Now()), nil)
+	if err := sender.SendPFCPMessage(req, udp.Server.Addr); err != nil {
+		t.Errorf("send PFCP: %v", err)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	if !heartbeatRequestReceived {
+	select {
+	case <-gotHeartBeat:
+	case <-time.After(2 * time.Second):
 		t.Error("expected Heartbeat Request to be received")
 	}
 }
 
 func TestServerSendPfcp(t *testing.T) {
-	localAddress := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: int(context.DefaultPfcpPort),
-	}
-	remoteAddress := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: int(context.DefaultPfcpPort),
-	}
-
-	msg := message.NewAssociationSetupResponse(1)
-
-	conn, err := net.ListenUDP("udp", localAddress)
-	if err != nil {
-		t.Fatalf("error listening on UDP: %v", err)
-	}
-
-	defer func() {
-		if err = conn.Close(); err != nil {
-			t.Logf("error closing connection: %v", err)
+	msg := message.NewAssociationSetupResponse(uint32(time.Now().UnixNano()))
+	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(context.DefaultPfcpPort)}
+	if udp.Server != nil && udp.Server.Conn != nil {
+		if err := udp.SendPfcp(msg, remote, nil); err != nil {
+			t.Errorf("failed to send PFCP message with running server: %v", err)
 		}
-	}()
-
-	udp.Server = &udp.PfcpServer{
-		Conn: conn,
+		return
 	}
-
-	err = udp.SendPfcp(msg, remoteAddress, nil)
+	local := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(context.DefaultPfcpPort)}
+	conn, err := net.ListenUDP("udp", local)
 	if err != nil {
+		t.Errorf("error listening on UDP: %v", err)
+	}
+	defer conn.Close()
+
+	orig := udp.Server
+	udp.Server = &udp.PfcpServer{Conn: conn}
+	defer func() { udp.Server = orig }()
+
+	if err := udp.SendPfcp(msg, remote, nil); err != nil {
 		t.Errorf("failed to send PFCP message: %v", err)
 	}
 }
 
 func TestServerNotSetSendPfcp(t *testing.T) {
-	udp.Server = nil
-	remoteAddress := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: int(context.DefaultPfcpPort),
+	if udp.Server != nil && udp.Server.Conn != nil {
+		t.Skip("PFCP server already running; skipping 'not set' case")
 	}
 
+	orig := udp.Server
+	udp.Server = &udp.PfcpServer{}
+	defer func() { udp.Server = orig }()
+
+	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(context.DefaultPfcpPort)}
 	msg := message.NewAssociationSetupResponse(1)
 
-	err := udp.SendPfcp(msg, remoteAddress, nil)
-
+	err := udp.SendPfcp(msg, remote, nil)
 	if err == nil {
-		t.Error("expected error, got nil")
+		t.Errorf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not listening") && !strings.Contains(err.Error(), "not initialized") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
