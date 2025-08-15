@@ -41,9 +41,13 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 	snssais := buildSNssais(sessionCfgs)
 	plmnList := buildPlmnList(sessionCfgs)
 	smfInfo := buildSmfInfo(sessionCfgs)
+	serviceNames := []string{"nsmf-pdusession"}
+	if factory.SmfConfig.Configuration != nil && len(factory.SmfConfig.Configuration.ServiceNameList) > 0 {
+		serviceNames = factory.SmfConfig.Configuration.ServiceNameList
+	}
 	now := time.Now()
-	nfServices := make([]models.NfService, 0)
-	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
+	nfServices := make([]models.NfService, 0, len(serviceNames))
+	for _, serviceName := range serviceNames {
 		nfServices = append(nfServices, models.NfService{
 			ServiceInstanceId: smfCtx.NfInstanceID + "-" + serviceName,
 			ServiceName:       models.ServiceName(serviceName),
