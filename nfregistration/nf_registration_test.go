@@ -180,33 +180,35 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 }
 
 func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T) {
-	originalSendRegisterNFInstance := consumer.SendRegisterNFInstance
-	defer func() {
-		consumer.SendRegisterNFInstance = originalSendRegisterNFInstance
-		if keepAliveTimer != nil {
-			keepAliveTimer.Stop()
-		}
-	}()
-
-	called := 0
-	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
-		profile := models.NfProfile{HeartBeatTimer: 60}
-		called++
-		return profile, "", errors.New("mock error")
+	attempts := make(chan struct{}, 4)
+	orig := consumer.SendRegisterNFInstance
+	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
+		attempts <- struct{}{}
+		return models.NfProfile{HeartBeatTimer: 60}, "", errors.New("mock error")
 	}
+	defer func() { consumer.SendRegisterNFInstance = orig }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	ch := make(chan []nfConfigApi.SessionManagement, 1)
-	ctx := t.Context()
 	go StartNfRegistrationService(ctx, ch)
-	sessionConfigs = append(sessionConfigs, sessionConfigOne)
-	ch <- sessionConfigs
 
-	time.Sleep(2 * retryTime)
+	ch <- []nfConfigApi.SessionManagement{sessionConfigOne}
 
-	if called < 2 {
-		t.Error("expected to retry register to NRF")
+	for i := 0; i < 2; i++ {
+		select {
+		case <-attempts:
+		case <-time.After(25 * time.Second):
+			t.Errorf("expected %d attempts, observed %d", 2, i)
+		}
 	}
-	t.Logf("Tried %v times", called)
+	cancel()
+	select {
+	case <-attempts:
+		t.Errorf("unexpected extra attempt after cancel")
+	default:
+	}
 }
 
 func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfConfigUsedInNFProfileIsUpdated_OtherwiseSameRegistrationUsed(t *testing.T) {
