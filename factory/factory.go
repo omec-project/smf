@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/omec-project/smf/logger"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v4"
 )
 
 var (
