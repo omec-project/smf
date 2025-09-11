@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	aperLogger "github.com/omec-project/aper/logger"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
 	openapiLogger "github.com/omec-project/openapi/logger"
@@ -172,21 +171,6 @@ func (smf *SMF) setLogLevel() {
 		} else {
 			ngapLogger.NgapLog.Warnln("NGAP Log level not set. Default set to [info] level")
 			ngapLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.SmfConfig.Logger.Aper != nil {
-		if factory.SmfConfig.Logger.Aper.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.Aper.DebugLevel); err != nil {
-				aperLogger.AperLog.Warnf("Aper Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.Aper.DebugLevel)
-				aperLogger.SetLogLevel(zap.InfoLevel)
-			} else {
-				aperLogger.SetLogLevel(level)
-			}
-		} else {
-			aperLogger.AperLog.Warnln("Aper Log level not set. Default set to [info] level")
-			aperLogger.SetLogLevel(zap.InfoLevel)
 		}
 	}
 
