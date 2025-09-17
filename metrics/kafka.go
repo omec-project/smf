@@ -41,7 +41,7 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 		topicName = config.KafkaInfo.Topic
 	}
 
-	logger.KafkaLog.Debugf("initialise kafka Topic: %s", config.KafkaInfo.Topic)
+	logger.KafkaLog.Debugf("initialise kafka Topic: %s", topicName)
 
 	producer := kafka.Writer{
 		Addr:                   kafka.TCP(brokerUrl),
