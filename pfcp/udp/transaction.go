@@ -6,12 +6,12 @@
 package udp
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/omec-project/smf/logger"
-	"github.com/pkg/errors"
 	"github.com/wmnsk/go-pfcp/message"
 )
 
@@ -114,7 +114,7 @@ func (transaction *Transaction) Start() error {
 			}
 		}
 		// Num of retries exhausted, send failure back to app
-		return errors.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
+		return fmt.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
 	} else if transaction.TxType == SendingResponse {
 		// Todo :Implement SendingResponse type of reliable delivery
 		timer := time.NewTimer(ResendResponseTimeOutPeriod * time.Second)
@@ -135,7 +135,7 @@ func (transaction *Transaction) Start() error {
 				}
 			case <-timer.C:
 				logger.PfcpLog.Debugf("response transaction [%d]: timeout expire", transaction.SequenceNumber)
-				return errors.Errorf("response timeout, seq [%d]", transaction.SequenceNumber)
+				return fmt.Errorf("response timeout, seq [%d]", transaction.SequenceNumber)
 			}
 		}
 	}

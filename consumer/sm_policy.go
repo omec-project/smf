@@ -15,14 +15,13 @@ import (
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
-	"github.com/pkg/errors"
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
 func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, int, error) {
 	httpRspStatusCode := http.StatusInternalServerError
 	if smContext.SMPolicyClient == nil {
-		return nil, httpRspStatusCode, errors.Errorf("smContext not selected PCF")
+		return nil, httpRspStatusCode, fmt.Errorf("smContext not selected PCF")
 	}
 
 	smPolicyData := models.SmPolicyContextData{}
