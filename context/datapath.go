@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/omec-project/nas/nasType"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
-	"github.com/omec-project/util/util_3gpp"
 )
 
 // GTPTunnel represents the GTP tunnel information
@@ -487,7 +487,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 			Ch: true,
 		}
 		ULPDR.PDI.UEIPAddress = &ueIpAddr
-		ULPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
+		ULPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
 		ULPDR.OuterHeaderRemoval = &OuterHeaderRemoval{
 			OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
 		}
@@ -673,7 +673,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 			if curDataPathNode.DownLinkTunnel.SrcEndPoint == nil {
 				for _, DNDLPDR := range curDataPathNode.DownLinkTunnel.PDR {
 					DNDLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
-					DNDLPDR.PDI.NetworkInstance = util_3gpp.Dnn(smContext.Dnn)
+					DNDLPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
 					DNDLPDR.PDI.UEIPAddress = &ueIpAddr
 				}
 			}
