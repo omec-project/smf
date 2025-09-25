@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omec-project/nas/nasType"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/message"
-	"github.com/omec-project/util/util_3gpp"
 	"github.com/wmnsk/go-pfcp/ie"
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
 )
@@ -266,7 +266,7 @@ func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
 				ApplicationID:   "app",
-				NetworkInstance: util_3gpp.Dnn{},
+				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
 				},
@@ -331,7 +331,7 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
 				ApplicationID:   "app",
-				NetworkInstance: util_3gpp.Dnn{},
+				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
 				},
@@ -403,7 +403,7 @@ func TestBuildPfcpSessionModificationRequestNoOuterHeader(t *testing.T) {
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
 				ApplicationID:   "app",
-				NetworkInstance: util_3gpp.Dnn{},
+				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
 				},

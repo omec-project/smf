@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/omec-project/util/util_3gpp"
+	"github.com/omec-project/nas/nasType"
 )
 
 const (
@@ -81,7 +81,7 @@ type PDI struct {
 	UEIPAddress     *UEIPAddress
 	SDFFilter       *SDFFilter
 	ApplicationID   string
-	NetworkInstance util_3gpp.Dnn
+	NetworkInstance nasType.Dnn
 	SourceInterface SourceInterface
 }
 
@@ -107,7 +107,7 @@ type ForwardingParameters struct {
 	OuterHeaderCreation  *OuterHeaderCreation
 	PFCPSMReqFlags       *PFCPSMReqFlags
 	ForwardingPolicyID   string
-	NetworkInstance      util_3gpp.Dnn
+	NetworkInstance      nasType.Dnn
 	DestinationInterface DestinationInterface
 }
 
