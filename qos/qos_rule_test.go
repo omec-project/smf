@@ -5,11 +5,11 @@
 package qos_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/qos"
-	"github.com/stretchr/testify/require"
 )
 
 var flowDesc = []string{
@@ -55,10 +55,10 @@ func TestBuildQosRules(t *testing.T) {
 
 	t.Logf("QosRules: %v", qosRules)
 
-	if bytes, err := qosRules.MarshalBinary(); err != nil {
+	if data, err := qosRules.MarshalBinary(); err != nil {
 		t.Logf("marshal Error: %v", err.Error())
 	} else {
-		t.Logf("encoded Bytes: %v", bytes)
+		t.Logf("encoded Bytes: %v", data)
 		expectedBytes := []byte{
 			0x1, 0x0, 0x37, 0x32, 0x31, 0x18, 0x10,
 			0x1, 0x1, 0x1, 0x1, 0xff, 0xff, 0xff, 0xff, 0x50, 0x3, 0xe8,
@@ -67,7 +67,9 @@ func TestBuildQosRules(t *testing.T) {
 			0xff, 0x50, 0xb, 0xb8, 0x11, 0x4, 0x4, 0x4, 0x4, 0xff, 0xff,
 			0xff, 0xff, 0x40, 0xf, 0xa0, 0xc8, 0x5,
 		}
-		require.Equal(t, expectedBytes, bytes)
+		if !bytes.Equal(data, expectedBytes) {
+			t.Fatalf("Content mismatch. got = %v, want = %v", data, expectedBytes)
+		}
 	}
 }
 

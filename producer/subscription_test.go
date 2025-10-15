@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/omec-project/openapi/models"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -170,11 +170,18 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 				ProfileChanges: []models.ChangeItem{},
 			}
 			err := NfSubscriptionStatusNotifyProcedure(notificationData)
-			assert.Equal(t, parameters[i].expectedProblem, err, "NfSubscriptionStatusNotifyProcedure is failed.")
-			// Subscription is removed.
-			assert.Equal(t, parameters[i].expectedCallCountSendRemoveSubscription, callCountSendRemoveSubscription, "Subscription is not removed.")
-			// NF Profile is removed from NRF cache.
-			assert.Equal(t, parameters[i].expectedCallCountNRFCacheRemoveNfProfileFromNrfCache, callCountNRFCacheRemoveNfProfileFromNrfCache, "NF Profile is not removed from NRF cache.")
+			if !reflect.DeepEqual(err, parameters[i].expectedProblem) {
+				t.Errorf("NfSubscriptionStatusNotifyProcedure error mismatch. got = %v, want = %v (NfSubscriptionStatusNotifyProcedure is failed)",
+					err, parameters[i].expectedProblem)
+			}
+			if callCountSendRemoveSubscription != parameters[i].expectedCallCountSendRemoveSubscription {
+				t.Errorf("Subscription removal count mismatch. got = %d, want = %d (Subscription is not removed)",
+					callCountSendRemoveSubscription, parameters[i].expectedCallCountSendRemoveSubscription)
+			}
+			if callCountNRFCacheRemoveNfProfileFromNrfCache != parameters[i].expectedCallCountNRFCacheRemoveNfProfileFromNrfCache {
+				t.Errorf("NF Profile cache removal count mismatch. got = %d, want = %d (NF Profile is not removed from NRF cache)",
+					callCountNRFCacheRemoveNfProfileFromNrfCache, parameters[i].expectedCallCountNRFCacheRemoveNfProfileFromNrfCache)
+			}
 			callCountSendRemoveSubscription = 0
 			callCountNRFCacheRemoveNfProfileFromNrfCache = 0
 			smfContext.SMF_Self().NfStatusSubscriptions.Delete(parameters[i].nfInstanceIdForSubscription)
