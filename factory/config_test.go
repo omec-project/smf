@@ -7,8 +7,6 @@ package factory
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -25,22 +23,38 @@ func TestKafkaEnabledByDefault(t *testing.T) {
 	}
 }
 
-// Webui URL is not set then default Webui URL value is returned
-func TestGetDefaultWebuiUrl(t *testing.T) {
-	if err := InitConfigFactory("../config/smfcfg.yaml"); err != nil {
-		t.Logf("error in InitConfigFactory: %v", err)
+func TestWebuiUrl(t *testing.T) {
+	tests := []struct {
+		name       string
+		configFile string
+		want       string
+	}{
+		{
+			name:       "default webui URL",
+			configFile: "../config/smfcfg.yaml",
+			want:       "http://webui:5001",
+		},
+		{
+			name:       "custom webui URL",
+			configFile: "../config/smfcfg_with_custom_webui_url.yaml",
+			want:       "https://myspecialwebui:5002",
+		},
 	}
-	got := SmfConfig.Configuration.WebuiUri
-	want := "http://webui:5001"
-	assert.Equal(t, got, want, "The webui URL is not correct.")
-}
 
-// Webui URL is set to a custom value then custom Webui URL is returned
-func TestGetCustomWebuiUrl(t *testing.T) {
-	if err := InitConfigFactory("../config/smfcfg_with_custom_webui_url.yaml"); err != nil {
-		t.Logf("error in InitConfigFactory: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore original config
+			origSmfConfig := SmfConfig
+			t.Cleanup(func() { SmfConfig = origSmfConfig })
+
+			if err := InitConfigFactory(tt.configFile); err != nil {
+				t.Logf("error in InitConfigFactory: %v", err)
+			}
+
+			got := SmfConfig.Configuration.WebuiUri
+			if got != tt.want {
+				t.Errorf("The webui URL is not correct. got = %q, want = %q", got, tt.want)
+			}
+		})
 	}
-	got := SmfConfig.Configuration.WebuiUri
-	want := "https://myspecialwebui:5002"
-	assert.Equal(t, got, want, "The webui URL is not correct.")
 }

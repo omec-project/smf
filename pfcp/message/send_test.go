@@ -18,7 +18,6 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
-	"github.com/stretchr/testify/assert"
 	"github.com/wmnsk/go-pfcp/ie"
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
 	"go.uber.org/zap"
@@ -486,5 +485,7 @@ func TestSendPfcpMsgToAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error sending PFCP message to adapter: %v", err)
 	}
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	if rsp.StatusCode != http.StatusOK {
+		t.Errorf("HTTP status code mismatch. got = %d, want = %d", rsp.StatusCode, http.StatusOK)
+	}
 }

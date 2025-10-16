@@ -5,11 +5,11 @@
 package qos_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/qos"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
@@ -32,5 +32,7 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 		0x65, 0x5, 0x3, 0x6, 0x0, 0xc9, 0x2, 0x3, 0x6, 0x0, 0xb, 0x3, 0x3, 0x6,
 		0x0, 0x15,
 	}
-	require.Equal(t, expectedBytes, authorizedQosFlow.Content)
+	if !bytes.Equal(authorizedQosFlow.Content, expectedBytes) {
+		t.Fatalf("Content mismatch. got = %v, want = %v", authorizedQosFlow.Content, expectedBytes)
+	}
 }
