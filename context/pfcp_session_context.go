@@ -31,16 +31,15 @@ type PFCPSessionContext struct {
 }
 
 func (pfcpSessionContext *PFCPSessionContext) String() string {
-	str := "\n"
+	str := ""
 	for pdrID, pdr := range pfcpSessionContext.PDRs {
-		str += fmt.Sprintln("PDR ID: ", pdrID)
-		str += fmt.Sprintf("PDR: %v\n", pdr)
+		str += fmt.Sprintln("PDR ID:", pdrID)
+		str += fmt.Sprintf("%+v\n", pdr)
 	}
 
-	str += fmt.Sprintln("Node ID: ", pfcpSessionContext.NodeID.ResolveNodeIdToIp().String())
-	str += fmt.Sprintln("LocalSEID: ", pfcpSessionContext.LocalSEID)
-	str += fmt.Sprintln("RemoteSEID: ", pfcpSessionContext.RemoteSEID)
-	str += "\n"
+	str += fmt.Sprintln("Node ID:", pfcpSessionContext.NodeID.ResolveNodeIdToIp().String())
+	str += fmt.Sprintln("LocalSEID:", pfcpSessionContext.LocalSEID)
+	str += fmt.Sprintln("RemoteSEID:", pfcpSessionContext.RemoteSEID)
 
 	return str
 }
