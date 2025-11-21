@@ -333,21 +333,14 @@ func setModuleLogLevel(logger *utilLogger.Logger, moduleCfg *utilLogger.LogSetti
 		logObj.Errorf("could not determine module name: %v", err)
 		return
 	}
-	if moduleCfg == nil {
-		logObj.Warnf("%s Log level not set. Default set to [info] level", moduleName)
+	if moduleCfg == nil || moduleCfg.DebugLevel == "" {
+		logObj.Warnf("%s Log level not set. Default setting to [info] level", moduleName)
 		setLevel(zap.InfoLevel)
 		return
 	}
-	if moduleCfg.DebugLevel != "" {
-		level, err := zapcore.ParseLevel(moduleCfg.DebugLevel)
-		if err != nil {
-			logObj.Warnf("%s Log level [%s] is invalid, set to [info] level", moduleName, moduleCfg.DebugLevel)
-			setLevel(zap.InfoLevel)
-		} else {
-			setLevel(level)
-		}
-	} else {
-		logObj.Warnf("%s Log level not set. Default set to [info] level", moduleName)
-		setLevel(zap.InfoLevel)
+	level, err := zapcore.ParseLevel(moduleCfg.DebugLevel)
+	if err != nil {
+		logObj.Warnf("%s Log level [%s] is invalid, setting to [%s] level", moduleName, moduleCfg.DebugLevel, level.String())
 	}
+	setLevel(level)
 }
