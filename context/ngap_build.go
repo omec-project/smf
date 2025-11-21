@@ -53,6 +53,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	ie.Id.Value = ngapType.ProtocolIEIDULNGUUPTNLInformation
 	ie.Criticality.Value = ngapType.CriticalityPresentReject
 	UpNode.UpfLock.RLock()
+	if UpNode.N3Interfaces == nil || len(UpNode.N3Interfaces) == 0 {
+		UpNode.UpfLock.RUnlock()
+		return nil, fmt.Errorf("no N3Interfaces available in UPF node")
+	}
 	n3IP, err := UpNode.N3Interfaces[0].IP(ctx.SelectedPDUSessionType)
 	UpNode.UpfLock.RUnlock()
 	if err != nil {
