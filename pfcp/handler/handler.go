@@ -458,10 +458,12 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 			return
 		}
-		upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
 		n3Interface := smf_context.UPFInterfaceInfo{}
 		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, fteid.IPv4Address)
+		upf.UpfLock.Lock()
+		upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
 		upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
+		upf.UpfLock.Unlock()
 	}
 
 	if rsp.NodeID == nil {

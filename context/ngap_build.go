@@ -52,7 +52,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	ie = ngapType.PDUSessionResourceSetupRequestTransferIEs{}
 	ie.Id.Value = ngapType.ProtocolIEIDULNGUUPTNLInformation
 	ie.Criticality.Value = ngapType.CriticalityPresentReject
-	if n3IP, err := UpNode.N3Interfaces[0].IP(ctx.SelectedPDUSessionType); err != nil {
+	UpNode.UpfLock.RLock()
+	n3IP, err := UpNode.N3Interfaces[0].IP(ctx.SelectedPDUSessionType)
+	UpNode.UpfLock.RUnlock()
+	if err != nil {
 		return nil, err
 	} else {
 		ie.Value = ngapType.PDUSessionResourceSetupRequestTransferIEsValue{
