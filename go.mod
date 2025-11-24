@@ -16,6 +16,7 @@ require (
 	github.com/urfave/cli/v3 v3.6.1
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver v1.17.6
+	go.uber.org/zap v1.27.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.3
 )
 
@@ -60,7 +61,6 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/crypto v0.43.0 // indirect

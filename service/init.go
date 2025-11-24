@@ -123,86 +123,17 @@ func (smf *SMF) Initialize(c *cli.Command) error {
 }
 
 func (smf *SMF) setLogLevel() {
-	if factory.SmfConfig.Logger == nil {
-		logger.InitLog.Warnln("SMF config without log level setting")
+	cfgLogger := factory.SmfConfig.Logger
+	if cfgLogger == nil {
+		logger.InitLog.Warnln("SMF config without log level setting, defaulting to `info`")
 		return
 	}
 
-	if factory.SmfConfig.Logger.SMF != nil {
-		if factory.SmfConfig.Logger.SMF.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.SMF.DebugLevel); err != nil {
-				logger.InitLog.Warnf("SMF Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.SMF.DebugLevel)
-				logger.SetLogLevel(zap.InfoLevel)
-			} else {
-				logger.InitLog.Infof("SMF Log level is set to [%s] level", level)
-				logger.SetLogLevel(level)
-			}
-		} else {
-			logger.InitLog.Infoln("SMF Log level is default set to [info] level")
-			logger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.SmfConfig.Logger.NAS != nil {
-		if factory.SmfConfig.Logger.NAS.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.NAS.DebugLevel); err != nil {
-				nasLogger.NasLog.Warnf("NAS Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.NAS.DebugLevel)
-				logger.SetLogLevel(zap.InfoLevel)
-			} else {
-				nasLogger.SetLogLevel(level)
-			}
-		} else {
-			nasLogger.NasLog.Warnln("NAS Log level not set. Default set to [info] level")
-			nasLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.SmfConfig.Logger.NGAP != nil {
-		if factory.SmfConfig.Logger.NGAP.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.NGAP.DebugLevel); err != nil {
-				ngapLogger.NgapLog.Warnf("NGAP Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.NGAP.DebugLevel)
-				ngapLogger.SetLogLevel(zap.InfoLevel)
-			} else {
-				ngapLogger.SetLogLevel(level)
-			}
-		} else {
-			ngapLogger.NgapLog.Warnln("NGAP Log level not set. Default set to [info] level")
-			ngapLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.SmfConfig.Logger.OpenApi != nil {
-		if factory.SmfConfig.Logger.OpenApi.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.OpenApi.DebugLevel); err != nil {
-				openapiLogger.OpenapiLog.Warnf("OpenApi Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.OpenApi.DebugLevel)
-				openapiLogger.SetLogLevel(zap.InfoLevel)
-			} else {
-				openapiLogger.SetLogLevel(level)
-			}
-		} else {
-			openapiLogger.OpenapiLog.Warnln("OpenApi Log level not set. Default set to [info] level")
-			openapiLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
-
-	if factory.SmfConfig.Logger.Util != nil {
-		if factory.SmfConfig.Logger.Util.DebugLevel != "" {
-			if level, err := zapcore.ParseLevel(factory.SmfConfig.Logger.Util.DebugLevel); err != nil {
-				utilLogger.UtilLog.Warnf("Util (drsm, fsm, etc.) Log level [%s] is invalid, set to [info] level",
-					factory.SmfConfig.Logger.Util.DebugLevel)
-				utilLogger.SetLogLevel(zap.InfoLevel)
-			} else {
-				utilLogger.SetLogLevel(level)
-			}
-		} else {
-			utilLogger.UtilLog.Warnln("Util (drsm, fsm, etc.) Log level not set. Default set to [info] level")
-			utilLogger.SetLogLevel(zap.InfoLevel)
-		}
-	}
+	setModuleLogLevel(cfgLogger, cfgLogger.SMF, logger.InitLog, logger.SetLogLevel)
+	setModuleLogLevel(cfgLogger, cfgLogger.NAS, nasLogger.NasLog, nasLogger.SetLogLevel)
+	setModuleLogLevel(cfgLogger, cfgLogger.NGAP, ngapLogger.NgapLog, ngapLogger.SetLogLevel)
+	setModuleLogLevel(cfgLogger, cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
+	setModuleLogLevel(cfgLogger, cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
 
 	// Initialize Statistics
 	go metrics.InitMetrics()
@@ -393,4 +324,23 @@ func (smf *SMF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup)
 
 func (smf *SMF) Exec(c *cli.Command) error {
 	return nil
+}
+
+// setModuleLogLevel is a helper to reduce repetition in log level setup
+func setModuleLogLevel(logger *utilLogger.Logger, moduleCfg *utilLogger.LogSetting, logObj *zap.SugaredLogger, setLevel func(zapcore.Level)) {
+	moduleName, err := utilLogger.GetLogSettingName(logger, moduleCfg)
+	if err != nil {
+		logObj.Errorf("could not determine module name: %v", err)
+		return
+	}
+	if moduleCfg == nil || moduleCfg.DebugLevel == "" {
+		logObj.Warnf("%s Log level not set. Default setting to [info] level", moduleName)
+		setLevel(zap.InfoLevel)
+		return
+	}
+	level, err := zapcore.ParseLevel(moduleCfg.DebugLevel)
+	if err != nil {
+		logObj.Warnf("%s Log level [%s] is invalid, setting to [%s] level", moduleName, moduleCfg.DebugLevel, level.String())
+	}
+	setLevel(level)
 }
