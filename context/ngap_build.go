@@ -61,22 +61,21 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 	UpNode.UpfLock.RUnlock()
 	if err != nil {
 		return nil, err
-	} else {
-		ie.Value = ngapType.PDUSessionResourceSetupRequestTransferIEsValue{
-			Present: ngapType.PDUSessionResourceSetupRequestTransferIEsPresentULNGUUPTNLInformation,
-			ULNGUUPTNLInformation: &ngapType.UPTransportLayerInformation{
-				Present: ngapType.UPTransportLayerInformationPresentGTPTunnel,
-				GTPTunnel: &ngapType.GTPTunnel{
-					TransportLayerAddress: ngapType.TransportLayerAddress{
-						Value: aper.BitString{
-							Bytes:     n3IP,
-							BitLength: uint64(len(n3IP) * 8),
-						},
+	}
+	ie.Value = ngapType.PDUSessionResourceSetupRequestTransferIEsValue{
+		Present: ngapType.PDUSessionResourceSetupRequestTransferIEsPresentULNGUUPTNLInformation,
+		ULNGUUPTNLInformation: &ngapType.UPTransportLayerInformation{
+			Present: ngapType.UPTransportLayerInformationPresentGTPTunnel,
+			GTPTunnel: &ngapType.GTPTunnel{
+				TransportLayerAddress: ngapType.TransportLayerAddress{
+					Value: aper.BitString{
+						Bytes:     n3IP,
+						BitLength: uint64(len(n3IP) * 8),
 					},
-					GTPTEID: ngapType.GTPTEID{Value: teidOct},
 				},
+				GTPTEID: ngapType.GTPTEID{Value: teidOct},
 			},
-		}
+		},
 	}
 
 	resourceSetupRequestTransfer.ProtocolIEs.List = append(resourceSetupRequestTransfer.ProtocolIEs.List, ie)
