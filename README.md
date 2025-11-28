@@ -7,6 +7,7 @@ Copyright 2019 free5GC.org
 SPDX-License-Identifier: Apache-2.0
 -->
 [![Go Report Card](https://goreportcard.com/badge/github.com/omec-project/smf)](https://goreportcard.com/report/github.com/omec-project/smf)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/omec-project/smf/badge)](https://scorecard.dev/viewer/?uri=github.com/omec-project/smf)
 
 # SMF
 
