@@ -23,7 +23,7 @@ WORKDIR $GOPATH/src/smf
 COPY . .
 RUN make all
 
-FROM alpine:3.23@sha256:51183f2cfa6320055da30872f211093f9ff1d3cf06f39a0bdb212314c5dc7375 AS smf
+FROM alpine:3.23@sha256:865b95f46d98cf867a156fe4a135ad3fe50d2056aa3f25ed31662dff6da4eb62 AS smf
 
 LABEL maintainer="Aether SD-Core <dev@lists.aetherproject.org>" \
     description="ONF open source 5G Core Network" \
