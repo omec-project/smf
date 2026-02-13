@@ -10,7 +10,7 @@ require (
 	github.com/omec-project/nas v1.6.4
 	github.com/omec-project/ngap v1.6.1
 	github.com/omec-project/openapi v1.7.0
-	github.com/omec-project/util v1.5.7
+	github.com/omec-project/util v1.7.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/urfave/cli/v3 v3.6.2
