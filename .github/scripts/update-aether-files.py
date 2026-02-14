@@ -110,8 +110,8 @@ def update_timeouts_and_fixes(aether_dir: Path) -> None:
     print(f"Updated 5gc timeouts in {core_install}")
 
 
-def replace_jinja2_with_placeholders(content: str) -> Tuple[str, Dict[str, str]]:
-    """Replace Jinja2 templates {{ ... }} with placeholders."""
+def replace_aether_templates_with_placeholders(content: str) -> Tuple[str, Dict[str, str]]:
+    """Replace Aether templates {{ ... }} with placeholders."""
     template_pattern = re.compile(r'\{\{[^}]+\}\}')
     templates = {}
     placeholder_index = 0
@@ -119,19 +119,19 @@ def replace_jinja2_with_placeholders(content: str) -> Tuple[str, Dict[str, str]]
     def replace_template(match):
         nonlocal placeholder_index
         template_text = match.group(0)
-        placeholder = f"__JINJA_PLACEHOLDER_{placeholder_index}__"
+        placeholder = f"AETHER_PLACEHOLDER_{placeholder_index}"
         templates[placeholder] = template_text
         placeholder_index += 1
         # Quote the placeholder so YAML parsers treat it as a string
         return f'"{placeholder}"'
     
     modified_content = template_pattern.sub(replace_template, content)
-    print(f"Replaced {len(templates)} Jinja2 templates with placeholders", file=sys.stderr)
+    print(f"Replaced {len(templates)} Aether templates with placeholders", file=sys.stderr)
     return modified_content, templates
 
 
-def restore_jinja2_templates(content: str, templates: Dict[str, str]) -> str:
-    """Restore Jinja2 templates from placeholders."""
+def restore_aether_templates(content: str, templates: Dict[str, str]) -> str:
+    """Restore Aether templates from placeholders."""
     replacements_made = 0
     
     for placeholder, template in templates.items():
@@ -304,9 +304,9 @@ def configure_sdcore_images(
     original_content = base_values_file.read_text()
     print(f"DEBUG: Original file size: {len(original_content)} bytes")
     
-    # Replace Jinja2 templates with placeholders
-    print("Replacing Jinja2 templates with placeholders...")
-    modified_content, template_map = replace_jinja2_with_placeholders(original_content)
+    # Replace Aether templates with placeholders
+    print("Replacing Aether templates with placeholders...")
+    modified_content, template_map = replace_aether_templates_with_placeholders(original_content)
     
     # Write modified content to temp file for YAML processing
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_base:
@@ -360,9 +360,9 @@ def configure_sdcore_images(
                 # Write merged data back to string
                 merged_yaml = yaml.dump(merged_data, default_flow_style=False, sort_keys=False)
                 
-                # Restore Jinja2 templates
-                print("\nDEBUG: Restoring Jinja2 templates...")
-                final_content = restore_jinja2_templates(merged_yaml, template_map)
+                # Restore Aether templates
+                print("\nDEBUG: Restoring Aether templates...")
+                final_content = restore_aether_templates(merged_yaml, template_map)
                 
                 # Write final content back to original file
                 base_values_file.write_text(final_content)
