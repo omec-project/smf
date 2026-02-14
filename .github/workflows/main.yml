@@ -15,107 +15,12 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/build.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  docker-build:
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/docker-build.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  static-analysis:
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/static-analysis.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  lint:
-    permissions:
-      contents: read
-      checks: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/lint.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  hadolint:
-    permissions:
-      contents: read
-      security-events: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/hadolint.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
   license-check:
     permissions:
       contents: read
       id-token: write
       attestations: write
     uses: omec-project/.github/.github/workflows/license-check.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  fossa-scan:
-    permissions:
-      contents: read
-      security-events: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/fossa-scan.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  unit-tests:
-    permissions:
-      contents: read
-      checks: write
-      id-token: write
-      attestations: write
-    uses: omec-project/.github/.github/workflows/unit-test.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
-
-  analysis:
-    if: github.repository_owner == 'omec-project'
-    permissions:
-      actions: read
-      artifact-metadata: read
-      attestations: read
-      checks: read
-      contents: read
-      deployments: read
-      discussions: read
-      id-token: write
-      issues: read
-      models: read
-      packages: read
-      pages: read
-      pull-requests: read
-      repository-projects: read
-      security-events: write
-      statuses: read
-    uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
     with:
       branch_name: ${{ github.ref }}
 
@@ -127,6 +32,206 @@ jobs:
       checks: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/e2e-test.yml@d2c362a98ad0cb4911ea762e25109f71f2301d9e # v0.0.12
-    with:
-      branch_name: ${{ github.ref }}
+    runs-on: ubuntu-latest
+    env:
+      NAMESPACE: aether-5gc
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set image names
+        run: |
+          REPO_NAME=$(echo "${GITHUB_REPOSITORY}" | cut -d'/' -f2)
+          # webconsole uses 'webui' as the image name
+          IMAGE_NAME="${REPO_NAME/webconsole/webui}"
+          LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
+          echo "REPO_NAME=${REPO_NAME}" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+          echo "LOCAL_IMAGE_NAME=${LOCAL_IMAGE_NAME}" >> "$GITHUB_ENV"
+          echo "Repository: ${REPO_NAME}"
+          echo "Image name: ${IMAGE_NAME}"
+          echo "Local image name: ${LOCAL_IMAGE_NAME}"
+
+      # - name: Update and install dependencies
+      #   run: |
+      #     set -e
+      #     sudo apt update
+      #     # Kubernetes dependencies
+      #     sudo apt-get install -y conntrack socat ipset ebtables
+      #     # Build and automation tools
+      #     sudo apt install -y pipx make yq
+      #     # Install Ansible via pipx for aether-onramp
+      #     pipx install --include-deps ansible
+      #     echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # - name: Generate SSH Key
+      #   run: |
+      #     set -e
+      #     # NOTE: This job runs on a GitHub-hosted runner. The VM and its filesystem
+      #     # are ephemeral and destroyed after the job completes, so this SSH key does
+      #     # not persist beyond the lifetime of this workflow run.
+      #     mkdir -p ~/.ssh
+      #     chmod 700 ~/.ssh
+      #     ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N "" -q
+      #     cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+      #     chmod 600 ~/.ssh/authorized_keys
+
+      - name: Clone aether-onramp repository
+        run: |
+          set -e
+          REPO_URL="https://github.com/opennetworkinglab/aether-onramp.git"
+          # Pin to a specific commit/tag for reproducible CI runs
+          AETHER_ONRAMP_REF="main"
+          # Clone to parent directory to avoid polluting current workspace
+          AETHER_ONRAMP_DIR="${GITHUB_WORKSPACE}/../aether-onramp"
+          if ! git clone --recursive --branch "${AETHER_ONRAMP_REF}" --depth 1 ${REPO_URL} "${AETHER_ONRAMP_DIR}"; then
+            echo "ERROR: Failed to clone aether-onramp repository from ${REPO_URL}" >&2
+            exit 1
+          fi
+          cd "${AETHER_ONRAMP_DIR}"
+          echo "=== aether-onramp commit used ==="
+          git log -1 --format="Commit: %H%nAuthor: %an%nDate: %ad%nMessage: %s"
+          # Export for use in subsequent steps
+          echo "AETHER_ONRAMP_DIR=${AETHER_ONRAMP_DIR}" >> "$GITHUB_ENV"
+
+      - name: Update aether-onramp configuration files
+        run: |
+          chmod +x .github/scripts/update-aether-files.sh
+          # Update all configuration: hosts.ini, timeouts, and sd-core values with local image
+          .github/scripts/update-aether-files.sh "${AETHER_ONRAMP_DIR}" "${IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
+
+      - name: Check values file
+        run: |
+          cat "${AETHER_ONRAMP_DIR}/deps/5gc/roles/core/templates/sdcore-5g-values.yaml"
+
+      # - name: Test aether-pingall
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-pingall
+
+      # - name: Install aether-k8s
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-k8s-install
+
+      # - name: Build and push local image to registry
+      #   run: |
+      #     set -ex
+
+      #     # Use the repository already checked out in the workspace
+      #     cd "${GITHUB_WORKSPACE}"
+
+      #     # Set up a local registry to serve the image; use host networking to avoid exposing an extra mapped port
+      #     echo "=== Starting local registry ==="
+      #     docker run -d --network host --name registry registry:2
+
+      #     # Build and push to local registry
+      #     LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
+      #     echo "=== Building Docker image ${LOCAL_IMAGE_NAME} ==="
+      #     if ! docker build -t "${LOCAL_IMAGE_NAME}" .; then
+      #       echo "Docker build failed, aborting."
+      #       exit 1
+      #     fi
+
+      #     echo "=== Pushing Docker image ${LOCAL_IMAGE_NAME} to local registry ==="
+      #     if ! docker push "${LOCAL_IMAGE_NAME}"; then
+      #       echo "Docker push failed, aborting."
+      #       exit 1
+      #     fi
+
+      #     echo "=== Verifying image in local registry ==="
+      #     curl -f -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
+
+      # - name: Install 5G Core
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-5gc-install
+
+      # - name: Pods status
+      #   run: |
+      #     set -e
+      #     echo "Pods status"
+      #     kubectl -n aether-5gc get pods
+
+      # - name: Wait for all pods to be ready
+      #   run: |
+      #     set -e
+      #     echo "Waiting for all pods in aether-5gc namespace to be Ready..."
+      #     kubectl wait --for=condition=ready pod --all -n aether-5gc --timeout=1200s
+
+      # - name: Install GNBSIM
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-gnbsim-install
+
+      # - name: Perform tests
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-gnbsim-run
+
+      # - name: Validate results
+      #   run: |
+      #     set -e
+      #     # Capture summary.log contents and verify it exists
+      #     status=$(docker exec gnbsim-1 cat summary.log 2>/dev/null) || {
+      #       echo "Failed to read summary.log from gnbsim-1 container."
+      #       exit 1
+      #     }
+
+      #     if [ -z "$status" ]; then
+      #       echo "summary.log is missing or empty."
+      #       exit 1
+      #     fi
+
+      #     if echo "$status" | grep -q "Profile Status: PASS"; then
+      #       echo "Profile Status is successful."
+      #       echo "summary.log contents:"
+      #       echo "$status"
+      #     else
+      #       echo "Profile Status does not indicate success (expected 'Profile Status: PASS')."
+      #       echo "summary.log contents:"
+      #       echo "$status"
+      #       exit 1
+      #     fi
+
+      # - name: Cleanup local registry
+      #   if: always()
+      #   run: |
+      #     if docker ps -a --format '{{.Names}}' | grep -q '^registry$'; then
+      #       echo "Stopping and removing local registry container..."
+      #       docker stop registry || true
+      #       docker rm registry || true
+      #     fi
+
+      # - name: Dump all pod logs in aether-5gc namespace
+      #   if: always()
+      #   run: |
+      #     set -ex
+
+      #     mkdir -p logs
+      #     kubectl get events -A --sort-by='.lastTimestamp' > logs/events.log
+      #     kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.log
+      #     for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+      #       if ! kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1; then
+      #         echo "Failed to collect logs for pod ${pod} using '--all-containers'; attempting fallback without the flag." | tee -a logs/log-collection-errors.log
+      #         if ! kubectl logs -n "$NAMESPACE" "$pod" >> "logs/${pod}.log" 2>&1; then
+      #           echo "Fallback log collection for pod ${pod} without '--all-containers' also failed." | tee -a logs/log-collection-errors.log
+      #         fi
+      #       fi
+      #     done
+      #     for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${IMAGE_NAME}" -o jsonpath='{.items[*].metadata.name}'); do
+      #       kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
+      #     done
+      #     docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1 || true
+
+      # - name: Upload pod logs
+      #   if: always()
+      #   uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      #   with:
+      #     name: aether-5gc-logs
+      #     path: logs/
