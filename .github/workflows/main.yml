@@ -52,17 +52,17 @@ jobs:
           echo "Image name: ${IMAGE_NAME}"
           echo "Local image name: ${LOCAL_IMAGE_NAME}"
 
-      # - name: Update and install dependencies
-      #   run: |
-      #     set -e
-      #     sudo apt update
-      #     # Kubernetes dependencies
-      #     sudo apt-get install -y conntrack socat ipset ebtables
-      #     # Build and automation tools
-      #     sudo apt install -y pipx make yq
-      #     # Install Ansible via pipx for aether-onramp
-      #     pipx install --include-deps ansible
-      #     echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Update and install dependencies
+        run: |
+          set -e
+          sudo apt update
+          # Kubernetes dependencies
+          sudo apt-get install -y conntrack socat ipset ebtables
+          # Build and automation tools
+          sudo apt install -y pipx make python3-yaml
+          # Install Ansible via pipx for aether-onramp
+          pipx install --include-deps ansible
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # - name: Generate SSH Key
       #   run: |
@@ -96,9 +96,8 @@ jobs:
 
       - name: Update aether-onramp configuration files
         run: |
-          chmod +x .github/scripts/update-aether-files.sh
           # Update all configuration: hosts.ini, timeouts, and sd-core values with local image
-          .github/scripts/update-aether-files.sh "${AETHER_ONRAMP_DIR}" "${IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
+          .github/scripts/update-aether-files.py "${AETHER_ONRAMP_DIR}" "${IMAGE_NAME}" "${LOCAL_IMAGE_NAME}"
 
       - name: Check values file
         run: |
