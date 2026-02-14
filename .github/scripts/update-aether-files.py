@@ -209,20 +209,65 @@ def find_single_directory(base_dir: Path, name: str) -> Optional[Path]:
     return matches[0]
 
 
+def get_enabled_sections(base_values_file: Path) -> list:
+    """Extract enabled sections from sdcore-5g-values.yaml."""
+    with open(base_values_file, 'r') as f:
+        values = yaml.safe_load(f)
+    
+    enabled_sections = []
+    if values:
+        for section_name, section_config in values.items():
+            if isinstance(section_config, dict):
+                # Check for various enable flags at the top level
+                if (section_config.get('enable') is True or 
+                    section_config.get('enable5G') is True or
+                    section_config.get('enable4G') is True):
+                    enabled_sections.append(section_name)
+                    print(f"DEBUG: Found enabled section: {section_name}")
+    
+    return enabled_sections
+
+
 def build_image_overrides(
     chart_dir: Path,
+    base_values_file: Path,
     image_name: str,
     local_image_name: str,
     registry_prefix: str
 ) -> dict:
-    """Build the image override structure for sd-core values."""
+    """Build the image override structure for sd-core values based on enabled sections."""
     overrides = {}
     
-    # Process 5g-control-plane images
-    control_plane_dir = find_single_directory(chart_dir, '5g-control-plane')
-    if control_plane_dir and (control_plane_dir / 'values.yaml').exists():
-        with open(control_plane_dir / 'values.yaml', 'r') as f:
+    # Get enabled sections from the base values file
+    enabled_sections = get_enabled_sections(base_values_file)
+    
+    if not enabled_sections:
+        print("WARNING: No enabled sections found in values file")
+        return overrides
+    
+    print(f"DEBUG: Processing enabled sections: {', '.join(enabled_sections)}")
+    
+    for section_name in enabled_sections:
+        # Try to find corresponding chart directory
+        section_dir = find_single_directory(chart_dir, section_name)
+        
+        # Some charts might have different names, try common alternatives
+        if not section_dir and section_name == 'omec-user-plane':
+            section_dir = find_single_directory(chart_dir, 'bess-upf')
+        
+        if not section_dir or not (section_dir / 'values.yaml').exists():
+            print(f"DEBUG: Skipping {section_name} - no chart directory found")
+            continue
+        
+        print(f"DEBUG: Processing images for {section_name}...")
+        
+        with open(section_dir / 'values.yaml', 'r') as f:
             chart_values = yaml.safe_load(f)
+        
+        # Check if this chart has images to override
+        if not chart_values.get('images', {}).get('tags'):
+            print(f"DEBUG: No image tags found in {section_name}")
+            continue
         
         tags = {}
         for tag_name, tag_value in chart_values.get('images', {}).get('tags', {}).items():
@@ -233,52 +278,15 @@ def build_image_overrides(
                 print(f"DEBUG: Using registry mirror for {tag_name}: {registry_prefix}{tag_value}")
                 tags[tag_name] = f"{registry_prefix}{tag_value}"
         
-        overrides['5g-control-plane'] = {
-            'images': {
-                'repository': '',
-                'pullPolicy': 'Always',
-                'tags': tags
-            }
-        }
-    
-    # Process omec-sub-provision images
-    sub_prov_dir = find_single_directory(chart_dir, 'omec-sub-provision')
-    if sub_prov_dir and (sub_prov_dir / 'values.yaml').exists():
-        print("DEBUG: Adding omec-sub-provision images to overrides...")
-        with open(sub_prov_dir / 'values.yaml', 'r') as f:
-            chart_values = yaml.safe_load(f)
-        
-        tags = {}
-        for tag_name, tag_value in chart_values.get('images', {}).get('tags', {}).items():
-            tags[tag_name] = f"{registry_prefix}{tag_value}"
-        
-        overrides['omec-sub-provision'] = {
+        # Build override structure
+        override_struct = {
             'images': {
                 'repository': '',
                 'tags': tags
             }
         }
-    
-    # Process omec-user-plane images (might be named bess-upf)
-    user_plane_dir = find_single_directory(chart_dir, 'omec-user-plane')
-    if not user_plane_dir:
-        user_plane_dir = find_single_directory(chart_dir, 'bess-upf')
-    
-    if user_plane_dir and (user_plane_dir / 'values.yaml').exists():
-        print("DEBUG: Adding omec-user-plane images to overrides...")
-        with open(user_plane_dir / 'values.yaml', 'r') as f:
-            chart_values = yaml.safe_load(f)
         
-        tags = {}
-        for tag_name, tag_value in chart_values.get('images', {}).get('tags', {}).items():
-            tags[tag_name] = f"{registry_prefix}{tag_value}"
-        
-        overrides['omec-user-plane'] = {
-            'images': {
-                'repository': '',
-                'tags': tags
-            }
-        }
+        overrides[section_name] = override_struct
     
     return overrides
 
@@ -339,6 +347,7 @@ def configure_sdcore_images(
             print("\n=== Extracting image tags from Helm chart values ===")
             overrides = build_image_overrides(
                 pulled_chart_dir,
+                temp_base_path,
                 image_name,
                 local_image_name,
                 registry_prefix
