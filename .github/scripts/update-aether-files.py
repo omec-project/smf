@@ -57,10 +57,52 @@ def get_network_info() -> Tuple[str, str]:
         sys.exit(1)
 
 
-def create_hosts_ini(aether_dir: Path, ip_addr: str) -> None:
-    """Create the hosts.ini file for Ansible."""
-    hosts_content = f"""[all]
-node1 ansible_host={ip_addr} ansible_user=runner ansible_ssh_private_key_file=~/.ssh/id_rsa
+def update_hosts_ini(aether_dir: Path, ip_addr: str) -> None:
+    """Update the hosts.ini file with the detected IP address and CI user settings."""
+    hosts_file = aether_dir / 'hosts.ini'
+    
+    # Detect current user and SSH key location
+    import os
+    ansible_user = os.environ.get('USER', 'runner')
+    
+    # Check common SSH key locations
+    ssh_key_locations = [
+        '~/.ssh/id_rsa',
+        '~/.ssh/id_ed25519',
+        '~/.ssh/id_ecdsa',
+    ]
+    ssh_key_file = '~/.ssh/id_rsa'  # default
+    for key_path in ssh_key_locations:
+        expanded = Path(key_path).expanduser()
+        if expanded.exists():
+            ssh_key_file = key_path
+            break
+    
+    if hosts_file.exists():
+        # Update existing file
+        content = hosts_file.read_text()
+        lines = content.splitlines()
+        updated_lines = []
+        
+        for line in lines:
+            # Skip empty lines and comments
+            if not line.strip() or line.strip().startswith('#'):
+                updated_lines.append(line)
+                continue
+            
+            # Update ansible parameters only in active lines
+            line = re.sub(r'ansible_host=\S+', f'ansible_host={ip_addr}', line)
+            line = re.sub(r'ansible_user=\S+', f'ansible_user={ansible_user}', line)
+            line = re.sub(r'ansible_ssh_private_key_file=\S+', f'ansible_ssh_private_key_file={ssh_key_file}', line)
+            updated_lines.append(line)
+        
+        content = '\n'.join(updated_lines)
+        print(f"Updated existing {hosts_file} with IP: {ip_addr}, user: {ansible_user}")
+    else:
+        # Create new file if it doesn't exist
+        print(f"Creating new {hosts_file}")
+        content = f"""[all]
+node1 ansible_host={ip_addr} ansible_user={ansible_user} ansible_ssh_private_key_file={ssh_key_file}
 
 [master_nodes]
 node1
@@ -70,9 +112,9 @@ node1
 [gnbsim_nodes]
 node1
 """
-    hosts_file = aether_dir / 'hosts.ini'
-    hosts_file.write_text(hosts_content)
-    print(f"Created {hosts_file}")
+    
+    hosts_file.write_text(content)
+    print(f"hosts.ini configured with IP: {ip_addr}, user: {ansible_user}, SSH key: {ssh_key_file}")
 
 
 def update_vars_main(aether_dir: Path, interface: str, ip_addr: str) -> None:
@@ -134,7 +176,12 @@ def restore_aether_templates(content: str, templates: Dict[str, str]) -> str:
     """Restore Aether templates from placeholders."""
     replacements_made = 0
     
-    for placeholder, template in templates.items():
+    # Sort placeholders by length (longest first) to avoid partial matches
+    # For example, AETHER_PLACEHOLDER_100 must be replaced before AETHER_PLACEHOLDER_10
+    sorted_placeholders = sorted(templates.keys(), key=len, reverse=True)
+    
+    for placeholder in sorted_placeholders:
+        template = templates[placeholder]
         quoted_placeholder = f'"{placeholder}"'
         
         # Try quoted version first (as inserted), then unquoted (after YAML processing)
@@ -422,7 +469,7 @@ def main():
     print(f"Interface: {interface}")
     
     # Update basic aether-onramp configuration
-    create_hosts_ini(args.aether_onramp_dir, ip_addr)
+    update_hosts_ini(args.aether_onramp_dir, ip_addr)
     update_vars_main(args.aether_onramp_dir, interface, ip_addr)
     update_timeouts_and_fixes(args.aether_onramp_dir)
     

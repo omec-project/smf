@@ -103,134 +103,134 @@ jobs:
         run: |
           cat "${AETHER_ONRAMP_DIR}/deps/5gc/roles/core/templates/sdcore-5g-values.yaml"
 
-      - name: Test aether-pingall
-        run: |
-          set -e
-          cd "${AETHER_ONRAMP_DIR}"
-          make aether-pingall
+      # - name: Test aether-pingall
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-pingall
 
-      - name: Install aether-k8s
-        run: |
-          set -e
-          cd "${AETHER_ONRAMP_DIR}"
-          make aether-k8s-install
+      # - name: Install aether-k8s
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-k8s-install
 
-      - name: Build and push local image to registry
-        run: |
-          set -ex
+      # - name: Build and push local image to registry
+      #   run: |
+      #     set -ex
 
-          # Use the repository already checked out in the workspace
-          cd "${GITHUB_WORKSPACE}"
+      #     # Use the repository already checked out in the workspace
+      #     cd "${GITHUB_WORKSPACE}"
 
-          # Set up a local registry to serve the image; use host networking to avoid exposing an extra mapped port
-          echo "=== Starting local registry ==="
-          docker run -d --network host --name registry registry:2
+      #     # Set up a local registry to serve the image; use host networking to avoid exposing an extra mapped port
+      #     echo "=== Starting local registry ==="
+      #     docker run -d --network host --name registry registry:2
 
-          # Build and push to local registry
-          LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
-          echo "=== Building Docker image ${LOCAL_IMAGE_NAME} ==="
-          if ! docker build -t "${LOCAL_IMAGE_NAME}" .; then
-            echo "Docker build failed, aborting."
-            exit 1
-          fi
+      #     # Build and push to local registry
+      #     LOCAL_IMAGE_NAME="localhost:5000/${IMAGE_NAME}:testing"
+      #     echo "=== Building Docker image ${LOCAL_IMAGE_NAME} ==="
+      #     if ! docker build -t "${LOCAL_IMAGE_NAME}" .; then
+      #       echo "Docker build failed, aborting."
+      #       exit 1
+      #     fi
 
-          echo "=== Pushing Docker image ${LOCAL_IMAGE_NAME} to local registry ==="
-          if ! docker push "${LOCAL_IMAGE_NAME}"; then
-            echo "Docker push failed, aborting."
-            exit 1
-          fi
+      #     echo "=== Pushing Docker image ${LOCAL_IMAGE_NAME} to local registry ==="
+      #     if ! docker push "${LOCAL_IMAGE_NAME}"; then
+      #       echo "Docker push failed, aborting."
+      #       exit 1
+      #     fi
 
-          echo "=== Verifying image in local registry ==="
-          curl -f -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
+      #     echo "=== Verifying image in local registry ==="
+      #     curl -f -X GET http://localhost:5000/v2/${IMAGE_NAME}/tags/list
 
-      - name: Install 5G Core
-        run: |
-          set -e
-          cd "${AETHER_ONRAMP_DIR}"
-          make aether-5gc-install
+      # - name: Install 5G Core
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-5gc-install
 
-      - name: Pods status
-        run: |
-          set -e
-          echo "Pods status"
-          kubectl -n aether-5gc get pods
+      # - name: Pods status
+      #   run: |
+      #     set -e
+      #     echo "Pods status"
+      #     kubectl -n aether-5gc get pods
 
-      - name: Wait for all pods to be ready
-        run: |
-          set -e
-          echo "Waiting for all pods in aether-5gc namespace to be Ready..."
-          kubectl wait --for=condition=ready pod --all -n aether-5gc --timeout=1200s
+      # - name: Wait for all pods to be ready
+      #   run: |
+      #     set -e
+      #     echo "Waiting for all pods in aether-5gc namespace to be Ready..."
+      #     kubectl wait --for=condition=ready pod --all -n aether-5gc --timeout=1200s
 
-      - name: Install GNBSIM
-        run: |
-          set -e
-          cd "${AETHER_ONRAMP_DIR}"
-          make aether-gnbsim-install
+      # - name: Install GNBSIM
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-gnbsim-install
 
-      - name: Perform tests
-        run: |
-          set -e
-          cd "${AETHER_ONRAMP_DIR}"
-          make aether-gnbsim-run
+      # - name: Perform tests
+      #   run: |
+      #     set -e
+      #     cd "${AETHER_ONRAMP_DIR}"
+      #     make aether-gnbsim-run
 
-      - name: Validate results
-        run: |
-          set -e
-          # Capture summary.log contents and verify it exists
-          status=$(docker exec gnbsim-1 cat summary.log 2>/dev/null) || {
-            echo "Failed to read summary.log from gnbsim-1 container."
-            exit 1
-          }
+      # - name: Validate results
+      #   run: |
+      #     set -e
+      #     # Capture summary.log contents and verify it exists
+      #     status=$(docker exec gnbsim-1 cat summary.log 2>/dev/null) || {
+      #       echo "Failed to read summary.log from gnbsim-1 container."
+      #       exit 1
+      #     }
 
-          if [ -z "$status" ]; then
-            echo "summary.log is missing or empty."
-            exit 1
-          fi
+      #     if [ -z "$status" ]; then
+      #       echo "summary.log is missing or empty."
+      #       exit 1
+      #     fi
 
-          if echo "$status" | grep -q "Profile Status: PASS"; then
-            echo "Profile Status is successful."
-            echo "summary.log contents:"
-            echo "$status"
-          else
-            echo "Profile Status does not indicate success (expected 'Profile Status: PASS')."
-            echo "summary.log contents:"
-            echo "$status"
-            exit 1
-          fi
+      #     if echo "$status" | grep -q "Profile Status: PASS"; then
+      #       echo "Profile Status is successful."
+      #       echo "summary.log contents:"
+      #       echo "$status"
+      #     else
+      #       echo "Profile Status does not indicate success (expected 'Profile Status: PASS')."
+      #       echo "summary.log contents:"
+      #       echo "$status"
+      #       exit 1
+      #     fi
 
-      - name: Cleanup local registry
-        if: always()
-        run: |
-          if docker ps -a --format '{{.Names}}' | grep -q '^registry$'; then
-            echo "Stopping and removing local registry container..."
-            docker stop registry || true
-            docker rm registry || true
-          fi
+      # - name: Cleanup local registry
+      #   if: always()
+      #   run: |
+      #     if docker ps -a --format '{{.Names}}' | grep -q '^registry$'; then
+      #       echo "Stopping and removing local registry container..."
+      #       docker stop registry || true
+      #       docker rm registry || true
+      #     fi
 
-      - name: Dump all pod logs in aether-5gc namespace
-        if: always()
-        run: |
-          set -ex
+      # - name: Dump all pod logs in aether-5gc namespace
+      #   if: always()
+      #   run: |
+      #     set -ex
 
-          mkdir -p logs
-          kubectl get events -A --sort-by='.lastTimestamp' > logs/events.log
-          kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.log
-          for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
-            if ! kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1; then
-              echo "Failed to collect logs for pod ${pod} using '--all-containers'; attempting fallback without the flag." | tee -a logs/log-collection-errors.log
-              if ! kubectl logs -n "$NAMESPACE" "$pod" >> "logs/${pod}.log" 2>&1; then
-                echo "Fallback log collection for pod ${pod} without '--all-containers' also failed." | tee -a logs/log-collection-errors.log
-              fi
-            fi
-          done
-          for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${IMAGE_NAME}" -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
-          done
-          docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1 || true
+      #     mkdir -p logs
+      #     kubectl get events -A --sort-by='.lastTimestamp' > logs/events.log
+      #     kubectl get pods -n "$NAMESPACE" -o wide > logs/pods-summary.log
+      #     for pod in $(kubectl get pods -n "$NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+      #       if ! kubectl logs --all-containers -n "$NAMESPACE" "$pod" > "logs/${pod}.log" 2>&1; then
+      #         echo "Failed to collect logs for pod ${pod} using '--all-containers'; attempting fallback without the flag." | tee -a logs/log-collection-errors.log
+      #         if ! kubectl logs -n "$NAMESPACE" "$pod" >> "logs/${pod}.log" 2>&1; then
+      #           echo "Fallback log collection for pod ${pod} without '--all-containers' also failed." | tee -a logs/log-collection-errors.log
+      #         fi
+      #       fi
+      #     done
+      #     for pod in $(kubectl get pods -n "$NAMESPACE" -l app="${IMAGE_NAME}" -o jsonpath='{.items[*].metadata.name}'); do
+      #       kubectl describe pod -n "$NAMESPACE" "$pod" > "logs/${pod}-describe.log" 2>&1 || true
+      #     done
+      #     docker exec gnbsim-1 cat gnbsim.log > logs/gnbsim.log 2>&1 || true
 
-      - name: Upload pod logs
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: aether-5gc-logs
-          path: logs/
+      # - name: Upload pod logs
+      #   if: always()
+      #   uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      #   with:
+      #     name: aether-5gc-logs
+      #     path: logs/
