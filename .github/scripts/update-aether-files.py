@@ -17,7 +17,7 @@ from typing import Dict, Tuple, Optional
 try:
     import yaml
 except ImportError:
-    print("ERROR: PyYAML is required. Install with: pip install PyYAML", file=sys.stderr)
+    print("ERROR: PyYAML is required. Install with: sudo apt install python3-yaml", file=sys.stderr)
     sys.exit(1)
 
 
@@ -97,7 +97,7 @@ def update_timeouts_and_fixes(aether_dir: Path) -> None:
     content = content.replace('300s', '600s')
     # Remove the deployment wait line that fails in fresh cluster
     content = '\n'.join(line for line in content.splitlines() 
-                       if 'kubectl.*wait deployment.*kube-system' not in line)
+                       if not ('kubectl' in line and 'wait deployment' in line and 'kube-system' in line))
     rke2_install.write_text(content)
     print(f"Updated RKE2 timeouts in {rke2_install}")
     
