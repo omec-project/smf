@@ -139,19 +139,6 @@ func (smf *SMF) setLogLevel() {
 	go metrics.InitMetrics()
 }
 
-func (smf *SMF) FilterCli(c *cli.Command) (args []string) {
-	for _, flag := range smf.GetCliCmd() {
-		name := flag.Names()[0]
-		value := fmt.Sprint(c.Generic(name))
-		if value == "" {
-			continue
-		}
-
-		args = append(args, "--"+name, value)
-	}
-	return args
-}
-
 func (smf *SMF) Start() {
 	logger.InitLog.Infoln("SMF app initialising")
 
@@ -320,10 +307,6 @@ func (smf *SMF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup)
 	nfregistration.DeregisterNF()
 	wg.Wait()
 	logger.InitLog.Infoln("SMF terminated")
-}
-
-func (smf *SMF) Exec(c *cli.Command) error {
-	return nil
 }
 
 // setModuleLogLevel is a helper to reduce repetition in log level setup
