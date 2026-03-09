@@ -308,22 +308,6 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 }
 
-func GetSeidByRefInDB(ref string) (seid uint64) {
-	filter := bson.M{}
-	filter["ref"] = ref
-
-	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(RefSeidCol, filter)
-	if getOneErr != nil {
-		logger.DataRepoLog.Warnln(getOneErr)
-	}
-	seidStr := result["seid"].(string)
-	seid, err := strconv.ParseUint(seidStr, 16, 64)
-	if err != nil {
-		logger.DataRepoLog.Errorf("seid unmarshall error: %v", err)
-	}
-	return
-}
-
 // GetSMContextByRefInDB GetSMContext By Ref from DB
 func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	logger.DataRepoLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
@@ -406,28 +390,12 @@ func DeleteSmContextInDBByRef(ref string) {
 	}
 }
 
-// ClearSMContextInMem Delete SMContext in smContextPool and seidSMContextMap, for test
-func ClearSMContextInMem(ref string) {
-	smContext := GetSMContext(ref)
-	smContextPool.Delete(ref)
-	seid := GetSeidByRefInDB(ref)
-	seidSMContextMap.Delete(seid)
-	canonicalRef.Delete(canonicalName(smContext.Identifier, smContext.PDUSessionID))
-}
-
 func mapToByte(data map[string]interface{}) (ret []byte) {
 	ret, err := json.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("map to byte error: %v", err)
 	}
 	return
-}
-
-func ShowSmContextPool() {
-	smContextPool.Range(func(k, v interface{}) bool {
-		logger.DataRepoLog.Infoln("db - iterate:", k, v)
-		return true
-	})
 }
 
 func GetSmContextPool() *sync.Map {

@@ -312,21 +312,6 @@ func (smfCtxt *SMFContext) Clear() {
 	smfCtxt.UserPlaneInformation.Reset()
 }
 
-func (smfCtxt *SMFContext) ExtractExistingUPFs() map[string]*UPNode {
-	smfContext.RLock()
-	defer smfContext.RUnlock()
-	existing := make(map[string]*UPNode)
-	if smfCtxt.UserPlaneInformation == nil {
-		return existing
-	}
-	for name, node := range smfCtxt.UserPlaneInformation.UPNodes {
-		if node.Type == UPNODE_UPF {
-			existing[name] = node
-		}
-	}
-	return existing
-}
-
 func buildSnssaiSmfInfo(sm *nfConfigApi.SessionManagement, staticIpInfo []factory.StaticIpInfo) SnssaiSmfInfo {
 	apiPlmnId := sm.GetPlmnId()
 	apiSnssai := sm.GetSnssai()

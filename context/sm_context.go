@@ -49,10 +49,7 @@ var (
 	seidSMContextMap sync.Map
 )
 
-var (
-	smContextCount  uint64
-	smContextActive uint64
-)
+var smContextActive uint64
 
 type SMContextState uint
 
@@ -81,11 +78,6 @@ func incSMContextActive() uint64 {
 func decSMContextActive() uint64 {
 	atomic.AddUint64(&smContextActive, ^uint64(0))
 	return smContextActive
-}
-
-func GetSMContextCount() uint64 {
-	atomic.AddUint64(&smContextCount, 1)
-	return smContextCount
 }
 
 type UeIpAddr struct {

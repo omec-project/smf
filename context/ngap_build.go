@@ -378,37 +378,6 @@ func BuildPathSwitchRequestAcknowledgeTransfer(ctx *SMContext) ([]byte, error) {
 	}
 }
 
-func BuildPathSwitchRequestUnsuccessfulTransfer(causePresent int, causeValue aper.Enumerated) (buf []byte, err error) {
-	pathSwitchRequestUnsuccessfulTransfer := ngapType.PathSwitchRequestUnsuccessfulTransfer{}
-
-	pathSwitchRequestUnsuccessfulTransfer.Cause.Present = causePresent
-	cause := &pathSwitchRequestUnsuccessfulTransfer.Cause
-
-	switch causePresent {
-	case ngapType.CausePresentRadioNetwork:
-		cause.RadioNetwork = new(ngapType.CauseRadioNetwork)
-		cause.RadioNetwork.Value = causeValue
-	case ngapType.CausePresentTransport:
-		cause.Transport = new(ngapType.CauseTransport)
-		cause.Transport.Value = causeValue
-	case ngapType.CausePresentNas:
-		cause.Nas = new(ngapType.CauseNas)
-		cause.Nas.Value = causeValue
-	case ngapType.CausePresentProtocol:
-		cause.Protocol = new(ngapType.CauseProtocol)
-		cause.Protocol.Value = causeValue
-	case ngapType.CausePresentMisc:
-		cause.Misc = new(ngapType.CauseMisc)
-		cause.Misc.Value = causeValue
-	}
-
-	buf, err = aper.MarshalWithParams(pathSwitchRequestUnsuccessfulTransfer, "valueExt")
-	if err != nil {
-		return nil, err
-	}
-	return
-}
-
 func BuildHandoverCommandTransfer(ctx *SMContext) ([]byte, error) {
 	ANUPF := ctx.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 	UpNode := ANUPF.UPF

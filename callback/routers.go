@@ -16,8 +16,6 @@ package callback
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/smf/logger"
-	utilLogger "github.com/omec-project/util/logger"
 )
 
 // Route is the information for every URI.
@@ -34,13 +32,6 @@ type Route struct {
 
 // Routes is the list of the generated Route.
 type Routes []Route
-
-// NewRouter returns a new router.
-func NewRouter() *gin.Engine {
-	router := utilLogger.NewGinWithZap(logger.GinLog)
-	AddService(router)
-	return router
-}
 
 func AddService(engine *gin.Engine) *gin.RouterGroup {
 	group := engine.Group("/nsmf-callback")
