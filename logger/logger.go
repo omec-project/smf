@@ -80,10 +80,6 @@ func init() {
 	NrfRegistrationLog = log.Sugar().With("component", "SMF", "category", "NrfRegistration")
 }
 
-func GetLogger() *zap.Logger {
-	return log
-}
-
 // SetLogLevel: set the log level (panic|fatal|error|warn|info|debug)
 func SetLogLevel(level zapcore.Level) {
 	InitLog.Infoln("set log level:", level)

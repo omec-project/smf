@@ -67,10 +67,6 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	return smPolicyDecision, httpRspStatusCode, nil
 }
 
-func SendSMPolicyAssociationModify(smContext *smf_context.SMContext) {
-	// TODO
-}
-
 func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
 	smPolicyDelData := models.SmPolicyDeleteData{}
 
