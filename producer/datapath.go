@@ -76,7 +76,7 @@ func SendPFCPRules(smContext *context.SMContext) {
 			}
 		} else {
 			err := message.SendPfcpSessionModificationRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
+				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, nil, nil, nil, pfcp.port)
 			if err != nil {
 				logger.PduSessLog.Errorf("send pfcp session modification request failed: %v for UPF[%v, %v]: ", err, pfcp.nodeID, pfcp.nodeID.ResolveNodeIdToIp())
 			}
