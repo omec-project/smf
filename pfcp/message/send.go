@@ -302,6 +302,9 @@ func SendPfcpSessionModificationRequest(
 	farList []*smf_context.FAR,
 	barList []*smf_context.BAR,
 	qerList []*smf_context.QER,
+	removePDR []*smf_context.PDR,
+	removeFAR []*smf_context.FAR,
+	removeQER []*smf_context.QER,
 	upfPort uint16,
 ) error {
 	seqNum := getSeqNumber()
@@ -310,7 +313,7 @@ func SendPfcpSessionModificationRequest(
 	if !ok {
 		return fmt.Errorf("PFCP Context not found for NodeID[%s]", upNodeIDStr)
 	}
-	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList)
+	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList, removePDR, removeFAR, removeQER)
 	if err != nil {
 		return err
 	}

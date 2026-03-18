@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Intel Corporation
+
+name: CDAC Master workflow
+
+on:
+  pull_request:
+    branches:
+      - cdacmaster
+  push:
+    branches:
+      - cdacmaster
+  workflow_dispatch:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Build
+        run: go build
+
+
+  lint:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8.0.0
+        with:
+          version: v2.2.2
+          args: -v --config ./.golangci.yml --timeout=10m
+
+  hadolint:
+    name: hadolint
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dockerfile linter
+        uses: hadolint/hadolint-action@v3.1.0
+        # For now, ignoring:
+        # DL3008 warning: Pin versions in apt get install (e.g., apt-get install <package>=<version>); and
+        # DL3018 warning: Pin versions in apk add (e.g., apk add <package>=<version>)
+        with:
+          dockerfile: Dockerfile
+          ignore: DL3008,DL3018
+
+  license-check:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: reuse lint
+        uses: fsfe/reuse-action@v5
+
+  fossa-check:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: FOSSA scan
+        uses: fossa-contrib/fossa-action@v3
+        with:
+          fossa-api-key: 0c3bbcdf20e157bbd487dae173751b28
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Unit tests
+        run: go test ./...
+
+  docker-build-push-images:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == '5GC-DEV'
+    needs: unit-tests
+   
+    env:
+      REGISTRY: docker.io
+      DOCKER_REGISTRY: docker.io/
+      DOCKER_REPOSITORY: cdac5gc/
+      
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - run: echo GIT_SHA_SHORT=$(git rev-parse --short HEAD) >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DCKRUSER }}
+          password: ${{ secrets.DCKRPASS }}
+
+      - name: Build and push "master-latest" Docker image
+        env:
+          DOCKER_TAG: master-latest
+        run: |
+          make docker-build
+          make docker-push
+
+      - name: Build and push "master-GIT_SHA" Docker image
+        env:
+          DOCKER_TAG: master-${{ env.GIT_SHA_SHORT }}
+        run: |
+          make docker-build
+          make docker-push
