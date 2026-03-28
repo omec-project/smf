@@ -50,6 +50,9 @@ configuration:
   pfcp: # the IP address of N4 interface on this SMF (PFCP)
     addr: smf
   nrfUri: http://nrf:29510 # a valid URI of NRF
+  pcscfInfos:
+    ipv4: 192.162.45.47
+    ipv6: fe80::543b:8dff:fef6:54cc
 
 # the kind of log output
   # debugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
