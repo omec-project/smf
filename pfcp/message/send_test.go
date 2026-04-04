@@ -259,7 +259,7 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 		Conn: conn,
 	}
 
-	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8806)
+	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, 8806)
 	if err != nil {
 		t.Errorf("error sending PFCP Session Modification Request: %v", err)
 	}

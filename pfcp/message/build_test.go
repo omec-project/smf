@@ -356,7 +356,7 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 	}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList)
+	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("error building PFCP session modification request: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestBuildPfcpSessionModificationRequestNoOuterHeader(t *testing.T) {
 	}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList)
+	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("error building PFCP session modification request: %v", err)
 	}
