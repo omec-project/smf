@@ -11,6 +11,7 @@ import (
 )
 
 var my_false bool = false
+var my_true bool = true
 
 func TestInitializeKafkaStreamWithKafkaDisabled(t *testing.T) {
 	config := factory.Configuration{
@@ -128,5 +129,26 @@ func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 
 	if result != nil {
 		t.Errorf("expected return value to be nil, got %v", result)
+	}
+}
+
+func TestSendMessageWithKafkaEnabledButWriterNotInitialized(t *testing.T) {
+	configuration := factory.Configuration{
+		KafkaInfo: factory.KafkaInfo{
+			EnableKafka: &my_true,
+		},
+	}
+	config := factory.Config{
+		Configuration: &configuration,
+	}
+	factory.SmfConfig = config
+
+	StatWriter = Writer{}
+
+	writer := GetWriter()
+	result := writer.SendMessage([]byte{0xFF})
+
+	if result == nil {
+		t.Errorf("expected error when kafka writer is not initialized, got nil")
 	}
 }

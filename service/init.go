@@ -153,6 +153,11 @@ func (smf *SMF) Start() {
 	// Init UE Specific Config
 	smfContext.InitSMFUERouting(&factory.UERoutingConfig)
 
+	// Init Kafka stream before spawning goroutines that may publish metric events.
+	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
+		logger.InitLog.Errorf("initialise kafka stream failed, %v ", err.Error())
+	}
+
 	if smfCtxt.EnableNrfCaching {
 		logger.InitLog.Infof("enable NRF caching feature for %d seconds", smfCtxt.NrfCacheEvictionInterval)
 		nrfCache.InitNrfCaching(smfCtxt.NrfCacheEvictionInterval*time.Second, consumer.SendNrfForNfInstance)
@@ -267,11 +272,6 @@ func (smf *SMF) Start() {
 		}
 	} else {
 		logger.InitLog.Infoln("DB is disabled, not initialising drsm")
-	}
-
-	// Init Kafka stream
-	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
-		logger.InitLog.Errorf("initialise kafka stream failed, %v ", err.Error())
 	}
 
 	udp.Run(pfcp.Dispatch)

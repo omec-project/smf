@@ -67,6 +67,11 @@ func (writer Writer) SendMessage(message []byte) error {
 	if !*factory.SmfConfig.Configuration.KafkaInfo.EnableKafka {
 		return nil
 	}
+	if writer.kafkaWriter == nil {
+		err := fmt.Errorf("kafka writer not initialized")
+		logger.KafkaLog.Errorf("kafka send message write error: %s", err.Error())
+		return err
+	}
 	msg := kafka.Message{Value: message}
 	if err := writer.kafkaWriter.WriteMessages(context.Background(), msg); err != nil {
 		logger.KafkaLog.Errorf("kafka send message write error: %s", err.Error())
