@@ -10,8 +10,10 @@ import (
 	"github.com/omec-project/util/metricinfo"
 )
 
-var my_false bool = false
-var my_true bool = true
+var (
+	my_false bool = false
+	my_true  bool = true
+)
 
 func TestInitializeKafkaStreamWithKafkaDisabled(t *testing.T) {
 	config := factory.Configuration{
