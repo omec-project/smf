@@ -135,6 +135,13 @@ func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 }
 
 func TestSendMessageWithKafkaEnabledButWriterNotInitialized(t *testing.T) {
+	origConfig := factory.SmfConfig
+	origStatWriter := StatWriter
+	t.Cleanup(func() {
+		factory.SmfConfig = origConfig
+		StatWriter = origStatWriter
+	})
+
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
 			EnableKafka: &my_true,

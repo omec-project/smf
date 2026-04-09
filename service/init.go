@@ -155,7 +155,7 @@ func (smf *SMF) Start() {
 
 	// Init Kafka stream before spawning goroutines that may publish metric events.
 	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
-		logger.InitLog.Errorf("initialise kafka stream failed, %v ", err.Error())
+		logger.InitLog.Errorf("initialise kafka stream failed, %v", err)
 	}
 
 	if smfCtxt.EnableNrfCaching {
