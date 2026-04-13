@@ -136,7 +136,7 @@ device-groups:
               site-device-group:
               - "5g-gnbsim-user-group1"   # All UEs in this device-group are assigned to this slice
               - "5g-gnbsim-user-group2"   # All UEs in this device-group are assigned to this slice
-              
+
               # Applicaiton filters control what each user can access.
               # Default, allow access to all applications
               application-filtering-rules:
@@ -156,11 +156,11 @@ device-groups:
                   mnc: "01"
                 site-name: "enterprise"
                 upfs:   # List of UPFs, each with a unique DNN
-                - upf-name: "upf-1"  
+                - upf-name: "upf-1"
                   upf-port: 8805
-                - upf-name: "upf-2"  
+                - upf-name: "upf-2"
                   upf-port: 8805
-      
+
     **Intended Behavior:** The new design aims to enhance the SMF logic to support UPF selection based on both DNN and Slice ID. This improvement will enable the SMF to correctly handle multiple DNNs within the same Slice ID, ensuring accurate UPF selection and preventing issues like the current failure with the `sdcore` DNN.
 
 ## 3. Proposed Changes
@@ -184,7 +184,7 @@ device-groups:
   - Each DNN should have its own set of UE IPs, ensuring proper IP assignment based on the DNN selected during session establishment.
   - Currently, the system only supports single DNN. Future changes will include extending support to handle multiple DNNs with distinct UE IP pools.
   - Use DNN as an additional key when processing PFCP session additions to map the correct DNN and UE IPs.
-  
+
 ## 4. Next Steps
 - **Documentation:** Continue documenting design thoughts.
 - **Implementation:** Start implementing the changes in SMF and UPF.

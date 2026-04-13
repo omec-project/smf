@@ -42,4 +42,3 @@ ueRoutingInfo: # the list of UE routing information
         UPF: !!seq
           - BranchingUPF
           - AnchorUPF2
-
