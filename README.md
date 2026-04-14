@@ -92,4 +92,3 @@ Refer to the [SD-Core documentation](https://docs.sd-core.opennetworking.org/mai
 
 1. #sdcore-dev channel in [Aether Community Slack](https://aether5g-project.slack.com)
 2. Raise Github [issues](https://github.com/omec-project/smf/issues/new)
-

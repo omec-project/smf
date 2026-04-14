@@ -12,4 +12,3 @@ configuration:
   smfName: SMF # the name of this SMF
   nrfUri: http://nrf:29510 # a valid URI of NRF
   webuiUri: https://myspecialwebui:5002 # a valid URI of Webui
-
