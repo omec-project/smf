@@ -375,9 +375,9 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 			}
 		}
 
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]", SEID)
 	} else {
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]", SEID)
 		if smContext.SMContextState == context.SmStatePfcpModify {
 			smContext.SBIPFCPCommunicationChan <- context.SessionUpdateFailed
 		}
