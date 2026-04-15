@@ -350,9 +350,6 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 	SEID := pfcpRsp.SEID()
 	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse SEID %v", SEID)
 
-	smContext := context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
-
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
 			logger.PfcpLog.Warnln("PFCP Session Modification Response found invalid event data, response discarded")
@@ -360,6 +357,13 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		} else {
 			SEID = eventData.LSEID
 		}
+	}
+
+	smContext := context.GetSMContextBySEID(SEID)
+	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
+	if smContext == nil {
+		logger.PfcpLog.Warnf("PFCP Session Modification Response found SM context nil for SEID %d, response discarded", SEID)
+		return
 	}
 
 	if causeValue == ie.CauseRequestAccepted {
@@ -375,9 +379,9 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 			}
 		}
 
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]", SEID)
 	} else {
-		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]\n", SEID)
+		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]", SEID)
 		if smContext.SMContextState == context.SmStatePfcpModify {
 			smContext.SBIPFCPCommunicationChan <- context.SessionUpdateFailed
 		}
