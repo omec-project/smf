@@ -8,6 +8,7 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,6 +36,10 @@ var newNrfNFManagementHTTPClient = func() *http.Client {
 }
 
 const podIPPlaceholder = "POD_IP"
+
+// n1n2TransferTimeout is the HTTP timeout for a single N1N2MessageTransfer attempt.
+// Kept short so that retries with AMF re-discovery can happen within the UE's T3580 window.
+const n1n2TransferTimeout = 5 * time.Second
 
 func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	if nfProfile == nil {
@@ -476,6 +481,235 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 		return nil, localErr
 	}
 	return nil, nil
+}
+
+// SendN1N2TransferWithRediscovery sends an N1N2MessageTransfer request using the
+// SMContext's CommunicationClient. If the request fails (including timeout), it
+// queries NRF directly (bypassing the cache) and tries every other AMF candidate
+// until one succeeds. This handles the case where NRF has multiple stale
+// registrations left behind by prior AMF pod restarts.
+func SendN1N2TransferWithRediscovery(ctx context.Context, smContext *smfContext.SMContext,
+	n1n2Request *models.N1N2MessageTransferRequest,
+) (*models.N1N2MessageTransferRspData, error) {
+	// Re-discovery mutates AMFProfile/ServingNfId/CommunicationClient while trying
+	// candidates. Snapshot them so a failed or aborted re-discovery leaves the session
+	// pointing at its original serving AMF rather than the last (failed) candidate —
+	// otherwise ServingNfId would be corrupted for later targeted discovery. Restored
+	// unless a transfer succeeds (committed).
+	origProfile := smContext.AMFProfile
+	origServingNfId := smContext.ServingNfId
+	origClient := smContext.CommunicationClient
+	committed := false
+	defer func() {
+		if !committed {
+			smContext.AMFProfile = origProfile
+			smContext.ServingNfId = origServingNfId
+			smContext.CommunicationClient = origClient
+		}
+	}()
+
+	if smContext.CommunicationClient == nil {
+		// Client not built yet (e.g. SMContext recovered from DB). Prefer rebuilding
+		// from the session's existing AMFProfile so we don't needlessly switch AMFs;
+		// only seed from NRF if that still leaves the client nil.
+		smContext.RebuildCommunicationClient()
+		if smContext.CommunicationClient == nil {
+			if err := selectAmfFromNrf(ctx, smContext); err != nil {
+				return nil, fmt.Errorf("AMF discovery failed: %w", err)
+			}
+		}
+	}
+
+	// First attempt with the currently-selected AMF
+	rspData, err := tryN1N2Transfer(ctx, smContext, n1n2Request)
+	if err == nil {
+		committed = true
+		return rspData, nil
+	}
+	// Only re-discover on transport-level failures (no HTTP response). An HTTP error
+	// from a reachable AMF, or a cancelled caller context, must not trigger retries
+	// against other AMFs (would risk duplicate N1/N2 delivery / ignore cancellation).
+	if !shouldRediscoverAMF(ctx, err) {
+		return rspData, err
+	}
+	smContext.SubPduSessLog.Warnf("N1N2Transfer failed (%v), attempting AMF re-discovery", err)
+
+	// First attempt failed — fetch all AMF candidates from NRF (bypassing cache)
+	// and try each, rebuilding the client from fresh NRF data. Candidates with a
+	// different NfInstanceId are tried first (handles the AMF-restarted-with-a-new-
+	// NfInstanceId case, where the failed id is a stale/dead entry); the candidate
+	// with the same NfInstanceId as the one that just failed is tried last, since
+	// its NRF profile may carry an updated ApiPrefix (AMF re-registered in place
+	// with the same id but a new endpoint).
+	candidates, discErr := fetchAmfCandidates(ctx)
+	if discErr != nil {
+		return nil, fmt.Errorf("N1N2Transfer failed and AMF re-discovery failed: %w", errors.Join(err, discErr))
+	}
+
+	attempted := 0
+	for _, candidate := range orderAmfCandidates(candidates, smContext.ServingNfId) {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("N1N2Transfer aborted during AMF re-discovery: %w", ctx.Err())
+		}
+		if useErr := useAmfProfile(smContext, candidate); useErr != nil {
+			smContext.SubPduSessLog.Warnf("AMF candidate %s unusable: %v", candidate.GetNfInstanceId(), useErr)
+			continue
+		}
+		attempted++
+		smContext.SubPduSessLog.Infof("AMF re-discovery retry %d: trying NfInstanceId %s", attempted, candidate.GetNfInstanceId())
+		rspData, err = tryN1N2Transfer(ctx, smContext, n1n2Request)
+		if err == nil {
+			smContext.SubPduSessLog.Infof("AMF re-discovery succeeded on attempt %d with NfInstanceId %s", attempted, candidate.GetNfInstanceId())
+			committed = true
+			return rspData, nil
+		}
+		smContext.SubPduSessLog.Warnf("AMF re-discovery retry %d failed: %v", attempted, err)
+	}
+
+	if attempted == 0 {
+		return nil, fmt.Errorf("N1N2Transfer failed (%w) and no alternative AMF candidates available", err)
+	}
+	return nil, fmt.Errorf("N1N2Transfer failed after %d AMF candidates; last error: %w", attempted, err)
+}
+
+// shouldRediscoverAMF reports whether an N1N2MessageTransfer error warrants AMF
+// re-discovery and retry. Only transport-level failures (connection refused, TLS,
+// or our own per-attempt timeout — i.e. no HTTP response was received) qualify.
+// A cancelled/expired caller context, or an HTTP error returned by a reachable AMF
+// (surfaced as openapi.GenericOpenAPIError), must NOT trigger retries against other
+// AMFs: that would risk duplicate N1/N2 delivery and ignore the caller's intent.
+func shouldRediscoverAMF(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return false // caller cancelled or deadline exceeded
+	}
+	// The generated client returns *openapi.GenericOpenAPIError; also check the value
+	// form defensively in case a code path returns it by value.
+	var apiErrPtr *openapi.GenericOpenAPIError
+	var apiErrVal openapi.GenericOpenAPIError
+	if errors.As(err, &apiErrPtr) || errors.As(err, &apiErrVal) {
+		return false // the AMF responded with an HTTP error — it is reachable
+	}
+	return true
+}
+
+// tryN1N2Transfer makes a single N1N2MessageTransfer call with a short timeout.
+func tryN1N2Transfer(ctx context.Context, smContext *smfContext.SMContext,
+	n1n2Request *models.N1N2MessageTransferRequest,
+) (*models.N1N2MessageTransferRspData, error) {
+	tryCtx, cancel := context.WithTimeout(ctx, n1n2TransferTimeout)
+	defer cancel()
+	apiReq := smContext.CommunicationClient.
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransfer(tryCtx, smContext.Supi).
+		N1N2MessageTransferReqData(n1n2Request.GetJsonData())
+	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
+		apiReq = apiReq.BinaryDataN1Message(binaryDataN1Message)
+	}
+	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
+		apiReq = apiReq.BinaryDataN2Information(binaryDataN2Information)
+	}
+	rspData, _, err := smContext.CommunicationClient.
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransferExecute(apiReq)
+	return rspData, err
+}
+
+// orderAmfCandidates returns all candidates, preserving NRF order, but moves any
+// candidate whose NfInstanceId equals failedNfId to the end. Every candidate is
+// retried (the per-attempt timeout bounds the cost of dead ones): a different
+// NfInstanceId is the live AMF when it restarted with a new id, and the same
+// NfInstanceId may carry a refreshed ApiPrefix when the AMF re-registered in place.
+func orderAmfCandidates(candidates []models.NFProfileDiscovery, failedNfId string) []models.NFProfileDiscovery {
+	out := make([]models.NFProfileDiscovery, 0, len(candidates))
+	var sameID []models.NFProfileDiscovery
+	for _, c := range candidates {
+		if c.GetNfInstanceId() == failedNfId {
+			sameID = append(sameID, c)
+			continue
+		}
+		out = append(out, c)
+	}
+	return append(out, sameID...)
+}
+
+// searchAmfInstancesNoSubscribe queries NRF directly (cache-bypassing) for AMF instances
+// WITHOUT creating NF-status subscriptions. SendNrfForNfInstance subscribes to every
+// returned instance; for best-effort re-discovery that would subscribe the SMF to every
+// AMF in the deployment (including dead ones), which is an unwanted side effect. If
+// targetNfInstanceId is non-empty the query is targeted at that single AMF.
+func searchAmfInstancesNoSubscribe(ctx context.Context, targetNfInstanceId string) (*models.SearchResult, error) {
+	client := newNrfNFDiscoveryClient(smfContext.SMF_Self().NrfUri)
+	req := client.NFInstancesStoreAPI.SearchNFInstances(ctx).
+		TargetNfType(models.NFTYPE_AMF).
+		RequesterNfType(models.NFTYPE_SMF)
+	if targetNfInstanceId != "" {
+		req = req.TargetNfInstanceId(targetNfInstanceId)
+	}
+	result, httpResp, err := client.NFInstancesStoreAPI.SearchNFInstancesExecute(req)
+	if httpResp != nil && httpResp.Body != nil {
+		defer func() {
+			if cerr := httpResp.Body.Close(); cerr != nil {
+				logger.ConsumerLog.Errorf("SearchNFInstances response body cannot close: %+v", cerr)
+			}
+		}()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// fetchAmfCandidates queries NRF directly (bypassing the cache and without subscribing)
+// for all registered AMFs. It derives its timeout from the caller's ctx so caller
+// cancellation/deadlines are honoured, while still bounding the wait if NRF is slow.
+func fetchAmfCandidates(ctx context.Context) ([]models.NFProfileDiscovery, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, n1n2TransferTimeout)
+	defer cancel()
+	result, err := searchAmfInstancesNoSubscribe(queryCtx, "")
+	if err != nil {
+		return nil, fmt.Errorf("broad AMF discovery failed: %w", err)
+	}
+	if result == nil || len(result.GetNfInstances()) == 0 {
+		return nil, fmt.Errorf("broad AMF discovery returned no AMF instances")
+	}
+	return result.GetNfInstances(), nil
+}
+
+// useAmfProfile selects the given AMF profile on the SMContext and rebuilds the CommunicationClient.
+func useAmfProfile(smContext *smfContext.SMContext, profile models.NFProfileDiscovery) error {
+	smContext.AMFProfile = deepcopy.Copy(profile).(models.NFProfileDiscovery)
+	smContext.ServingNfId = smContext.AMFProfile.GetNfInstanceId()
+	smContext.RebuildCommunicationClient()
+	if smContext.CommunicationClient == nil {
+		return fmt.Errorf("AMF profile %s has no Namf_Communication service", profile.GetNfInstanceId())
+	}
+	return nil
+}
+
+// selectAmfFromNrf installs an AMF on the SMContext via a direct (cache-bypassing) NRF
+// query, used to bootstrap a nil CommunicationClient. It prefers a targeted lookup by the
+// session's ServingNfId (the AMF that actually serves this UE), so we don't silently switch
+// the session to an unrelated AMF; it falls back to the first broad candidate only if
+// ServingNfId is unset or the targeted lookup yields nothing.
+func selectAmfFromNrf(ctx context.Context, smContext *smfContext.SMContext) error {
+	if servingNfId := smContext.ServingNfId; servingNfId != "" {
+		smContext.SubPduSessLog.Infof("AMF discovery: targeted NRF lookup for ServingNfId %s (bypassing cache)", servingNfId)
+		queryCtx, cancel := context.WithTimeout(ctx, n1n2TransferTimeout)
+		result, err := searchAmfInstancesNoSubscribe(queryCtx, servingNfId)
+		cancel()
+		if err == nil && result != nil && len(result.GetNfInstances()) > 0 {
+			return useAmfProfile(smContext, result.GetNfInstances()[0])
+		}
+		smContext.SubPduSessLog.Warnf("targeted AMF lookup for ServingNfId %s found nothing, falling back to broad discovery", servingNfId)
+	} else {
+		smContext.SubPduSessLog.Infof("AMF discovery: no ServingNfId, broad NRF lookup (bypassing cache)")
+	}
+
+	candidates, err := fetchAmfCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	return useAmfProfile(smContext, candidates[0])
 }
 
 func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.SubscriptionData) (nrfSubData *models.SubscriptionData, problemDetails *models.ProblemDetails, err error) {
