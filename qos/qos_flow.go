@@ -100,49 +100,53 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 		Content: make([]byte, 0),
 	}
 
-	qosFlowUpdate := smPolicyUpdates.QosFlowUpdate
 	hasUpdates := false // Track if any QoS flows were processed
 
 	// ===============================
 	// Handle PCC rule deletions if QoS flow updates are nil
 	// ===============================
-	if smPolicyUpdates == nil || smPolicyUpdates.QosFlowUpdate == nil {
-		logger.QosLog.Warn("smPolicyUpdates or QosFlowUpdate is nil, processing PCC rule deletions only")
+	if smPolicyUpdates.QosFlowUpdate == nil {
+		logger.QosLog.Warn("QosFlowUpdate is nil, processing PCC rule deletions only")
 
-		for pccRuleID := range smPolicyUpdates.PccRuleUpdate.del {
-			logger.QosLog.Infof("Processing deletion for PCC rule ID: %s", pccRuleID)
+		if smPolicyUpdates.PccRuleUpdate != nil {
+			logger.QosLog.Warn("smPolicyUpdates or QosFlowUpdate is nil, processing PCC rule deletions only")
 
-			qfiVal, err := strconv.Atoi(pccRuleID)
-			if err != nil {
-				logger.QosLog.Errorf("Invalid QFI string for PCC rule ID '%s': %v", pccRuleID, err)
-				continue
+			for pccRuleID := range smPolicyUpdates.PccRuleUpdate.del {
+				logger.QosLog.Infof("Processing deletion for PCC rule ID: %s", pccRuleID)
+
+				qfiVal, err := strconv.Atoi(pccRuleID)
+				if err != nil {
+					logger.QosLog.Errorf("Invalid QFI string for PCC rule ID '%s': %v", pccRuleID, err)
+					continue
+				}
+				qfi := uint8(qfiVal)
+
+				logger.QosLog.Infof("Deleting QoS Flow Description for QFI=%d (from PCC rule %s)", qfi, pccRuleID)
+
+				// Skip if QFI is zero
+				if qfi == 0 {
+					logger.QosLog.Warnf("Skipping QoS Flow deletion because QFI=0 for PCC rule ID='%s'", pccRuleID)
+					continue
+				}
+
+				// Build delete QoS Flow Description
+				QFDescriptions.BuildDelQosFlowDescFromQoSDesc(qfi)
+				hasUpdates = true
 			}
-			qfi := uint8(qfiVal)
 
-			logger.QosLog.Infof("Deleting QoS Flow Description for QFI=%d (from PCC rule %s)", qfi, pccRuleID)
-
-			// Skip if QFI is zero
-			if qfi == 0 {
-				logger.QosLog.Warnf("Skipping QoS Flow deletion because QFI=0 for PCC rule ID='%s'", pccRuleID)
-				continue
+			if hasUpdates {
+				logger.QosLog.Infof("Completed building delete QoS flow descriptions for %d PCC rules", len(smPolicyUpdates.PccRuleUpdate.del))
+			} else {
+				logger.QosLog.Warn("No QoS flow deletions were processed")
 			}
-
-			// Build delete QoS Flow Description
-			QFDescriptions.BuildDelQosFlowDescFromQoSDesc(qfi)
-			hasUpdates = true
-		}
-
-		if hasUpdates {
-			logger.QosLog.Infof("Completed building delete QoS flow descriptions for %d PCC rules", len(smPolicyUpdates.PccRuleUpdate.del))
-		} else {
-			logger.QosLog.Warn("No QoS flow deletions were processed")
 		}
 	}
 
 	// ===============================
 	// Handle Add/Modify/Delete QoS Flow updates
 	// ===============================
-	if qosFlowUpdate != nil {
+	if smPolicyUpdates != nil {
+		qosFlowUpdate := smPolicyUpdates.QosFlowUpdate
 		// Add QoS flows
 		if len(qosFlowUpdate.add) > 0 {
 			logger.QosLog.Infof("Processing %d QoS flows to add", len(qosFlowUpdate.add))
@@ -158,7 +162,7 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 			logger.QosLog.Infof("Processing %d QoS flows to modify", len(qosFlowUpdate.mod))
 			for name, qosFlow := range qosFlowUpdate.mod {
 				logger.QosLog.Infof("Modifying QoS Flow Description [%v]", name)
-				QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow)
+				QFDescriptions.BuildModQosFlowDescFromQoSDesc(qosFlow)
 				hasUpdates = true
 			}
 		}
@@ -319,7 +323,7 @@ func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *
 	}
 
 	// Set E-Bit of QFD for the "modify existing QoS flow description" operation
-	qfd.SetQFDEBitCreateNewQFD()
+	qfd.SetQFDEBitModExtendParamQFD()
 
 	// Add QFD to Authorised QFD IE
 	d.AddQFD(&qfd)

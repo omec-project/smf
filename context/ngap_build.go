@@ -510,20 +510,22 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 func StringToBitRate(s string) (uint64, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if strings.HasSuffix(s, "kbps") {
-		val, err := strconv.ParseUint(strings.TrimSuffix(s, "kbps"), 10, 64)
+		numPart := strings.TrimSpace(strings.TrimSuffix(s, "kbps"))
+		val, err := strconv.ParseUint(numPart, 10, 64)
 		if err != nil {
 			return 0, err
 		}
 		return val * 1000, nil
 	}
 	if strings.HasSuffix(s, "mbps") {
-		val, err := strconv.ParseUint(strings.TrimSuffix(s, "mbps"), 10, 64)
+		numPart := strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
+		val, err := strconv.ParseUint(numPart, 10, 64)
 		if err != nil {
 			return 0, err
 		}
 		return val * 1000 * 1000, nil
 	}
-	return 0, nil
+	return 0, fmt.Errorf("unsupported bitrate format: %q", s)
 }
 
 func BuildPDUSessionResourceReleaseCommandTransfer(ctx *SMContext) (buf []byte, err error) {

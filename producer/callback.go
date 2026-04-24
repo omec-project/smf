@@ -31,69 +31,68 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	request := txn.Req.(models.SmPolicyNotification)
 	smContext := txn.Ctxt.(*smfContext.SMContext)
 
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
-
 	logger.PduSessLog.Infoln("In HandleSMPolicyUpdateNotify")
-	pcfPolicyDecision := request.SmPolicyDecision
+
+	smContext.SMLock.Lock()
 
 	if smContext.SMContextState != smfContext.SmStateActive {
 		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be SmStateActive, but actual %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
 	}
 
-	// Derive QoS change
 	logger.PduSessLog.Infof("Building SM Policy Update for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
-	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, pcfPolicyDecision)
-
-	logger.PduSessLog.Infof("SM Policy Update built: %+v", policyUpdates)
+	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, request.SmPolicyDecision)
 
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], policyUpdates)
-	logger.PduSessLog.Infof("Appended SM Policy Update, total updates count: %d",
-		len(smContext.SmPolicyUpdates))
-	logger.PduSessLog.Infof("SmPolicyUpdates: %v", smContext.SmPolicyUpdates)
 
-	// Build PFCP parameters
+	// Build PFCP params while locked (if it reads shared state)
 	pfcpParam := BuildPfcpParam(smContext)
-	// Set state to PFCP Modify before sending PFCP request
+
+	// Change state before sending PFCP
 	smContext.ChangeState(smfContext.SmStatePfcpModify)
 
+	smContext.SMLock.Unlock()
+
 	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		// PFCP modify failed — revert state and return error
+
+		smContext.SMLock.Lock()
+
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
-		// smContext.ChangeState(prevState)
-		logger.PduSessLog.Infof("SMContext[%s-%02d] state reverted to %s after PFCP error",
+
+		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
 
-		// Build HTTP error response for the original transaction
+		smContext.SMLock.Unlock()
+
 		httpResponse := makePduCtxtModifyErrRsp(smContext, err.Error())
 		txn.Err = err
 		txn.Rsp = httpResponse
 		return err
 	}
 
-	smContext.SubCtxLog.Infoln("SMContextState Change State:", smContext.SMContextState.String())
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
-	// Now send N1/N2 Msg after PFCP success
 	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
 		txn.Err = err
 		return err
 	}
 
-	// Set response and change state to active
-	smContext.ChangeState(smfContext.SmStateActive)
-	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:", smContext.SMContextState.String())
+	smContext.SMLock.Lock()
 
-	httpResponse := &httpwrapper.Response{
+	smContext.ChangeState(smfContext.SmStateActive)
+	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
+		smContext.SMContextState.String())
+
+	smContext.SMLock.Unlock()
+
+	txn.Rsp = &httpwrapper.Response{
 		Status: http.StatusOK,
 		Body:   nil,
 	}
-	txn.Rsp = httpResponse
 
 	return nil
 }
@@ -187,7 +186,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			}
 
 			// Attach dedicated QER to DL PDR
-			dlPDR.QER = []*smfContext.QER{dedQER}
+			if dedQER != nil {
+				dlPDR.QER = []*smfContext.QER{dedQER}
+			}
 			if dlPDR.Precedence == 0 {
 				dlPDR.Precedence = 1
 			}
@@ -197,6 +198,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
 
 			// Configure FAR for downlink traffic
+			if dlPDR.FAR == nil {
+				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
+			}
 			dlFAR := dlPDR.FAR
 			dlFAR.ApplyAction = smfContext.ApplyAction{
 				Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
@@ -206,9 +210,13 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			pfcpParam.pdrList = append(pfcpParam.pdrList, dlPDR)
 			if dlFAR != nil {
 				pfcpParam.farList = append(pfcpParam.farList, dlFAR)
+			} else {
+				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
 			}
 			if dedQER != nil {
 				pfcpParam.qerList = append(pfcpParam.qerList, dedQER)
+			} else {
+				logger.PduSessLog.Errorf("dedicated QER is nil")
 			}
 
 			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
@@ -245,6 +253,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			}
 
 			// Configure FAR for UL traffic
+			if ulPDR.FAR == nil {
+				logger.PduSessLog.Errorf("ulPDR.FAR is nil")
+			}
 			ulFAR := ulPDR.FAR
 			ulFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
 			ulFAR.ForwardingParameters = &smfContext.ForwardingParameters{
@@ -258,6 +269,8 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			pfcpParam.pdrList = append(pfcpParam.pdrList, ulPDR)
 			if ulFAR != nil {
 				pfcpParam.farList = append(pfcpParam.farList, ulFAR)
+			} else {
+				logger.PduSessLog.Errorf("ulFAR is nil")
 			}
 
 			smContext.PendingUPF[ANUPF.GetNodeIP()] = true

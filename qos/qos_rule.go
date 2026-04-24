@@ -7,7 +7,6 @@ package qos
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -151,7 +150,7 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 		for pccRuleName, pccRuleVal := range pccRulesUpdate.mod {
 			logger.QosLog.Infof("building QoS Rule from modified PCC rule [%s]", pccRuleName)
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
-			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
+			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
 			qosRules = append(qosRules, *qosRule)
 		}
 	}
@@ -350,15 +349,17 @@ func GetPacketFilterFromFlowInfo(flowInfo *models.FlowInformation) PacketFilter 
 
 func GetPfId(pfID string) uint8 {
 	if pfID == "" {
-		fmt.Println("Warning: PackFiltId is empty, defaulting to 0")
+		logger.QosLog.Warn("PackFiltId is empty, defaulting to 0")
 		return 0
 	}
+
 	id, err := strconv.Atoi(pfID)
 	if err != nil {
-		fmt.Printf("Error converting PackFiltId [%s] to int: %v. Defaulting to 0\n", pfID, err)
+		logger.QosLog.Errorf("Error converting PackFiltId [%s] to int: %v. Defaulting to 0", pfID, err)
 		return 0
 	}
-	return uint8(id)
+
+	return uint8(id) & PacketFilterIdBitmask
 }
 
 // Get Packet Filter Directions
@@ -718,9 +719,13 @@ func (r *QosRule) MarshalBinary() ([]byte, error) {
 	}
 	if r.OperationCode != OperationCodeDeleteExistingQoSRule {
 		// Only for Create/Modify
-		ruleContentBuffer.WriteByte(r.Precedence)
+		if err := ruleContentBuffer.WriteByte(r.Precedence); err != nil {
+			return nil, err
+		}
 		segregationAndQFIByte := r.Segregation<<6 | r.QFI
-		ruleContentBuffer.WriteByte(segregationAndQFIByte)
+		if err := ruleContentBuffer.WriteByte(segregationAndQFIByte); err != nil {
+			return nil, err
+		}
 	}
 
 	ruleBuffer := bytes.NewBuffer(nil)

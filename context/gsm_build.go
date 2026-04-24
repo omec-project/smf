@@ -135,14 +135,15 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 		// IPv4 P-CSCF
 		if smContext.ProtocolConfigurationOptions.PCSCFIPv4Request {
 			pcsfIpStr := factory.SmfConfig.Configuration.PCSCFInfo.IPv4Addr
-			smContext.SubGsmLog.Infof("PCSCF Info from configuration: ", pcsfIpStr)
-			smContext.SubGsmLog.Infof("PCSCF Info: ", smfContext.PCSCFInfo)
-			if smfContext.PCSCFInfo.IPv4Addr != "" {
-				pcsfIpStr = smfContext.PCSCFInfo.IPv4Addr
+			smContext.SubGsmLog.Infof("PCSCF Info from configuration: %v", pcsfIpStr)
+			smContext.SubGsmLog.Infof("PCSCF Info: %v", smfContext.PCSCFInfo)
+			pcscfInfo := SMF_Self().PCSCFInfo
+			if pcscfInfo.IPv4Addr != "" {
+				pcsfIpStr = pcscfInfo.IPv4Addr
 			} else {
-				smContext.SubGsmLog.Warn("PCSCFInfo.IPv4Addr is empty in smfContext, using config fallback")
+				smContext.SubGsmLog.Warn("PCSCFInfo.IPv4Addr is empty in global SMF context, using config fallback")
 			}
-			smContext.SubGsmLog.Infof("PCSCF Ip: ", pcsfIpStr)
+			smContext.SubGsmLog.Infof("PCSCF Ip: %v", pcsfIpStr)
 			pcscfIP := net.ParseIP(pcsfIpStr)
 			if pcscfIP == nil {
 				smContext.SubGsmLog.Warnln("Invalid P-CSCF IP address")
@@ -259,7 +260,7 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 			nasMessage.PDUSessionModificationCommandAuthorizedQosFlowDescriptionsType)
 	}
 	pDUSessionModificationCommand.AuthorizedQosFlowDescriptions.SetLen(authQfd.IeLen)
-	pDUSessionModificationCommand.AuthorizedQosFlowDescriptions.SetQoSFlowDescriptions(authQfd.Content)
+	pDUSessionModificationCommand.SetQoSFlowDescriptions(authQfd.Content)
 
 	// ===============================
 	// Build Authorized QoS Rules
@@ -292,10 +293,10 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 				nas.MsgTypePDUSessionModificationCommand)
 			pDUSessionModificationCommand.AuthorizedQosRules.SetIei(0x7A)
 			pDUSessionModificationCommand.AuthorizedQosRules.SetLen(uint16(len(qosRulesBytes)))
-			pDUSessionModificationCommand.AuthorizedQosRules.SetQosRule(qosRulesBytes)
+			pDUSessionModificationCommand.SetQosRule(qosRulesBytes)
 
 			smContext.SubGsmLog.Debugf("AuthorizedQoS IE len: %d", pDUSessionModificationCommand.AuthorizedQosRules.GetLen())
-			smContext.SubGsmLog.Debugf("AuthorizedQoS IE hex: %x", pDUSessionModificationCommand.AuthorizedQosRules.GetQosRule())
+			smContext.SubGsmLog.Debugf("AuthorizedQoS IE hex: %x", pDUSessionModificationCommand.GetQosRule())
 		}
 	}
 

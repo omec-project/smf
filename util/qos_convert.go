@@ -37,10 +37,25 @@ func BitRateTokbps(bitrate string) uint64 {
 }
 
 func NormalizeBitRate(br string) string {
-	// Example: "128.000000 Kbps" → "128 Kbps"
-	parts := strings.Split(br, ".")
-	if len(parts) > 1 {
-		br = parts[0] + " Kbps"
+	fields := strings.Fields(br)
+	if len(fields) == 0 {
+		return strings.TrimSpace(br)
+	}
+	numeric := fields[0]
+	unit := ""
+	if len(fields) > 1 {
+		unit = strings.Join(fields[1:], " ")
+	}
+	if strings.Contains(numeric, ".") {
+		numeric = strings.TrimRight(strings.TrimRight(numeric, "0"), ".")
+		if numeric == "" {
+			numeric = "0"
+		}
+	}
+	if unit != "" {
+		br = numeric + " " + unit
+	} else {
+		br = numeric
 	}
 	return strings.TrimSpace(br)
 }
