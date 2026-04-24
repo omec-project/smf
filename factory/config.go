@@ -72,6 +72,7 @@ type Configuration struct {
 	EnableDbStore            bool              `yaml:"enableDBStore,omitempty"`
 	EnableUpfAdapter         bool              `yaml:"enableUPFAdapter,omitempty"`
 	ULCL                     bool              `yaml:"ulcl,omitempty"`
+	PCSCFInfo                PCSCFInfo         `yaml:"pcscfInfos,omitempty"`
 }
 
 type StaticIpInfo struct {
@@ -195,6 +196,11 @@ type InterfaceUpfInfoItem struct {
 type UPLink struct {
 	A string `yaml:"A"`
 	B string `yaml:"B"`
+}
+
+type PCSCFInfo struct {
+	IPv4Addr string `yaml:"ipv4,omitempty"`
+	IPv6Addr string `yaml:"ipv6,omitempty"`
 }
 
 func (c *Config) GetVersion() string {

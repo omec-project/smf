@@ -587,12 +587,27 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 
 // SelectedSessionRule - return the SMF selected session rule for this SM Context
 func (smContext *SMContext) SelectedSessionRule() *models.SessionRule {
-	// Policy update in progress
+	logger.CtxLog.Debugf("SelectedSessionRule len(smContext.SmPolicyUpdates): %v", len(smContext.SmPolicyUpdates))
+
 	if len(smContext.SmPolicyUpdates) > 0 {
-		return smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
-	} else {
-		return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
+		policyUpdate := smContext.SmPolicyUpdates[0]
+		if policyUpdate != nil {
+			logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0]: %v", policyUpdate)
+			if policyUpdate.SessRuleUpdate != nil {
+				logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0].SessRuleUpdate: %v", policyUpdate.SessRuleUpdate)
+				if policyUpdate.SessRuleUpdate.ActiveSessRule != nil {
+					logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule: %v", policyUpdate.SessRuleUpdate.ActiveSessRule)
+					return policyUpdate.SessRuleUpdate.ActiveSessRule
+				}
+			}
+		}
 	}
+
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData: %v", smContext.SmPolicyData)
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData.SmCtxtSessionRules: %v", smContext.SmPolicyData.SmCtxtSessionRules)
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule: %v", smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule)
+
+	return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
 }
 
 func (smContextState SMContextState) String() string {

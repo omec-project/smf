@@ -88,6 +88,9 @@ type SMFContext struct {
 	// For ULCL
 	ULCLSupport bool
 	mu          sync.RWMutex
+
+	// PCSCF Info
+	PCSCFInfo PCSCFInfo
 }
 
 func (s *SMFContext) Lock()    { s.mu.Lock() }
@@ -257,6 +260,11 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 			smfContext.NrfCacheEvictionInterval = time.Duration(configuration.NrfCacheEvictionInterval)
 		}
 	}
+
+	smfContext.PCSCFInfo = PCSCFInfo(configuration.PCSCFInfo)
+
+	logger.CtxLog.Infof("Configuration PCSCF Info: %v", configuration.PCSCFInfo)
+	logger.CtxLog.Infof("SMF Context PCSCF Info: %v", smfContext.PCSCFInfo)
 
 	smfContext.PodIp = os.Getenv("POD_IP")
 

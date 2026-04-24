@@ -62,8 +62,84 @@ func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *Traffic
 }
 
 func GetTCDataChanges(pcfTc, ctxtTc *models.TrafficControlData) bool {
-	// TODO
+	if pcfTc == nil || ctxtTc == nil {
+		return true
+	}
+
+	if pcfTc.TcId != ctxtTc.TcId ||
+		pcfTc.FlowStatus != ctxtTc.FlowStatus ||
+		pcfTc.MuteNotif != ctxtTc.MuteNotif ||
+		pcfTc.TrafficSteeringPolIdDl != ctxtTc.TrafficSteeringPolIdDl ||
+		pcfTc.TrafficSteeringPolIdUl != ctxtTc.TrafficSteeringPolIdUl {
+		return true
+	}
+
+	if !compareRedirectInfo(pcfTc.RedirectInfo, ctxtTc.RedirectInfo) {
+		return true
+	}
+
+	if !compareRouteToLocations(pcfTc.RouteToLocs, ctxtTc.RouteToLocs) {
+		return true
+	}
+
+	if !compareUpPathChgEvent(pcfTc.UpPathChgEvent, ctxtTc.UpPathChgEvent) {
+		return true
+	}
+
 	return false
+}
+
+func compareRedirectInfo(a, b *models.RedirectInformation) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+
+	return a.RedirectEnabled == b.RedirectEnabled &&
+		a.RedirectAddressType == b.RedirectAddressType &&
+		a.RedirectServerAddress == b.RedirectServerAddress
+}
+
+func compareRouteToLocations(a, b []models.RouteToLocation) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i].Dnai != b[i].Dnai ||
+			a[i].RouteProfId != b[i].RouteProfId ||
+			!compareRouteInformation(a[i].RouteInfo, b[i].RouteInfo) {
+			return false
+		}
+	}
+	return true
+}
+
+func compareRouteInformation(a, b *models.RouteInformation) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+
+	return a.Ipv4Addr == b.Ipv4Addr &&
+		a.Ipv6Addr == b.Ipv6Addr &&
+		a.PortNumber == b.PortNumber
+}
+
+func compareUpPathChgEvent(a, b *models.UpPathChgEvent) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.NotificationUri == b.NotificationUri &&
+		a.NotifCorreId == b.NotifCorreId &&
+		a.DnaiChgType == b.DnaiChgType
 }
 
 func GetTcDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refTcData string) *models.TrafficControlData {

@@ -66,8 +66,50 @@ func CommitPccRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *PccRulesUpdat
 
 // Get the difference between 2 pcc rules
 func GetPccRuleChanges(s, d *models.PccRule) bool {
-	// TODO
+	if s == nil || d == nil {
+		return true
+	}
+
+	if s.PccRuleId != d.PccRuleId ||
+		s.AppId != d.AppId ||
+		s.ContVer != d.ContVer ||
+		s.Precedence != d.Precedence ||
+		s.AfSigProtocol != d.AfSigProtocol ||
+		s.AppReloc != d.AppReloc ||
+		s.RefCondData != d.RefCondData {
+		return true
+	}
+
+	if !stringSlicesEqual(s.RefQosData, d.RefQosData) ||
+		!stringSlicesEqual(s.RefTcData, d.RefTcData) ||
+		!stringSlicesEqual(s.RefChgData, d.RefChgData) ||
+		!stringSlicesEqual(s.RefUmData, d.RefUmData) {
+		return true
+	}
+
+	if len(s.FlowInfos) != len(d.FlowInfos) {
+		return true
+	}
+	for i := range s.FlowInfos {
+		if s.FlowInfos[i] != d.FlowInfos[i] {
+			return true
+		}
+	}
+
 	return false
+}
+
+// Helper to compare two string slices (order matters)
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (upd *PccRulesUpdate) GetAddPccRuleUpdate() map[string]*models.PccRule {

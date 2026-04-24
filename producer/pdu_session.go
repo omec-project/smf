@@ -766,7 +766,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		ANUPF := defaultPath.FirstDPNode
 
 		// Sending PFCP modification with flag set to DROP the packets.
-		err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, ANUPF.UPF.Port)
+		err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.Port)
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("pfcp Session Modification Request failed: %v", err)
 		}
