@@ -12,7 +12,7 @@ require (
 	github.com/omec-project/openapi v1.7.1
 	github.com/omec-project/util v1.7.2
 	github.com/prometheus/client_golang v1.23.2
-	github.com/segmentio/kafka-go v0.4.50
+	github.com/segmentio/kafka-go v0.4.51
 	github.com/urfave/cli/v3 v3.8.0
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver v1.17.9
