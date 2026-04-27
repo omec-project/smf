@@ -119,10 +119,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	}
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionDocumentApi.
-		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed, %v", err.Error())
 		return err

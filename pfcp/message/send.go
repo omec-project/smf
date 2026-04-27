@@ -22,6 +22,7 @@ import (
 
 	"github.com/omec-project/nas/nasMessage"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -487,10 +488,7 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	}
 
 	// Send N1N2 Reject request
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionDocumentApi.
-		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	smContext.ChangeState(smf_context.SmStateInit)
 	smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
 	if err != nil {

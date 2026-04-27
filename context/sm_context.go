@@ -371,6 +371,23 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.ServingNfId = createData.ServingNfId
 }
 
+// RebuildCommunicationClient reconstructs the Namf_Communication API client
+// from the stored AMFProfile. This is needed after recovering an SMContext from
+// MongoDB, since CommunicationClient is not serializable.
+func (smContext *SMContext) RebuildCommunicationClient() {
+	if smContext.AMFProfile.NfServices == nil {
+		return
+	}
+	for _, service := range *smContext.AMFProfile.NfServices {
+		if service.ServiceName == models.ServiceName_NAMF_COMM {
+			communicationConf := Namf_Communication.NewConfiguration()
+			communicationConf.SetBasePath(service.ApiPrefix)
+			smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
+			return
+		}
+	}
+}
+
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
 	createdData = new(models.SmContextCreatedData)
 	createdData.SNssai = smContext.Snssai
