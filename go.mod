@@ -16,7 +16,7 @@ require (
 	github.com/urfave/cli/v3 v3.8.0
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver v1.17.9
-	go.uber.org/zap v1.27.1
+	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 )
 
