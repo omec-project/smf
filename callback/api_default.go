@@ -38,7 +38,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 		logger.PduSessLog.Errorf("error: %v", err)
 	}
 
-	err = openapi.Deserialize(&request, reqBody, c.ContentType())
+	err = openapi.Decode(&request, reqBody, c.ContentType())
 	if err != nil {
 		logger.PduSessLog.Errorln("deserialize request failed")
 	}
@@ -54,17 +54,16 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
-	// HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
 
-	resBody, err := openapi.Serialize(HTTPResponse.Body, "application/json")
+	resBody, err := openapi.SetBody(HTTPResponse.Body, "application/json")
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
 	}
-	_, err = c.Writer.Write(resBody)
+	_, err = c.Writer.Write(resBody.Bytes())
 	if err != nil {
 		logger.PduSessLog.Errorf("error: %v", err)
 	}

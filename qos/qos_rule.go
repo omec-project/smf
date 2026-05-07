@@ -132,11 +132,11 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 
 func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
 	qRule := QosRule{
-		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.PccRuleId),
-		DQR:           btou(qosData.DefQosFlowIndication),
+		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
+		DQR:           btou(qosData.GetDefQosFlowIndication()),
 		OperationCode: pccRuleOpCode,
-		Precedence:    uint8(pccRule.Precedence),
-		QFI:           GetQosFlowIdFromQosId(qosData.QosId),
+		Precedence:    uint8(pccRule.GetPrecedence()),
+		QFI:           GetQosFlowIdFromQosId(qosData.GetQosId()),
 	}
 
 	qRule.BuildPacketFilterListFromPccRule(pccRule)
@@ -173,12 +173,12 @@ func (q *QosRule) BuildPacketFilterListFromPccRule(pccRule *models.PccRule) {
 
 func GetPacketFilterFromFlowInfo(flowInfo *models.FlowInformation) PacketFilter {
 	pf := &PacketFilter{
-		Identifier: GetPfId(flowInfo.PackFiltId),
-		Direction:  GetPfDirectionFromPccFlowInfo(flowInfo.FlowDirection),
+		Identifier: GetPfId(flowInfo.GetPackFiltId()),
+		Direction:  GetPfDirectionFromPccFlowInfo(flowInfo.GetFlowDirection()),
 	}
 
 	// Fill PF component contents
-	pf.GetPfContent(flowInfo.FlowDescription)
+	pf.GetPfContent(flowInfo.GetFlowDescription())
 
 	return *pf
 }
@@ -195,11 +195,11 @@ func GetPfId(ids string) uint8 {
 // Get Packet Filter Directions
 func GetPfDirectionFromPccFlowInfo(flowDir models.FlowDirectionRm) uint8 {
 	switch flowDir {
-	case models.FlowDirectionRm_UPLINK:
+	case models.FLOWDIRECTIONRM_UPLINK:
 		return PacketFilterDirectionUplink
-	case models.FlowDirectionRm_DOWNLINK:
+	case models.FLOWDIRECTIONRM_DOWNLINK:
 		return PacketFilterDirectionDownlink
-	case models.FlowDirectionRm_BIDIRECTIONAL:
+	case models.FLOWDIRECTIONRM_BIDIRECTIONAL:
 		return PacketFilterDirectionBidirectional
 	default:
 		// TODO: Error Log

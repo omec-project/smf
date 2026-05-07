@@ -6,6 +6,7 @@ package transaction
 
 import (
 	"fmt"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -16,9 +17,9 @@ import (
 
 type Transaction struct {
 	startTime, endTime time.Time
-	Req                interface{}
-	Rsp                interface{}
-	Ctxt               interface{}
+	Req                any
+	Rsp                any
+	Ctxt               any
 	CtxtKey            string
 	Err                error
 	Status             chan bool
@@ -97,7 +98,7 @@ func getNewTxnId() uint32 {
 	return TxnId
 }
 
-func NewTransaction(req, rsp interface{}, msgType svcmsgtypes.SmfMsgType) *Transaction {
+func NewTransaction(req, rsp any, msgType svcmsgtypes.SmfMsgType) *Transaction {
 	t := &Transaction{
 		Req:       req,
 		Rsp:       rsp,
@@ -170,6 +171,14 @@ func InitTxnFsm(fsm txnFsm) {
 }
 
 func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Err = fmt.Errorf("panic in transaction lifecycle: %v", recovered)
+			t.TxnFsmLog.Errorf("panic in transaction lifecycle: %v\n%s", recovered, debug.Stack())
+			t.Status <- false
+		}
+	}()
+
 	nextEvent := TxnEventInit
 	var err error
 

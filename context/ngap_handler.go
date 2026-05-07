@@ -50,7 +50,7 @@ func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (er
 		}
 	}
 
-	ctx.UpCnxState = models.UpCnxState_ACTIVATED
+	ctx.UpCnxState = models.UPCNXSTATE_ACTIVATED
 	return nil
 }
 

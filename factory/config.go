@@ -79,19 +79,6 @@ type StaticIpInfo struct {
 	Dnn        string            `yaml:"dnn"`
 }
 
-type SnssaiInfoItem struct {
-	SNssai   *models.Snssai      `yaml:"sNssai"`
-	PlmnId   models.PlmnId       `yaml:"plmnId"`
-	DnnInfos []SnssaiDnnInfoItem `yaml:"dnnInfos"`
-}
-
-type SnssaiDnnInfoItem struct {
-	Dnn      string `yaml:"dnn"`
-	DNS      DNS    `yaml:"dns"`
-	UESubnet string `yaml:"ueSubnet"`
-	MTU      uint16 `yaml:"mtu"`
-}
-
 type Sbi struct {
 	Scheme       string `yaml:"scheme"`
 	TLS          *TLS   `yaml:"tls"`
@@ -109,11 +96,6 @@ type TLS struct {
 type PFCP struct {
 	Addr string `yaml:"addr,omitempty"`
 	Port uint16 `yaml:"port,omitempty"`
-}
-
-type DNS struct {
-	IPv4Addr string `yaml:"ipv4,omitempty"`
-	IPv6Addr string `yaml:"ipv6,omitempty"`
 }
 
 type Path struct {
@@ -188,7 +170,7 @@ type UPNode struct {
 
 type InterfaceUpfInfoItem struct {
 	NetworkInstance string                 `yaml:"networkInstance"`
-	InterfaceType   models.UpInterfaceType `yaml:"interfaceType"`
+	InterfaceType   models.UPInterfaceType `yaml:"interfaceType"`
 	Endpoints       []string               `yaml:"endpoints"`
 }
 

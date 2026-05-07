@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/utils"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -24,25 +25,16 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 
 	requestBody, err := c.GetRawData()
 	if err != nil {
-		logger.PduSessLog.Errorf("Get Request Body error: %+v", err)
-		problemDetail := models.ProblemDetails{
-			Title:  "System failure",
-			Status: http.StatusInternalServerError,
-			Detail: err.Error(),
-			Cause:  "SYSTEM_FAILURE",
-		}
+		logger.PduSessLog.Errorf("get Request Body error: %+v", err)
+		problemDetail := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetail)
 		return
 	}
 
-	err = openapi.Deserialize(&nfSubscriptionStatusNotification, requestBody, "application/json")
+	err = openapi.Decode(&nfSubscriptionStatusNotification, requestBody, "application/json")
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
-		rsp := models.ProblemDetails{
-			Title:  "Malformed request syntax",
-			Status: http.StatusBadRequest,
-			Detail: problemDetail,
-		}
+		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
 		logger.PduSessLog.Errorln(problemDetail)
 		c.JSON(http.StatusBadRequest, rsp)
 		return
@@ -52,18 +44,14 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 
 	rsp := producer.HandleNfSubscriptionStatusNotify(req)
 
-	responseBody, err := openapi.Serialize(rsp.Body, "application/json")
+	responseBody, err := openapi.SetBody(rsp.Body, "application/json")
 	if err != nil {
-		logger.PduSessLog.Errorf("Error fetching response for HTTPNfSubscriptionStatusNotify : %+v\n", err)
-		problemDetails := models.ProblemDetails{
-			Status: http.StatusInternalServerError,
-			Cause:  "SYSTEM_FAILURE",
-			Detail: err.Error(),
-		}
+		logger.PduSessLog.Errorf("error fetching response for HTTPNfSubscriptionStatusNotify: %+v", err)
+		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
-		c.Data(rsp.Status, "application/json", responseBody)
-		if nfSubscriptionStatusNotification.Event != models.NotificationEventType_DEREGISTERED {
+		c.Data(rsp.Status, "application/json", responseBody.Bytes())
+		if nfSubscriptionStatusNotification.Event != models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED {
 			return
 		}
 		nfID := nfSubscriptionStatusNotification.NfProfile.NfInstanceId

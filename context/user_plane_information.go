@@ -10,6 +10,7 @@ import (
 	"net"
 	"reflect"
 
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/openapi/nfConfigApi"
 	"github.com/omec-project/smf/factory"
@@ -71,9 +72,9 @@ func AllocateUPFID() {
 
 func convertSnssaiInfoToModel(snssaiInfo SnssaiUPFInfo) models.SnssaiUpfInfoItem {
 	return models.SnssaiUpfInfoItem{
-		SNssai: &models.Snssai{
+		SNssai: models.Snssai{
 			Sst: snssaiInfo.SNssai.Sst,
-			Sd:  snssaiInfo.SNssai.Sd,
+			Sd:  openapi.PtrString(snssaiInfo.SNssai.Sd),
 		},
 		DnnUpfInfoList: convertDnnUpfInfoToModel(snssaiInfo.DnnList),
 	}
@@ -134,13 +135,13 @@ func BuildUserPlaneInformationFromSessionManagement(existing *UserPlaneInformati
 
 		for _, ipDomain := range sm.IpDomain {
 			n3 := factory.InterfaceUpfInfoItem{
-				InterfaceType:   models.UpInterfaceType_N3,
+				InterfaceType:   models.UPINTERFACETYPE_N3,
 				NetworkInstance: ipDomain.DnnName,
 				Endpoints:       []string{ipStr},
 			}
 			interfaceInfoList = append(interfaceInfoList, n3)
 			n9 := factory.InterfaceUpfInfoItem{
-				InterfaceType:   models.UpInterfaceType_N9,
+				InterfaceType:   models.UPINTERFACETYPE_N9,
 				NetworkInstance: ipDomain.DnnName,
 				Endpoints:       []string{ipStr},
 			}
@@ -210,8 +211,8 @@ func CreateNodeIDFromHostname(hostname string) NodeID {
 func updateSNssaiInfo(upfNode *UPNode, newInfo models.SnssaiUpfInfoItem) {
 	newSnssai := SnssaiUPFInfo{
 		SNssai: SNssai{
-			Sst: newInfo.SNssai.Sst,
-			Sd:  newInfo.SNssai.Sd,
+			Sst: newInfo.SNssai.GetSst(),
+			Sd:  newInfo.SNssai.GetSd(),
 		},
 		DnnList: make([]DnnUPFInfoItem, 0),
 	}
@@ -335,8 +336,8 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 		for _, snssaiInfoConfig := range node.SNssaiInfos {
 			snssaiInfo := SnssaiUPFInfo{
 				SNssai: SNssai{
-					Sst: snssaiInfoConfig.SNssai.Sst,
-					Sd:  snssaiInfoConfig.SNssai.Sd,
+					Sst: snssaiInfoConfig.SNssai.GetSst(),
+					Sd:  snssaiInfoConfig.SNssai.GetSd(),
 				},
 				DnnList: make([]DnnUPFInfoItem, 0),
 			}
@@ -359,9 +360,9 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 			upIface := NewUPFInterfaceInfo(&iface)
 
 			switch iface.InterfaceType {
-			case models.UpInterfaceType_N3:
+			case models.UPINTERFACETYPE_N3:
 				upNode.UPF.N3Interfaces = append(upNode.UPF.N3Interfaces, *upIface)
-			case models.UpInterfaceType_N9:
+			case models.UPINTERFACETYPE_N9:
 				upNode.UPF.N9Interfaces = append(upNode.UPF.N9Interfaces, *upIface)
 			}
 		}
@@ -392,7 +393,7 @@ func convertIpDomainsToDnnList(ipDomains []nfConfigApi.IpDomain) []DnnUPFInfoIte
 		dnnList = append(dnnList, DnnUPFInfoItem{
 			Dnn:             domain.DnnName,
 			DnaiList:        []string{""},
-			PduSessionTypes: []models.PduSessionType{models.PduSessionType_IPV4},
+			PduSessionTypes: []models.PduSessionType{models.PDUSESSIONTYPE_IPV4},
 		})
 	}
 	return dnnList

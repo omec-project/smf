@@ -73,7 +73,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 	var sd [3]uint8
 
-	if byteArray, err := hex.DecodeString(smContext.Snssai.Sd); err != nil {
+	if byteArray, err := hex.DecodeString(smContext.Snssai.GetSd()); err != nil {
 		return nil, err
 	} else {
 		copy(sd[:], byteArray)

@@ -233,9 +233,9 @@ func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 		upIface := NewUPFInterfaceInfo(&iface)
 
 		switch iface.InterfaceType {
-		case models.UpInterfaceType_N3:
+		case models.UPINTERFACETYPE_N3:
 			upf.N3Interfaces = append(upf.N3Interfaces, *upIface)
-		case models.UpInterfaceType_N9:
+		case models.UPINTERFACETYPE_N9:
 			upf.N9Interfaces = append(upf.N9Interfaces, *upIface)
 		}
 	}
@@ -245,20 +245,20 @@ func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 
 // *** add unit test ***//
 // GetInterface return the UPFInterfaceInfo that match input cond
-func (upf *UPF) GetInterface(interfaceType models.UpInterfaceType, dnn string) *UPFInterfaceInfo {
+func (upf *UPF) GetInterface(interfaceType models.UPInterfaceType, dnn string) *UPFInterfaceInfo {
 	switch interfaceType {
-	case models.UpInterfaceType_N3:
+	case models.UPINTERFACETYPE_N3:
 		for i, iface := range upf.N3Interfaces {
 			logger.CtxLog.Debugf("checking N3 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
-				return &upf.N3Interfaces[i]
+				return &iface
 			}
 		}
-	case models.UpInterfaceType_N9:
+	case models.UPINTERFACETYPE_N9:
 		for i, iface := range upf.N9Interfaces {
 			logger.CtxLog.Debugf("checking N9 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
-				return &upf.N9Interfaces[i]
+				return &iface
 			}
 		}
 	}
@@ -415,11 +415,11 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	flow := rule.FlowInfos[0]
 
 	// Flow Description
-	if flow.FlowDescription != "" {
+	if flow.GetFlowDescription() != "" {
 		sdfFilter.Fd = true
-		sdfFilter.FlowDescription = []byte(flow.FlowDescription)
+		sdfFilter.FlowDescription = []byte(flow.GetFlowDescription())
 		sdfFilter.LengthOfFlowDescription = uint16(len(sdfFilter.FlowDescription))
-		if id, err := strconv.ParseUint(flow.PackFiltId, 10, 32); err != nil {
+		if id, err := strconv.ParseUint(flow.GetPackFiltId(), 10, 32); err != nil {
 			return nil, err
 		} else {
 			sdfFilter.SdfFilterId = uint32(id)
@@ -427,21 +427,21 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	}
 
 	// ToS Traffic Class
-	if flow.TosTrafficClass != "" {
+	if flow.TosTrafficClass.IsSet() {
 		sdfFilter.Ttc = true
-		sdfFilter.TosTrafficClass = []byte(flow.TosTrafficClass)
+		sdfFilter.TosTrafficClass = []byte(flow.GetTosTrafficClass())
 	}
 
 	// Flow Label
-	if flow.FlowLabel != "" {
+	if flow.FlowLabel.IsSet() {
 		sdfFilter.Fl = true
-		sdfFilter.FlowLabel = []byte(flow.FlowLabel)
+		sdfFilter.FlowLabel = []byte(flow.GetFlowLabel())
 	}
 
 	// Security Parameter Index
-	if flow.Spi != "" {
+	if flow.Spi.IsSet() {
 		sdfFilter.Spi = true
-		sdfFilter.SecurityParameterIndex = []byte(flow.Spi)
+		sdfFilter.SecurityParameterIndex = []byte(flow.GetSpi())
 	}
 
 	pdi := PDI{
@@ -449,7 +449,7 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	}
 
 	pdr.PDI = pdi
-	pdr.Precedence = uint32(rule.Precedence)
+	pdr.Precedence = uint32(rule.GetPrecedence())
 
 	return pdr, nil
 }

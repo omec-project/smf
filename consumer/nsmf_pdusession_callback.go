@@ -17,16 +17,16 @@ import (
 func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error) {
 	if uri != "" {
 		request := models.SmContextStatusNotification{}
-		request.StatusInfo = &models.StatusInfo{
-			ResourceStatus: models.ResourceStatus_RELEASED,
+		request.StatusInfo = models.StatusInfo{
+			ResourceStatus: models.RESOURCESTATUS_RELEASED,
 		}
 		configuration := Nsmf_PDUSession.NewConfiguration()
 		client := Nsmf_PDUSession.NewAPIClient(configuration)
 
 		logger.CtxLog.Infoln("[SMF] Send SMContext Status Notification")
-		httpResp, localErr := client.
-			IndividualSMContextNotificationApi.
-			SMContextNotification(context.Background(), uri, request)
+		apiSmContextStatusNotificationPostRequest := client.SMContextsCollectionCallbacksmContextStatusNotificationAPI.SmContextStatusNotificationPost(context.Background())
+		apiSmContextStatusNotificationPostRequest = apiSmContextStatusNotificationPostRequest.SmContextStatusNotification(request)
+		httpResp, localErr := client.SMContextsCollectionCallbacksmContextStatusNotificationAPI.SmContextStatusNotificationPostExecute(apiSmContextStatusNotificationPostRequest)
 
 		if localErr == nil {
 			if httpResp.StatusCode != http.StatusNoContent {

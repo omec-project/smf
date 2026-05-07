@@ -7,11 +7,13 @@
 package context
 
 import (
+	"fmt"
+
 	"github.com/omec-project/nas/nasConvert"
 	"github.com/omec-project/nas/nasMessage"
 )
 
-func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) {
+func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) error {
 	// Retrieve PDUSessionID
 	smContext.PDUSessionID = int32(req.GetPDUSessionID())
 
@@ -23,7 +25,7 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		requestedPDUSessionType := req.GetPDUSessionTypeValue()
 		if err := smContext.isAllowedPDUSessionType(requestedPDUSessionType); err != nil {
 			smContext.SubCtxLog.Errorf("%s", err)
-			return
+			return err
 		}
 	} else {
 		// Set to default supported PDU Session Type
@@ -39,6 +41,12 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 		default:
 			smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
 		}
+	}
+
+	if smContext.SelectedPDUSessionType == 0 {
+		err := fmt.Errorf("selected PDU session type is not set")
+		smContext.SubCtxLog.Errorf("%s", err)
+		return err
 	}
 
 	if req.ExtendedProtocolConfigurationOptions != nil {
@@ -134,6 +142,8 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 			}
 		}
 	}
+
+	return nil
 }
 
 func (smContext *SMContext) HandlePDUSessionReleaseRequest(req *nasMessage.PDUSessionReleaseRequest) {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/omec-project/openapi/models"
@@ -79,12 +80,12 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 
 	// N2 Container Info
 	n2InfoContainer := models.N2InfoContainer{
-		N2InformationClass: models.N2InformationClass_SM,
+		N2InformationClass: models.N2INFORMATIONCLASS_SM,
 		SmInfo: &models.N2SmInformation{
 			PduSessionId: smContext.PDUSessionID,
 			N2InfoContent: &models.N2InfoContent{
-				NgapIeType: models.NgapIeType_PDU_RES_SETUP_REQ,
-				NgapData: &models.RefToBinaryData{
+				NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr(),
+				NgapData: models.RefToBinaryData{
 					ContentId: "N2SmInformation",
 				},
 			},
@@ -93,20 +94,35 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	}
 
 	// N1 Container Info
-	n1MsgContainer := models.N1MessageContainer{
-		N1MessageClass:   "SM",
-		N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
+	n1MessageClass, err := models.NewN1MessageClassFromValue("SM")
+	if err != nil {
+		smContext.SubPduSessLog.Errorln("err")
 	}
+	n1MessageContent := models.NewRefToBinaryData("GSM_NAS")
+	n1MsgContainer := models.NewN1MessageContainer(*n1MessageClass, *n1MessageContent)
 
 	// N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
+	n1n2Request.JsonData = models.NewN1N2MessageTransferReqData()
+	n1n2Request.JsonData.SetPduSessionId(smContext.PDUSessionID)
 
 	// N1 Msg
-	if smNasBuf, err := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err != nil {
-		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err)
+	if smNasBuf, err1 := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err1 != nil {
+		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err1.Error())
 	} else {
-		n1n2Request.BinaryDataN1Message = smNasBuf
-		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+		// Create a temporary file
+		tmpFile, err2 := os.CreateTemp("", "prefix")
+		if err2 != nil {
+			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
+		}
+		defer tmpFile.Close()
+		if _, err = tmpFile.Write(smNasBuf); err != nil {
+			smContext.SubPduSessLog.Errorf("failed to write to temp file: %s", err.Error())
+		}
+		if _, err = tmpFile.Seek(0, 0); err != nil {
+			smContext.SubPduSessLog.Errorf("failed to seek to beginning of temp file: %s", err.Error())
+		}
+		n1n2Request.BinaryDataN1Message = &tmpFile
+		n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
 	}
 
 	// N2 Msg
@@ -114,20 +130,43 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("SMPolicyUpdate, build PDUSession Resource Modify Request Transfer Error(%s)", err.Error())
 	} else {
-		n1n2Request.BinaryDataN2Information = n2Pdu
+		// Create a temporary file
+		tmpFile, err1 := os.CreateTemp("", "prefix")
+		if err1 != nil {
+			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
+		}
+		defer tmpFile.Close()
+		if _, err = tmpFile.Write(n2Pdu); err != nil {
+			smContext.SubPduSessLog.Errorf("error writing to temp file (%s)", err.Error())
+		}
+		if _, err = tmpFile.Seek(0, 0); err != nil {
+			smContext.SubPduSessLog.Errorf("error seeking to beginning of temp file (%s)", err.Error())
+		}
+		n1n2Request.BinaryDataN2Information = &tmpFile
 		n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 	}
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
+	apiN1N2MessageTransferRequest := smContext.
+		CommunicationClient.
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransfer(context.Background(), smContext.Supi)
+	apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
+	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
+		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
+	}
+	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
+		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
+	}
 	rspData, _, err := smContext.
 		CommunicationClient.
-		N1N2MessageCollectionDocumentApi.
-		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed, %v", err.Error())
 		return err
 	}
-	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
+	if rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 		return fmt.Errorf("N1N2MessageTransfer failure, %v", rspData.Cause)
 	}
@@ -142,7 +181,7 @@ func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper
 
 	problemDetails := NfSubscriptionStatusNotifyProcedure(notificationData)
 	if problemDetails != nil {
-		return httpwrapper.NewResponse(int(problemDetails.Status), nil, problemDetails)
+		return httpwrapper.NewResponse(int(problemDetails.GetStatus()), nil, problemDetails)
 	} else {
 		return httpwrapper.NewResponse(http.StatusNoContent, nil, nil)
 	}
@@ -155,11 +194,10 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	logger.ProducerLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
 
 	if notificationData.Event == "" || notificationData.NfInstanceUri == "" {
-		problemDetails := &models.ProblemDetails{
-			Status: http.StatusBadRequest,
-			Cause:  "MANDATORY_IE_MISSING", // Defined in TS 29.510 6.1.6.2.17
-			Detail: "Missing IE [Event]/[NfInstanceUri] in NotificationData",
-		}
+		problemDetails := models.NewProblemDetails()
+		problemDetails.SetStatus(http.StatusBadRequest)
+		problemDetails.SetCause("MANDATORY_IE_MISSING") // Defined in TS 29.510 6.1.6.2.17
+		problemDetails.SetDetail("Missing IE [Event]/[NfInstanceUri] in NotificationData")
 		return problemDetails
 	}
 	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
@@ -167,7 +205,7 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	logger.ProducerLog.Infof("Received Subscription Status Notification from NRF: %v", notificationData.Event)
 	// If nrf caching is enabled, go ahead and delete the entry from the cache.
 	// This will force the PCF to do nf discovery and get the updated nf profile from the NRF.
-	if notificationData.Event == models.NotificationEventType_DEREGISTERED {
+	if notificationData.GetEvent() == models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED {
 		if smfContext.SMF_Self().EnableNrfCaching {
 			ok := NRFCacheRemoveNfProfileFromNrfCache(nfInstanceId)
 			logger.ProducerLog.Debugf("nfinstance %v deleted from cache: %v", nfInstanceId, ok)

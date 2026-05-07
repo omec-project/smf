@@ -10,7 +10,7 @@ type CondDataUpdate struct {
 	add, mod, del map[string]*models.ConditionData
 }
 
-func GetConditionDataUpdate(condData, ctxtCondData map[string]*models.ConditionData) *CondDataUpdate {
+func GetConditionDataUpdate(condData map[string]models.ConditionData, ctxtCondData map[string]*models.ConditionData) *CondDataUpdate {
 	change := CondDataUpdate{
 		add: make(map[string]*models.ConditionData),
 		mod: make(map[string]*models.ConditionData),

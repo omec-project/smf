@@ -25,9 +25,9 @@ import (
 	"github.com/omec-project/smf/logger"
 )
 
-// Post /pdu-sessions
-// Create
-func HTTPPostPduSessions(c *gin.Context) {
-	logger.PduSessLog.Warnln("Handle Post /pdu-sessions is not implemented")
+// Post /:$request.body#/vsmfPduSessionUri
+// Notify Status
+func HTTPNotifyStatus(c *gin.Context) {
+	logger.PduSessLog.Warnln("Handle Post /:$request.body#/vsmfPduSessionUri is not implemented")
 	c.String(http.StatusNotImplemented, "501 not implemented")
 }

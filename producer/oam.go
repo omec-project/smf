@@ -47,7 +47,7 @@ func HandleOAMGetUEPDUSessionInfo(smContextRef string) *httpwrapper.Response {
 			PDUSessionID: strconv.Itoa(int(smContext.PDUSessionID)),
 			Dnn:          smContext.Dnn,
 			Sst:          strconv.Itoa(int(smContext.Snssai.Sst)),
-			Sd:           smContext.Snssai.Sd,
+			Sd:           smContext.Snssai.GetSd(),
 			AnType:       smContext.AnType,
 			PDUAddress:   smContext.PDUAddress.Ip.String(),
 			UpCnxState:   smContext.UpCnxState,

@@ -17,6 +17,52 @@ import (
 
 const DefaultNonGBR5QI = 9
 
+func buildAllocationAndRetentionPriority(qosFlow *models.QosData, sessRule *models.SessionRule) ngapType.AllocationAndRetentionPriority {
+	priorityLevel := int64(8)
+	preemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
+	preemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
+
+	if sessRule != nil && sessRule.AuthDefQos != nil {
+		if value := sessRule.AuthDefQos.GetPriorityLevel(); value > 0 {
+			priorityLevel = int64(value)
+		}
+		if sessRule.AuthDefQos.Arp != nil {
+			if value := sessRule.AuthDefQos.Arp.GetPriorityLevel(); value > 0 {
+				priorityLevel = int64(value)
+			}
+			if sessRule.AuthDefQos.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
+				preemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
+			}
+			if sessRule.AuthDefQos.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
+				preemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+			}
+		}
+	}
+
+	if qosFlow != nil {
+		if value := qosFlow.GetPriorityLevel(); value > 0 {
+			priorityLevel = int64(value)
+		}
+		if qosFlow.Arp != nil {
+			if value := qosFlow.Arp.GetPriorityLevel(); value > 0 {
+				priorityLevel = int64(value)
+			}
+			if qosFlow.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
+				preemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
+			}
+			if qosFlow.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
+				preemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+			}
+		}
+	}
+
+	return ngapType.AllocationAndRetentionPriority{
+		PriorityLevelARP:        ngapType.PriorityLevelARP{Value: priorityLevel},
+		PreEmptionCapability:    ngapType.PreEmptionCapability{Value: preemptCap},
+		PreEmptionVulnerability: ngapType.PreEmptionVulnerability{Value: preemptVul},
+	}
+}
+
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {
 	ANUPF := ctx.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 	UpNode := ANUPF.UPF
@@ -116,15 +162,7 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 
 		var qosFlowsList []ngapType.QosFlowSetupRequestItem
 		for _, qosFlow := range qosAddFlows {
-			arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
-			if qosFlow.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
-				arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
-			}
-
-			arpPreemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
-			if qosFlow.Arp.PreemptVuln == models.PreemptionVulnerability_PREEMPTABLE {
-				arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
-			}
+			allocationAndRetentionPriority := buildAllocationAndRetentionPriority(qosFlow, sessRule)
 
 			qosFlowItem := ngapType.QosFlowSetupRequestItem{
 				QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.QosId))},
@@ -133,21 +171,11 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 						Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 						NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
 							FiveQI: ngapType.FiveQI{
-								Value: int64(qosFlow.Var5qi),
+								Value: int64(qosFlow.GetVar5qi()),
 							},
 						},
 					},
-					AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
-						PriorityLevelARP: ngapType.PriorityLevelARP{
-							Value: int64(qosFlow.Arp.PriorityLevel),
-						},
-						PreEmptionCapability: ngapType.PreEmptionCapability{
-							Value: arpPreemptCap,
-						},
-						PreEmptionVulnerability: ngapType.PreEmptionVulnerability{
-							Value: arpPreemptVul,
-						},
-					},
+					AllocationAndRetentionPriority: allocationAndRetentionPriority,
 				},
 			}
 			qosFlowsList = append(qosFlowsList, qosFlowItem)
@@ -172,12 +200,12 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 		ie.Criticality.Value = ngapType.CriticalityPresentReject
 
 		arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
-		if sessRule.AuthDefQos.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
+		if sessRule.AuthDefQos.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
 			arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
 		}
 
 		arpPreemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
-		if sessRule.AuthDefQos.Arp.PreemptVuln == models.PreemptionVulnerability_PREEMPTABLE {
+		if sessRule.AuthDefQos.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
 			arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
 		}
 		//Default Session Rule
@@ -255,12 +283,12 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// use Default 5qi, arp
 	// TODO: Get QFI from PCF/UDM
 	arpPreemptCap := ngapType.PreEmptionCapabilityPresentMayTriggerPreEmption
-	if sessRule.AuthDefQos.Arp.PreemptCap == models.PreemptionCapability_NOT_PREEMPT {
+	if sessRule.AuthDefQos.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
 		arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
 	}
 
 	arpPreemptVul := ngapType.PreEmptionVulnerabilityPresentNotPreEmptable
-	if sessRule.AuthDefQos.Arp.PreemptVuln == models.PreemptionVulnerability_PREEMPTABLE {
+	if sessRule.AuthDefQos.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
 		arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
 	}
 
@@ -273,20 +301,20 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			List: []ngapType.QosFlowAddOrModifyRequestItem{
 				{
 					QosFlowIdentifier: ngapType.QosFlowIdentifier{
-						Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
+						Value: int64(sessRule.AuthDefQos.GetVar5qi()), // DefaultNonGBR5QI,
 					},
 					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
 							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
 								FiveQI: ngapType.FiveQI{
-									Value: int64(sessRule.AuthDefQos.Var5qi), // DefaultNonGBR5QI,
+									Value: int64(sessRule.AuthDefQos.GetVar5qi()), // DefaultNonGBR5QI,
 								},
 							},
 						},
 						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
 							PriorityLevelARP: ngapType.PriorityLevelARP{
-								Value: int64(sessRule.AuthDefQos.Arp.PriorityLevel), // 15,
+								Value: int64(sessRule.AuthDefQos.Arp.GetPriorityLevel()), // 15,
 							},
 							PreEmptionCapability: ngapType.PreEmptionCapability{
 								Value: arpPreemptCap, // ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption,

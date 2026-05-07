@@ -25,12 +25,9 @@ import (
 
 const (
 	SmContextDataColl = "smf.data.smContext"
-	// TransactionDataCol = "smf.data.transaction"
-	SeidSmContextCol = "smf.data.seidSmContext"
-	NodeInDBCol      = "smf.data.nodeInDB"
-	// SMPolicyClientCol  = "smf.data.smPolicyClient"
-	RefSeidCol    = "smf.data.refToSeid"
-	SmfCounterCol = "smf.data.smfCount"
+	SeidSmContextCol  = "smf.data.seidSmContext"
+	NodeInDBCol       = "smf.data.nodeInDB"
+	RefSeidCol        = "smf.data.refToSeid"
 )
 
 func SetupSmfCollection() {

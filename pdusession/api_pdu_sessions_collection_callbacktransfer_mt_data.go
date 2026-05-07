@@ -25,9 +25,9 @@ import (
 	"github.com/omec-project/smf/logger"
 )
 
-// Post /pdu-sessions
-// Create
-func HTTPPostPduSessions(c *gin.Context) {
-	logger.PduSessLog.Warnln("Handle Post /pdu-sessions is not implemented")
+// Post /:$request.body#/vsmfPduSessionUri/transfer-mt-data
+// Transfer MT Data (by H-SMF)
+func HTTPTransferMtData(c *gin.Context) {
+	logger.PduSessLog.Warnln("Handle Post /:$request.body#/vsmfPduSessionUri/transfer-mt-data is not implemented")
 	c.String(http.StatusNotImplemented, "501 not implemented")
 }

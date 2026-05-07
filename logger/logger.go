@@ -29,9 +29,10 @@ var (
 	TxnFsmLog          *zap.SugaredLogger
 	QosLog             *zap.SugaredLogger
 	KafkaLog           *zap.SugaredLogger
-	atomicLevel        zap.AtomicLevel
+	EventExposureLog   *zap.SugaredLogger
 	PollConfigLog      *zap.SugaredLogger
 	NrfRegistrationLog *zap.SugaredLogger
+	atomicLevel        zap.AtomicLevel
 )
 
 func init() {
@@ -78,6 +79,7 @@ func init() {
 	KafkaLog = log.Sugar().With("component", "SMF", "category", "Kafka")
 	PollConfigLog = log.Sugar().With("component", "SMF", "category", "PollConfig")
 	NrfRegistrationLog = log.Sugar().With("component", "SMF", "category", "NrfRegistration")
+	EventExposureLog = log.Sugar().With("component", "SMF", "category", "EventExposure")
 }
 
 // SetLogLevel: set the log level (panic|fatal|error|warn|info|debug)

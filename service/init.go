@@ -198,7 +198,7 @@ func (smf *SMF) Start() {
 		for {
 			select {
 			case <-ctx.Done():
-				logger.InitLog.Info("received cancellation signal. Shutting down context update routine.")
+				logger.InitLog.Infoln("received cancellation signal. Shutting down context update routine")
 				return
 			case cfg := <-contextUpdateChan:
 				factory.SmfConfigSyncLock.Lock()
@@ -256,9 +256,9 @@ func (smf *SMF) Start() {
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
 		switch models.ServiceName(serviceName) {
-		case models.ServiceName_NSMF_PDUSESSION:
+		case models.SERVICENAME_NSMF_PDUSESSION:
 			pdusession.AddService(router)
-		case models.ServiceName_NSMF_EVENT_EXPOSURE:
+		case models.SERVICENAME_NSMF_EVENT_EXPOSURE:
 			eventexposure.AddService(router)
 		}
 	}
@@ -268,7 +268,7 @@ func (smf *SMF) Start() {
 		smfContext.SetupSmfCollection()
 		// Init DRSM for unique FSEID/FTEID
 		if err := smfCtxt.InitDrsm(); err != nil {
-			logger.InitLog.Errorf("initialise drsm failed, %v ", err.Error())
+			logger.InitLog.Errorf("initialise drsm failed, %+v", err)
 		}
 	} else {
 		logger.InitLog.Infoln("DB is disabled, not initialising drsm")

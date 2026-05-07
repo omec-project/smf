@@ -8,123 +8,124 @@ import (
 	"net/http"
 
 	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 )
 
 var (
-	N1SmError = models.ProblemDetails{
-		Title:  "Invalid N1 Message",
-		Status: http.StatusForbidden,
-		Detail: "N1 Message Error",
-		Cause:  "N1_SM_ERROR",
+	N1SmError = models.ExtProblemDetails{
+		Title:  openapi.PtrString("Invalid N1 Message"),
+		Status: openapi.PtrInt32(http.StatusForbidden),
+		Detail: openapi.PtrString("N1 Message Error"),
+		Cause:  openapi.PtrString(string(models.CAUSE_REJECT_DUE_TO_N1_SM_ERROR)),
 	}
-	DnnDeniedError = models.ProblemDetails{
-		Title:         "DNN Denied",
-		Status:        http.StatusForbidden,
-		Detail:        "The subscriber does not have the necessary subscription to access the DNN",
-		Cause:         "DNN_DENIED",
+	DnnDeniedError = models.ExtProblemDetails{
+		Title:         openapi.PtrString("DNN Denied"),
+		Status:        openapi.PtrInt32(http.StatusForbidden),
+		Detail:        openapi.PtrString("The subscriber does not have the necessary subscription to access the DNN"),
+		Cause:         openapi.PtrString(string(models.CAUSE_REL_DUE_TO_DNN_DENIED)),
 		InvalidParams: nil,
 	}
-	DnnNotSupported = models.ProblemDetails{
-		Title:         "DNN Not Supported",
-		Status:        http.StatusForbidden,
-		Detail:        "The DNN is not supported by the SMF.",
-		Cause:         "DNN_NOT_SUPPORTED",
+	DnnNotSupported = models.ExtProblemDetails{
+		Title:         openapi.PtrString("DNN Not Supported"),
+		Status:        openapi.PtrInt32(http.StatusForbidden),
+		Detail:        openapi.PtrString("The DNN is not supported by the SMF."),
+		Cause:         openapi.PtrString(string(models.CAUSE_REL_DUE_TO_DNN_NOT_SUPPORTED)),
 		InvalidParams: nil,
 	}
-	InsufficientResourceSliceDnn = models.ProblemDetails{
-		Title:         "DNN Resource insufficient",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to insufficient resources for the specific slice and DNN.",
-		Cause:         "INSUFFICIENT_RESOURCES_SLICE_DNN",
+	InsufficientResourceSliceDnn = models.ExtProblemDetails{
+		Title:         openapi.PtrString("DNN Resource insufficient"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to insufficient resources for the specific slice and DNN."),
+		Cause:         openapi.PtrString(string(models.CAUSE_REL_DUE_TO_INSUFFICIENT_RESOURCES_SLICE_DNN)),
 		InvalidParams: nil,
 	}
-	IpAllocError = models.ProblemDetails{
-		Title:         "IP Allocation Error",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to insufficient resources for the IP allocation.",
-		Cause:         "INSUFFICIENT_RESOURCES",
+	IpAllocError = models.ExtProblemDetails{
+		Title:         openapi.PtrString("IP Allocation Error"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to insufficient resources for the IP allocation."),
+		Cause:         openapi.PtrString(string(models.CAUSE_REL_DUE_TO_INSUFFICIENT_RESOURCES_SLICE)),
 		InvalidParams: nil,
 	}
-	SubscriptionDataFetchError = models.ProblemDetails{
-		Title:         "Subscription Data Fetch error",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in fetching subscription data.",
-		Cause:         "REQUEST_REJECTED",
+	SubscriptionDataFetchError = models.ExtProblemDetails{
+		Title:         openapi.PtrString("Subscription Data Fetch error"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in fetching subscription data."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	SubscriptionDataLenError = models.ProblemDetails{
-		Title:         "Subscription Data Fetch error",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to not receiving any subscription data.  ",
-		Cause:         "REQUEST_REJECTED",
+	SubscriptionDataLenError = models.ExtProblemDetails{
+		Title:         openapi.PtrString("Subscription Data Fetch error"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to not receiving any subscription data.  "),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	UDMDiscoveryFailure = models.ProblemDetails{
-		Title:         "UDM Discovery Failure",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in UDM discovery.",
-		Cause:         "REQUEST_REJECTED",
+	UDMDiscoveryFailure = models.ExtProblemDetails{
+		Title:         openapi.PtrString("UDM Discovery Failure"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in UDM discovery."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	UPFDataPathError = models.ProblemDetails{
-		Title:         "UPF Data Path Failure",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in fetching UPF data path.",
-		Cause:         "REQUEST_REJECTED",
+	UPFDataPathError = models.ExtProblemDetails{
+		Title:         openapi.PtrString("UPF Data Path Failure"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in fetching UPF data path."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	PCFDiscoveryFailure = models.ProblemDetails{
-		Title:         "PCF Discovery Failure",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in PCF discovery.",
-		Cause:         "REQUEST_REJECTED",
+	PCFDiscoveryFailure = models.ExtProblemDetails{
+		Title:         openapi.PtrString("PCF Discovery Failure"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in PCF discovery."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	PCFPolicyCreateFailure = models.ProblemDetails{
-		Title:         "PCF Discovery Failure",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in creating PCF policy.",
-		Cause:         "REQUEST_REJECTED",
+	PCFPolicyCreateFailure = models.ExtProblemDetails{
+		Title:         openapi.PtrString("PCF Policy Create Failure"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in creating PCF policy."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	AMFDiscoveryFailure = models.ProblemDetails{
-		Title:         "AMF Discovery Failure",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in AMF discovery .",
-		Cause:         "REQUEST_REJECTED",
+	AMFDiscoveryFailure = models.ExtProblemDetails{
+		Title:         openapi.PtrString("AMF Discovery Failure"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in AMF discovery ."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	ApplySMPolicyFailure = models.ProblemDetails{
-		Title:         "Apply SM Policy Error",
-		Status:        http.StatusInternalServerError,
-		Detail:        "The request cannot be provided due to failure in applying SM policy.",
-		Cause:         "REQUEST_REJECTED",
+	ApplySMPolicyFailure = models.ExtProblemDetails{
+		Title:         openapi.PtrString("Apply SM Policy Error"),
+		Status:        openapi.PtrInt32(http.StatusInternalServerError),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in applying SM policy."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
-	PduSessionTypeNotSupported = models.ProblemDetails{
-		Title:         "PduSession Type Not Supported",
-		Status:        http.StatusForbidden,
-		Detail:        "Unstructured PDU Type is not Supported.",
-		Cause:         "REQUEST_REJECTED",
+	PduSessionTypeNotSupported = models.ExtProblemDetails{
+		Title:         openapi.PtrString("PduSession Type Not Supported"),
+		Status:        openapi.PtrInt32(http.StatusForbidden),
+		Detail:        openapi.PtrString("Unstructured PDU Type is not Supported."),
+		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
 )
 
-var ErrorType = map[string]*models.ProblemDetails{
-	"DnnDeniedError":                &DnnDeniedError,
-	"DnnNotSupported":               &DnnNotSupported,
-	"InsufficientResourceSliceDnn":  &InsufficientResourceSliceDnn,
-	"IpAllocError":                  &IpAllocError,
-	"SubscriptionDataFetchError":    &SubscriptionDataFetchError,
-	"SubscriptionDataLenError":      &SubscriptionDataLenError,
-	"UDMDiscoveryFailure":           &UDMDiscoveryFailure,
-	"UPFDataPathError":              &UPFDataPathError,
-	"PCFDiscoveryFailure":           &PCFDiscoveryFailure,
-	"PCFPolicyCreateFailure":        &PCFPolicyCreateFailure,
-	"ApplySMPolicyFailure":          &ApplySMPolicyFailure,
-	"AMFDiscoveryFailure":           &AMFDiscoveryFailure,
-	"PDUSessionTypeIPv4OnlyAllowed": &PduSessionTypeNotSupported,
+var ErrorType = map[string]models.ExtProblemDetails{
+	"DnnDeniedError":                DnnDeniedError,
+	"DnnNotSupported":               DnnNotSupported,
+	"InsufficientResourceSliceDnn":  InsufficientResourceSliceDnn,
+	"IpAllocError":                  IpAllocError,
+	"SubscriptionDataFetchError":    SubscriptionDataFetchError,
+	"SubscriptionDataLenError":      SubscriptionDataLenError,
+	"UDMDiscoveryFailure":           UDMDiscoveryFailure,
+	"UPFDataPathError":              UPFDataPathError,
+	"PCFDiscoveryFailure":           PCFDiscoveryFailure,
+	"PCFPolicyCreateFailure":        PCFPolicyCreateFailure,
+	"ApplySMPolicyFailure":          ApplySMPolicyFailure,
+	"AMFDiscoveryFailure":           AMFDiscoveryFailure,
+	"PDUSessionTypeIPv4OnlyAllowed": PduSessionTypeNotSupported,
 }
 
 var ErrorCause = map[string]uint8{

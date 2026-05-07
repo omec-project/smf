@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	"github.com/omec-project/smf/qos"
 )
@@ -40,7 +41,7 @@ func TestGetPfContent(t *testing.T) {
 
 func TestBuildQosRules(t *testing.T) {
 	// make SM Policy Decision
-	smPolicyDecision := &models.SmPolicyDecision{}
+	smPolicyDecision := models.NewSmPolicyDecision()
 
 	// make Sm ctxt Policy Data
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
@@ -73,44 +74,55 @@ func TestBuildQosRules(t *testing.T) {
 	}
 }
 
-func makeSamplePccRules() map[string]*models.PccRule {
+func makeSamplePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
-		Precedence: 200,
+		Precedence: openapi.PtrInt32(200),
 		RefQosData: []string{"QosData1"},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
 	flowInfos := []models.FlowInformation{
 		{
-			FlowDescription:   "permit out ip from 1.1.1.1 1000 to 2.2.2.2 2000",
-			PackFiltId:        "1",
-			PacketFilterUsage: true,
-			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
+			FlowDescription:   openapi.PtrString("permit out ip from 1.1.1.1 1000 to 2.2.2.2 2000"),
+			PackFiltId:        openapi.PtrString("1"),
+			PacketFilterUsage: openapi.PtrBool(true),
+			FlowDirection:     models.FLOWDIRECTIONRM_BIDIRECTIONAL.Ptr(),
 		},
 		{
-			FlowDescription:   "permit out ip from 3.3.3.3 3000 to 4.4.4.4 4000",
-			PackFiltId:        "2",
-			PacketFilterUsage: true,
-			FlowDirection:     models.FlowDirectionRm_BIDIRECTIONAL,
+			FlowDescription:   openapi.PtrString("permit out ip from 3.3.3.3 3000 to 4.4.4.4 4000"),
+			PackFiltId:        openapi.PtrString("2"),
+			PacketFilterUsage: openapi.PtrBool(true),
+			FlowDirection:     models.FLOWDIRECTIONRM_BIDIRECTIONAL.Ptr(),
 		},
 	}
 
 	pccRule1.FlowInfos = append(pccRule1.FlowInfos, flowInfos...)
 
-	return map[string]*models.PccRule{"PccRule1": &pccRule1}
+	return map[string]models.PccRule{"PccRule1": pccRule1}
 }
 
-func makeSampleQosData() map[string]*models.QosData {
+func makeSampleQosData() *map[string]models.QosData {
+	var maxbrUl openapi.NullableString
+	var maxbrDl openapi.NullableString
+	var gbrbrUl openapi.NullableString
+	var gbrbrDl openapi.NullableString
+	var prioLevel openapi.NullableInt32
+	maxbrUl.Set(openapi.PtrString("101 Mbps"))
+	maxbrDl.Set(openapi.PtrString("201 Mbps"))
+	gbrbrUl.Set(openapi.PtrString("11 Mbps"))
+	gbrbrDl.Set(openapi.PtrString("21 Mbps"))
+	prioLevel.Set(openapi.PtrInt32(5))
+
 	qosData1 := models.QosData{
 		QosId:                "5",
-		Var5qi:               5,
-		MaxbrUl:              "101 Mbps",
-		MaxbrDl:              "201 Mbps",
-		GbrUl:                "11 Mbps",
-		GbrDl:                "21 Mbps",
-		PriorityLevel:        5,
-		DefQosFlowIndication: true,
+		Var5qi:               openapi.PtrInt32(5),
+		MaxbrUl:              maxbrUl,
+		MaxbrDl:              maxbrDl,
+		GbrUl:                gbrbrUl,
+		GbrDl:                gbrbrDl,
+		PriorityLevel:        prioLevel,
+		DefQosFlowIndication: openapi.PtrBool(true),
 	}
 
 	/*
@@ -126,46 +138,59 @@ func makeSampleQosData() map[string]*models.QosData {
 		}
 	*/
 
-	return map[string]*models.QosData{
-		"QosData1": &qosData1,
+	qosDataMap := map[string]models.QosData{
+		"QosData1": qosData1,
 		//		"QosData2": &qosData2,
 	}
+
+	return &qosDataMap
 }
 
-func makeSampleSessionRule() map[string]*models.SessionRule {
+func makeSampleSessionRule() *map[string]models.SessionRule {
+	var prioLevel openapi.NullableInt32
+	var prioLevelArp openapi.NullableInt32
+	prioLevel.Set(openapi.PtrInt32(8))
+	prioLevelArp.Set(openapi.PtrInt32(8))
+
 	sessRule1 := models.SessionRule{
 		AuthSessAmbr: &models.Ambr{
 			Uplink:   "77 Mbps",
 			Downlink: "99 Mbps",
 		},
 		AuthDefQos: &models.AuthorizedDefaultQos{
-			Var5qi: 9,
+			Var5qi: openapi.PtrInt32(9),
 			Arp: &models.Arp{
-				PriorityLevel: 8,
-				PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,
-				PreemptVuln:   models.PreemptionVulnerability_NOT_PREEMPTABLE,
+				PriorityLevel: prioLevelArp,
+				PreemptCap:    models.PREEMPTIONCAPABILITY_MAY_PREEMPT,
+				PreemptVuln:   models.PREEMPTIONVULNERABILITY_NOT_PREEMPTABLE,
 			},
-			PriorityLevel: 8,
+			PriorityLevel: prioLevel,
 		},
 	}
+
+	prioLevel.Set(openapi.PtrInt32(7))
+	prioLevelArp.Set(openapi.PtrInt32(7))
+
 	sessRule2 := models.SessionRule{
 		AuthSessAmbr: &models.Ambr{
 			Uplink:   "55 Mbps",
 			Downlink: "33 Mbps",
 		},
 		AuthDefQos: &models.AuthorizedDefaultQos{
-			Var5qi: 8,
+			Var5qi: openapi.PtrInt32(8),
 			Arp: &models.Arp{
-				PriorityLevel: 7,
-				PreemptCap:    models.PreemptionCapability_MAY_PREEMPT,
-				PreemptVuln:   models.PreemptionVulnerability_NOT_PREEMPTABLE,
+				PriorityLevel: prioLevelArp,
+				PreemptCap:    models.PREEMPTIONCAPABILITY_MAY_PREEMPT,
+				PreemptVuln:   models.PREEMPTIONVULNERABILITY_NOT_PREEMPTABLE,
 			},
-			PriorityLevel: 7,
+			PriorityLevel: prioLevel,
 		},
 	}
 
-	return map[string]*models.SessionRule{
-		"SessRule1": &sessRule1,
-		"SessRule2": &sessRule2,
+	sessionRuleMap := map[string]models.SessionRule{
+		"SessRule1": sessRule1,
+		"SessRule2": sessRule2,
 	}
+
+	return &sessionRuleMap
 }

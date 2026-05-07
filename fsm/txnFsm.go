@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/omec-project/openapi"
 	"github.com/omec-project/openapi/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -20,7 +21,7 @@ import (
 )
 
 func (SmfTxnFsm) TxnInit(txn *transaction.Transaction) (transaction.TxnEvent, error) {
-	txn.TxnFsmLog.Debugf("handle event[%v] ", transaction.TxnEventInit.String())
+	txn.TxnFsmLog.Debugf("handle event[%v]", transaction.TxnEventInit.String())
 	return transaction.TxnEventDecode, nil
 }
 
@@ -33,19 +34,19 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 	case svcmsgtypes.CreateSmContext:
 		req := txn.Req.(models.PostSmContextsRequest)
 		createData := req.JsonData
-		if smCtxtRef, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId); err == nil {
+		if smCtxtRef, err := smf_context.ResolveRef(createData.GetSupi(), createData.GetPduSessionId()); err == nil {
 			// Previous context exist
 			err := producer.HandlePduSessionContextReplacement(smCtxtRef)
 			if err != nil {
-				txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v] ",
+				txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v]",
 					transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
 			}
 		}
 		// Create fresh context
-		txn.Ctxt = smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
-		CtxtKey, err := smf_context.ResolveRef(createData.Supi, createData.PduSessionId)
+		txn.Ctxt = smf_context.NewSMContext(createData.GetSupi(), createData.GetPduSessionId())
+		CtxtKey, err := smf_context.ResolveRef(createData.GetSupi(), createData.GetPduSessionId())
 		if err != nil {
-			txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v] ",
+			txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v]",
 				transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
 		}
 		txn.CtxtKey = CtxtKey
@@ -66,7 +67,7 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
 	default:
-		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v] ",
+		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v]",
 			transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), txn.MsgType)
 		return transaction.TxnEventFailure, fmt.Errorf("invalid Msg to load Txn")
 	}
@@ -91,7 +92,7 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 		smContext.TxnBus = smContext.TxnBus.AddTxn(txn)
 
 		// Txn has been posted and shall be scheduled later
-		txn.TxnFsmLog.Debugf("event[%v], next-event[%v], txn queued ", transaction.TxnEventCtxtPost.String(), transaction.TxnEventExit.String())
+		txn.TxnFsmLog.Debugf("event[%v], next-event[%v], txn queued", transaction.TxnEventCtxtPost.String(), transaction.TxnEventExit.String())
 		return transaction.TxnEventQueue, nil
 	}
 
@@ -216,13 +217,13 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
-				Body: models.UpdateSmContextErrorResponse{
+				Body: models.UpdateSmContext400Response{
 					JsonData: &models.SmContextUpdateError{
-						UpCnxState: models.UpCnxState_DEACTIVATED,
-						Error: &models.ProblemDetails{
-							Type:   "Resource Not Found",
-							Title:  "SMContext Ref is not found",
-							Status: http.StatusNotFound,
+						UpCnxState: models.UPCNXSTATE_DEACTIVATED.Ptr(),
+						Error: models.ExtProblemDetails{
+							Type:   openapi.PtrString("Resource Not Found"),
+							Title:  openapi.PtrString("SMContext Ref is not found"),
+							Status: openapi.PtrInt32(http.StatusNotFound),
 						},
 					},
 				},
@@ -241,9 +242,9 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 				Status: http.StatusNotFound,
 
 				Body: &models.ProblemDetails{
-					Type:   "Resource Not Found",
-					Title:  "SMContext Ref is not found",
-					Status: http.StatusNotFound,
+					Type:   openapi.PtrString("Resource Not Found"),
+					Title:  openapi.PtrString("SMContext Ref is not found"),
+					Status: openapi.PtrInt32(http.StatusNotFound),
 				},
 			}
 			txn.Rsp = httpResponse

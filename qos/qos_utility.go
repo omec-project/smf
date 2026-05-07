@@ -124,26 +124,26 @@ func PfcString(pfcType uint8) string {
 func SmPolicyDecisionString(smPolicy *models.SmPolicyDecision) string {
 	// PCC Rules
 	str := "\nPCC Rules: "
-	for name, rule := range smPolicy.PccRules {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(rule))
+	for name, rule := range smPolicy.GetPccRules() {
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(&rule))
 	}
 
 	// Session Rules
 	str = str + "\nSession Rules: "
-	for name, rule := range smPolicy.SessRules {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(rule))
+	for name, rule := range smPolicy.GetSessRules() {
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(&rule))
 	}
 
 	// Qos Data
 	str = str + "\nQosData: "
-	for name, qosData := range smPolicy.QosDecs {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(qosData))
+	for name, qosData := range smPolicy.GetQosDecs() {
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(&qosData))
 	}
 
 	// TC Data
 	str = str + "\nTCData: "
-	for name, tcData := range smPolicy.TraffContDecs {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(tcData))
+	for name, tcData := range smPolicy.GetTraffContDecs() {
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(&tcData))
 	}
 	return str
 }
