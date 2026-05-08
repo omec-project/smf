@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/util/httpwrapper"
 )

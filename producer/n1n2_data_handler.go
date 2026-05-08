@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/omec-project/nas"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/smferrors"

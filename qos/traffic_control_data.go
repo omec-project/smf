@@ -4,7 +4,7 @@
 
 package qos
 
-import "github.com/omec-project/openapi/models"
+import "github.com/omec-project/openapi/v2/models"
 
 type TrafficControlUpdate struct {
 	add, mod, del map[string]*models.TrafficControlData

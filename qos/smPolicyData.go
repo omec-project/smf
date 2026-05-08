@@ -4,7 +4,7 @@
 
 package qos
 
-import "github.com/omec-project/openapi/models"
+import "github.com/omec-project/openapi/v2/models"
 
 // Define SMF Session-Rule/PccRule/Rule-Qos-Data
 type PolicyUpdate struct {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )

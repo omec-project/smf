@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
 func makeSessionConfig(sliceName, mcc, mnc, sst, sd, dnnName, ueSubnet, hostname string, port int32) (nfConfigApi.SessionManagement, error) {

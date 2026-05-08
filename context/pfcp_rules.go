@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/omec-project/nas/nasType"
+	"github.com/omec-project/nas/v2/nasType"
 )
 
 const (

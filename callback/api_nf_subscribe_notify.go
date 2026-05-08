@@ -10,9 +10,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/utils"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"

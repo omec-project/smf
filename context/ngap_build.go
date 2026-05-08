@@ -8,10 +8,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/omec-project/ngap/aper"
-	"github.com/omec-project/ngap/ngapConvert"
-	"github.com/omec-project/ngap/ngapType"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/ngap/v2/aper"
+	"github.com/omec-project/ngap/v2/ngapConvert"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/qos"
 )
 

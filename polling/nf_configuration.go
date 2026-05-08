@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/mohae/deepcopy"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/logger"
 )
 

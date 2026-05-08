@@ -11,8 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )

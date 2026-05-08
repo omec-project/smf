@@ -18,8 +18,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"

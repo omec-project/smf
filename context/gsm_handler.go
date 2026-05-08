@@ -9,8 +9,8 @@ package context
 import (
 	"fmt"
 
-	"github.com/omec-project/nas/nasConvert"
-	"github.com/omec-project/nas/nasMessage"
+	"github.com/omec-project/nas/v2/nasConvert"
+	"github.com/omec-project/nas/v2/nasMessage"
 )
 
 func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage.PDUSessionEstablishmentRequest) error {

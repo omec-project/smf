@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"

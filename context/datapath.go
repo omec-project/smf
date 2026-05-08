@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/omec-project/nas/nasType"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"

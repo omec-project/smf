@@ -1,10 +1,13 @@
+// Copyright (c) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 package util
 
 import (
 	"net/http"
 
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 )
 

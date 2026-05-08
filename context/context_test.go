@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
 func makeSessionConfig(
