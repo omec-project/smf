@@ -30,6 +30,7 @@ import (
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 )
 
@@ -573,11 +574,11 @@ func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *h
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
 	}
 
-	tmpFile, err := createResponseBinaryFile(n1buf)
+	tmpFile, err := util.CreatePayloadTempFile(n1buf)
 	if err != nil {
 		smContext.SubPduSessLog.Errorln(err)
 	}
-	tmpFile1, err1 := createResponseBinaryFile(n2buf)
+	tmpFile1, err1 := util.CreatePayloadTempFile(n2buf)
 	if err1 != nil {
 		smContext.SubPduSessLog.Errorln(err1)
 	}
@@ -1031,11 +1032,11 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 		smContext.ChangeState(smf_context.SmStatePfcpModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
-		tmpFile, err := createResponseBinaryFile(n1buf)
+		tmpFile, err := util.CreatePayloadTempFile(n1buf)
 		if err != nil {
 			smContext.SubPduSessLog.Errorln(err)
 		}
-		tmpFile1, err1 := createResponseBinaryFile(n2buf)
+		tmpFile1, err1 := util.CreatePayloadTempFile(n2buf)
 		if err1 != nil {
 			smContext.SubPduSessLog.Errorln(err1)
 		}

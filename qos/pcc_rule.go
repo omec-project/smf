@@ -26,17 +26,18 @@ func GetPccRulesUpdate(pcfPccRules map[string]models.PccRule, ctxtPccRules map[s
 
 	// Compare against Ctxt rules to get added or modified rules
 	for name, pcfRule := range pcfPccRules {
+		rule := pcfRule
 		// if pcfRule is nil then it need to be deleted
-		if pcfRule.GetPccRuleId() == "" {
-			change.del[name] = &pcfRule // nil
+		if rule.GetPccRuleId() == "" {
+			change.del[name] = &rule // nil
 			continue
 		}
 
 		// match against SM ctxt Rules for add/mod
 		if ctxtrule := ctxtPccRules[name]; ctxtrule == nil {
-			change.add[name] = &pcfRule
-		} else if GetPccRuleChanges(&pcfRule, ctxtrule) {
-			change.mod[name] = &pcfRule
+			change.add[name] = &rule
+		} else if GetPccRuleChanges(&rule, ctxtrule) {
+			change.mod[name] = &rule
 		}
 	}
 

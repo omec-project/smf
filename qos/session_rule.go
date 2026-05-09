@@ -30,21 +30,22 @@ func GetSessionRulesUpdate(pcfSessRules *map[string]models.SessionRule, ctxtSess
 	// TODO: Iterate through all session rules from PCF and check against ctxt session rules
 	// Get only active session Rule for now
 	for name, sessRule := range *pcfSessRules {
+		rule := sessRule
 		// Rules to be deleted
-		if sessRule.GetSessRuleId() == "" {
-			change.del[name] = &sessRule // nil
+		if rule.GetSessRuleId() == "" {
+			change.del[name] = &rule // nil
 			continue
 		}
 
 		// Rules to be added
 		if ctxtSessRules[name] == nil {
-			change.add[name] = &sessRule
+			change.add[name] = &rule
 
 			// Activate last rule
 			change.activeRuleName = name
-			change.ActiveSessRule = &sessRule
+			change.ActiveSessRule = &rule
 		} else {
-			change.mod[name] = &sessRule
+			change.mod[name] = &rule
 			// Rules to be modified
 			// TODO
 		}

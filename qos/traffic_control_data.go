@@ -23,17 +23,18 @@ func GetTrafficControlUpdate(tcData *map[string]models.TrafficControlData, ctxtT
 
 	// Compare against Ctxt rules to get added or modified rules
 	for name, pcfTc := range *tcData {
+		tc := pcfTc
 		// if pcfRule is nil then it need to be deleted
-		if pcfTc.GetTcId() == "" {
-			change.del[name] = &pcfTc // nil
+		if tc.GetTcId() == "" {
+			change.del[name] = &tc // nil
 			continue
 		}
 
 		// match against SM ctxt Rules for add/mod
 		if ctxtTc := ctxtTcData[name]; ctxtTc == nil {
-			change.add[name] = &pcfTc
-		} else if GetTCDataChanges(&pcfTc, ctxtTc) {
-			change.mod[name] = &pcfTc
+			change.add[name] = &tc
+		} else if GetTCDataChanges(&tc, ctxtTc) {
+			change.mod[name] = &tc
 		}
 	}
 

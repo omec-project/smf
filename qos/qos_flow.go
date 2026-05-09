@@ -292,17 +292,18 @@ func GetQosFlowDescUpdate(pcfQosData *map[string]models.QosData, ctxtQosData map
 
 	// Iterate through pcf qos data to identify find add/mod/del qos flows
 	for name, pcfQF := range *pcfQosData {
+		qosData := pcfQF
 		// if pcfQF is null then rule is deleted
-		if pcfQF.GetQosId() == "" {
-			update.del[name] = &pcfQF // nil
+		if qosData.GetQosId() == "" {
+			update.del[name] = &qosData // nil
 			continue
 		}
 
 		// Flows to add
 		if ctxtQF := ctxtQosData[name]; ctxtQF == nil {
-			update.add[name] = &pcfQF
-		} else if GetQosDataChanges(&pcfQF, ctxtQF) {
-			update.mod[name] = &pcfQF
+			update.add[name] = &qosData
+		} else if GetQosDataChanges(&qosData, ctxtQF) {
+			update.mod[name] = &qosData
 		}
 	}
 

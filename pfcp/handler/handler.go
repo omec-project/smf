@@ -9,9 +9,7 @@ package handler
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
-	"os"
 
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
@@ -23,6 +21,7 @@ import (
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/producer"
+	"github.com/omec-project/smf/util"
 	mi "github.com/omec-project/util/metricinfo"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -706,24 +705,14 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 			n2SmBuf, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln("Build PDU Session Resource Setup Request Transfer failed:", err)
-			}
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
-			if err != nil {
-				smContext.SubPduSessLog.Errorf("failed to create temp file: %v", err)
-			}
-			defer tmpFile.Close()
-			if _, err = tmpFile.Write(n2SmBuf); err != nil {
-				smContext.SubPduSessLog.Errorf("failed to write to temp file: %v", err)
-			}
-			if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorf("failed to seek to beginning of temp file: %v", err)
-			}
-
-			if err != nil {
-				smContext.SubPduSessLog.Errorln("Build PDUSessionResourceSetupRequestTransfer failed:", err)
 			} else {
-				n1n2Request.BinaryDataN2Information = &tmpFile
+				tmpFile, fileErr := util.CreatePayloadTempFile(n2SmBuf)
+				if fileErr != nil {
+					smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
+				} else {
+					defer tmpFile.Close()
+					n1n2Request.BinaryDataN2Information = &tmpFile
+				}
 			}
 
 			// n1n2FailureTxfNotifURI to be added in n1n2 request transfer.

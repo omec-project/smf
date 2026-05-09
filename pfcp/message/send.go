@@ -29,6 +29,7 @@ import (
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/util"
 	mi "github.com/omec-project/util/metricinfo"
 	"github.com/wmnsk/go-pfcp/message"
 )
@@ -485,20 +486,14 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
 		smContext.SubPduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
 	} else {
-		// Create a temporary file
-		tmpFile, err := os.CreateTemp("", "prefix")
-		if err != nil {
-			smContext.SubPduSessLog.Errorln("err")
+		tmpFile, fileErr := util.CreatePayloadTempFile(smNasBuf)
+		if fileErr != nil {
+			smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
+		} else {
+			defer tmpFile.Close()
+			n1n2Request.BinaryDataN1Message = &tmpFile
+			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 		}
-		defer tmpFile.Close()
-		if _, err := tmpFile.Write(smNasBuf); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		if _, err := tmpFile.Seek(0, 0); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		n1n2Request.BinaryDataN1Message = &tmpFile
-		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 	}
 
 	// Send N1N2 Reject request

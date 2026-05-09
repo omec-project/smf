@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/omec-project/openapi/v2/models"
@@ -18,6 +17,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 )
 
@@ -109,20 +109,14 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	if smNasBuf, err1 := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err1 != nil {
 		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err1.Error())
 	} else {
-		// Create a temporary file
-		tmpFile, err2 := os.CreateTemp("", "prefix")
+		tmpFile, err2 := util.CreatePayloadTempFile(smNasBuf)
 		if err2 != nil {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
+		} else {
+			defer tmpFile.Close()
+			n1n2Request.BinaryDataN1Message = &tmpFile
+			n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
 		}
-		defer tmpFile.Close()
-		if _, err = tmpFile.Write(smNasBuf); err != nil {
-			smContext.SubPduSessLog.Errorf("failed to write to temp file: %s", err.Error())
-		}
-		if _, err = tmpFile.Seek(0, 0); err != nil {
-			smContext.SubPduSessLog.Errorf("failed to seek to beginning of temp file: %s", err.Error())
-		}
-		n1n2Request.BinaryDataN1Message = &tmpFile
-		n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
 	}
 
 	// N2 Msg
@@ -130,20 +124,14 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("SMPolicyUpdate, build PDUSession Resource Modify Request Transfer Error(%s)", err.Error())
 	} else {
-		// Create a temporary file
-		tmpFile, err1 := os.CreateTemp("", "prefix")
+		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
 		if err1 != nil {
 			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
+		} else {
+			defer tmpFile.Close()
+			n1n2Request.BinaryDataN2Information = &tmpFile
+			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 		}
-		defer tmpFile.Close()
-		if _, err = tmpFile.Write(n2Pdu); err != nil {
-			smContext.SubPduSessLog.Errorf("error writing to temp file (%s)", err.Error())
-		}
-		if _, err = tmpFile.Seek(0, 0); err != nil {
-			smContext.SubPduSessLog.Errorf("error seeking to beginning of temp file (%s)", err.Error())
-		}
-		n1n2Request.BinaryDataN2Information = &tmpFile
-		n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 	}
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")

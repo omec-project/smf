@@ -16,6 +16,7 @@ import (
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 )
 
@@ -120,7 +121,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
 					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
 				} else {
-					tmpFile, err := createResponseBinaryFile(buf)
+					tmpFile, err := util.CreatePayloadTempFile(buf)
 					if err != nil {
 						smContext.SubPduSessLog.Errorln(err)
 					} else {
@@ -136,7 +137,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
 					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
 				} else {
-					tmpFile, err := createResponseBinaryFile(buf)
+					tmpFile, err := util.CreatePayloadTempFile(buf)
 					if err != nil {
 						smContext.SubPduSessLog.Errorln(err)
 					} else {
