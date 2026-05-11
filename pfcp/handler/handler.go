@@ -700,6 +700,7 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 			}
 
 			n1n2Request := models.N1N2MessageTransferRequest{}
+			defer util.CleanupMultipartTempFiles(&n1n2Request)
 
 			// TS 23.502 4.2.3.3 3a. Send Namf_Communication_N1N2MessageTransfer Request, SMF->AMF
 			n2SmBuf, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext)
@@ -710,7 +711,6 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 				if fileErr != nil {
 					smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
 				} else {
-					defer tmpFile.Close()
 					n1n2Request.BinaryDataN2Information = &tmpFile
 				}
 			}

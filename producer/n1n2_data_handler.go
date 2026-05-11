@@ -358,26 +358,18 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		if n2Buf, err := context.BuildHandoverCommandTransfer(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSession Resource Setup Request Transfer Error(%s)", err.Error())
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(n2Buf)
 			if err != nil {
-				smContext.SubPduSessLog.Errorln("err")
+				smContext.SubPduSessLog.Errorf("failed to create temp file: %v", err)
+			} else {
+				response.BinaryDataN2SmInformation = &tmpFile
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(n2Buf); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			if _, err := tmpFile.Seek(0, 0); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			response.BinaryDataN2SmInformation = &tmpFile
 		}
 
 		response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_HANDOVER_CMD.Ptr()
 		response.JsonData.N2SmInfo = &models.RefToBinaryData{
 			ContentId: "HANDOVER_CMD",
 		}
-		response.JsonData.HoState = models.HOSTATE_PREPARING.Ptr()
 	case models.HOSTATE_COMPLETED:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.HoState)
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_COMPLETED")
@@ -418,6 +410,7 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 		buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext)
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("build PDU Session Resource Release Command Transfer failed: %+v", err)
+			return err
 		}
 		tmpFile, err := util.CreatePayloadTempFile(buf)
 		if err != nil {

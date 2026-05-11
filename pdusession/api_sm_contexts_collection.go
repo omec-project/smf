@@ -59,6 +59,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	case "multipart/related", "multipart/form-data":
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	}
+	defer smfutil.CleanupMultipartTempFiles(request)
 
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()

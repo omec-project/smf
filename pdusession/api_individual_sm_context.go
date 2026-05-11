@@ -65,6 +65,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	case multipartRelated, multipartForm:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	}
+	defer smfutil.CleanupMultipartTempFiles(request)
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
 		problemDetail := "[Request Body] " + err.Error()

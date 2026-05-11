@@ -77,6 +77,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// N1N2 Request towards AMF
 	n1n2Request := models.N1N2MessageTransferRequest{}
+	defer util.CleanupMultipartTempFiles(&n1n2Request)
 
 	// N2 Container Info
 	n2InfoContainer := models.N2InfoContainer{
@@ -96,7 +97,8 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// N1 Container Info
 	n1MessageClass, err := models.NewN1MessageClassFromValue("SM")
 	if err != nil {
-		smContext.SubPduSessLog.Errorln("err")
+		smContext.SubPduSessLog.Errorf("failed to create N1 message class: %v", err)
+		return err
 	}
 	n1MessageContent := models.NewRefToBinaryData("GSM_NAS")
 	n1MsgContainer := models.NewN1MessageContainer(*n1MessageClass, *n1MessageContent)
@@ -113,7 +115,6 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 		if err2 != nil {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
 		} else {
-			defer tmpFile.Close()
 			n1n2Request.BinaryDataN1Message = &tmpFile
 			n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
 		}
@@ -128,7 +129,6 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 		if err1 != nil {
 			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
 		} else {
-			defer tmpFile.Close()
 			n1n2Request.BinaryDataN2Information = &tmpFile
 			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 		}

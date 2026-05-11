@@ -481,6 +481,7 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
 		PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
 	}
+	defer util.CleanupMultipartTempFiles(&n1n2Request)
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
@@ -490,7 +491,6 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 		if fileErr != nil {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
 		} else {
-			defer tmpFile.Close()
 			n1n2Request.BinaryDataN1Message = &tmpFile
 			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 		}
