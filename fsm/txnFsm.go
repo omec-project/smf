@@ -250,7 +250,10 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 			txn.Rsp = httpResponse
 		}
 	}
-	txn.Status <- false
+	select {
+	case txn.Status <- false:
+	default:
+	}
 	return transaction.TxnEventEnd, nil
 }
 

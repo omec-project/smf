@@ -32,6 +32,7 @@ import (
 	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
+	smfutil "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/util/metricinfo"
 )
@@ -149,6 +150,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 
 	if HTTPResponse.Status < http.StatusMultipleChoices {
 		c.Render(HTTPResponse.Status, openapi.MultipartRelatedRender{Data: HTTPResponse.Body})
+		smfutil.CleanupMultipartTempFiles(HTTPResponse.Body)
 	} else {
 		c.JSON(HTTPResponse.Status, HTTPResponse.Body)
 	}

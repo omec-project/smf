@@ -175,7 +175,10 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 		if recovered := recover(); recovered != nil {
 			t.Err = fmt.Errorf("panic in transaction lifecycle: %v", recovered)
 			t.TxnFsmLog.Errorf("panic in transaction lifecycle: %v\n%s", recovered, debug.Stack())
-			t.Status <- false
+			select {
+			case t.Status <- false:
+			default:
+			}
 		}
 	}()
 

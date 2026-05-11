@@ -9,10 +9,8 @@ package context
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +31,7 @@ import (
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
+	util "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/util/metricinfo"
 	"go.uber.org/zap"
@@ -650,29 +649,21 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 			},
 		}
 	} else {
-		// Create a temporary file
-		tmpFile, err := os.CreateTemp("", "prefix")
+		tmpFile, err := util.CreatePayloadTempFile(buf)
 		if err != nil {
-			logger.PduSessLog.Errorln("err")
-		}
-		defer tmpFile.Close()
-		if _, err := tmpFile.Write(buf); err != nil {
-			logger.PduSessLog.Errorln("err")
-		}
-		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-			logger.PduSessLog.Errorln("err")
-		}
-
-		httpResponse = &httpwrapper.Response{
-			Header: nil,
-			Status: int(*errors.ErrorType[cause].Status),
-			Body: models.PostSmContexts400Response{
-				JsonData: &models.SmContextCreateError{
-					Error:   errors.ErrorType[cause],
-					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+			logger.PduSessLog.Errorln(err)
+		} else {
+			httpResponse = &httpwrapper.Response{
+				Header: nil,
+				Status: int(*errors.ErrorType[cause].Status),
+				Body: models.PostSmContexts400Response{
+					JsonData: &models.SmContextCreateError{
+						Error:   errors.ErrorType[cause],
+						N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+					},
+					BinaryDataN1SmMessage: &tmpFile,
 				},
-				BinaryDataN1SmMessage: &tmpFile,
-			},
+			}
 		}
 	}
 

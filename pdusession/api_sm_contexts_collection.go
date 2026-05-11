@@ -32,6 +32,7 @@ import (
 	stats "github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/transaction"
+	smfutil "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/util/metricinfo"
 )
@@ -52,8 +53,6 @@ func HTTPPostSmContexts(c *gin.Context) {
 	request.SetJsonData(models.SmContextCreateData{})
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
-	logger.PduSessLog.Infof("GA: content-Type: %s", c.GetHeader("Content-Type"))
-	logger.PduSessLog.Infof("GA: request: %+v", request)
 	switch s[0] {
 	case "application/json":
 		err = c.ShouldBindJSON(request.JsonData)
@@ -111,6 +110,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 		http.StatusServiceUnavailable,
 		http.StatusGatewayTimeout:
 		c.Render(HTTPResponse.Status, openapi.MultipartRelatedRender{Data: HTTPResponse.Body})
+		smfutil.CleanupMultipartTempFiles(HTTPResponse.Body)
 	default:
 		c.JSON(HTTPResponse.Status, HTTPResponse.Body)
 	}

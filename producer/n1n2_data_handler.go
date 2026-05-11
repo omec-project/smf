@@ -84,11 +84,28 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		file := *body.BinaryDataN1SmMessage
 		_, err := file.Seek(0, io.SeekStart) // Ensure the file pointer is at the beginning
 		if err != nil {
-			smContext.SubPduSessLog.Fatalf("Seek file error: %+v", err)
+			txn.Rsp = &httpwrapper.Response{
+				Status: http.StatusForbidden,
+				Body: models.UpdateSmContext400Response{
+					JsonData: &models.SmContextUpdateError{
+						Error: smferrors.N1SmError,
+					},
+				},
+			}
+			return err
 		}
 		fileContents, err := io.ReadAll(file)
 		if err != nil {
-			smContext.SubPduSessLog.Errorln("Read file error")
+			smContext.SubPduSessLog.Errorf("read file error: %+v", err)
+			txn.Rsp = &httpwrapper.Response{
+				Status: http.StatusForbidden,
+				Body: models.UpdateSmContext400Response{
+					JsonData: &models.SmContextUpdateError{
+						Error: smferrors.N1SmError,
+					},
+				},
+			}
+			return err
 		}
 		err = m.GsmMessageDecode(&fileContents)
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Update SM Context Request N1SmMessage:", m)
@@ -160,19 +177,12 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				if buf, err := context.BuildGSMPDUSessionReleaseRejectWithCause(smContext, pduSessIDRelReq, "InvalidPDUSessionIdentity"); err != nil {
 					smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
 				} else {
-					// Create a temporary file
-					tmpFile, err := os.CreateTemp("", "prefix")
+					tmpFile, err := util.CreatePayloadTempFile(buf)
 					if err != nil {
-						smContext.SubPduSessLog.Errorln("err")
+						smContext.SubPduSessLog.Errorln(err)
+					} else {
+						response.BinaryDataN1SmMessage = &tmpFile
 					}
-					defer tmpFile.Close()
-					if _, err := tmpFile.Write(buf); err != nil {
-						smContext.SubPduSessLog.Errorln("err")
-					}
-					if _, err := tmpFile.Seek(0, 0); err != nil {
-						smContext.SubPduSessLog.Errorln("err")
-					}
-					response.BinaryDataN1SmMessage = &tmpFile
 				}
 				response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
 				smContext.ChangeState(context.SmStateModify)
@@ -221,20 +231,14 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 		n2Buf, err := context.BuildPDUSessionResourceSetupRequestTransfer(smContext)
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSession Resource Setup Request Transfer Error(%s)", err.Error())
+			return err
 		}
 		smContext.UpCnxState = models.UPCNXSTATE_ACTIVATING
 
-		// Create a temporary file
-		tmpFile, err := os.CreateTemp("", "prefix")
+		tmpFile, err := util.CreatePayloadTempFile(n2Buf)
 		if err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		defer tmpFile.Close()
-		if _, err := tmpFile.Write(n2Buf); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		if _, err := tmpFile.Seek(0, 0); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
+			smContext.SubPduSessLog.Errorln(err)
+			return err
 		}
 		response.BinaryDataN2SmInformation = &tmpFile
 		response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_PDU_RES_SETUP_REQ.Ptr()
@@ -303,9 +307,10 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		smContext.HoState = models.HOSTATE_PREPARING
-		fileBytes, err := io.ReadAll(*body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if err := context.HandleHandoverRequiredTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle HandoverRequiredTransfer failed: %+v", err)
@@ -315,17 +320,10 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		if n2Buf, err := context.BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSession Resource Setup Request Transfer Error(%s)", err.Error())
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(n2Buf)
 			if err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(n2Buf); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			if _, err := tmpFile.Seek(0, 0); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
+				smContext.SubPduSessLog.Errorln(err)
+				return err
 			}
 
 			response.BinaryDataN2SmInformation = &tmpFile
@@ -348,9 +346,10 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		smContext.HoState = models.HOSTATE_PREPARED
 		response.JsonData.HoState = models.HOSTATE_PREPARED.Ptr()
-		fileBytes, err := io.ReadAll(*body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if err := context.HandleHandoverRequestAcknowledgeTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle HandoverRequestAcknowledgeTransfer failed: %+v", err)
@@ -420,22 +419,12 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("build PDU Session Resource Release Command Transfer failed: %+v", err)
 		}
-		// Create a temporary file
-		tmpFile, err := os.CreateTemp("", "prefix")
-		if err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		defer tmpFile.Close()
-		if _, err = tmpFile.Write(buf); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		if _, err = tmpFile.Seek(0, 0); err != nil {
-			smContext.SubPduSessLog.Errorln("err")
-		}
-		response.BinaryDataN2SmInformation = &tmpFile
+		tmpFile, err := util.CreatePayloadTempFile(buf)
 		if err != nil {
 			smContext.SubPduSessLog.Error(err)
+			return err
 		}
+		response.BinaryDataN2SmInformation = &tmpFile
 
 		smContext.SubCtxLog.Infof("PDUSessionSMContextUpdate, Cause_REL_DUE_TO_DUPLICATE_SESSION_ID")
 
@@ -577,9 +566,10 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
-		fileBytes, err := io.ReadAll(*body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if err := context.HandlePathSwitchRequestTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle PathSwitchRequestTransfer: %+v", err)
@@ -588,17 +578,10 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		if n2Buf, err := context.BuildPathSwitchRequestAcknowledgeTransfer(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build Path Switch Transfer Error(%+v)", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(n2Buf)
 			if err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(n2Buf); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
-			}
-			if _, err := tmpFile.Seek(0, 0); err != nil {
-				smContext.SubPduSessLog.Errorln("err")
+				smContext.SubPduSessLog.Errorln(err)
+				return err
 			}
 			response.BinaryDataN2SmInformation = &tmpFile
 		}
@@ -641,9 +624,10 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
-		fileBytes, err := io.ReadAll(*body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if err := context.HandlePathSwitchRequestSetupFailedTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Error()

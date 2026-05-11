@@ -46,6 +46,8 @@ func AddService(engine *gin.Engine) *gin.RouterGroup {
 		switch route.Method {
 		case http.MethodGet:
 			group.GET(route.Pattern, route.HandlerFunc)
+		case http.MethodOptions:
+			group.OPTIONS(route.Pattern, route.HandlerFunc)
 		}
 	}
 
