@@ -71,13 +71,9 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	resBody, err := openapi.SetBody(HTTPResponse.Body, "application/json")
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
+		return
 	}
-	_, err = c.Writer.Write(resBody.Bytes())
-	if err != nil {
-		logger.PduSessLog.Errorf("error: %v", err)
-	}
-
-	c.Status(HTTPResponse.Status)
+	c.Data(HTTPResponse.Status, "application/json", resBody.Bytes())
 }
 
 func SmPolicyControlTerminationRequestNotification(c *gin.Context) {

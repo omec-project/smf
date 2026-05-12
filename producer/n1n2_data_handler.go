@@ -6,6 +6,7 @@
 package producer
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -143,13 +144,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 						smContext.SubPduSessLog.Errorln(err)
 					} else {
 						response.BinaryDataN1SmMessage = &tmpFile
+						response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseCommand"}
 					}
 				}
-
-				response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseCommand"}
-
-				response.JsonData.N2SmInfo = &models.RefToBinaryData{ContentId: "PDUResourceReleaseCommand"}
-				response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_PDU_RES_REL_CMD.Ptr()
 
 				if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
 					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
@@ -159,6 +156,8 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 						smContext.SubPduSessLog.Errorln(err)
 					} else {
 						response.BinaryDataN2SmInformation = &tmpFile
+						response.JsonData.N2SmInfo = &models.RefToBinaryData{ContentId: "PDUResourceReleaseCommand"}
+						response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_PDU_RES_REL_CMD.Ptr()
 					}
 				}
 
@@ -566,8 +565,12 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
 		}
+		if len(fileBytes) == 0 {
+			return fmt.Errorf("missing PATH_SWITCH_REQ N2 binary payload")
+		}
 		if err := context.HandlePathSwitchRequestTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle PathSwitchRequestTransfer: %+v", err)
+			return err
 		}
 
 		if n2Buf, err := context.BuildPathSwitchRequestAcknowledgeTransfer(smContext); err != nil {
