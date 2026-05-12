@@ -313,9 +313,12 @@ func getSvcMsgType(nfType models.NFType) svcmsgtypes.SmfMsgType {
 func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requestNfType models.NFType,
 	apiSearchNFInstancesRequest Nnrf_NFDiscovery.ApiSearchNFInstancesRequest,
 ) (*models.SearchResult, error) {
+	client := newNrfNFDiscoveryClient(nrfUri)
+	if apiSearchNFInstancesRequest.ApiService == nil {
+		apiSearchNFInstancesRequest = client.NFInstancesStoreAPI.SearchNFInstances(ctx)
+	}
 	apiSearchNFInstancesRequest = apiSearchNFInstancesRequest.TargetNfType(targetNfType)
 	apiSearchNFInstancesRequest = apiSearchNFInstancesRequest.RequesterNfType(requestNfType)
-	client := newNrfNFDiscoveryClient(nrfUri)
 	result, httpResp, localErr := client.NFInstancesStoreAPI.SearchNFInstancesExecute(apiSearchNFInstancesRequest)
 
 	svcMsgType := getSvcMsgType(targetNfType)
@@ -364,7 +367,7 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 	for _, nfProfile := range result.NfInstances {
 		if _, ok := smfSelf.NfStatusSubscriptions.Load(nfProfile.NfInstanceId); !ok {
 			nrfSubscriptionData := models.SubscriptionData{
-				NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/v1/nf-status-notify",
+				NfStatusNotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/nf-status-notify",
 					smfSelf.URIScheme,
 					smfSelf.RegisterIPv4,
 					smfSelf.SBIPort),
@@ -429,10 +432,10 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 			logger.ConsumerLog.Warnln("sdm client failed")
 		}
 	} else {
-		apiError, ok := localErr.(openapi.GenericOpenAPIError)
-		if ok {
-			problem := apiError.Model().(models.ProblemDetails)
-			return &problem, nil
+		if problem, handledErr := util.HandleOpenAPIError(localErr); problem != nil {
+			return problem, nil
+		} else if handledErr != nil && handledErr != localErr {
+			return nil, handledErr
 		}
 
 		return nil, localErr
@@ -461,10 +464,10 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
 		smContext.AMFProfile = deepcopy.Copy(result.NfInstances[0]).(models.NFProfileDiscovery)
 	} else {
-		apiError, ok := localErr.(openapi.GenericOpenAPIError)
-		if ok {
-			problem := apiError.Model().(models.ProblemDetails)
-			return &problem, nil
+		if problem, handledErr := util.HandleOpenAPIError(localErr); problem != nil {
+			return problem, nil
+		} else if handledErr != nil && handledErr != localErr {
+			return nil, handledErr
 		}
 
 		return nil, localErr

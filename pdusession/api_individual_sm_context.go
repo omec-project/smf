@@ -148,7 +148,16 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
-	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
+	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
+	if !ok || HTTPResponse == nil {
+		logger.PduSessLog.Errorf("update SM Context transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := models.NewProblemDetails()
+		problemDetails.SetStatus(http.StatusInternalServerError)
+		problemDetails.SetCause("SYSTEM_FAILURE")
+		problemDetails.SetDetail("SM Context update transaction failed")
+		c.JSON(http.StatusInternalServerError, problemDetails)
+		return
+	}
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")
 

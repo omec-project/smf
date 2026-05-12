@@ -53,7 +53,16 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
-	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
+	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
+	if !ok || HTTPResponse == nil {
+		logger.PduSessLog.Errorf("SM Policy update transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := models.NewProblemDetails()
+		problemDetails.SetStatus(http.StatusInternalServerError)
+		problemDetails.SetCause("SYSTEM_FAILURE")
+		problemDetails.SetDetail("SM Policy update transaction failed")
+		c.JSON(http.StatusInternalServerError, problemDetails)
+		return
+	}
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])

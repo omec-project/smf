@@ -58,6 +58,13 @@ func HTTPPostSmContexts(c *gin.Context) {
 		err = c.ShouldBindJSON(request.JsonData)
 	case "multipart/related", "multipart/form-data":
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+	default:
+		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
+		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "Out", http.StatusText(http.StatusUnsupportedMediaType), "UnsupportedMediaType")
+		logger.PduSessLog.Errorln(problemDetail)
+		c.JSON(http.StatusUnsupportedMediaType, rsp)
+		return
 	}
 	defer smfutil.CleanupMultipartTempFiles(request)
 
