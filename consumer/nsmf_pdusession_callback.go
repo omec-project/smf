@@ -21,12 +21,24 @@ func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error)
 			ResourceStatus: models.RESOURCESTATUS_RELEASED,
 		}
 		configuration := Nsmf_PDUSession.NewConfiguration()
+		serverConfig := &configuration.Servers[0]
+		if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+			apiRootVar.DefaultValue = uri
+			serverConfig.Variables["apiRoot"] = apiRootVar
+		}
 		client := Nsmf_PDUSession.NewAPIClient(configuration)
 
 		logger.CtxLog.Infoln("[SMF] Send SMContext Status Notification")
 		apiSmContextStatusNotificationPostRequest := client.SMContextsCollectionCallbacksmContextStatusNotificationAPI.SmContextStatusNotificationPost(context.Background())
 		apiSmContextStatusNotificationPostRequest = apiSmContextStatusNotificationPostRequest.SmContextStatusNotification(request)
 		httpResp, localErr := client.SMContextsCollectionCallbacksmContextStatusNotificationAPI.SmContextStatusNotificationPostExecute(apiSmContextStatusNotificationPostRequest)
+		if httpResp != nil && httpResp.Body != nil {
+			defer func() {
+				if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
+					logger.ConsumerLog.Errorf("SMContextNotification response body cannot close: %+v", resCloseErr)
+				}
+			}()
+		}
 
 		if localErr == nil {
 			if httpResp.StatusCode != http.StatusNoContent {
@@ -35,11 +47,6 @@ func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error)
 
 			logger.PduSessLog.Debugln("send SMContextStatus Notification Success")
 		} else if httpResp != nil {
-			defer func() {
-				if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
-					logger.ConsumerLog.Errorf("SMContextNotification response body cannot close: %+v", resCloseErr)
-				}
-			}()
 			logger.PduSessLog.Warnf("Send SMContextStatus Notification Error[%s]", httpResp.Status)
 			if httpResp.Status != localErr.Error() {
 				return nil, localErr

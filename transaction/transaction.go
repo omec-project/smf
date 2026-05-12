@@ -105,7 +105,7 @@ func NewTransaction(req, rsp any, msgType svcmsgtypes.SmfMsgType) *Transaction {
 		MsgType:   msgType,
 		startTime: time.Now(),
 		TxnId:     getNewTxnId(),
-		Status:    make(chan bool),
+		Status:    make(chan bool, 1),
 	}
 
 	t.initLogTags()
@@ -175,10 +175,7 @@ func (t *Transaction) StartTxnLifeCycle(fsm txnFsm) {
 		if recovered := recover(); recovered != nil {
 			t.Err = fmt.Errorf("panic in transaction lifecycle: %v", recovered)
 			t.TxnFsmLog.Errorf("panic in transaction lifecycle: %v\n%s", recovered, debug.Stack())
-			select {
-			case t.Status <- false:
-			default:
-			}
+			t.Status <- false
 		}
 	}()
 

@@ -135,6 +135,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		logger.PduSessLog.Errorln(err)
 		return
 	}
+	defer smfutil.CleanupMultipartTempFiles(request)
 
 	req := httpwrapper.NewRequest(c.Request, request)
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
