@@ -92,15 +92,17 @@ func HTTPReleaseSmContext(c *gin.Context) {
 // Post /sm-contexts/:smContextRef/retrieve
 // Retrieve SM Context
 func HTTPRetrieveSmContext(c *gin.Context) {
-	logger.PduSessLog.Warnln("Handle Post /sm-contexts/:smContextRef/retrieve is not implemented")
-	c.String(http.StatusNotImplemented, "501 not implemented")
+	detail := "Handle Post /sm-contexts/:smContextRef/retrieve is not implemented"
+	logger.PduSessLog.Warnln(detail)
+	writeNotImplementedProblem(c, detail)
 }
 
 // Post /sm-contexts/:smContextRef/send-mo-data
 // Send MO Data
 func HTTPSendMoData(c *gin.Context) {
-	logger.PduSessLog.Warnln("Handle Post /sm-contexts/:smContextRef/send-mo-data is not implemented")
-	c.String(http.StatusNotImplemented, "501 not implemented")
+	detail := "Handle Post /sm-contexts/:smContextRef/send-mo-data is not implemented"
+	logger.PduSessLog.Warnln(detail)
+	writeNotImplementedProblem(c, detail)
 }
 
 // Post /sm-contexts/:smContextRef/modify
