@@ -138,28 +138,28 @@ func wrapRouteHandler(handler gin.HandlerFunc, aliases []routeParamAlias) gin.Ha
 func getRoutes() []Route {
 	return []Route{
 		{
-			"DeleteIndividualSubcription",
+			"DeleteIndividualSubscription",
 			http.MethodDelete,
 			"/subscriptions/:subId",
-			HTTPDeleteIndividualSubcription,
+			HTTPDeleteIndividualSubscription,
 		},
 		{
-			"GetIndividualSubcription",
+			"GetIndividualSubscription",
 			http.MethodGet,
 			"/subscriptions/:subId",
-			HTTPGetIndividualSubcription,
+			HTTPGetIndividualSubscription,
 		},
 		{
-			"ReplaceIndividualSubcription",
+			"ReplaceIndividualSubscription",
 			http.MethodPut,
 			"/subscriptions/:subId",
-			HTTPReplaceIndividualSubcription,
+			HTTPReplaceIndividualSubscription,
 		},
 		{
-			"CreateIndividualSubcription",
+			"CreateIndividualSubscription",
 			http.MethodPost,
 			"/subscriptions",
-			HTTPCreateIndividualSubcription,
+			HTTPCreateIndividualSubscription,
 		},
 		{
 			"MyNotificationPost",

@@ -25,7 +25,7 @@ import (
 
 // Post /subscriptions
 // Create an individual subscription for event notifications from the SMF
-func HTTPCreateIndividualSubcription(c *gin.Context) {
+func HTTPCreateIndividualSubscription(c *gin.Context) {
 	detail := "Handle Post /subscriptions is not implemented"
 	logger.EventExposureLog.Warnln(detail)
 	writeNotImplementedProblem(c, detail)

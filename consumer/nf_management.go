@@ -34,6 +34,8 @@ var newNrfNFManagementHTTPClient = func() *http.Client {
 	return nil
 }
 
+const podIPPlaceholder = "POD_IP"
+
 func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	if nfProfile == nil {
 		return
@@ -41,9 +43,9 @@ func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	advertisedHost := ""
 	if factory.SmfConfig.Configuration != nil && factory.SmfConfig.Configuration.Sbi != nil {
 		configuredRegisterIPv4 := factory.SmfConfig.Configuration.Sbi.RegisterIPv4
-		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != "POD_IP" && net.ParseIP(configuredRegisterIPv4) == nil {
+		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != podIPPlaceholder && net.ParseIP(configuredRegisterIPv4) == nil {
 			advertisedHost = configuredRegisterIPv4
-		} else if configuredRegisterIPv4 == "POD_IP" && factory.SmfConfig.Configuration.SmfName != "" {
+		} else if configuredRegisterIPv4 == podIPPlaceholder && factory.SmfConfig.Configuration.SmfName != "" {
 			advertisedHost = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
 	}
@@ -100,9 +102,9 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 	advertisedRegisterIPv4 := smfCtx.RegisterIPv4
 	if factory.SmfConfig.Configuration != nil && factory.SmfConfig.Configuration.Sbi != nil {
 		configuredRegisterIPv4 := factory.SmfConfig.Configuration.Sbi.RegisterIPv4
-		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != "POD_IP" && net.ParseIP(configuredRegisterIPv4) == nil {
+		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != podIPPlaceholder && net.ParseIP(configuredRegisterIPv4) == nil {
 			advertisedRegisterIPv4 = configuredRegisterIPv4
-		} else if configuredRegisterIPv4 == "POD_IP" && factory.SmfConfig.Configuration.SmfName != "" {
+		} else if configuredRegisterIPv4 == podIPPlaceholder && factory.SmfConfig.Configuration.SmfName != "" {
 			advertisedRegisterIPv4 = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
 	}
@@ -479,20 +481,21 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.Subscripti
 	apiCreateSubscriptionRequest := client.SubscriptionsCollectionAPI.CreateSubscription(context.TODO())
 	apiCreateSubscriptionRequest = apiCreateSubscriptionRequest.SubscriptionData(nrfSubscriptionData)
 	nrfSubData, res, err = client.SubscriptionsCollectionAPI.CreateSubscriptionExecute(apiCreateSubscriptionRequest)
+	if res != nil {
+		defer util.CloseResponseBody(res)
+	}
 	if err == nil {
 		return nrfSubData, nil, nil
 	} else if res != nil {
-		defer func() {
-			if resCloseErr := res.Body.Close(); resCloseErr != nil {
-				logger.ConsumerLog.Errorf("SendCreateSubscription response cannot close: %+v", resCloseErr)
-			}
-		}()
 		if res.Status != err.Error() {
 			logger.ConsumerLog.Errorf("SendCreateSubscription received error response: %v", res.Status)
 			return nrfSubData, nil, err
 		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		problemDetails = &problem
+		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
+			return nrfSubData, problem, nil
+		} else if handledErr != nil {
+			return nrfSubData, nil, handledErr
+		}
 	} else {
 		err = openapi.ReportError("server no response")
 	}
@@ -508,19 +511,20 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 
 	apiRemoveSubscriptionRequest := client.SubscriptionIDDocumentAPI.RemoveSubscription(context.Background(), subscriptionId)
 	res, err = client.SubscriptionIDDocumentAPI.RemoveSubscriptionExecute(apiRemoveSubscriptionRequest)
+	if res != nil {
+		defer util.CloseResponseBody(res)
+	}
 	if err == nil {
 		return nil, nil
 	} else if res != nil {
-		defer func() {
-			if bodyCloseErr := res.Body.Close(); bodyCloseErr != nil {
-				err = openapi.ReportError("RemoveSubscription's response body cannot close: %w", bodyCloseErr)
-			}
-		}()
 		if res.Status != err.Error() {
 			return nil, openapi.ReportError("RemoveSubscription received error response: %s", res.Status)
 		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		problemDetails = &problem
+		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
+			return problem, nil
+		} else if handledErr != nil {
+			return nil, handledErr
+		}
 	} else {
 		err = openapi.ReportError("server no response")
 	}

@@ -24,7 +24,7 @@ import (
 	"github.com/omec-project/util/httpwrapper"
 )
 
-// Get /:smContextRef
+// Get /ue-pdu-session-info/:smContextRef
 func GetUePduSessionInfo(c *gin.Context) {
 	req := httpwrapper.NewRequest(c.Request, nil)
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")

@@ -633,37 +633,29 @@ func (smContextState SMContextState) String() string {
 }
 
 func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
-	var httpResponse *httpwrapper.Response
+	httpResponse := &httpwrapper.Response{
+		Header: nil,
+		Status: int(*errors.ErrorType[cause].Status),
+		Body: models.PostSmContexts400Response{
+			JsonData: &models.SmContextCreateError{
+				Error:   errors.ErrorType[cause],
+				N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
+			},
+		},
+	}
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
 		smContext,
 		errors.ErrorCause[cause]); err != nil {
-		httpResponse = &httpwrapper.Response{
-			Header: nil,
-			Status: int(*errors.ErrorType[cause].Status),
-			Body: models.PostSmContexts400Response{
-				JsonData: &models.SmContextCreateError{
-					Error:   errors.ErrorType[cause],
-					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
-				},
-			},
-		}
+		return httpResponse
 	} else {
 		tmpFile, err := util.CreatePayloadTempFile(buf)
 		if err != nil {
 			logger.PduSessLog.Errorln(err)
 		} else {
-			httpResponse = &httpwrapper.Response{
-				Header: nil,
-				Status: int(*errors.ErrorType[cause].Status),
-				Body: models.PostSmContexts400Response{
-					JsonData: &models.SmContextCreateError{
-						Error:   errors.ErrorType[cause],
-						N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
-					},
-					BinaryDataN1SmMessage: &tmpFile,
-				},
-			}
+			body := httpResponse.Body.(models.PostSmContexts400Response)
+			body.BinaryDataN1SmMessage = &tmpFile
+			httpResponse.Body = body
 		}
 	}
 

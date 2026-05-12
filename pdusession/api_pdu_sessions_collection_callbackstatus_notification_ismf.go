@@ -25,7 +25,7 @@ import (
 
 // Post /:$request.body#/ismfPduSessionUri
 // Notify Status
-func HTTPNotifyStatusIsfm(c *gin.Context) {
+func HTTPNotifyStatusIsmf(c *gin.Context) {
 	detail := "Handle Post /:$request.body#/ismfPduSessionUri is not implemented"
 	logger.PduSessLog.Warnln(detail)
 	writeNotImplementedProblem(c, detail)

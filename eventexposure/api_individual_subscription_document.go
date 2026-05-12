@@ -25,7 +25,7 @@ import (
 
 // Delete /subscriptions/:subId
 // Delete an individual subscription for event notifications from the SMF
-func HTTPDeleteIndividualSubcription(c *gin.Context) {
+func HTTPDeleteIndividualSubscription(c *gin.Context) {
 	detail := "Handle Delete /subscriptions/:subId is not implemented"
 	logger.EventExposureLog.Warnln(detail)
 	writeNotImplementedProblem(c, detail)
@@ -33,7 +33,7 @@ func HTTPDeleteIndividualSubcription(c *gin.Context) {
 
 // Get /subscriptions/:subId
 // Read an individual subscription for event notifications from the SMF
-func HTTPGetIndividualSubcription(c *gin.Context) {
+func HTTPGetIndividualSubscription(c *gin.Context) {
 	detail := "Handle Get /subscriptions/:subId is not implemented"
 	logger.EventExposureLog.Warnln(detail)
 	writeNotImplementedProblem(c, detail)
@@ -41,7 +41,7 @@ func HTTPGetIndividualSubcription(c *gin.Context) {
 
 // Put /subscriptions/:subId
 // Replace an individual subscription for event notifications from the SMF
-func HTTPReplaceIndividualSubcription(c *gin.Context) {
+func HTTPReplaceIndividualSubscription(c *gin.Context) {
 	detail := "Handle Put /subscriptions/:subId is not implemented"
 	logger.EventExposureLog.Warnln(detail)
 	writeNotImplementedProblem(c, detail)

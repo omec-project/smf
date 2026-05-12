@@ -204,10 +204,10 @@ func getRoutes() []Route {
 			HTTPNotifyStatus,
 		},
 		{
-			"NotifyStatusIsfm",
+			"NotifyStatusIsmf",
 			http.MethodPost,
 			"/:$request.body#/ismfPduSessionUri",
-			HTTPNotifyStatusIsfm,
+			HTTPNotifyStatusIsmf,
 		},
 		{
 			"TransferMtData",
