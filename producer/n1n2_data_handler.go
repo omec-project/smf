@@ -181,9 +181,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 						smContext.SubPduSessLog.Errorln(err)
 					} else {
 						response.BinaryDataN1SmMessage = &tmpFile
+						response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
 					}
 				}
-				response.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
@@ -362,12 +362,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 				smContext.SubPduSessLog.Errorf("failed to create temp file: %v", err)
 			} else {
 				response.BinaryDataN2SmInformation = &tmpFile
+				response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_HANDOVER_CMD.Ptr()
+				response.JsonData.N2SmInfo = &models.RefToBinaryData{
+					ContentId: "HANDOVER_CMD",
+				}
 			}
-		}
-
-		response.JsonData.N2SmInfoType = models.N2SMINFOTYPE_HANDOVER_CMD.Ptr()
-		response.JsonData.N2SmInfo = &models.RefToBinaryData{
-			ContentId: "HANDOVER_CMD",
 		}
 	case models.HOSTATE_COMPLETED:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.HoState)

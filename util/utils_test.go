@@ -59,3 +59,31 @@ func TestCreatePayloadTempFileReturnsReadableFile(t *testing.T) {
 		t.Fatalf("unexpected temp file content %q", string(content))
 	}
 }
+
+func TestCleanupMultipartTempFilesRemovesNestedFilesOnce(t *testing.T) {
+	tmpFile, err := CreatePayloadTempFile([]byte("payload"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	type nestedBody struct {
+		Direct *os.File
+		Slice  []*os.File
+		Map    map[string]any
+	}
+
+	name := tmpFile.Name()
+	body := nestedBody{
+		Direct: tmpFile,
+		Slice:  []*os.File{tmpFile},
+		Map: map[string]any{
+			"duplicate": tmpFile,
+		},
+	}
+
+	CleanupMultipartTempFiles(body)
+
+	if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected temp file %q to be removed, got err=%v", name, err)
+	}
+}
