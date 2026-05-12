@@ -27,6 +27,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/util"
 )
 
 var newNrfNFManagementHTTPClient = func() *http.Client {
@@ -37,14 +38,17 @@ func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	if nfProfile == nil {
 		return
 	}
-	advertisedHost := "smf"
+	advertisedHost := ""
 	if factory.SmfConfig.Configuration != nil && factory.SmfConfig.Configuration.Sbi != nil {
 		configuredRegisterIPv4 := factory.SmfConfig.Configuration.Sbi.RegisterIPv4
 		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != "POD_IP" && net.ParseIP(configuredRegisterIPv4) == nil {
 			advertisedHost = configuredRegisterIPv4
-		} else if factory.SmfConfig.Configuration.SmfName != "" {
+		} else if configuredRegisterIPv4 == "POD_IP" && factory.SmfConfig.Configuration.SmfName != "" {
 			advertisedHost = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
+	}
+	if advertisedHost == "" {
+		return
 	}
 	for index := range nfProfile.NfServices {
 		service := &nfProfile.NfServices[index]
@@ -98,12 +102,9 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 		configuredRegisterIPv4 := factory.SmfConfig.Configuration.Sbi.RegisterIPv4
 		if configuredRegisterIPv4 != "" && configuredRegisterIPv4 != "POD_IP" && net.ParseIP(configuredRegisterIPv4) == nil {
 			advertisedRegisterIPv4 = configuredRegisterIPv4
-		} else if net.ParseIP(advertisedRegisterIPv4) != nil && factory.SmfConfig.Configuration.SmfName != "" {
+		} else if configuredRegisterIPv4 == "POD_IP" && factory.SmfConfig.Configuration.SmfName != "" {
 			advertisedRegisterIPv4 = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
-	}
-	if net.ParseIP(advertisedRegisterIPv4) != nil {
-		advertisedRegisterIPv4 = "smf"
 	}
 	now := time.Now()
 	nfServices := make([]models.NFService, 0, len(serviceNames))
@@ -277,14 +278,11 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile
 	apiUpdateNFInstanceRequest = apiUpdateNFInstanceRequest.PatchItem(patchItem)
 	receivedNfProfile, res, err = client.NFInstanceIDDocumentAPI.UpdateNFInstanceExecute(apiUpdateNFInstanceRequest)
 	if err != nil {
-		if openapiErr, ok := err.(openapi.GenericOpenAPIError); ok {
-			if model := openapiErr.Model(); model != nil {
-				if problem, ok := model.(models.ProblemDetails); ok {
-					return &models.NFProfile{}, &problem, nil
-				}
-			}
+		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
+			return &models.NFProfile{}, problem, nil
+		} else if handledErr != nil {
+			return &models.NFProfile{}, nil, handledErr
 		}
-		return &models.NFProfile{}, nil, err
 	}
 
 	if res == nil {
