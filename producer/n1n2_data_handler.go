@@ -478,6 +478,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if len(fileBytes) > 0 {
 			if err := context.
@@ -498,6 +499,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
+			return err
 		}
 		if len(fileBytes) > 0 {
 			if err := context.

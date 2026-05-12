@@ -64,6 +64,13 @@ func HTTPReleaseSmContext(c *gin.Context) {
 		err = c.ShouldBindJSON(request.JsonData)
 	case multipartRelated, multipartForm:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+	default:
+		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
+		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
+		logger.PduSessLog.Errorln(problemDetail)
+		c.JSON(http.StatusUnsupportedMediaType, rsp)
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusUnsupportedMediaType), "UnsupportedMediaType")
+		return
 	}
 	defer smfutil.CleanupMultipartTempFiles(request)
 	if err != nil {
@@ -126,6 +133,13 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		err = c.ShouldBindJSON(request.JsonData)
 	case multipartRelated, multipartForm:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+	default:
+		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
+		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
+		logger.PduSessLog.Errorln(problemDetail)
+		c.JSON(http.StatusUnsupportedMediaType, rsp)
+		stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(http.StatusUnsupportedMediaType), "UnsupportedMediaType")
+		return
 	}
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
