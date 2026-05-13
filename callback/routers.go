@@ -37,7 +37,7 @@ type Route struct {
 	HandlerFunc gin.HandlerFunc
 }
 
-// AddService add routes to existing gin engine.
+// AddService adds routes to an existing gin engine.
 func AddService(engine *gin.Engine) *gin.RouterGroup {
 	group := engine.Group("/nsmf-callback")
 	for _, route := range getRoutes() {
