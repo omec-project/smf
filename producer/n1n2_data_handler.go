@@ -81,6 +81,18 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 
 	if body.BinaryDataN1SmMessage != nil {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage isn't nil")
+		if *body.BinaryDataN1SmMessage == nil {
+			err := fmt.Errorf("binary N1 SM message payload is nil")
+			txn.Rsp = &httpwrapper.Response{
+				Status: http.StatusForbidden,
+				Body: models.UpdateSmContext400Response{
+					JsonData: &models.SmContextUpdateError{
+						Error: smferrors.N1SmError,
+					},
+				},
+			}
+			return err
+		}
 		m := nas.NewMessage()
 		file := *body.BinaryDataN1SmMessage
 		_, err := file.Seek(0, io.SeekStart) // Ensure the file pointer is at the beginning
