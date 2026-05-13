@@ -45,6 +45,9 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	smPolicyData.Ipv4Address = openapi.PtrString(smContext.PDUAddress.Ip.To4().String())
 	smPolicyData.SubsSessAmbr = smContext.DnnConfiguration.SessionAmbr
 	smPolicyData.SubsDefQos = smContext.DnnConfiguration.Var5gQosProfile
+	if smContext.Snssai == nil {
+		return nil, http.StatusBadRequest, fmt.Errorf("missing S-NSSAI for PCF policy association")
+	}
 	smPolicyData.SliceInfo = *smContext.Snssai
 	smPolicyData.ServingNetwork = models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc)
 	smPolicyData.SuppFeat = openapi.PtrString("F")

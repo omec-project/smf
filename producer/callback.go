@@ -114,6 +114,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 		tmpFile, err2 := util.CreatePayloadTempFile(smNasBuf)
 		if err2 != nil {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
+			return err2
 		} else {
 			n1n2Request.BinaryDataN1Message = &tmpFile
 			n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
@@ -128,6 +129,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
 		if err1 != nil {
 			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
+			return err1
 		} else {
 			n1n2Request.BinaryDataN2Information = &tmpFile
 			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer

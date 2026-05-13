@@ -490,6 +490,10 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 		tmpFile, fileErr := util.CreatePayloadTempFile(smNasBuf)
 		if fileErr != nil {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
+			smContext.ChangeState(smf_context.SmStateInit)
+			smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+			smf_context.RemoveSMContext(smContext.Ref)
+			return
 		} else {
 			n1n2Request.BinaryDataN1Message = &tmpFile
 			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
