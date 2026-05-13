@@ -291,6 +291,9 @@ var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile
 		return &models.NFProfile{}, nil, openapi.ReportError("no response from server")
 	}
 	if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNoContent {
+		if receivedNfProfile == nil {
+			receivedNfProfile = &models.NFProfile{}
+		}
 		return receivedNfProfile, nil, nil
 	}
 	return &models.NFProfile{}, nil, openapi.ReportError("unexpected response code")
