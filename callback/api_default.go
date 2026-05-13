@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
@@ -36,11 +37,18 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	reqBody, err := c.GetRawData()
 	if err != nil {
 		logger.PduSessLog.Errorf("error: %v", err)
+		problemDetail := utils.ProblemDetailsSystemFailure(err.Error())
+		c.JSON(http.StatusInternalServerError, problemDetail)
+		return
 	}
 
 	err = openapi.Decode(&request, reqBody, c.ContentType())
 	if err != nil {
+		problemDetail := "[Request Body] " + err.Error()
+		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
 		logger.PduSessLog.Errorln("deserialize request failed")
+		c.JSON(http.StatusBadRequest, rsp)
+		return
 	}
 
 	reqWrapper := httpwrapper.NewRequest(c.Request, request)
@@ -71,6 +79,8 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	resBody, err := openapi.SetBody(HTTPResponse.Body, "application/json")
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
+		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
+		c.JSON(http.StatusInternalServerError, problemDetails)
 		return
 	}
 	c.Data(HTTPResponse.Status, "application/json", resBody.Bytes())
