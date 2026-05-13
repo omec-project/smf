@@ -184,7 +184,16 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		if sbi.RegisterIPv4 != "" {
 			smfContext.RegisterIPv4 = sbi.RegisterIPv4
 			if sbi.RegisterIPv4 == "POD_IP" {
-				smfContext.RegisterIPv4 = os.Getenv("POD_IP")
+				podIP := os.Getenv("POD_IP")
+				if podIP != "" {
+					smfContext.RegisterIPv4 = podIP
+				} else if localIp != "" {
+					smfContext.RegisterIPv4 = localIp
+					logger.CtxLog.Warnln("POD_IP is not set; falling back to local IP for RegisterIPv4", localIp)
+				} else {
+					smfContext.RegisterIPv4 = factory.SMF_DEFAULT_IPV4
+					logger.CtxLog.Warnln("POD_IP is not set and local IP is unavailable; falling back to default RegisterIPv4", factory.SMF_DEFAULT_IPV4)
+				}
 			}
 			logger.CtxLog.Infoln("sbi lb - smf smfContext.RegisterIPv4", smfContext.RegisterIPv4)
 		}
