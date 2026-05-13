@@ -756,13 +756,13 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 			if err != nil {
 				smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
 			}
-			if rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
+			if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
 				smContext.SubPfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
 
 				pfcpSRflag.Drobu = false
 				cause = ie.CauseRequestAccepted
 			}
-			if rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
+			if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
 				smContext.SubPfcpLog.Infof("Receive %v, UE is not responding to N1N2 transfer message", rspData.Cause)
 				// TODO: TS 23.502 4.2.3.3 3c. Failure indication
 

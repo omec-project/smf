@@ -74,6 +74,17 @@ func TestBuildQosRules(t *testing.T) {
 	}
 }
 
+func TestBuildAddQoSRuleFromPccRuleNilQosData(t *testing.T) {
+	pccRule := &models.PccRule{
+		PccRuleId:  "1",
+		Precedence: openapi.PtrInt32(1),
+	}
+
+	if rule := qos.BuildAddQoSRuleFromPccRule(pccRule, nil, qos.OperationCodeCreateNewQoSRule); rule != nil {
+		t.Fatal("expected nil QoS rule when QoS data is missing")
+	}
+}
+
 func makeSamplePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",

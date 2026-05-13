@@ -110,6 +110,10 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 			logger.QosLog.Infof("building QoS Rule from PCC rule [%s]", pccRuleName)
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
 			qosRules = append(qosRules, *qosRule)
 		}
 	}
@@ -131,6 +135,10 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 }
 
 func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
+	if pccRule == nil || qosData == nil {
+		return nil
+	}
+
 	qRule := QosRule{
 		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
 		DQR:           btou(qosData.GetDefQosFlowIndication()),
