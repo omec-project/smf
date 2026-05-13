@@ -108,6 +108,10 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	if pccRulesUpdate != nil {
 		for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
 			logger.QosLog.Infof("building QoS Rule from PCC rule [%s]", pccRuleName)
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
 			if qosRule == nil {

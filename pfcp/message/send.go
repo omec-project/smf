@@ -486,6 +486,10 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
 		smContext.SubPduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
+		smContext.ChangeState(smf_context.SmStateInit)
+		smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+		smf_context.RemoveSMContext(smContext.Ref)
+		return
 	} else {
 		tmpFile, fileErr := util.CreatePayloadTempFile(smNasBuf)
 		if fileErr != nil {

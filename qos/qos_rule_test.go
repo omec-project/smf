@@ -85,6 +85,21 @@ func TestBuildAddQoSRuleFromPccRuleNilQosData(t *testing.T) {
 	}
 }
 
+func TestBuildQosRules_SkipsPccRuleWithoutRefQosData(t *testing.T) {
+	smPolicyDecision := models.NewSmPolicyDecision()
+	smPolicyDecision.PccRules = map[string]models.PccRule{
+		"missing-qos-ref": {
+			PccRuleId:  "missing-qos-ref",
+			Precedence: openapi.PtrInt32(1),
+		},
+	}
+	smPolicyUpdates := qos.BuildSmPolicyUpdate(&qos.SmCtxtPolicyData{}, smPolicyDecision)
+
+	if got := qos.BuildQosRules(smPolicyUpdates); len(got) != 0 {
+		t.Fatalf("expected no QoS rules, got %+v", got)
+	}
+}
+
 func makeSamplePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",

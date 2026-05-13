@@ -110,6 +110,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// N1 Msg
 	if smNasBuf, err1 := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err1 != nil {
 		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err1.Error())
+		return err1
 	} else {
 		tmpFile, err2 := util.CreatePayloadTempFile(smNasBuf)
 		if err2 != nil {
@@ -125,6 +126,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	n2Pdu, err := smfContext.BuildPDUSessionResourceModifyRequestTransfer(smContext)
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("SMPolicyUpdate, build PDUSession Resource Modify Request Transfer Error(%s)", err.Error())
+		return err
 	} else {
 		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
 		if err1 != nil {
