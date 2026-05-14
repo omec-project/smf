@@ -107,7 +107,7 @@ func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo 
 				return info
 			}
 		}
-		if lookup.Sst == snssaiInfo.Snssai.Sst {
+		if lookup.Sd == "" && lookup.Sst == snssaiInfo.Snssai.Sst {
 			if info, ok := snssaiInfo.DnnInfos[dnn]; ok {
 				fallback = info
 			}

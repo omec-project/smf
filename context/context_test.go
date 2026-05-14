@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
@@ -163,5 +165,27 @@ func TestUpdateSmfContext(t *testing.T) {
 				t.Errorf("validation failed: %s", msg)
 			}
 		})
+	}
+}
+
+func TestRetrieveDnnInformationFallsBackToSstOnlyWhenSdMissing(t *testing.T) {
+	originalInfos := smfContext.SnssaiInfos
+	t.Cleanup(func() {
+		smfContext.SnssaiInfos = originalInfos
+	})
+
+	info := &SnssaiSmfDnnInfo{MTU: 1400}
+	smfContext.SnssaiInfos = []SnssaiSmfInfo{{
+		Snssai:   SNssai{Sst: 1, Sd: "010101"},
+		DnnInfos: map[string]*SnssaiSmfDnnInfo{"internet": info},
+	}}
+
+	if got := RetrieveDnnInformation(models.Snssai{Sst: 1}, "internet"); got != info {
+		t.Fatalf("expected Sst-only fallback to return configured DNN info, got %#v", got)
+	}
+
+	requested := models.Snssai{Sst: 1, Sd: openapi.PtrString("FFFFFF")}
+	if got := RetrieveDnnInformation(requested, "internet"); got != nil {
+		t.Fatalf("expected no fallback when request includes Sd, got %#v", got)
 	}
 }

@@ -43,6 +43,31 @@ var (
 	applicationJson  string = "application/json"
 )
 
+func shouldRenderUpdateSmContextMultipart(body any) bool {
+	switch response := body.(type) {
+	case models.UpdateSmContext200Response:
+		return response.HasBinaryDataN1SmMessage() || response.HasBinaryDataN2SmInformation()
+	case *models.UpdateSmContext200Response:
+		return response != nil && (response.HasBinaryDataN1SmMessage() || response.HasBinaryDataN2SmInformation())
+	case models.UpdateSmContext400Response:
+		return response.HasBinaryDataN1SmMessage() || response.HasBinaryDataN2SmInformation()
+	case *models.UpdateSmContext400Response:
+		return response != nil && (response.HasBinaryDataN1SmMessage() || response.HasBinaryDataN2SmInformation())
+	default:
+		return false
+	}
+}
+
+func renderUpdateSmContextResponse(c *gin.Context, response *httpwrapper.Response) {
+	if response.Status < http.StatusMultipleChoices || shouldRenderUpdateSmContextMultipart(response.Body) {
+		c.Render(response.Status, openapi.MultipartRelatedRender{Data: response.Body})
+		smfutil.CleanupMultipartTempFiles(response.Body)
+		return
+	}
+
+	c.JSON(response.Status, response.Body)
+}
+
 // Post /sm-contexts/:smContextRef/release
 // Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
@@ -175,10 +200,5 @@ func HTTPUpdateSmContext(c *gin.Context) {
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")
 
-	if HTTPResponse.Status < http.StatusMultipleChoices {
-		c.Render(HTTPResponse.Status, openapi.MultipartRelatedRender{Data: HTTPResponse.Body})
-		smfutil.CleanupMultipartTempFiles(HTTPResponse.Body)
-	} else {
-		c.JSON(HTTPResponse.Status, HTTPResponse.Body)
-	}
+	renderUpdateSmContextResponse(c, HTTPResponse)
 }
