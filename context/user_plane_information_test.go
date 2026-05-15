@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
 func makeTestSessionConfig(sliceName, mcc, mnc, sst, sd, dnn, ueSubnet, upfName string, gnbNames []string) nfConfigApi.SessionManagement {

@@ -8,7 +8,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/qos"
 )
 
@@ -32,6 +33,41 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 		0x65, 0x5, 0x3, 0x6, 0x0, 0xc9, 0x2, 0x3, 0x6, 0x0, 0xb, 0x3, 0x3, 0x6,
 		0x0, 0x15,
 	}
+	if !bytes.Equal(authorizedQosFlow.Content, expectedBytes) {
+		t.Fatalf("Content mismatch. got = %v, want = %v", authorizedQosFlow.Content, expectedBytes)
+	}
+}
+
+func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) {
+	var maxbrUl openapi.NullableString
+	var maxbrDl openapi.NullableString
+	var gbrUl openapi.NullableString
+	var gbrDl openapi.NullableString
+
+	maxbrUl.Set(nil)
+	maxbrDl.Set(nil)
+	gbrUl.Set(nil)
+	gbrDl.Set(nil)
+
+	smPolicyDecision := &models.SmPolicyDecision{}
+	smPolicyDecision.QosDecs = &map[string]models.QosData{
+		"null-rates": {
+			QosId:   "5",
+			Var5qi:  openapi.PtrInt32(5),
+			MaxbrUl: maxbrUl,
+			MaxbrDl: maxbrDl,
+			GbrUl:   gbrUl,
+			GbrDl:   gbrDl,
+		},
+	}
+
+	smCtxtPolData := &qos.SmCtxtPolicyData{}
+	smCtxtPolData.Initialize()
+	smPolicyUpdates := qos.BuildSmPolicyUpdate(smCtxtPolData, smPolicyDecision)
+
+	authorizedQosFlow := qos.BuildAuthorizedQosFlowDescriptions(smPolicyUpdates)
+	expectedBytes := []byte{0x5, 0x20, 0x41, 0x1, 0x1, 0x5}
+
 	if !bytes.Equal(authorizedQosFlow.Content, expectedBytes) {
 		t.Fatalf("Content mismatch. got = %v, want = %v", authorizedQosFlow.Content, expectedBytes)
 	}

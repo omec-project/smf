@@ -18,8 +18,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/logger"
@@ -36,11 +37,18 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	reqBody, err := c.GetRawData()
 	if err != nil {
 		logger.PduSessLog.Errorf("error: %v", err)
+		problemDetail := utils.ProblemDetailsSystemFailure(err.Error())
+		c.JSON(http.StatusInternalServerError, problemDetail)
+		return
 	}
 
-	err = openapi.Deserialize(&request, reqBody, c.ContentType())
+	err = openapi.Decode(&request, reqBody, c.ContentType())
 	if err != nil {
+		problemDetail := "[Request Body] " + err.Error()
+		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
 		logger.PduSessLog.Errorln("deserialize request failed")
+		c.JSON(http.StatusBadRequest, rsp)
+		return
 	}
 
 	reqWrapper := httpwrapper.NewRequest(c.Request, request)
@@ -53,23 +61,29 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
-	HTTPResponse := txn.Rsp.(*httpwrapper.Response)
-	// HTTPResponse := producer.HandleSMPolicyUpdateNotify(smContextRef, reqWrapper.Body.(models.SmPolicyNotification))
+	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
+	if !ok || HTTPResponse == nil {
+		logger.PduSessLog.Errorf("SM Policy update transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := models.NewProblemDetails()
+		problemDetails.SetStatus(http.StatusInternalServerError)
+		problemDetails.SetCause("SYSTEM_FAILURE")
+		problemDetails.SetDetail("SM Policy update transaction failed")
+		c.JSON(http.StatusInternalServerError, problemDetails)
+		return
+	}
 
 	for key, val := range HTTPResponse.Header {
 		c.Header(key, val[0])
 	}
 
-	resBody, err := openapi.Serialize(HTTPResponse.Body, "application/json")
+	resBody, err := openapi.SetBody(HTTPResponse.Body, "application/json")
 	if err != nil {
 		logger.PduSessLog.Errorln(err)
+		problemDetails := utils.ProblemDetailsSystemFailure(err.Error())
+		c.JSON(http.StatusInternalServerError, problemDetails)
+		return
 	}
-	_, err = c.Writer.Write(resBody)
-	if err != nil {
-		logger.PduSessLog.Errorf("error: %v", err)
-	}
-
-	c.Status(HTTPResponse.Status)
+	c.Data(HTTPResponse.Status, "application/json", resBody.Bytes())
 }
 
 func SmPolicyControlTerminationRequestNotification(c *gin.Context) {

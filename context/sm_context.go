@@ -17,13 +17,13 @@ import (
 	"sync/atomic"
 
 	"github.com/google/uuid"
-	"github.com/omec-project/nas/nasConvert"
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/openapi/Namf_Communication"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/Npcf_SMPolicyControl"
-	"github.com/omec-project/openapi/models"
-	nrfCache "github.com/omec-project/openapi/nrfcache"
+	"github.com/omec-project/nas/v2/nasConvert"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/openapi/v2/Namf_Communication"
+	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/v2/Npcf_SMPolicyControl"
+	"github.com/omec-project/openapi/v2/models"
+	nrfCache "github.com/omec-project/openapi/v2/nrfcache"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -31,6 +31,7 @@ import (
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
+	util "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
 	mi "github.com/omec-project/util/metricinfo"
 	"go.uber.org/zap"
@@ -98,18 +99,18 @@ type SMContext struct {
 	ServingNfId       string `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
 	SmStatusNotifyUri string `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
 
-	UpCnxState         models.UpCnxState       `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
-	AMFProfile         models.NfProfile        `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
-	SelectedPCFProfile models.NfProfile        `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
-	AnType             models.AccessType       `json:"anType" yaml:"anType" bson:"anType"`
-	RatType            models.RatType          `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
-	PresenceInLadn     models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
-	HoState            models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
-	DnnConfiguration   models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
+	UpCnxState         models.UpCnxState         `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
+	AMFProfile         models.NFProfileDiscovery `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
+	SelectedPCFProfile models.NFProfileDiscovery `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
+	AnType             models.AccessType         `json:"anType" yaml:"anType" bson:"anType"`
+	RatType            models.RatType            `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
+	PresenceInLadn     models.PresenceState      `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	HoState            models.HoState            `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
+	DnnConfiguration   models.DnnConfiguration   `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
 	Snssai         *models.Snssai       `json:"snssai" yaml:"snssai" bson:"snssai"`
 	HplmnSnssai    *models.Snssai       `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
-	ServingNetwork *models.PlmnId       `json:"servingNetwork,omitempty" yaml:"servingNetwork" bson:"servingNetwork,omitempty"`
+	ServingNetwork models.PlmnIdNid     `json:"servingNetwork,omitempty" yaml:"servingNetwork" bson:"servingNetwork,omitempty"`
 	UeLocation     *models.UserLocation `json:"ueLocation,omitempty" yaml:"ueLocation" bson:"ueLocation,omitempty"`
 	AddUeLocation  *models.UserLocation `json:"addUeLocation,omitempty" yaml:"addUeLocation" bson:"addUeLocation,omitempty"` // ignore
 
@@ -249,7 +250,7 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 			entMap := *smfContext.EnterpriseList
 			smContext.SubCtxLog.Debugf("context state change, Enterprises configured = [%v], subscriber slice sst [%v], sd [%v]",
 				entMap, smContext.Snssai.Sst, smContext.Snssai.Sd)
-			ent = entMap[strconv.Itoa(int(smContext.Snssai.Sst))+smContext.Snssai.Sd]
+			ent = entMap[strconv.Itoa(int(smContext.Snssai.GetSst()))+smContext.Snssai.GetSd()]
 		} else {
 			smContext.SubCtxLog.Debug("context state change, enterprise info not available")
 		}
@@ -355,24 +356,24 @@ func (smContext *SMContext) ReleaseUeIpAddr() error {
 
 // *** add unit test ***//
 func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData) {
-	smContext.Gpsi = createData.Gpsi
-	smContext.Supi = createData.Supi
-	smContext.Dnn = createData.Dnn
+	smContext.Gpsi = createData.GetGpsi()
+	smContext.Supi = createData.GetSupi()
+	smContext.Dnn = createData.GetDnn()
 	smContext.Snssai = createData.SNssai
 	smContext.HplmnSnssai = createData.HplmnSnssai
-	smContext.ServingNetwork = createData.ServingNetwork
-	smContext.AnType = createData.AnType
-	smContext.RatType = createData.RatType
-	smContext.PresenceInLadn = createData.PresenceInLadn
+	smContext.ServingNetwork = createData.GetServingNetwork()
+	smContext.AnType = createData.GetAnType()
+	smContext.RatType = createData.GetRatType()
+	smContext.PresenceInLadn = createData.GetPresenceInLadn()
 	smContext.UeLocation = createData.UeLocation
-	smContext.UeTimeZone = createData.UeTimeZone
+	smContext.UeTimeZone = createData.GetUeTimeZone()
 	smContext.AddUeLocation = createData.AddUeLocation
-	smContext.OldPduSessionId = createData.OldPduSessionId
-	smContext.ServingNfId = createData.ServingNfId
+	smContext.OldPduSessionId = createData.GetOldPduSessionId()
+	smContext.ServingNfId = createData.GetServingNfId()
 }
 
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
-	createdData = new(models.SmContextCreatedData)
+	createdData = models.NewSmContextCreatedData()
 	createdData.SNssai = smContext.Snssai
 	return
 }
@@ -392,22 +393,28 @@ func (smContext *SMContext) PDUAddressToNAS() (addr [12]byte, addrLen uint8) {
 // PCFSelection will select PCF for this SM Context
 func (smContext *SMContext) PCFSelection() error {
 	// Send NFDiscovery for find PCF
-	localVarOptionals := Nnrf_NFDiscovery.SearchNFInstancesParamOpts{}
+	localVarOptionals := Nnrf_NFDiscovery.ApiSearchNFInstancesRequest{}
 
-	var rep models.SearchResult
+	var rep *models.SearchResult
 	var res *http.Response
 	var err error
 
 	if SMF_Self().EnableNrfCaching {
-		rep, err = nrfCache.SearchNFInstances(context.Background(), SMF_Self().NrfUri, models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+		rep, err = nrfCache.SearchNFInstances(context.Background(), SMF_Self().NrfUri, models.NFTYPE_PCF, models.NFTYPE_SMF, localVarOptionals)
 		if err != nil {
 			return err
 		}
 	} else {
+		localVarOptionals := SMF_Self().
+			NFDiscoveryClient.
+			NFInstancesStoreAPI.
+			SearchNFInstances(context.TODO())
+		localVarOptionals = localVarOptionals.TargetNfType(models.NFTYPE_PCF)
+		localVarOptionals = localVarOptionals.RequesterNfType(models.NFTYPE_SMF)
 		rep, res, err = SMF_Self().
 			NFDiscoveryClient.
-			NFInstancesStoreApi.
-			SearchNFInstances(context.TODO(), models.NfType_PCF, models.NfType_SMF, &localVarOptionals)
+			NFInstancesStoreAPI.
+			SearchNFInstancesExecute(localVarOptionals)
 		if err != nil {
 			metrics.IncrementSvcNrfMsgStats(SMF_Self().NfInstanceID, string(svcmsgtypes.NnrfNFDiscoveryPcf), "In", "Failure", err.Error())
 			return err
@@ -432,11 +439,15 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range *smContext.SelectedPCFProfile.NfServices {
-		if service.ServiceName == models.ServiceName_NPCF_SMPOLICYCONTROL {
-			SmPolicyControlConf := Npcf_SMPolicyControl.NewConfiguration()
-			SmPolicyControlConf.SetBasePath(service.ApiPrefix)
-			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(SmPolicyControlConf)
+	for _, service := range smContext.SelectedPCFProfile.NfServices {
+		if service.ServiceName == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+			cfg := Npcf_SMPolicyControl.NewConfiguration()
+			serverConfig := &cfg.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
+			}
+			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
 		}
 	}
 
@@ -500,7 +511,7 @@ func (smContext *SMContext) RemovePDRfromPFCPSession(nodeID NodeID, pdr *PDR) {
 
 func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint8) error {
 	dnnPDUSessionType := smContext.DnnConfiguration.PduSessionTypes
-	if dnnPDUSessionType == nil {
+	if !dnnPDUSessionType.HasDefaultSessionType() {
 		return fmt.Errorf("this SMContext[%s] has no subscription pdu session type info", smContext.Ref)
 	}
 
@@ -510,14 +521,14 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 
 	for _, allowedPDUSessionType := range smContext.DnnConfiguration.PduSessionTypes.AllowedSessionTypes {
 		switch allowedPDUSessionType {
-		case models.PduSessionType_IPV4:
+		case models.PDUSESSIONTYPE_IPV4:
 			allowIPv4 = true
-		case models.PduSessionType_IPV6:
+		case models.PDUSESSIONTYPE_IPV6:
 			allowIPv6 = true
-		case models.PduSessionType_IPV4_V6:
+		case models.PDUSESSIONTYPE_IPV4_V6:
 			allowIPv4 = true
 			allowIPv6 = true
-		case models.PduSessionType_ETHERNET:
+		case models.PDUSESSIONTYPE_ETHERNET:
 			allowEthernet = true
 		}
 	}
@@ -544,38 +555,38 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 
 	smContext.EstAcceptCause5gSMValue = 0
 	switch nasConvert.PDUSessionTypeToModels(requestedPDUSessionType) {
-	case models.PduSessionType_IPV4:
+	case models.PDUSESSIONTYPE_IPV4:
 		if allowIPv4 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_IPV4)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
 		} else {
 			return fmt.Errorf("PduSessionType_IPV4 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
-	case models.PduSessionType_IPV6:
+	case models.PDUSESSIONTYPE_IPV6:
 		if allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_IPV6)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
 		} else {
 			return fmt.Errorf("PduSessionType_IPV6 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
-	case models.PduSessionType_IPV4_V6:
+	case models.PDUSESSIONTYPE_IPV4_V6:
 		if allowIPv4 && allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_IPV4_V6)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4_V6)
 		} else if allowIPv4 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_IPV4)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
 			smContext.EstAcceptCause5gSMValue = nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed
 		} else if allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_IPV6)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
 			smContext.EstAcceptCause5gSMValue = nasMessage.Cause5GSMPDUSessionTypeIPv6OnlyAllowed
 		} else {
 			return fmt.Errorf("PduSessionType_IPV4_V6 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
-	case models.PduSessionType_ETHERNET:
+	case models.PDUSESSIONTYPE_ETHERNET:
 		if allowEthernet {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_ETHERNET)
+			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_ETHERNET)
 		} else {
 			return fmt.Errorf("PduSessionType_ETHERNET is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
-	case models.PduSessionType_UNSTRUCTURED:
-		smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PduSessionType_UNSTRUCTURED)
+	case models.PDUSESSIONTYPE_UNSTRUCTURED:
+		smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_UNSTRUCTURED)
 		return fmt.Errorf("unstructured PDU Session type")
 	default:
 		return fmt.Errorf("requested PDU Sesstion type[%d] is not supported", requestedPDUSessionType)
@@ -622,32 +633,29 @@ func (smContextState SMContextState) String() string {
 }
 
 func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
-	var httpResponse *httpwrapper.Response
+	httpResponse := &httpwrapper.Response{
+		Header: nil,
+		Status: int(*errors.ErrorType[cause].Status),
+		Body: models.PostSmContexts400Response{
+			JsonData: &models.SmContextCreateError{
+				Error: errors.ErrorType[cause],
+			},
+		},
+	}
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
 		smContext,
 		errors.ErrorCause[cause]); err != nil {
-		httpResponse = &httpwrapper.Response{
-			Header: nil,
-			Status: int(errors.ErrorType[cause].Status),
-			Body: models.PostSmContextsErrorResponse{
-				JsonData: &models.SmContextCreateError{
-					Error:   errors.ErrorType[cause],
-					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
-				},
-			},
-		}
+		return httpResponse
 	} else {
-		httpResponse = &httpwrapper.Response{
-			Header: nil,
-			Status: int(errors.ErrorType[cause].Status),
-			Body: models.PostSmContextsErrorResponse{
-				JsonData: &models.SmContextCreateError{
-					Error:   errors.ErrorType[cause],
-					N1SmMsg: &models.RefToBinaryData{ContentId: "n1SmMsg"},
-				},
-				BinaryDataN1SmMessage: buf,
-			},
+		tmpFile, err := util.CreatePayloadTempFile(buf)
+		if err != nil {
+			logger.PduSessLog.Errorln(err)
+		} else {
+			body := httpResponse.Body.(models.PostSmContexts400Response)
+			body.BinaryDataN1SmMessage = &tmpFile
+			body.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "n1SmMsg"}
+			httpResponse.Body = body
 		}
 	}
 
@@ -709,7 +717,7 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	}
 	kafkaSmCtxt.SmfSubState, op = mapPduSessStateToMetricStateAndOp(smContext.SMContextState)
 	kafkaSmCtxt.SmfId = smContext.Ref
-	kafkaSmCtxt.Slice = "sd:" + smContext.Snssai.Sd + " sst:" + strconv.Itoa(int(smContext.Snssai.Sst))
+	kafkaSmCtxt.Slice = "sd:" + smContext.Snssai.GetSd() + " sst:" + strconv.Itoa(int(smContext.Snssai.GetSst()))
 	kafkaSmCtxt.Dnn = smContext.Dnn
 	kafkaSmCtxt.UpfName, kafkaSmCtxt.UpfAddr = smContext.getSmCtxtUpf()
 	kafkaSmCtxt.SmfIp = SMF_Self().PodIp

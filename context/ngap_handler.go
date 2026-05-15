@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/omec-project/ngap/aper"
-	"github.com/omec-project/ngap/ngapType"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/ngap/v2/aper"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2/models"
 )
 
 func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (err error) {
@@ -50,7 +50,7 @@ func HandlePDUSessionResourceSetupResponseTransfer(b []byte, ctx *SMContext) (er
 		}
 	}
 
-	ctx.UpCnxState = models.UpCnxState_ACTIVATED
+	ctx.UpCnxState = models.UPCNXSTATE_ACTIVATED
 	return nil
 }
 

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )
@@ -44,11 +44,11 @@ func makeSMFContext() *smfContext.SMFContext {
 	}
 }
 
-func validateBasicProfile(profile models.NfProfile, t *testing.T) {
+func validateBasicProfile(profile models.NFProfile, t *testing.T) {
 	if profile.NfInstanceId != "test-nf-id" {
 		t.Errorf("expected NfInstanceId to be 'test-nf-id', got %s", profile.NfInstanceId)
 	}
-	if profile.NfServices == nil || len(*profile.NfServices) == 0 {
+	if len(profile.NfServices) == 0 {
 		t.Error("expected non-nil and non-empty NfServices")
 	}
 	if profile.SmfInfo == nil || profile.SmfInfo.SNssaiSmfInfoList == nil {
@@ -73,7 +73,7 @@ func TestGetNfProfile(t *testing.T) {
 		cfgs      []nfConfigApi.SessionManagement
 		expectErr bool
 		errorMsg  string
-		validate  func(models.NfProfile, *testing.T)
+		validate  func(models.NFProfile, *testing.T)
 	}{
 		{
 			name:      "Valid config and context",
@@ -120,9 +120,15 @@ func TestGetNfProfile(t *testing.T) {
 }
 
 func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
+	originalHTTPClientFactory := newNrfNFManagementHTTPClient
+	defer func() {
+		newNrfNFManagementHTTPClient = originalHTTPClientFactory
+	}()
+
+	var serverURL string
 	svr := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/nnrf-nfm/v1/nf-instances/") {
-			w.Header().Set("Location", fmt.Sprintf("%s/nnrf-nfm/v1/nf-instances/mocked-id", r.Host))
+			w.Header().Set("Location", fmt.Sprintf("%s/nnrf-nfm/v1/nf-instances/mocked-id", serverURL))
 			w.WriteHeader(http.StatusCreated)
 		} else {
 			t.Errorf("Unexpected request: %s %s", r.Method, r.URL.Path)
@@ -132,6 +138,10 @@ func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
 	svr.EnableHTTP2 = true
 	svr.StartTLS()
 	defer svr.Close()
+	serverURL = svr.URL
+	newNrfNFManagementHTTPClient = func() *http.Client {
+		return svr.Client()
+	}
 	if err := factory.InitConfigFactory("../config/smfcfg.yaml"); err != nil {
 		t.Fatalf("Could not read example configuration file")
 	}
@@ -141,7 +151,7 @@ func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
 
 	_, _, err := SendRegisterNFInstance([]nfConfigApi.SessionManagement{makeSessionCfg()})
 	if err != nil {
-		t.Errorf("Got and error %+v", err)
+		t.Errorf("Got an error: %+v", err)
 	}
 	if self.NfInstanceID != "mocked-id" {
 		t.Errorf("Expected NfId to be 'mocked-id', got %v", self.NfInstanceID)

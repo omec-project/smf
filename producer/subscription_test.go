@@ -11,7 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )
@@ -47,10 +48,10 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 		callCountNRFCacheRemoveNfProfileFromNrfCache++
 		return true
 	}
-	udmProfile := models.NfProfileNotificationData{
+	udmProfile := models.NotificationDataAllOfNfProfile{
 		UdrInfo: &models.UdrInfo{
 			SupportedDataSets: []models.DataSetId{
-				models.DataSetId_SUBSCRIPTION,
+				models.DATASETID_SUBSCRIPTION,
 			},
 		},
 		NfInstanceId: nfInstanceID,
@@ -58,9 +59,9 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 		NfStatus:     "DEREGISTERED",
 	}
 	badRequestProblem := models.ProblemDetails{
-		Status: http.StatusBadRequest,
-		Cause:  "MANDATORY_IE_MISSING",
-		Detail: "Missing IE [Event]/[NfInstanceUri] in NotificationData",
+		Status: openapi.PtrInt32(http.StatusBadRequest),
+		Cause:  openapi.PtrString("MANDATORY_IE_MISSING"),
+		Detail: openapi.PtrString("Missing IE [Event]/[NfInstanceUri] in NotificationData"),
 	}
 	parameters := []struct {
 		expectedProblem                                      *models.ProblemDetails

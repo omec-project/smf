@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
-	nasLogger "github.com/omec-project/nas/logger"
-	ngapLogger "github.com/omec-project/ngap/logger"
-	openapiLogger "github.com/omec-project/openapi/logger"
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
-	nrfCache "github.com/omec-project/openapi/nrfcache"
+	nasLogger "github.com/omec-project/nas/v2/logger"
+	ngapLogger "github.com/omec-project/ngap/v2/logger"
+	openapiLogger "github.com/omec-project/openapi/v2/logger"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
+	nrfCache "github.com/omec-project/openapi/v2/nrfcache"
 	"github.com/omec-project/smf/callback"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
@@ -198,7 +198,7 @@ func (smf *SMF) Start() {
 		for {
 			select {
 			case <-ctx.Done():
-				logger.InitLog.Info("received cancellation signal. Shutting down context update routine.")
+				logger.InitLog.Infoln("received cancellation signal. Shutting down context update routine")
 				return
 			case cfg := <-contextUpdateChan:
 				factory.SmfConfigSyncLock.Lock()
@@ -256,9 +256,9 @@ func (smf *SMF) Start() {
 	callback.AddService(router)
 	for _, serviceName := range factory.SmfConfig.Configuration.ServiceNameList {
 		switch models.ServiceName(serviceName) {
-		case models.ServiceName_NSMF_PDUSESSION:
+		case models.SERVICENAME_NSMF_PDUSESSION:
 			pdusession.AddService(router)
-		case models.ServiceName_NSMF_EVENT_EXPOSURE:
+		case models.SERVICENAME_NSMF_EVENT_EXPOSURE:
 			eventexposure.AddService(router)
 		}
 	}
@@ -268,7 +268,7 @@ func (smf *SMF) Start() {
 		smfContext.SetupSmfCollection()
 		// Init DRSM for unique FSEID/FTEID
 		if err := smfCtxt.InitDrsm(); err != nil {
-			logger.InitLog.Errorf("initialise drsm failed, %v ", err.Error())
+			logger.InitLog.Errorf("initialise drsm failed, %+v", err)
 		}
 	} else {
 		logger.InitLog.Infoln("DB is disabled, not initialising drsm")

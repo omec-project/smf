@@ -5,11 +5,13 @@
 package qos
 
 import (
+	"maps"
 	"strconv"
 	"strings"
 
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 )
 
@@ -117,6 +119,11 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 }
 
 func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *models.QosData) {
+	if qosData == nil {
+		logger.QosLog.Warn("skipping nil QoS flow description")
+		return
+	}
+
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	// Set QFI
@@ -127,26 +134,26 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 
 	// Create Params
 	// 5QI
-	qfd.AddQosFlowParam5Qi(uint8(qosData.Var5qi))
+	qfd.AddQosFlowParam5Qi(uint8(qosData.GetVar5qi()))
 
 	// MFBR uplink
-	if qosData.MaxbrUl != "" {
-		qfd.addQosFlowRateParam(qosData.MaxbrUl, QFDParameterIdMfbrUl)
+	if rate, ok := getNullableString(qosData.MaxbrUl); ok {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrUl)
 	}
 
 	// MFBR downlink
-	if qosData.MaxbrDl != "" {
-		qfd.addQosFlowRateParam(qosData.MaxbrDl, QFDParameterIdMfbrDl)
+	if rate, ok := getNullableString(qosData.MaxbrDl); ok {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrDl)
 	}
 
 	// GFBR uplink
-	if qosData.GbrUl != "" {
-		qfd.addQosFlowRateParam(qosData.GbrUl, QFDParameterIdGfbrUl)
+	if rate, ok := getNullableString(qosData.GbrUl); ok {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrUl)
 	}
 
 	// GFBR downlink
-	if qosData.GbrDl != "" {
-		qfd.addQosFlowRateParam(qosData.GbrDl, QFDParameterIdGfbrDl)
+	if rate, ok := getNullableString(qosData.GbrDl); ok {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrDl)
 	}
 
 	// Set E-Bit of QFD for the "create new QoS flow description" operation
@@ -156,8 +163,25 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 	d.AddQFD(&qfd)
 }
 
+func getNullableString(value openapi.NullableString) (string, bool) {
+	if !value.IsSet() {
+		return "", false
+	}
+
+	resolved := value.Get()
+	if resolved == nil || strings.TrimSpace(*resolved) == "" {
+		return "", false
+	}
+
+	return *resolved, true
+}
+
 func GetBitRate(sBitRate string) (val uint16, unit uint8) {
 	sl := strings.Fields(sBitRate)
+	if len(sl) < 2 {
+		logger.QosLog.Errorf("invalid bit rate [%v]", sBitRate)
+		return 0, QFBitRate1Mbps
+	}
 
 	// rate
 	if rate, err := strconv.Atoi(sl[0]); err != nil {
@@ -255,8 +279,8 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 	qfd.QFDLen += 5 //(Id-1 + len-1 + Content-3)
 }
 
-func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
-	if len(pcfQosData) == 0 {
+func GetQosFlowDescUpdate(pcfQosData *map[string]models.QosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
+	if pcfQosData == nil || len(*pcfQosData) == 0 {
 		return nil
 	}
 
@@ -267,18 +291,19 @@ func GetQosFlowDescUpdate(pcfQosData, ctxtQosData map[string]*models.QosData) *Q
 	}
 
 	// Iterate through pcf qos data to identify find add/mod/del qos flows
-	for name, pcfQF := range pcfQosData {
+	for name, pcfQF := range *pcfQosData {
+		qosData := pcfQF
 		// if pcfQF is null then rule is deleted
-		if pcfQF == nil {
-			update.del[name] = pcfQF // nil
+		if qosData.GetQosId() == "" {
+			update.del[name] = &qosData // nil
 			continue
 		}
 
 		// Flows to add
 		if ctxtQF := ctxtQosData[name]; ctxtQF == nil {
-			update.add[name] = pcfQF
-		} else if GetQosDataChanges(pcfQF, ctxtQF) {
-			update.mod[name] = pcfQF
+			update.add[name] = &qosData
+		} else if GetQosDataChanges(&qosData, ctxtQF) {
+			update.mod[name] = &qosData
 		}
 	}
 
@@ -290,9 +315,7 @@ func CommitQosFlowDescUpdate(smCtxtPolData *SmCtxtPolicyData, update *QosFlowsUp
 
 	// Add new Flows
 	if len(update.add) > 0 {
-		for name, qosData := range update.add {
-			smCtxtPolData.SmCtxtQosData.QosData[name] = qosData
-		}
+		maps.Copy(smCtxtPolData.SmCtxtQosData.QosData, update.add)
 	}
 
 	// Mod flows
@@ -313,7 +336,14 @@ func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 }
 
 func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refQosData string) *models.QosData {
-	return smPolicyDecision.QosDecs[refQosData]
+	if smPolicyDecision.QosDecs == nil {
+		return nil
+	}
+	qosData, exists := (*smPolicyDecision.QosDecs)[refQosData]
+	if !exists {
+		return nil
+	}
+	return &qosData
 }
 
 func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
@@ -321,9 +351,9 @@ func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
 }
 
 func GetDefaultQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision) *models.QosData {
-	for _, qosData := range smPolicyDecision.QosDecs {
-		if qosData.DefQosFlowIndication {
-			return qosData
+	for _, qosData := range smPolicyDecision.GetQosDecs() {
+		if qosData.GetDefQosFlowIndication() {
+			return &qosData
 		}
 	}
 

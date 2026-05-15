@@ -20,14 +20,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/util"
 	mi "github.com/omec-project/util/metricinfo"
 	"github.com/wmnsk/go-pfcp/message"
 )
@@ -472,31 +474,58 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	// N1 Container Info
 	n1MsgContainer := models.N1MessageContainer{
 		N1MessageClass:   "SM",
-		N1MessageContent: &models.RefToBinaryData{ContentId: "GSM_NAS"},
+		N1MessageContent: models.RefToBinaryData{ContentId: "GSM_NAS"},
 	}
 
 	// N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{PduSessionId: smContext.PDUSessionID}
+	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
+		PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
+	}
+	defer util.CleanupMultipartTempFiles(&n1n2Request)
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
 		smContext.SubPduSessLog.Errorf("Build GSM PDUSessionEstablishmentReject failed: %s", err)
+		smContext.ChangeState(smf_context.SmStateInit)
+		smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+		smf_context.RemoveSMContext(smContext.Ref)
+		return
 	} else {
-		n1n2Request.BinaryDataN1Message = smNasBuf
-		n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+		tmpFile, fileErr := util.CreatePayloadTempFile(smNasBuf)
+		if fileErr != nil {
+			smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
+			smContext.ChangeState(smf_context.SmStateInit)
+			smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+			smf_context.RemoveSMContext(smContext.Ref)
+			return
+		} else {
+			n1n2Request.BinaryDataN1Message = &tmpFile
+			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+		}
 	}
 
 	// Send N1N2 Reject request
+	apiN1N2MessageTransferRequest := smContext.
+		CommunicationClient.
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransfer(context.Background(), smContext.Supi)
+	apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
+	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
+		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
+	}
+	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
+		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
+	}
 	rspData, _, err := smContext.
 		CommunicationClient.
-		N1N2MessageCollectionDocumentApi.
-		N1N2MessageTransfer(context.Background(), smContext.Supi, n1n2Request)
+		N1N2MessageCollectionCollectionAPI.
+		N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
 	smContext.ChangeState(smf_context.SmStateInit)
 	smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
 	if err != nil {
 		smContext.SubPfcpLog.Warnln("send N1N2Transfer failed")
 	}
-	if rspData.Cause == models.N1N2MessageTransferCause_N1_MSG_NOT_TRANSFERRED {
+	if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_N1_MSG_NOT_TRANSFERRED {
 		smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
 	}
 	smContext.SubPfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)

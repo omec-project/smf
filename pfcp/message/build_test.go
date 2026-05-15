@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/nas/nasType"
+	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/wmnsk/go-pfcp/ie"

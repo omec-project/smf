@@ -36,10 +36,9 @@ func NewIPAllocator(cidr string) (*IPAllocator, error) {
 func maskBits(mask net.IPMask) int {
 	var cnt int
 	for _, b := range mask {
-		for ; b != 0; b /= 2 {
-			if b%2 != 0 {
-				cnt++
-			}
+		for b != 0 {
+			cnt += int(b & 1)
+			b >>= 1
 		}
 	}
 	return cnt

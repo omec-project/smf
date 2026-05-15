@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/omec-project/openapi/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/Nnrf_NFManagement"
-	"github.com/omec-project/openapi/Nudm_SubscriberDataManagement"
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
+	"github.com/omec-project/openapi/v2/Nnrf_NFManagement"
+	"github.com/omec-project/openapi/v2/Nudm_SDM"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
@@ -62,7 +62,7 @@ type SMFContext struct {
 	NrfUri                         string
 	NFManagementClient             *Nnrf_NFManagement.APIClient
 	NFDiscoveryClient              *Nnrf_NFDiscovery.APIClient
-	SubscriberDataManagementClient *Nudm_SubscriberDataManagement.APIClient
+	SubscriberDataManagementClient *Nudm_SDM.APIClient
 
 	UserPlaneInformation *UserPlaneInformation
 
@@ -79,7 +79,7 @@ type SMFContext struct {
 	StaticIpInfo             []factory.StaticIpInfo
 	CPNodeID                 NodeID
 	PFCPPort                 int
-	UDMProfile               models.NfProfile
+	UDMProfile               models.NFProfileDiscovery
 	NrfCacheEvictionInterval time.Duration
 	SBIPort                  int
 	LocalSEIDCount           uint64
@@ -99,15 +99,25 @@ func (s *SMFContext) RUnlock() { s.mu.RUnlock() }
 func RetrieveDnnInformation(snssai models.Snssai, dnn string) *SnssaiSmfDnnInfo {
 	smfContext.RLock()
 	defer smfContext.RUnlock()
-	lookup := SNssai{Sst: snssai.Sst, Sd: snssai.Sd}
+	lookup := SNssai{Sst: snssai.GetSst(), Sd: snssai.GetSd()}
+	var fallback *SnssaiSmfDnnInfo
 	for _, snssaiInfo := range SMF_Self().SnssaiInfos {
 		if snssaiInfo.Snssai.Equal(&lookup) {
 			if info, ok := snssaiInfo.DnnInfos[dnn]; ok {
 				return info
 			}
 		}
+		if lookup.Sd == "" && lookup.Sst == snssaiInfo.Snssai.Sst {
+			if info, ok := snssaiInfo.DnnInfos[dnn]; ok {
+				fallback = info
+			}
+		}
 	}
-	logger.CtxLog.Warnf("No match found for Snssai: %+v and DNN: %s", lookup, dnn)
+	if fallback != nil {
+		logger.CtxLog.Warnf("falling back to Sst-only DNN match for Snssai: %+v and DNN: %s", lookup, dnn)
+		return fallback
+	}
+	logger.CtxLog.Warnf("no match found for Snssai: %+v and DNN: %s", lookup, dnn)
 	return nil
 }
 
@@ -133,7 +143,7 @@ func AllocateLocalSEID() (uint64, error) {
 
 func InitSmfContext(config *factory.Config) *SMFContext {
 	if config == nil {
-		logger.CtxLog.Error("Config is nil")
+		logger.CtxLog.Errorln("config is nil")
 		return nil
 	}
 	// Acquire master SMF config lock, no one should update it in parallel
@@ -164,7 +174,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	localIp := GetLocalIP()
 	logger.CtxLog.Infof("sbi lb - localIp %v", localIp)
 	if sbi == nil {
-		logger.CtxLog.Errorln("Configuration needs \"sbi\" value")
+		logger.CtxLog.Errorln("configuration needs 'sbi' value")
 		return nil
 	} else {
 		smfContext.URIScheme = models.UriScheme(sbi.Scheme)
@@ -172,11 +182,20 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		smfContext.SBIPort = factory.SMF_DEFAULT_PORT_INT  // default port
 
 		if sbi.RegisterIPv4 != "" {
-			// smfContext.RegisterIPv4 = sbi.RegisterIPv4
-			sbi.RegisterIPv4 = localIp
-			smfContext.RegisterIPv4 = localIp
-			logger.CtxLog.Info("sbi lb - changing smf sbi.RegisterIPv4 ", sbi.RegisterIPv4)
-			logger.CtxLog.Info("sbi lb - smf smfContext.RegisterIPv4 ", smfContext.RegisterIPv4)
+			smfContext.RegisterIPv4 = sbi.RegisterIPv4
+			if sbi.RegisterIPv4 == "POD_IP" {
+				podIP := os.Getenv("POD_IP")
+				if podIP != "" {
+					smfContext.RegisterIPv4 = podIP
+				} else if localIp != "" {
+					smfContext.RegisterIPv4 = localIp
+					logger.CtxLog.Warnln("POD_IP is not set; falling back to local IP for RegisterIPv4", localIp)
+				} else {
+					smfContext.RegisterIPv4 = factory.SMF_DEFAULT_IPV4
+					logger.CtxLog.Warnln("POD_IP is not set and local IP is unavailable; falling back to default RegisterIPv4", factory.SMF_DEFAULT_IPV4)
+				}
+			}
+			logger.CtxLog.Infoln("sbi lb - smf smfContext.RegisterIPv4", smfContext.RegisterIPv4)
 		}
 		if sbi.Port != 0 {
 			smfContext.SBIPort = sbi.Port
@@ -193,11 +212,11 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 		smfContext.BindingIPv4 = os.Getenv(sbi.BindingIPv4)
 		if smfContext.BindingIPv4 != "" {
-			logger.CtxLog.Info("Parsing ServerIPv4 address from ENV Variable.")
+			logger.CtxLog.Infoln("parsing ServerIPv4 address from ENV Variable")
 		} else {
 			smfContext.BindingIPv4 = sbi.BindingIPv4
 			if smfContext.BindingIPv4 == "" {
-				logger.CtxLog.Warn("Error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default.")
+				logger.CtxLog.Warnln("error parsing ServerIPv4 address as string. Using the 0.0.0.0 address as default")
 				smfContext.BindingIPv4 = "0.0.0.0"
 			}
 		}
@@ -206,7 +225,7 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 	if configuration.NrfUri != "" {
 		smfContext.NrfUri = configuration.NrfUri
 	} else {
-		logger.CtxLog.Warn("NRF Uri is empty! Using localhost as NRF IPv4 address.")
+		logger.CtxLog.Warnln("NRF Uri is empty! Using localhost as NRF IPv4 address")
 		smfContext.NrfUri = fmt.Sprintf("%s://%s:%d", smfContext.URIScheme, "127.0.0.1", 29510)
 	}
 
@@ -216,11 +235,11 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 		}
 		pfcpAddrEnv := os.Getenv(pfcp.Addr)
 		if pfcpAddrEnv != "" {
-			logger.CtxLog.Info("Parsing PFCP IPv4 address from ENV variable found.")
+			logger.CtxLog.Infoln("parsing PFCP IPv4 address from ENV variable found")
 			pfcp.Addr = pfcpAddrEnv
 		}
 		if pfcp.Addr == "" {
-			logger.CtxLog.Warn("Error parsing PFCP IPv4 address as string. Using the 0.0.0.0 address as default.")
+			logger.CtxLog.Warnln("error parsing PFCP IPv4 address as string. Using the 0.0.0.0 address as default")
 			pfcp.Addr = "0.0.0.0"
 		}
 		addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", pfcp.Addr, pfcp.Port))
@@ -237,11 +256,19 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	// Set client and set url
 	ManagementConfig := Nnrf_NFManagement.NewConfiguration()
-	ManagementConfig.SetBasePath(SMF_Self().NrfUri)
+	serverConfig := &ManagementConfig.Servers[0]
+	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = SMF_Self().NrfUri
+		serverConfig.Variables["apiRoot"] = apiRootVar
+	}
 	smfContext.NFManagementClient = Nnrf_NFManagement.NewAPIClient(ManagementConfig)
 
 	NFDiscovryConfig := Nnrf_NFDiscovery.NewConfiguration()
-	NFDiscovryConfig.SetBasePath(SMF_Self().NrfUri)
+	serverConfig1 := &NFDiscovryConfig.Servers[0]
+	if apiRootVar, exists := serverConfig1.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = SMF_Self().NrfUri
+		serverConfig1.Variables["apiRoot"] = apiRootVar
+	}
 	smfContext.NFDiscoveryClient = Nnrf_NFDiscovery.NewAPIClient(NFDiscovryConfig)
 
 	smfContext.ULCLSupport = configuration.ULCL

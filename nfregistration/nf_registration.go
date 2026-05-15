@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -144,7 +144,7 @@ var registerNF = func(registerCtx context.Context, newSessionManagementConfig []
 				continue
 			}
 			logger.NrfRegistrationLog.Infoln("register SMF instance to NRF with updated profile succeeded")
-			startKeepAliveTimer(nfProfile.HeartBeatTimer, newSessionManagementConfig)
+			startKeepAliveTimer(nfProfile.GetHeartBeatTimer(), newSessionManagementConfig)
 			return
 		}
 	}
@@ -164,9 +164,9 @@ func heartbeatNF(sessionConfig []nfConfigApi.SessionManagement) {
 
 	patchItem := []models.PatchItem{
 		{
-			Op:    "replace",
+			Op:    models.PATCHOPERATION_REPLACE,
 			Path:  "/nfStatus",
-			Value: "REGISTERED",
+			Value: models.NFSTATUS_REGISTERED,
 		},
 	}
 	nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(patchItem)
@@ -182,7 +182,7 @@ func heartbeatNF(sessionConfig []nfConfigApi.SessionManagement) {
 	} else {
 		logger.NrfRegistrationLog.Debugln("SMF update NF instance (heartbeat) succeeded")
 	}
-	startKeepAliveTimer(nfProfile.HeartBeatTimer, sessionConfig)
+	startKeepAliveTimer(nfProfile.GetHeartBeatTimer(), sessionConfig)
 }
 
 func shouldRegister(problemDetails *models.ProblemDetails, err error) bool {
@@ -220,7 +220,7 @@ func startKeepAliveTimer(profileHeartbeatTimer int32, sessionConfig []nfConfigAp
 	heartbeatFunction := func() { heartbeatNF(sessionConfig) }
 	// AfterFunc starts a timer and waits for keepAliveTimer to elapse and then calls heartbeatNF function
 	keepAliveTimer = afterFunc(time.Duration(heartbeatTimer)*time.Second, heartbeatFunction)
-	logger.NrfRegistrationLog.Debugf("started heartbeat timer: %v sec", heartbeatTimer)
+	logger.NrfRegistrationLog.Debugf("started heartbeat timer: %d sec", heartbeatTimer)
 }
 
 func stopKeepAliveTimer() {

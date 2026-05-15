@@ -17,8 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/openapi/models"
-	"github.com/omec-project/openapi/nfConfigApi"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 )
 
@@ -157,10 +158,10 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 	}()
 
 	registrations := []nfConfigApi.SessionManagement{}
-	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
-		profile := models.NfProfile{HeartBeatTimer: 60}
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
+		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
 		registrations = append(registrations, sessionManagementConfig...)
-		return profile, "", nil
+		return &profile, "", nil
 	}
 
 	ch := make(chan []nfConfigApi.SessionManagement, 1)
@@ -182,9 +183,9 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T) {
 	attempts := make(chan struct{}, 4)
 	orig := consumer.SendRegisterNFInstance
-	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
+	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		attempts <- struct{}{}
-		return models.NfProfile{HeartBeatTimer: 60}, "", errors.New("mock error")
+		return &models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}, "", errors.New("mock error")
 	}
 	defer func() { consumer.SendRegisterNFInstance = orig }()
 
@@ -307,13 +308,13 @@ func TestHeartbeatNF_Success(t *testing.T) {
 		}
 	}()
 
-	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (models.NfProfile, *models.ProblemDetails, error) {
-		return models.NfProfile{}, nil, nil
+	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
+		return &models.NFProfile{}, nil, nil
 	}
-	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		calledRegister = true
-		profile := models.NfProfile{HeartBeatTimer: 60}
-		return profile, "", nil
+		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
+		return &profile, "", nil
 	}
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}
 	heartbeatNF(sessionManagementConfig)
@@ -339,14 +340,14 @@ func TestHeartbeatNF_WhenNfUpdateFails_ThenNfRegistersIsCalled(t *testing.T) {
 		}
 	}()
 
-	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (models.NfProfile, *models.ProblemDetails, error) {
-		return models.NfProfile{}, nil, errors.New("mock error")
+	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
+		return &models.NFProfile{}, nil, errors.New("mock error")
 	}
 
-	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (models.NfProfile, string, error) {
-		profile := models.NfProfile{HeartBeatTimer: 60}
+	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
+		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
 		calledRegister = true
-		return profile, "", nil
+		return &profile, "", nil
 	}
 
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}

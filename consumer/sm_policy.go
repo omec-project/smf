@@ -11,8 +11,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/omec-project/nas/nasConvert"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasConvert"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 )
@@ -36,28 +37,32 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	)
 	smPolicyData.Dnn = smContext.Dnn
 	smPolicyData.PduSessionType = nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
-	smPolicyData.AccessType = smContext.AnType
-	smPolicyData.RatType = smContext.RatType
-	smPolicyData.Ipv4Address = smContext.PDUAddress.Ip.To4().String()
+	if !smPolicyData.PduSessionType.IsValid() {
+		return nil, http.StatusBadRequest, fmt.Errorf("invalid selected PDU session type %d for PCF policy association", smContext.SelectedPDUSessionType)
+	}
+	smPolicyData.AccessType = smContext.AnType.Ptr()
+	smPolicyData.RatType = smContext.RatType.Ptr()
+	smPolicyData.Ipv4Address = openapi.PtrString(smContext.PDUAddress.Ip.To4().String())
 	smPolicyData.SubsSessAmbr = smContext.DnnConfiguration.SessionAmbr
 	smPolicyData.SubsDefQos = smContext.DnnConfiguration.Var5gQosProfile
-	smPolicyData.SliceInfo = smContext.Snssai
-	smPolicyData.ServingNetwork = &models.NetworkId{
-		Mcc: smContext.ServingNetwork.Mcc,
-		Mnc: smContext.ServingNetwork.Mnc,
+	if smContext.Snssai == nil {
+		return nil, http.StatusBadRequest, fmt.Errorf("missing S-NSSAI for PCF policy association")
 	}
-	smPolicyData.SuppFeat = "F"
+	smPolicyData.SliceInfo = *smContext.Snssai
+	smPolicyData.ServingNetwork = models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc)
+	smPolicyData.SuppFeat = openapi.PtrString("F")
 
 	var smPolicyDecision *models.SmPolicyDecision
-	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.
-		DefaultApi.SmPoliciesPost(context.Background(), smPolicyData); err != nil {
+	apiCreateSMPolicyRequest := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicy(context.Background())
+	apiCreateSMPolicyRequest = apiCreateSMPolicyRequest.SmPolicyContextData(smPolicyData)
+	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicyExecute(apiCreateSMPolicyRequest); err != nil {
 		if httpRsp != nil {
 			httpRspStatusCode = httpRsp.StatusCode
 		}
 		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
 	} else {
 		httpRspStatusCode = http.StatusCreated
-		smPolicyDecision = &smPolicyDecisionFromPCF
+		smPolicyDecision = smPolicyDecisionFromPCF
 	}
 
 	if err := validateSmPolicyDecision(smPolicyDecision); err != nil {
@@ -72,10 +77,7 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 
 	// Populate Policy delete data
 	// Network Id
-	smPolicyDelData.ServingNetwork = &models.NetworkId{
-		Mcc: smContext.ServingNetwork.Mcc,
-		Mnc: smContext.ServingNetwork.Mnc,
-	}
+	smPolicyDelData.ServingNetwork = models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc)
 
 	// User location info
 	if smDelReq.JsonData.UeLocation != nil {
@@ -85,7 +87,7 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	}
 
 	// UE Time Zone
-	if smDelReq.JsonData.UeTimeZone != "" {
+	if smDelReq.JsonData.GetUeTimeZone() != "" {
 		smPolicyDelData.UeTimeZone = smDelReq.JsonData.UeTimeZone
 	}
 
@@ -106,8 +108,9 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)
 
 	// Send to  PCF
-	if httpRsp, err := smContext.SMPolicyClient.
-		DefaultApi.SmPoliciesSmPolicyIdDeletePost(context.Background(), smPolicyID, smPolicyDelData); err != nil {
+	apiDeleteSMPolicyRequest := smContext.SMPolicyClient.IndividualSMPolicyDocumentAPI.DeleteSMPolicy(context.Background(), smPolicyID)
+	apiDeleteSMPolicyRequest = apiDeleteSMPolicyRequest.SmPolicyDeleteData(smPolicyDelData)
+	if httpRsp, err := smContext.SMPolicyClient.IndividualSMPolicyDocumentAPI.DeleteSMPolicyExecute(apiDeleteSMPolicyRequest); err != nil {
 		logger.ConsumerLog.Warnf("smf policy delete failed, [%v] ", err.Error())
 		return 0, err
 	} else {
@@ -118,7 +121,7 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
 	// Validate just presence of important IEs as of now
 	// Sess Rules
-	for name, rule := range smPolicy.SessRules {
+	for name, rule := range smPolicy.GetSessRules() {
 		if rule.AuthSessAmbr == nil {
 			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
 			return fmt.Errorf("authorised session ambr missing")

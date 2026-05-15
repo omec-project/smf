@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/omec-project/nas/nasType"
-	"github.com/omec-project/openapi/models"
+	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
@@ -128,9 +128,19 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 
 		for name, rule := range addRules {
 			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+				qosRef := ""
+				if len(rule.RefQosData) > 0 {
+					qosRef = rule.RefQosData[0]
+				}
+				tcRef := ""
+				if len(rule.RefTcData) > 0 {
+					tcRef = rule.RefTcData[0]
+				}
 				// Add PCC Rule Qos Data QER
-				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil {
 					pdr.QER = append(pdr.QER, flowQer)
+				} else {
+					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
 				}
 				// Set PDR in Tunnel
 				node.UpLinkTunnel.PDR[name] = pdr
@@ -401,10 +411,13 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
 	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
+	if refQos == nil {
+		return nil, fmt.Errorf("missing QoS data reference %q", qosData)
+	}
 
 	// Get Flow Status
 	gateStatus := GateOpen
-	if tc != nil && tc.FlowStatus == models.FlowStatus_DISABLED {
+	if tc != nil && tc.GetFlowStatus() == models.FLOWSTATUS_DISABLED {
 		gateStatus = GateClose
 	}
 
@@ -422,10 +435,19 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLGate: gateStatus,
 		}
 
+		ulMbr := smContext.SelectedSessionRule().AuthSessAmbr.Uplink
+		if maxbrUl, ok := refQos.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
+			ulMbr = *maxbrUl
+		}
+		dlMbr := smContext.SelectedSessionRule().AuthSessAmbr.Downlink
+		if maxbrDl, ok := refQos.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
+			dlMbr = *maxbrDl
+		}
+
 		// Rates
 		newQER.MBR = &MBR{
-			ULMBR: util.BitRateTokbps(refQos.MaxbrUl),
-			DLMBR: util.BitRateTokbps(refQos.MaxbrDl),
+			ULMBR: util.BitRateTokbps(ulMbr),
+			DLMBR: util.BitRateTokbps(dlMbr),
 		}
 
 		flowQER = newQER
@@ -514,7 +536,7 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 
 		if nextULDest := dpNode.Next(); nextULDest != nil {
 			nextULTunnel := nextULDest.UpLinkTunnel
-			iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
+			iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UPINTERFACETYPE_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 				logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)
@@ -583,7 +605,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 				return fmt.Errorf("nextDLDest.UPF is nil")
 			}
 
-			iface = nextDLDest.UPF.GetInterface(models.UpInterfaceType_N9, smContext.Dnn)
+			iface = nextDLDest.UPF.GetInterface(models.UPINTERFACETYPE_N9, smContext.Dnn)
 
 			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
 				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v", name, err)

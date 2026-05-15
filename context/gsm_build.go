@@ -9,10 +9,10 @@ package context
 import (
 	"encoding/hex"
 
-	"github.com/omec-project/nas"
-	"github.com/omec-project/nas/nasConvert"
-	"github.com/omec-project/nas/nasMessage"
-	"github.com/omec-project/nas/nasType"
+	"github.com/omec-project/nas/v2"
+	"github.com/omec-project/nas/v2/nasConvert"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 )
@@ -73,7 +73,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 
 	var sd [3]uint8
 
-	if byteArray, err := hex.DecodeString(smContext.Snssai.Sd); err != nil {
+	if byteArray, err := hex.DecodeString(smContext.Snssai.GetSd()); err != nil {
 		return nil, err
 	} else {
 		copy(sd[:], byteArray)
