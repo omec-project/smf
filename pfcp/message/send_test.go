@@ -58,9 +58,9 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpAssociationSetupRequest(upNodeID, 8801)
 	if err != nil {
@@ -85,9 +85,9 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
@@ -150,9 +150,9 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8803)
 	if err != nil {
@@ -196,9 +196,9 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8804)
 	if err == nil {
@@ -255,9 +255,9 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8806)
 	if err != nil {
@@ -309,9 +309,9 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionDeletionRequest(upNodeID, smContext, 8807)
 	if err != nil {
@@ -342,9 +342,9 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	flags := context.PFCPSRRspFlags{}
 	err = message.SendPfcpSessionReportResponse(remoteAddr, ie.CauseRequestAccepted, flags, 1, 1)
@@ -382,9 +382,9 @@ func TestSendHeartbeatRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendHeartbeatRequest(upNodeID, 8809)
 	if err != nil {
@@ -415,9 +415,9 @@ func TestSendHeartbeatResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	udp.SetServer(&udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendHeartbeatResponse(remoteAddr, 1)
 	if err != nil {

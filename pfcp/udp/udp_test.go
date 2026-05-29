@@ -67,8 +67,8 @@ func TestRun(t *testing.T) {
 		t.Errorf("failed to start PFCP server: %v", err)
 	}
 	defer func() {
-		if udp.Server != nil && udp.Server.Conn != nil {
-			_ = udp.Server.Conn.Close()
+		if server := udp.GetServer(); server != nil && server.Conn != nil {
+			_ = server.Conn.Close()
 		}
 	}()
 
@@ -79,7 +79,11 @@ func TestRun(t *testing.T) {
 	defer sender.Conn.Close()
 
 	req := message.NewHeartbeatRequest(1, ie.NewRecoveryTimeStamp(time.Now()), nil)
-	if err := sender.SendPFCPMessage(req, udp.Server.Addr); err != nil {
+	server := udp.GetServer()
+	if server == nil {
+		t.Fatal("expected PFCP server to be initialized")
+	}
+	if err := sender.SendPFCPMessage(req, server.Addr); err != nil {
 		t.Errorf("send PFCP: %v", err)
 	}
 
@@ -93,7 +97,7 @@ func TestRun(t *testing.T) {
 func TestServerSendPfcp(t *testing.T) {
 	msg := message.NewAssociationSetupResponse(uint32(time.Now().UnixNano()))
 	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(context.DefaultPfcpPort)}
-	if udp.Server != nil && udp.Server.Conn != nil {
+	if server := udp.GetServer(); server != nil && server.Conn != nil {
 		if err := udp.SendPfcp(msg, remote, nil); err != nil {
 			t.Errorf("failed to send PFCP message with running server: %v", err)
 		}
@@ -106,9 +110,9 @@ func TestServerSendPfcp(t *testing.T) {
 	}
 	defer conn.Close()
 
-	orig := udp.Server
-	udp.Server = &udp.PfcpServer{Conn: conn}
-	defer func() { udp.Server = orig }()
+	orig := udp.GetServer()
+	udp.SetServer(&udp.PfcpServer{Conn: conn})
+	defer func() { udp.SetServer(orig) }()
 
 	if err := udp.SendPfcp(msg, remote, nil); err != nil {
 		t.Errorf("failed to send PFCP message: %v", err)
@@ -116,13 +120,13 @@ func TestServerSendPfcp(t *testing.T) {
 }
 
 func TestServerNotSetSendPfcp(t *testing.T) {
-	if udp.Server != nil && udp.Server.Conn != nil {
+	if server := udp.GetServer(); server != nil && server.Conn != nil {
 		t.Skip("PFCP server already running; skipping 'not set' case")
 	}
 
-	orig := udp.Server
-	udp.Server = &udp.PfcpServer{}
-	defer func() { udp.Server = orig }()
+	orig := udp.GetServer()
+	udp.SetServer(&udp.PfcpServer{})
+	defer func() { udp.SetServer(orig) }()
 
 	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(context.DefaultPfcpPort)}
 	msg := message.NewAssociationSetupResponse(1)
