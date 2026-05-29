@@ -54,6 +54,18 @@ func SetServer(server *PfcpServer) {
 	Server = server
 }
 
+func GetServerStartTime() time.Time {
+	serverMu.RLock()
+	defer serverMu.RUnlock()
+	return ServerStartTime
+}
+
+func SetServerStartTime(startTime time.Time) {
+	serverMu.Lock()
+	defer serverMu.Unlock()
+	ServerStartTime = startTime
+}
+
 func (t *ConsumerTable) Load(consumerAddr string) (*TxTable, bool) {
 	txTable, ok := t.m.Load(consumerAddr)
 	if ok {
@@ -98,7 +110,7 @@ func Run(Dispatch func(*Message)) {
 		}
 	}()
 
-	ServerStartTime = time.Now()
+	SetServerStartTime(time.Now())
 }
 
 func WaitForServer() error {

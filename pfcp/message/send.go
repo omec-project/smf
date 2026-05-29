@@ -78,7 +78,7 @@ func InsertPfcpTxn(seqNo uint32, upNodeID *smf_context.NodeID) {
 }
 
 func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
-	msg := BuildPfcpHeartbeatRequest(getSeqNumber(), udp.ServerStartTime)
+	msg := BuildPfcpHeartbeatRequest(getSeqNumber(), udp.GetServerStartTime())
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: int(upfPort),
@@ -146,7 +146,7 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		return fmt.Errorf("PFCP Association Setup Request failed, invalid NodeId: %v", string(upNodeID.NodeIdValue))
 	}
 
-	pfcpMsg := BuildPfcpAssociationSetupRequest(getSeqNumber(), udp.ServerStartTime, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String())
+	pfcpMsg := BuildPfcpAssociationSetupRequest(getSeqNumber(), udp.GetServerStartTime(), smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String())
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: int(upfPort),
@@ -188,7 +188,7 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 }
 
 func SendPfcpAssociationSetupResponse(upNodeID smf_context.NodeID, cause uint8, upfPort uint16) error {
-	pfcpMsg := BuildPfcpAssociationSetupResponse(cause, udp.ServerStartTime, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String())
+	pfcpMsg := BuildPfcpAssociationSetupResponse(cause, udp.GetServerStartTime(), smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String())
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: int(upfPort),
@@ -422,7 +422,7 @@ func SendPfcpSessionReportResponse(addr *net.UDPAddr, cause uint8, pfcpSRflag sm
 }
 
 func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
-	pfcpMsg := BuildPfcpHeartbeatResponse(sequenceNumber, udp.ServerStartTime)
+	pfcpMsg := BuildPfcpHeartbeatResponse(sequenceNumber, udp.GetServerStartTime())
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
 		return err
