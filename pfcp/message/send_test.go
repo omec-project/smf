@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,17 +28,32 @@ func boolPointer(b bool) *bool {
 	return &b
 }
 
+var initTestSmfConfigOnce sync.Once
+
+func initTestSmfConfig() {
+	initTestSmfConfigOnce.Do(func() {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo: factory.KafkaInfo{
+					EnableKafka: boolPointer(false),
+				},
+				EnableUpfAdapter: false,
+			},
+		}
+	})
+}
+
+func setTestServer(t *testing.T, server *udp.PfcpServer) {
+	t.Helper()
+	originalServer := udp.GetServer()
+	udp.SetServer(server)
+	t.Cleanup(func() {
+		udp.SetServer(originalServer)
+	})
+}
+
 func TestSendPfcpAssociationSetupRequest(t *testing.T) {
-	kafkaInfo := factory.KafkaInfo{
-		EnableKafka: boolPointer(false),
-	}
-	configuration := &factory.Configuration{
-		KafkaInfo:        kafkaInfo,
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP("127.0.0.1").To4(),
@@ -58,9 +74,9 @@ func TestSendPfcpAssociationSetupRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpAssociationSetupRequest(upNodeID, 8801)
 	if err != nil {
@@ -85,9 +101,9 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
@@ -103,12 +119,7 @@ func TestSendPfcpAssociationSetupResponse(t *testing.T) {
 // When the User Plane Node exists in the stored context, then the PFCP Session Establishment Request is sent
 func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 	const upNodeIDStr = "127.0.0.1"
-	configuration := &factory.Configuration{
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -150,9 +161,9 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8803)
 	if err != nil {
@@ -163,12 +174,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 // Given the User Plane Node does not exist in the stored context, then the PFCP Session Establishment Request is not sent
 func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 	const upNodeIDStr = "127.0.0.1"
-	configuration := &factory.Configuration{
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -196,9 +202,9 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8804)
 	if err == nil {
@@ -208,12 +214,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 
 func TestSendPfcpSessionModificationRequest(t *testing.T) {
 	const upNodeIDStr = "127.0.0.1"
-	configuration := &factory.Configuration{
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -255,9 +256,9 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8806)
 	if err != nil {
@@ -267,12 +268,7 @@ func TestSendPfcpSessionModificationRequest(t *testing.T) {
 
 func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 	const upNodeIDStr = "127.0.0.1"
-	configuration := &factory.Configuration{
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -309,9 +305,9 @@ func TestSendPfcpSessionDeletionRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendPfcpSessionDeletionRequest(upNodeID, smContext, 8807)
 	if err != nil {
@@ -342,9 +338,9 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	flags := context.PFCPSRRspFlags{}
 	err = message.SendPfcpSessionReportResponse(remoteAddr, ie.CauseRequestAccepted, flags, 1, 1)
@@ -355,12 +351,7 @@ func TestSendPfcpSessionReportResponse(t *testing.T) {
 
 func TestSendHeartbeatRequest(t *testing.T) {
 	const upNodeIDStr = "127.0.0.1"
-	configuration := &factory.Configuration{
-		EnableUpfAdapter: false,
-	}
-	factory.SmfConfig = factory.Config{
-		Configuration: configuration,
-	}
+	initTestSmfConfig()
 	upNodeID := context.NodeID{
 		NodeIdType:  context.NodeIdTypeIpv4Address,
 		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
@@ -382,9 +373,9 @@ func TestSendHeartbeatRequest(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendHeartbeatRequest(upNodeID, 8809)
 	if err != nil {
@@ -415,9 +406,9 @@ func TestSendHeartbeatResponse(t *testing.T) {
 		}
 	}()
 
-	udp.Server = &udp.PfcpServer{
+	setTestServer(t, &udp.PfcpServer{
 		Conn: conn,
-	}
+	})
 
 	err = message.SendHeartbeatResponse(remoteAddr, 1)
 	if err != nil {

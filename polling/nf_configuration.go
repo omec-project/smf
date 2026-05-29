@@ -62,7 +62,7 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 		case <-ctx.Done():
 			logger.PollConfigLog.Infoln("polling service shutting down")
 			return
-		case <-time.After(interval):
+		case <-pollingIntervalAfter(interval):
 			newSessionManagementConfig, err := fetchSessionManagementConfig(&poller, pollingEndpoint)
 			if err != nil {
 				interval = minDuration(interval*time.Duration(pollingBackoffFactor), pollingMaxBackoff)
@@ -86,6 +86,8 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 var fetchSessionManagementConfig = func(p *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
 	return p.fetchSessionManagementConfig(endpoint)
 }
+
+var pollingIntervalAfter = time.After
 
 func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([]nfConfigApi.SessionManagement, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), initialPollingInterval)
