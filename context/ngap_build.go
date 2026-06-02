@@ -165,7 +165,7 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 			allocationAndRetentionPriority := buildAllocationAndRetentionPriority(qosFlow, sessRule)
 
 			qosFlowItem := ngapType.QosFlowSetupRequestItem{
-				QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.QosId))},
+				QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.GetQosId()))},
 				QosFlowLevelQosParameters: ngapType.QosFlowLevelQosParameters{
 					QosCharacteristics: ngapType.QosCharacteristics{
 						Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
