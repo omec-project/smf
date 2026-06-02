@@ -429,6 +429,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	// Get N3 interface UPF
+	if smContext.Tunnel == nil {
+		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel not yet initialized, ignoring response")
+		return
+	}
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	if defaultPath == nil {
 		logger.PfcpLog.Errorln("failed to get default path")
