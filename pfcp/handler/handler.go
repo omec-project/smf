@@ -407,6 +407,14 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
+	// If Tunnel has not been initialized yet, ignore this response without
+	// consuming the pending txn so a retransmit can be processed once Tunnel
+	// is wired up.
+	if smContext.Tunnel == nil {
+		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel not yet initialized, ignoring response")
+		return
+	}
+
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
 	nodeID := pfcp_message.FetchPfcpTxn(seq)
@@ -429,10 +437,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	// Get N3 interface UPF
-	if smContext.Tunnel == nil {
-		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel not yet initialized, ignoring response")
-		return
-	}
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	if defaultPath == nil {
 		logger.PfcpLog.Errorln("failed to get default path")
