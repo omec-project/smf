@@ -46,7 +46,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
-		logger.PduSessLog.Errorln("deserialize request failed")
+		logger.PduSessLog.Errorf("deserialize request failed: %s", err.Error())
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
