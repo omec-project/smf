@@ -98,7 +98,8 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 			case nasMessage.MSSupportOfLocalAddressInTFTIndicatorUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type MSSupportOfLocalAddressInTFTIndicatorUL")
 			case nasMessage.PCSCFReSelectionSupportUL:
-				smContext.SubGsmLog.Infoln("Didn't Implement container type PCSCFReSelectionSupportUL")
+				smContext.ProtocolConfigurationOptions.PCSCFIPv4Request = true
+				smContext.SubGsmLog.Infoln("PCSCFIPv4AddressRequestUL has been set true")
 			case nasMessage.NBIFOMRequestIndicatorUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type NBIFOMRequestIndicatorUL")
 			case nasMessage.NBIFOMModeUL:
@@ -137,6 +138,8 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 				smContext.SubGsmLog.Infoln("Didn't Implement container type ChallengeHandshakeAuthenticationProtocolUL")
 			case nasMessage.InternetProtocolControlProtocolUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type InternetProtocolControlProtocolUL")
+			case nasMessage.IPv4LinkMTURequestUL:
+				smContext.SubGsmLog.Infoln("Container type IPv4LinkMTURequestUL set to true")
 			default:
 				smContext.SubGsmLog.Infof("Unknown Container ID [%d]", container.ProtocolOrContainerID)
 			}
