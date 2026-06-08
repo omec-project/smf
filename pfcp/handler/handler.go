@@ -407,11 +407,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
-	// If Tunnel has not been initialized yet, ignore this response without
-	// consuming the pending txn so a retransmit can be processed once Tunnel
-	// is wired up.
+	// If Tunnel is nil (e.g. a stale Establishment Response arrives after
+	// releaseTunnel nilled it), discard the response. Consume any pending
+	// txn entry on this path too so it can't be leaked if reached without
+	// having been deleted by the original response processing.
 	if smContext.Tunnel == nil {
-		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel not yet initialized, ignoring response")
+		pfcp_message.FetchPfcpTxn(rsp.Sequence())
+		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel is nil, ignoring response")
 		return
 	}
 
