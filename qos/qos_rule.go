@@ -157,8 +157,16 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	if pccRulesUpdate != nil && pccRulesUpdate.mod != nil {
 		for pccRuleName, pccRuleVal := range pccRulesUpdate.mod {
 			logger.QosLog.Infof("building QoS Rule from modified PCC rule [%s]", pccRuleName)
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
 			qosRules = append(qosRules, *qosRule)
 		}
 	}
@@ -194,12 +202,19 @@ func BuildQosRulespdumod(smPolicyUpdates *PolicyUpdate) QoSRules {
 		for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
 			logger.QosLog.Infof("building QoS Rule from PCC rule [%s]", pccRuleName)
 
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
 			// Get reference QoS data from SM Policy Decision using the RefQosData index
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 
 			// Build a new QoS rule from the PCC rule and reference QoS data
 			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
-
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
 			// Append the constructed rule to the list
 			qosRules = append(qosRules, *qosRule)
 		}
@@ -213,10 +228,18 @@ func BuildQosRulespdumod(smPolicyUpdates *PolicyUpdate) QoSRules {
 			logger.QosLog.Infof("building QoS Rule from modified PCC rule [%s]", pccRuleName)
 
 			// Get reference QoS data for modification
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 
 			// Build a QoS rule for modification (OperationCode can be same as create depending on implementation)
-			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
+			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
 
 			// Append modified rule to the list
 			qosRules = append(qosRules, *qosRule)
@@ -279,6 +302,10 @@ func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData
 // BuildModifyQosRuleFromPccRule constructs a QoSRule modification based on
 // PCC rule updates and QoS data.
 func BuildModifyQosRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
+	if pccRule == nil || qosData == nil {
+		return nil
+	}
+
 	qRule := QosRule{
 		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
 		DQR:           btou(qosData.GetDefQosFlowIndication()),

@@ -359,10 +359,18 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	gbuplink := ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Uplink)
 
 	// Default QoS params from session rule
-	qfi := sessRule.AuthDefQos.GetVar5qi()
-	priorityPtr := sessRule.AuthDefQos.Arp.PriorityLevel.Get()
-	priority := *priorityPtr
-	qi := sessRule.AuthDefQos.GetVar5qi()
+	var qfi int32
+	var qi int32
+	priority := int32(8)
+	if sessRule.AuthDefQos != nil {
+		qfi = sessRule.AuthDefQos.GetVar5qi()
+		qi = sessRule.AuthDefQos.GetVar5qi()
+		if sessRule.AuthDefQos.Arp != nil {
+			if v := sessRule.AuthDefQos.Arp.GetPriorityLevel(); v > 0 {
+				priority = v
+			}
+		}
+	}
 
 	// ----------------------------------------------------
 	// Step 4: Check QoS Policy Decision overrides
@@ -476,11 +484,13 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	}
 
 	// Apply ARP defaults from session rule if not overridden
-	if sessRule.AuthDefQos.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
-		arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
-	}
-	if sessRule.AuthDefQos.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
-		arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+	if sessRule.AuthDefQos != nil && sessRule.AuthDefQos.Arp != nil {
+		if sessRule.AuthDefQos.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
+			arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
+		}
+		if sessRule.AuthDefQos.Arp.PreemptVuln == models.PREEMPTIONVULNERABILITY_PREEMPTABLE {
+			arpPreemptVul = ngapType.PreEmptionVulnerabilityPresentPreEmptable
+		}
 	}
 
 	ctx.SubPduSessLog.Infof(

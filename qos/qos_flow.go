@@ -7,7 +7,6 @@ package qos
 import (
 	"fmt"
 	"maps"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -147,7 +146,7 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 	// ===============================
 	// Handle Add/Modify/Delete QoS Flow updates
 	// ===============================
-	if smPolicyUpdates != nil {
+	if smPolicyUpdates != nil && smPolicyUpdates.QosFlowUpdate != nil {
 		qosFlowUpdate := smPolicyUpdates.QosFlowUpdate
 		// Add QoS flows
 		if len(qosFlowUpdate.add) > 0 {
@@ -294,6 +293,11 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 // for the "modify existing QoS flow" operation, based on updated QoS data.
 // Only parameters that are present and need to be modified are added.
 func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *models.QosData) {
+	if qosData == nil {
+		logger.QosLog.Warn("skipping nil QoS flow description")
+		return
+	}
+
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	// Set QFI
@@ -596,7 +600,7 @@ func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, ref
 	}
 	qosData, exists := (*smPolicyDecision.QosDecs)[refQosData]
 	if !exists {
-		logger.PduSessLog.Errorf("QoS Data [%s] not found in QosDecs. Available keys: %v", refQosData, reflect.ValueOf(smPolicyDecision.QosDecs).MapKeys())
+		logger.PduSessLog.Errorf("QoS Data [%s] not found in QosDecs", refQosData)
 		return nil
 	}
 	return &qosData
