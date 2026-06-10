@@ -407,6 +407,16 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
+	// If Tunnel is nil (e.g. a stale Establishment Response arrives after
+	// releaseTunnel nilled it), discard the response. Consume any pending
+	// txn entry on this path too so it can't be leaked if reached without
+	// having been deleted by the original response processing.
+	if smContext.Tunnel == nil {
+		pfcp_message.FetchPfcpTxn(rsp.Sequence())
+		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel is nil, ignoring response")
+		return
+	}
+
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
 	nodeID := pfcp_message.FetchPfcpTxn(seq)
