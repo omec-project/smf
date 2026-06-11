@@ -42,8 +42,6 @@ import (
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 type SMF struct{}
@@ -129,11 +127,11 @@ func (smf *SMF) setLogLevel() {
 		return
 	}
 
-	setModuleLogLevel(cfgLogger, cfgLogger.SMF, logger.InitLog, logger.SetLogLevel)
-	setModuleLogLevel(cfgLogger, cfgLogger.NAS, nasLogger.NasLog, nasLogger.SetLogLevel)
-	setModuleLogLevel(cfgLogger, cfgLogger.NGAP, ngapLogger.NgapLog, ngapLogger.SetLogLevel)
-	setModuleLogLevel(cfgLogger, cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
-	setModuleLogLevel(cfgLogger, cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("SMF", cfgLogger.SMF, logger.InitLog, logger.SetLogLevel)
+	utilLogger.ApplyLogSetting("NAS", cfgLogger.NAS, nasLogger.NasLog, nasLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("NGAP", cfgLogger.NGAP, ngapLogger.NgapLog, ngapLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("OpenApi", cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("Util", cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
 
 	// Initialize Statistics
 	go metrics.InitMetrics()
@@ -307,23 +305,4 @@ func (smf *SMF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup)
 	nfregistration.DeregisterNF()
 	wg.Wait()
 	logger.InitLog.Infoln("SMF terminated")
-}
-
-// setModuleLogLevel is a helper to reduce repetition in log level setup
-func setModuleLogLevel(logger *utilLogger.Logger, moduleCfg *utilLogger.LogSetting, logObj *zap.SugaredLogger, setLevel func(zapcore.Level)) {
-	moduleName, err := utilLogger.GetLogSettingName(logger, moduleCfg)
-	if err != nil {
-		logObj.Errorf("could not determine module name: %v", err)
-		return
-	}
-	if moduleCfg == nil || moduleCfg.DebugLevel == "" {
-		logObj.Warnf("%s Log level not set. Default setting to [info] level", moduleName)
-		setLevel(zap.InfoLevel)
-		return
-	}
-	level, err := zapcore.ParseLevel(moduleCfg.DebugLevel)
-	if err != nil {
-		logObj.Warnf("%s Log level [%s] is invalid, setting to [%s] level", moduleName, moduleCfg.DebugLevel, level.String())
-	}
-	setLevel(level)
 }
