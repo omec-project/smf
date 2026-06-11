@@ -102,6 +102,7 @@ func (smf *SMF) Initialize(c *cli.Command) error {
 	}
 
 	smf.setLogLevel()
+	go metrics.InitMetrics()
 
 	if err := factory.CheckConfigVersion(); err != nil {
 		return err
@@ -132,9 +133,6 @@ func (smf *SMF) setLogLevel() {
 	utilLogger.ApplyLogSetting("NGAP", cfgLogger.NGAP, ngapLogger.NgapLog, ngapLogger.SetLogLevel)
 	utilLogger.ApplyLogSetting("OpenApi", cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
 	utilLogger.ApplyLogSetting("Util", cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
-
-	// Initialize Statistics
-	go metrics.InitMetrics()
 }
 
 func (smf *SMF) Start() {
