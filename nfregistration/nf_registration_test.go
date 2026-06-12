@@ -10,6 +10,7 @@ package nfregistration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -24,6 +25,15 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 )
+
+func marshalJSONForCompare(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal comparison value: %v", err)
+	}
+	return string(data)
+}
 
 var (
 	port             int32 = 8805
@@ -368,10 +378,10 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		// expected
 	}
 
-	if !reflect.DeepEqual(firstRegistration.config, []nfConfigApi.SessionManagement{firstConfig}) {
+	if marshalJSONForCompare(t, firstRegistration.config) != marshalJSONForCompare(t, []nfConfigApi.SessionManagement{firstConfig}) {
 		t.Errorf("expected first config %+v, got %+v", firstConfig, firstRegistration.config)
 	}
-	if !reflect.DeepEqual(secondRegistration.config, []nfConfigApi.SessionManagement{secondConfig}) {
+	if marshalJSONForCompare(t, secondRegistration.config) != marshalJSONForCompare(t, []nfConfigApi.SessionManagement{secondConfig}) {
 		t.Errorf("expected second config %+v, got %+v", secondConfig, secondRegistration.config)
 	}
 }

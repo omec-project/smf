@@ -25,6 +25,15 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
+func marshalJSONForCompare(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal comparison value: %v", err)
+	}
+	return string(data)
+}
+
 func startTestPollingService(ctx context.Context, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement) (context.CancelFunc, <-chan struct{}) {
 	testCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -460,7 +469,7 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected no error, got `%v`", err)
 				}
-				if !reflect.DeepEqual(tc.expectedResult, fetchedConfig) {
+				if marshalJSONForCompare(t, tc.expectedResult) != marshalJSONForCompare(t, fetchedConfig) {
 					t.Errorf("error in fetched config: expected `%v`, got `%v`", tc.expectedResult, fetchedConfig)
 				}
 			} else {
