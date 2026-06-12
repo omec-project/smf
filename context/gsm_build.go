@@ -112,7 +112,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 		if smContext.ProtocolConfigurationOptions.DNSIPv4Request {
 			err := protocolConfigurationOptions.AddDNSServerIPv4Address(smContext.DNNInfo.DNS.IPv4Addr)
 			if err != nil {
-				smContext.SubGsmLog.Warnln("Error while adding DNS IPv4 Addr: ", err)
+				smContext.SubGsmLog.Warnln("error while adding DNS IPv4 Addr:", err)
 			}
 		}
 
@@ -120,7 +120,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 		if smContext.ProtocolConfigurationOptions.DNSIPv6Request {
 			err := protocolConfigurationOptions.AddDNSServerIPv6Address(smContext.DNNInfo.DNS.IPv6Addr)
 			if err != nil {
-				smContext.SubGsmLog.Warnln("Error while adding DNS IPv6 Addr: ", err)
+				smContext.SubGsmLog.Warnln("error while adding DNS IPv6 Addr:", err)
 			}
 		}
 
@@ -128,7 +128,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 		if smContext.ProtocolConfigurationOptions.IPv4LinkMTURequest {
 			err := protocolConfigurationOptions.AddIPv4LinkMTU(smContext.DNNInfo.MTU)
 			if err != nil {
-				smContext.SubGsmLog.Warnln("Error while adding MTU: ", err)
+				smContext.SubGsmLog.Warnln("error while adding MTU:", err)
 			}
 		}
 
