@@ -1,5 +1,4 @@
-// SPDX-FileCopyrightText: 2022-present Intel Corporation
-//
+// Copyright (c) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 package context
