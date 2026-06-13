@@ -139,21 +139,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	}
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
-	apiN1N2MessageTransferRequest := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransfer(context.Background(), smContext.Supi)
-	apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
-	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
-	}
-	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
-	}
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed, %v", err.Error())
 		return err
