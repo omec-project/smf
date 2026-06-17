@@ -368,10 +368,19 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		// expected
 	}
 
-	if !reflect.DeepEqual(firstRegistration.config, []nfConfigApi.SessionManagement{firstConfig}) {
+	expectedFirstRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{firstConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize first expected config: %v", err)
+	}
+	expectedSecondRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{secondConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize second expected config: %v", err)
+	}
+
+	if !reflect.DeepEqual(firstRegistration.config, expectedFirstRegistrationConfig) {
 		t.Errorf("expected first config %+v, got %+v", firstConfig, firstRegistration.config)
 	}
-	if !reflect.DeepEqual(secondRegistration.config, []nfConfigApi.SessionManagement{secondConfig}) {
+	if !reflect.DeepEqual(secondRegistration.config, expectedSecondRegistrationConfig) {
 		t.Errorf("expected second config %+v, got %+v", secondConfig, secondRegistration.config)
 	}
 }
