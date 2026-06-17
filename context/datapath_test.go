@@ -41,6 +41,7 @@ func TestActivateUpLinkPdr(t *testing.T) {
 	pdr := dpNode.UpLinkTunnel.PDR["default"]
 	if pdr == nil {
 		t.Fatalf("expected pdr to be not nil")
+		return
 	}
 
 	if pdr.PDI.SourceInterface.InterfaceValue != context.SourceInterfaceAccess {
@@ -109,6 +110,7 @@ func TestActivateDlLinkPdr(t *testing.T) {
 	pdr := dpNode.DownLinkTunnel.PDR["default"]
 	if pdr == nil {
 		t.Fatalf("expected pdr to be not nil")
+		return
 	}
 
 	if pdr.PDI.SourceInterface.InterfaceValue != context.SourceInterfaceCore {
