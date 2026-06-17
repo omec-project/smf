@@ -20,6 +20,7 @@ func TestUnmarshallUserPlaneFunctionFeaturesEmpty(t *testing.T) {
 
 	if functionFeatures == nil {
 		t.Fatalf("error unmarshalling UE IP Information: %v", err)
+		return
 	}
 
 	if functionFeatures.SupportedFeatures != 0 {
