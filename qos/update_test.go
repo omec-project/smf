@@ -19,6 +19,7 @@ func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	update := GetSessionRulesUpdate(&pcfRules, ctxtRules)
 	if update == nil {
 		t.Fatal("expected non-nil update")
+		return
 	}
 	if update.add["add"] == update.add["add-2"] {
 		t.Fatal("expected add entries to point to distinct copies")
@@ -31,6 +32,7 @@ func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	}
 	if update.ActiveSessRule == nil {
 		t.Fatal("expected active rule to be set")
+		return
 	}
 	if got := update.ActiveSessRule.GetSessRuleId(); got != "sess-add" && got != "sess-add-2" {
 		t.Fatalf("unexpected active rule %+v", update.ActiveSessRule)
