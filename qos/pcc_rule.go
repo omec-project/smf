@@ -92,7 +92,12 @@ func GetPccRuleChanges(s, d *models.PccRule) bool {
 		return true
 	}
 	for i := range s.FlowInfos {
-		if s.FlowInfos[i] != d.FlowInfos[i] {
+		sf, df := s.FlowInfos[i], d.FlowInfos[i]
+		if sf.GetFlowDescription() != df.GetFlowDescription() ||
+			sf.GetPackFiltId() != df.GetPackFiltId() ||
+			sf.GetFlowDirection() != df.GetFlowDirection() ||
+			(sf.PacketFilterUsage == nil) != (df.PacketFilterUsage == nil) ||
+			(sf.PacketFilterUsage != nil && *sf.PacketFilterUsage != *df.PacketFilterUsage) {
 			return true
 		}
 	}

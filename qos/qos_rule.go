@@ -185,10 +185,10 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	return qosRules
 }
 
-// BuildQosRulespdumod constructs a list of QoS rules for a PDU Session Modification Command
+// BuildQosRulesPDUMod constructs a list of QoS rules for a PDU Session Modification Command
 // based on policy updates (add, modify, delete) from the SM Policy Decision.
 // It returns a slice of QoSRules ready to be encoded in NAS messages.
-func BuildQosRulespdumod(smPolicyUpdates *PolicyUpdate) QoSRules {
+func BuildQosRulesPDUMod(smPolicyUpdates *PolicyUpdate) QoSRules {
 	qosRules := QoSRules{}
 
 	// Extract the SM Policy Decision and PCC Rule updates

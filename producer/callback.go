@@ -120,7 +120,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 
 	// Determine if we only need to release existing rules (no new policy)
 	shouldSendReleaseOnly := false
-	ruleid := "0"
+	ruleid := "default"
 
 	if len(smContext.SmPolicyUpdates) > 0 && smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules != nil {
 		if len(smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules) == 0 {
@@ -241,7 +241,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			}
 
 			// Attach dedicated QER to UL PDR
-			ulPDR.QER = []*smfContext.QER{dedQER}
+			if dedQER != nil {
+				ulPDR.QER = []*smfContext.QER{dedQER}
+			}
 			if ulPDR.Precedence == 0 {
 				ulPDR.Precedence = 1
 			}

@@ -254,19 +254,21 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 	// ===============================
 	// Build Authorized QoS Flow Descriptions
 	// ===============================
-	authQfd := qos.BuildAuthorizedQosFlowDescriptions(smContext.SmPolicyUpdates[0])
-	if pDUSessionModificationCommand.AuthorizedQosFlowDescriptions == nil {
-		pDUSessionModificationCommand.AuthorizedQosFlowDescriptions = nasType.NewAuthorizedQosFlowDescriptions(
-			nasMessage.PDUSessionModificationCommandAuthorizedQosFlowDescriptionsType)
+	if len(smContext.SmPolicyUpdates) > 0 {
+		authQfd := qos.BuildAuthorizedQosFlowDescriptions(smContext.SmPolicyUpdates[0])
+		if pDUSessionModificationCommand.AuthorizedQosFlowDescriptions == nil {
+			pDUSessionModificationCommand.AuthorizedQosFlowDescriptions = nasType.NewAuthorizedQosFlowDescriptions(
+				nasMessage.PDUSessionModificationCommandAuthorizedQosFlowDescriptionsType)
+		}
+		pDUSessionModificationCommand.AuthorizedQosFlowDescriptions.SetLen(authQfd.IeLen)
+		pDUSessionModificationCommand.SetQoSFlowDescriptions(authQfd.Content)
 	}
-	pDUSessionModificationCommand.AuthorizedQosFlowDescriptions.SetLen(authQfd.IeLen)
-	pDUSessionModificationCommand.SetQoSFlowDescriptions(authQfd.Content)
 
 	// ===============================
 	// Build Authorized QoS Rules
 	// ===============================
 	if len(smContext.SmPolicyUpdates) > 0 {
-		qoSRules := qos.BuildQosRulespdumod(smContext.SmPolicyUpdates[0])
+		qoSRules := qos.BuildQosRulesPDUMod(smContext.SmPolicyUpdates[0])
 
 		for _, r := range qoSRules {
 			smContext.SubGsmLog.Debugf("Built QoS Rule ID: %d, QFI: %d, PF Count: %d",

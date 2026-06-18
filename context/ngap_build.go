@@ -298,7 +298,7 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 
 		// Get QFI from session rule for release
 		sessRule := ctx.SelectedSessionRule()
-		if sessRule == nil {
+		if sessRule == nil || sessRule.AuthDefQos == nil {
 			ctx.SubPduSessLog.Error("SelectedSessionRule is nil")
 			return nil, fmt.Errorf("sessRule is nil")
 		}
@@ -549,23 +549,33 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 //   - "mbps" → megabits per second (multiplied by 1,000,000)
 func StringToBitRate(s string) (uint64, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
-	if strings.HasSuffix(s, "kbps") {
-		numPart := strings.TrimSpace(strings.TrimSuffix(s, "kbps"))
-		val, err := strconv.ParseUint(numPart, 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return val * 1000, nil
+
+	mult := float64(0)
+	switch {
+	case strings.HasSuffix(s, "tbps"):
+		mult = 1e12
+		s = strings.TrimSuffix(s, "tbps")
+	case strings.HasSuffix(s, "gbps"):
+		mult = 1e9
+		s = strings.TrimSuffix(s, "gbps")
+	case strings.HasSuffix(s, "mbps"):
+		mult = 1e6
+		s = strings.TrimSuffix(s, "mbps")
+	case strings.HasSuffix(s, "kbps"):
+		mult = 1e3
+		s = strings.TrimSuffix(s, "kbps")
+	case strings.HasSuffix(s, "bps"):
+		mult = 1
+		s = strings.TrimSuffix(s, "bps")
+	default:
+		return 0, fmt.Errorf("unsupported bitrate format: %q", s)
 	}
-	if strings.HasSuffix(s, "mbps") {
-		numPart := strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
-		val, err := strconv.ParseUint(numPart, 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return val * 1000 * 1000, nil
+
+	val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, err
 	}
-	return 0, fmt.Errorf("unsupported bitrate format: %q", s)
+	return uint64(val*mult + 0.5), nil
 }
 
 func BuildPDUSessionResourceReleaseCommandTransfer(ctx *SMContext) (buf []byte, err error) {

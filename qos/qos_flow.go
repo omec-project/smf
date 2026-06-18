@@ -106,10 +106,10 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 	// ===============================
 	// Handle PCC rule deletions if QoS flow updates are nil
 	// ===============================
-	if smPolicyUpdates.QosFlowUpdate == nil {
+	if smPolicyUpdates == nil || smPolicyUpdates.QosFlowUpdate == nil {
 		logger.QosLog.Warn("QosFlowUpdate is nil, processing PCC rule deletions only")
 
-		if smPolicyUpdates.PccRuleUpdate != nil {
+		if smPolicyUpdates != nil && smPolicyUpdates.PccRuleUpdate != nil {
 			logger.QosLog.Warn("smPolicyUpdates or QosFlowUpdate is nil, processing PCC rule deletions only")
 
 			for pccRuleID := range smPolicyUpdates.PccRuleUpdate.del {
