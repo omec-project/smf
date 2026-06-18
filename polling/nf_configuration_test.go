@@ -388,6 +388,12 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		t.Fail()
 	}
 
+	var expectedFetchedConfig []nfConfigApi.SessionManagement
+	err = json.Unmarshal(validJson, &expectedFetchedConfig)
+	if err != nil {
+		t.Fatalf("failed to unmarshal expectedFetchedConfig: %v", err)
+	}
+
 	tests := []struct {
 		name           string
 		statusCode     int
@@ -402,7 +408,7 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 			contentType:    "application/json",
 			responseBody:   string(validJson),
 			expectedError:  "",
-			expectedResult: sessionConfigs,
+			expectedResult: expectedFetchedConfig,
 		},
 		{
 			name:          "200 OK with invalid Content-Type",

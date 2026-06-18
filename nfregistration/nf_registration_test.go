@@ -10,7 +10,6 @@ package nfregistration
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -25,15 +24,6 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
 )
-
-func marshalJSONForCompare(t *testing.T, value any) string {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("marshal comparison value: %v", err)
-	}
-	return string(data)
-}
 
 var (
 	port             int32 = 8805
@@ -378,10 +368,19 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		// expected
 	}
 
-	if marshalJSONForCompare(t, firstRegistration.config) != marshalJSONForCompare(t, []nfConfigApi.SessionManagement{firstConfig}) {
+	expectedFirstRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{firstConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize first expected config: %v", err)
+	}
+	expectedSecondRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{secondConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize second expected config: %v", err)
+	}
+
+	if !reflect.DeepEqual(firstRegistration.config, expectedFirstRegistrationConfig) {
 		t.Errorf("expected first config %+v, got %+v", firstConfig, firstRegistration.config)
 	}
-	if marshalJSONForCompare(t, secondRegistration.config) != marshalJSONForCompare(t, []nfConfigApi.SessionManagement{secondConfig}) {
+	if !reflect.DeepEqual(secondRegistration.config, expectedSecondRegistrationConfig) {
 		t.Errorf("expected second config %+v, got %+v", secondConfig, secondRegistration.config)
 	}
 }
