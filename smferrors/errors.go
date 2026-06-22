@@ -104,6 +104,11 @@ var (
 		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
+	SMContextNotFound = models.ExtProblemDetails{
+		Type:   openapi.PtrString("Resource Not Found"),
+		Title:  openapi.PtrString("SMContext Ref is not found"),
+		Status: openapi.PtrInt32(http.StatusNotFound),
+	}
 	PduSessionTypeNotSupported = models.ExtProblemDetails{
 		Title:         openapi.PtrString("PduSession Type Not Supported"),
 		Status:        openapi.PtrInt32(http.StatusForbidden),

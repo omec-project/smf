@@ -215,14 +215,13 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
+			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
+			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
 				Body: models.UpdateSmContext400Response{
-					JsonData: &models.SmContextUpdateError{
-						UpCnxState: models.UPCNXSTATE_DEACTIVATED.Ptr(),
-						Error:      smferrors.NewExtProblemDetails("SMContext Ref is not found", http.StatusNotFound, "Resource Not Found"),
-					},
+					JsonData: jsonData,
 				},
 			}
 			txn.Rsp = httpResponse
