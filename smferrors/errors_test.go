@@ -6,6 +6,8 @@ package smferrors
 import (
 	"net/http"
 	"testing"
+
+	"github.com/omec-project/openapi/v2/utils"
 )
 
 func TestNewExtProblemDetails(t *testing.T) {
@@ -45,7 +47,7 @@ func TestNewExtProblemDetailsSystemFailure(t *testing.T) {
 	if pd.GetStatus() != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, pd.GetStatus())
 	}
-	if pd.GetCause() != "SYSTEM_FAILURE" {
-		t.Fatalf("expected cause SYSTEM_FAILURE, got %q", pd.GetCause())
+	if pd.GetCause() != utils.CauseSystemFailure {
+		t.Fatalf("expected cause %q, got %q", utils.CauseSystemFailure, pd.GetCause())
 	}
 }
