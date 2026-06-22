@@ -438,10 +438,14 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 						}
 						// Apply priority and ARP if present
 						if qosData.GetPriorityLevel() > 0 {
-							priority = *qosData.PriorityLevel.Get()
+							if pl := qosData.PriorityLevel.Get(); pl != nil {
+								priority = *pl
+							}
 						}
 						if qosData.Arp != nil {
-							priority = *qosData.Arp.PriorityLevel.Get()
+							if pl := qosData.Arp.PriorityLevel.Get(); pl != nil {
+								priority = *pl
+							}
 							if qosData.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
 								arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
 							}
@@ -465,10 +469,14 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 							ctx.SubPduSessLog.Errorf("Invalid QosId string: %s", qosData.GetQosId())
 						}
 						if qosData.GetPriorityLevel() > 0 {
-							priority = *qosData.PriorityLevel.Get()
+							if pl := qosData.PriorityLevel.Get(); pl != nil {
+								priority = *pl
+							}
 						}
 						if qosData.Arp != nil {
-							priority = *qosData.Arp.PriorityLevel.Get()
+							if pl := qosData.Arp.PriorityLevel.Get(); pl != nil {
+								priority = *pl
+							}
 							if qosData.Arp.PreemptCap == models.PREEMPTIONCAPABILITY_NOT_PREEMPT {
 								arpPreemptCap = ngapType.PreEmptionCapabilityPresentShallNotTriggerPreEmption
 							}

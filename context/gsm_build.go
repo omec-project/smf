@@ -274,7 +274,7 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 			smContext.SubGsmLog.Debugf("Built QoS Rule ID: %d, QFI: %d, PF Count: %d",
 				r.Identifier, r.QFI, len(r.PacketFilterList))
 			for _, pf := range r.PacketFilterList {
-				smContext.SubGsmLog.Debugf("PF ID: %d, Dir: %d, Content: %s",
+				smContext.SubGsmLog.Debugf("PF ID: %d, Dir: %d, Content: %v",
 					pf.Identifier, pf.Direction, pf.Content)
 			}
 		}

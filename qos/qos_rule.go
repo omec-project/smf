@@ -173,8 +173,8 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 
 	// Rules to be deleted
 	if pccRulesUpdate != nil && pccRulesUpdate.del != nil {
-		for id, pccRuleName := range pccRulesUpdate.del {
-			logger.QosLog.Infof("building delete QoS Rule for PCC rule [%s]", pccRuleName)
+		for id := range pccRulesUpdate.del {
+			logger.QosLog.Infof("building delete QoS Rule for PCC rule [%s]", id)
 
 			qosRule := BuildDeleteQosRuleFromPccRule(id)
 			if qosRule != nil {
@@ -251,7 +251,7 @@ func BuildQosRulesPDUMod(smPolicyUpdates *PolicyUpdate) QoSRules {
 	// ===============================
 	if pccRulesUpdate != nil && pccRulesUpdate.del != nil {
 		for id, pccRuleName := range pccRulesUpdate.del {
-			logger.QosLog.Infof("Processing PCC rule deletion: ID='%s', Name='%s'", id, pccRuleName)
+			logger.QosLog.Infof("Processing PCC rule deletion: ID='%s', Rule=%+v", id, pccRuleName)
 
 			// Build a delete QoS rule based on the PCC rule ID
 			qosRule := BuildDeleteQosRuleFromPccRule(id)

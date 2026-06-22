@@ -182,6 +182,18 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				if dlPDR.QER != nil {
 					pfcpParam.removeQER = append(pfcpParam.removeQER, dlPDR.QER...)
 				}
+
+				// Mark UL PDR, FAR, QER for removal
+				if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
+					logger.PduSessLog.Infof("[BuildPfcpParam] Marking UL PDR[%s] for removal", ruleid)
+					pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
+					if ulPDR.FAR != nil {
+						pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
+					}
+					if ulPDR.QER != nil {
+						pfcpParam.removeQER = append(pfcpParam.removeQER, ulPDR.QER...)
+					}
+				}
 				continue
 			}
 
