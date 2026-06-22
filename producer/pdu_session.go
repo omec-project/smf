@@ -999,10 +999,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 	case smf_context.SessionUpdateTimeout:
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
 
-		/* TODO: exact http error response code for this usecase is 504, so relevant cause for
-		   this usecase is 500. If it gets added in spec 29.502 new release that can be added
-		*/
-		problemDetail := smferrors.NewExtProblemDetailsWithCause("PFCP Session Mod Timeout", http.StatusServiceUnavailable, "PFCP Session Modification Timeout", "UPF_NOT_RESPONDING")
+		problemDetail := smferrors.NewExtProblemDetailsWithCause("PFCP Session Mod Timeout", http.StatusGatewayTimeout, "PFCP Session Modification Timeout", "UPF_NOT_RESPONDING")
 		var n1buf, n2buf []byte
 		var err error
 		if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
