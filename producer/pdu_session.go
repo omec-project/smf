@@ -1022,7 +1022,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			smContext.SubPduSessLog.Errorln(err1)
 		}
 		httpResponse = &httpwrapper.Response{
-			Status: http.StatusServiceUnavailable,
+			Status: http.StatusGatewayTimeout,
 			Body: models.UpdateSmContext400Response{
 				JsonData: &models.SmContextUpdateError{
 					Error:        problemDetail,
