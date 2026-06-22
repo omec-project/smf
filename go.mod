@@ -8,11 +8,11 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/nas/v2 v2.0.0
 	github.com/omec-project/ngap/v2 v2.1.0
-	github.com/omec-project/openapi/v2 v2.1.1
+	github.com/omec-project/openapi/v2 v2.1.4
 	github.com/omec-project/util v1.7.5
 	github.com/prometheus/client_golang v1.23.2
 	github.com/segmentio/kafka-go v0.4.51
-	github.com/urfave/cli/v3 v3.9.1
+	github.com/urfave/cli/v3 v3.10.0
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver v1.17.9
 	go.uber.org/zap v1.28.0
