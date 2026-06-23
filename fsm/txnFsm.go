@@ -16,6 +16,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/producer"
+	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
 )
@@ -214,18 +215,13 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
+			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
+			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
 				Body: models.UpdateSmContext400Response{
-					JsonData: &models.SmContextUpdateError{
-						UpCnxState: models.UPCNXSTATE_DEACTIVATED.Ptr(),
-						Error: models.ExtProblemDetails{
-							Type:   openapi.PtrString("Resource Not Found"),
-							Title:  openapi.PtrString("SMContext Ref is not found"),
-							Status: openapi.PtrInt32(http.StatusNotFound),
-						},
-					},
+					JsonData: jsonData,
 				},
 			}
 			txn.Rsp = httpResponse

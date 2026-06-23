@@ -558,12 +558,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 }
 
 func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *httpwrapper.Response {
-	problemDetail := models.ExtProblemDetails{
-		Title:  openapi.PtrString(errStr),
-		Status: openapi.PtrInt32(http.StatusInternalServerError),
-		Detail: openapi.PtrString(errStr),
-		Cause:  openapi.PtrString("UPF_NOT_RESPONDING"),
-	}
+	problemDetail := smferrors.NewExtProblemDetailsWithCause(errStr, http.StatusServiceUnavailable, errStr, "UPF_NOT_RESPONDING")
 	var n1buf, n2buf []byte
 	var err error
 	if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
@@ -689,10 +684,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 		// Update SmContext Request(N1 PDU Session Release Request)
 		// Send PDU Session Release Reject
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, PFCP SessionReleaseFailed")
-		problemDetail := models.ExtProblemDetails{
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Cause:  openapi.PtrString("SYSTEM_FAILULE"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsSystemFailure()
 		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.GetStatus()),
 		}
@@ -724,13 +716,10 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 		errResponse.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
 		httpResponse.Body = errResponse
 	default:
-		smContext.SubCtxLog.Warnf("PDUSessionSMContextRelease, The state shouldn't be [%s]\n", PFCPResponseStatus)
+		smContext.SubCtxLog.Warnf("PDUSessionSMContextRelease, The state shouldn't be [%s]", PFCPResponseStatus)
 
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, in case Unknown")
-		problemDetail := models.ExtProblemDetails{
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Cause:  openapi.PtrString("SYSTEM_FAILULE"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsSystemFailure()
 		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.GetStatus()),
 		}
@@ -1010,15 +999,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 	case smf_context.SessionUpdateTimeout:
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
 
-		/* TODO: exact http error response code for this usecase is 504, so relevant cause for
-		   this usecase is 500. If it gets added in spec 29.502 new release that can be added
-		*/
-		problemDetail := models.ExtProblemDetails{
-			Title:  openapi.PtrString("PFCP Session Mod Timeout"),
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Detail: openapi.PtrString("PFCP Session Modification Timeout"),
-			Cause:  openapi.PtrString("UPF_NOT_RESPONDING"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsWithCause("PFCP Session Mod Timeout", http.StatusGatewayTimeout, "PFCP Session Modification Timeout", "UPF_NOT_RESPONDING")
 		var n1buf, n2buf []byte
 		var err error
 		if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
@@ -1041,7 +1022,7 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			smContext.SubPduSessLog.Errorln(err1)
 		}
 		httpResponse = &httpwrapper.Response{
-			Status: http.StatusServiceUnavailable,
+			Status: http.StatusGatewayTimeout,
 			Body: models.UpdateSmContext400Response{
 				JsonData: &models.SmContextUpdateError{
 					Error:        problemDetail,

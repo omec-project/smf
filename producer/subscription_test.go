@@ -59,6 +59,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 		NfStatus:     "DEREGISTERED",
 	}
 	badRequestProblem := models.ProblemDetails{
+		Title:  openapi.PtrString("Mandatory IE missing"),
 		Status: openapi.PtrInt32(http.StatusBadRequest),
 		Cause:  openapi.PtrString("MANDATORY_IE_MISSING"),
 		Detail: openapi.PtrString("Missing IE [Event]/[NfInstanceUri] in NotificationData"),
