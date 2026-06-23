@@ -58,7 +58,7 @@ func shouldRenderUpdateSmContextMultipart(body any) bool {
 	}
 }
 
-func renderUpdateSmContextResponse(c *gin.Context, response *httpwrapper.Response) {
+func renderSmContextResponse(c *gin.Context, response *httpwrapper.Response) {
 	if response.Status < http.StatusMultipleChoices || shouldRenderUpdateSmContextMultipart(response.Body) {
 		c.Render(response.Status, openapi.MultipartRelatedRender{Data: response.Body})
 		smfutil.CleanupMultipartTempFiles(response.Body)
@@ -71,7 +71,7 @@ func renderUpdateSmContextResponse(c *gin.Context, response *httpwrapper.Respons
 // Post /sm-contexts/:smContextRef/release
 // Release SM Context
 func HTTPReleaseSmContext(c *gin.Context) {
-	logger.PduSessLog.Infoln("Handle Post /sm-contexts/:smContextRef/release")
+	logger.PduSessLog.Infoln("handle Post /sm-contexts/:smContextRef/release")
 	var err error
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
 	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
@@ -117,8 +117,16 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
 
-	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(http.StatusNoContent), "")
-	c.Status(http.StatusNoContent)
+	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
+	if !ok || HTTPResponse == nil {
+		logger.PduSessLog.Errorf("release SM Context transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := utils.ProblemDetailsSystemFailure("SM Context release transaction failed")
+		c.JSON(http.StatusInternalServerError, problemDetails)
+		return
+	}
+
+	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "Out", http.StatusText(HTTPResponse.Status), "")
+	renderSmContextResponse(c, HTTPResponse)
 }
 
 // Post /sm-contexts/:smContextRef/retrieve
@@ -140,7 +148,7 @@ func HTTPSendMoData(c *gin.Context) {
 // Post /sm-contexts/:smContextRef/modify
 // Update SM Context
 func HTTPUpdateSmContext(c *gin.Context) {
-	logger.PduSessLog.Infoln("Handle Post /sm-contexts/:smContextRef/modify")
+	logger.PduSessLog.Infoln("handle Post /sm-contexts/:smContextRef/modify")
 	var err error
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
 	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
@@ -190,15 +198,12 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
 	if !ok || HTTPResponse == nil {
 		logger.PduSessLog.Errorf("update SM Context transaction finished without HTTP response: err=%v", txn.Err)
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("SYSTEM_FAILURE")
-		problemDetails.SetDetail("SM Context update transaction failed")
+		problemDetails := utils.ProblemDetailsSystemFailure("SM Context update transaction failed")
 		c.JSON(http.StatusInternalServerError, problemDetails)
 		return
 	}
 
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "Out", http.StatusText(HTTPResponse.Status), "")
 
-	renderUpdateSmContextResponse(c, HTTPResponse)
+	renderSmContextResponse(c, HTTPResponse)
 }

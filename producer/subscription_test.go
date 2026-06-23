@@ -6,13 +6,11 @@ package producer
 
 import (
 	"fmt"
-	"net/http"
 	"os"
-	"reflect"
 	"testing"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 )
@@ -48,22 +46,14 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 		callCountNRFCacheRemoveNfProfileFromNrfCache++
 		return true
 	}
-	udmProfile := models.NotificationDataAllOfNfProfile{
-		UdrInfo: &models.UdrInfo{
-			SupportedDataSets: []models.DataSetId{
-				models.DATASETID_SUBSCRIPTION,
-			},
+	udmProfile := models.NewNotificationDataAllOfNfProfile(nfInstanceID, "UDM", "DEREGISTERED")
+	udrInfo := models.UdrInfo{
+		SupportedDataSets: []models.DataSetId{
+			models.DATASETID_SUBSCRIPTION,
 		},
-		NfInstanceId: nfInstanceID,
-		NfType:       "UDM",
-		NfStatus:     "DEREGISTERED",
 	}
-	badRequestProblem := models.ProblemDetails{
-		Title:  openapi.PtrString("Mandatory IE missing"),
-		Status: openapi.PtrInt32(http.StatusBadRequest),
-		Cause:  openapi.PtrString("MANDATORY_IE_MISSING"),
-		Detail: openapi.PtrString("Missing IE [Event]/[NfInstanceUri] in NotificationData"),
-	}
+	udmProfile.SetUdrInfo(udrInfo)
+	badRequestProblem := utils.ProblemDetailsMandatoryIeMissing("Missing IE [Event]/[NfInstanceUri] in NotificationData")
 	parameters := []struct {
 		expectedProblem                                      *models.ProblemDetails
 		testName                                             string
@@ -137,7 +127,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			true,
 		},
 		{
-			&badRequestProblem,
+			badRequestProblem,
 			"Notification event type DEREGISTERED NRF caching is enabled NfInstanceUri in notificationData is empty",
 			"Return StatusBadRequest with cause MANDATORY_IE_MISSING",
 			"",
@@ -149,7 +139,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			true,
 		},
 		{
-			&badRequestProblem,
+			badRequestProblem,
 			"Notification event type empty NRF caching is enabled",
 			"Return StatusBadRequest with cause MANDATORY_IE_MISSING",
 			nfInstanceID,
@@ -163,18 +153,38 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 	}
 	for i := range parameters {
 		t.Run(fmt.Sprintf("NfSubscriptionStatusNotify testname %v result %v", parameters[i].testName, parameters[i].result), func(t *testing.T) {
+			prevEnableNrfCaching := smfContext.SMF_Self().EnableNrfCaching
 			smfContext.SMF_Self().EnableNrfCaching = parameters[i].enableNrfCaching
 			smfContext.SMF_Self().NfStatusSubscriptions.Store(parameters[i].nfInstanceIdForSubscription, parameters[i].subscriptionID)
+			t.Cleanup(func() {
+				callCountSendRemoveSubscription = 0
+				callCountNRFCacheRemoveNfProfileFromNrfCache = 0
+				smfContext.SMF_Self().NfStatusSubscriptions.Delete(parameters[i].nfInstanceIdForSubscription)
+				smfContext.SMF_Self().EnableNrfCaching = prevEnableNrfCaching
+			})
 			notificationData := models.NotificationData{
 				Event:          models.NotificationEventType(parameters[i].notificationEventType),
 				NfInstanceUri:  parameters[i].nfInstanceId,
-				NfProfile:      &udmProfile,
+				NfProfile:      udmProfile,
 				ProfileChanges: []models.ChangeItem{},
 			}
 			err := NfSubscriptionStatusNotifyProcedure(notificationData)
-			if !reflect.DeepEqual(err, parameters[i].expectedProblem) {
-				t.Errorf("NfSubscriptionStatusNotifyProcedure error mismatch. got = %v, want = %v (NfSubscriptionStatusNotifyProcedure is failed)",
-					err, parameters[i].expectedProblem)
+			if parameters[i].expectedProblem == nil {
+				if err != nil {
+					t.Errorf("NfSubscriptionStatusNotifyProcedure error mismatch. got = %v, want = nil (NfSubscriptionStatusNotifyProcedure is failed)", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("NfSubscriptionStatusNotifyProcedure error mismatch. got = nil, want = %v (NfSubscriptionStatusNotifyProcedure is failed)", parameters[i].expectedProblem)
+				}
+				if err.GetStatus() != parameters[i].expectedProblem.GetStatus() ||
+					err.GetCause() != parameters[i].expectedProblem.GetCause() ||
+					err.GetTitle() != parameters[i].expectedProblem.GetTitle() ||
+					err.GetDetail() != parameters[i].expectedProblem.GetDetail() {
+					t.Errorf("NfSubscriptionStatusNotifyProcedure error mismatch. got status=%d cause=%q title=%q detail=%q, want status=%d cause=%q title=%q detail=%q (NfSubscriptionStatusNotifyProcedure is failed)",
+						err.GetStatus(), err.GetCause(), err.GetTitle(), err.GetDetail(),
+						parameters[i].expectedProblem.GetStatus(), parameters[i].expectedProblem.GetCause(), parameters[i].expectedProblem.GetTitle(), parameters[i].expectedProblem.GetDetail())
+				}
 			}
 			if callCountSendRemoveSubscription != parameters[i].expectedCallCountSendRemoveSubscription {
 				t.Errorf("Subscription removal count mismatch. got = %d, want = %d (Subscription is not removed)",
@@ -184,9 +194,6 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 				t.Errorf("NF Profile cache removal count mismatch. got = %d, want = %d (NF Profile is not removed from NRF cache)",
 					callCountNRFCacheRemoveNfProfileFromNrfCache, parameters[i].expectedCallCountNRFCacheRemoveNfProfileFromNrfCache)
 			}
-			callCountSendRemoveSubscription = 0
-			callCountNRFCacheRemoveNfProfileFromNrfCache = 0
-			smfContext.SMF_Self().NfStatusSubscriptions.Delete(parameters[i].nfInstanceIdForSubscription)
 		})
 	}
 }
