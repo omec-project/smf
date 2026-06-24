@@ -262,23 +262,23 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 	// 5QI
 	qfd.AddQosFlowParam5Qi(uint8(qosData.GetVar5qi()))
 
-	// MFBR uplink
-	if rate, ok := getNullableString(qosData.MaxbrUl); ok {
+	// MFBR uplink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.MaxbrUl); ok && !isZeroBitRate(rate) {
 		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrUl)
 	}
 
-	// MFBR downlink
-	if rate, ok := getNullableString(qosData.MaxbrDl); ok {
+	// MFBR downlink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.MaxbrDl); ok && !isZeroBitRate(rate) {
 		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrDl)
 	}
 
-	// GFBR uplink
-	if rate, ok := getNullableString(qosData.GbrUl); ok {
+	// GFBR uplink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.GbrUl); ok && !isZeroBitRate(rate) {
 		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrUl)
 	}
 
-	// GFBR downlink
-	if rate, ok := getNullableString(qosData.GbrDl); ok {
+	// GFBR downlink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.GbrDl); ok && !isZeroBitRate(rate) {
 		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrDl)
 	}
 
@@ -376,6 +376,30 @@ func getNullableString(value openapi.NullableString) (string, bool) {
 	}
 
 	return *resolved, true
+}
+
+// isZeroBitRate reports whether a bit rate string (e.g. "0 Mbps") must not be
+// encoded as a QoS flow description rate parameter. It returns true for an
+// explicit zero rate as well as for any value GetBitRate would otherwise turn
+// into a zero or nonsensical rate: fewer than two fields (a missing unit, e.g.
+// "10", which GetBitRate encodes as 0) and a value that does not fit the 16-bit
+// rate field (a negative or >65535 value, which would wrap to a bogus uint16).
+//
+// A zero rate is not a valid GFBR/MFBR parameter per 3GPP TS 24.501: these are
+// meaningful only for GBR flows, so a non-GBR flow (such as the default 5QI 9
+// flow) may carry an explicit zero MFBR in the policy decision. Encoding it has
+// been observed to make UEs (e.g. Qualcomm modems) reject the PDU Session
+// Establishment Accept with 5GSM cause 0x22 (Service option temporarily out of
+// order), so such parameters are omitted.
+func isZeroBitRate(sBitRate string) bool {
+	fields := strings.Fields(sBitRate)
+	if len(fields) < 2 {
+		return true
+	}
+	// ParseUint with bitSize 16 rejects negatives and values that would
+	// overflow the uint16 rate field GetBitRate encodes into.
+	rate, err := strconv.ParseUint(fields[0], 10, 16)
+	return err != nil || rate == 0
 }
 
 func GetBitRate(sBitRate string) (val uint16, unit uint8) {

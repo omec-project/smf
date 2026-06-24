@@ -13,12 +13,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/omec-project/nas/v2"
 	"github.com/omec-project/nas/v2/nasMessage"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/Namf_Communication"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
@@ -91,15 +89,13 @@ func ensureDataPathUpfAssociated(dataPath *smf_context.DataPath) error {
 	return nil
 }
 
-func formContextCreateErrRsp(httpStatus int, problemBody *models.ExtProblemDetails, n1SmMsg *models.RefToBinaryData) *httpwrapper.Response {
+func formContextCreateErrRsp(httpStatus int, problemBody models.ExtProblemDetails) *httpwrapper.Response {
+	jsonData := models.NewSmContextCreateError(problemBody)
 	return &httpwrapper.Response{
 		Header: nil,
 		Status: httpStatus,
 		Body: models.PostSmContexts400Response{
-			JsonData: &models.SmContextCreateError{
-				Error:   *problemBody,
-				N1SmMsg: n1SmMsg,
-			},
+			JsonData: jsonData,
 		},
 	}
 }
@@ -145,7 +141,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	logger.PduSessLog.Errorf("PDUSessionSMContextCreate, request: %+v", request)
 	if request.BinaryDataN1SmMessage == nil {
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, missing N1 SM message payload")
-		txn.Rsp = formContextCreateErrRsp(http.StatusForbidden, &smferrors.N1SmError, nil)
+		txn.Rsp = formContextCreateErrRsp(http.StatusForbidden, smferrors.N1SmError)
 		return fmt.Errorf("MissingN1SmMessage")
 	}
 	m := nas.NewMessage()
@@ -157,7 +153,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		m.GsmHeader.GetMessageType() != nas.MsgTypePDUSessionEstablishmentRequest {
 		logger.PduSessLog.Errorln("PDUSessionSMContextCreate, GsmMessageDecode Error:", err)
 
-		txn.Rsp = formContextCreateErrRsp(http.StatusForbidden, &smferrors.N1SmError, nil)
+		txn.Rsp = formContextCreateErrRsp(http.StatusForbidden, smferrors.N1SmError)
 		return fmt.Errorf("GsmMsgDecodeError")
 	}
 
@@ -558,12 +554,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 }
 
 func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *httpwrapper.Response {
-	problemDetail := models.ExtProblemDetails{
-		Title:  openapi.PtrString(errStr),
-		Status: openapi.PtrInt32(http.StatusInternalServerError),
-		Detail: openapi.PtrString(errStr),
-		Cause:  openapi.PtrString("UPF_NOT_RESPONDING"),
-	}
+	problemDetail := smferrors.NewExtProblemDetailsWithCause(errStr, http.StatusServiceUnavailable, errStr, "UPF_NOT_RESPONDING")
 	var n1buf, n2buf []byte
 	var err error
 	if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
@@ -582,18 +573,22 @@ func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *h
 	if err1 != nil {
 		smContext.SubPduSessLog.Errorln(err1)
 	}
+	jsonData := models.NewSmContextUpdateError(problemDetail)
+	responseBody := models.UpdateSmContext400Response{
+		JsonData: jsonData,
+	}
+	if tmpFile != nil {
+		jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD})
+		responseBody.SetBinaryDataN1SmMessage(tmpFile)
+	}
+	if tmpFile1 != nil {
+		jsonData.SetN2SmInfo(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD})
+		jsonData.SetN2SmInfoType(models.N2SMINFOTYPE_PDU_RES_REL_CMD)
+		responseBody.SetBinaryDataN2SmInformation(tmpFile1)
+	}
 	httpResponse := &httpwrapper.Response{
 		Status: http.StatusServiceUnavailable,
-		Body: models.UpdateSmContext400Response{
-			JsonData: &models.SmContextUpdateError{
-				Error:        problemDetail,
-				N1SmMsg:      &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-				N2SmInfo:     &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-				N2SmInfoType: models.N2SMINFOTYPE_PDU_RES_REL_CMD.Ptr(),
-			},
-			BinaryDataN1SmMessage:     &tmpFile,
-			BinaryDataN2SmInformation: &tmpFile1,
-		}, // Depends on the reason why N4 fail
+		Body:   responseBody, // Depends on the reason why N4 fail
 	}
 
 	return httpResponse
@@ -689,77 +684,59 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 		// Update SmContext Request(N1 PDU Session Release Request)
 		// Send PDU Session Release Reject
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, PFCP SessionReleaseFailed")
-		problemDetail := models.ExtProblemDetails{
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Cause:  openapi.PtrString("SYSTEM_FAILULE"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsSystemFailure()
 		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.GetStatus()),
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, SMContextState Change State:", smContext.SMContextState.String())
+		jsonData := models.NewSmContextUpdateError(problemDetail)
 		errResponse := models.UpdateSmContext400Response{
-			JsonData: &models.SmContextUpdateError{
-				Error: problemDetail,
-			},
+			JsonData: jsonData,
 		}
 		if buf, err := smf_context.BuildGSMPDUSessionReleaseReject(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(buf)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln(err)
+			} else {
+				errResponse.SetBinaryDataN1SmMessage(tmpFile)
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(buf); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			errResponse.BinaryDataN1SmMessage = &tmpFile
 		}
 
-		errResponse.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
+		if errResponse.HasBinaryDataN1SmMessage() {
+			errResponse.JsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"})
+		}
 		httpResponse.Body = errResponse
 	default:
-		smContext.SubCtxLog.Warnf("PDUSessionSMContextRelease, The state shouldn't be [%s]\n", PFCPResponseStatus)
+		smContext.SubCtxLog.Warnf("PDUSessionSMContextRelease, The state shouldn't be [%s]", PFCPResponseStatus)
 
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, in case Unknown")
-		problemDetail := models.ExtProblemDetails{
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Cause:  openapi.PtrString("SYSTEM_FAILULE"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsSystemFailure()
 		httpResponse = &httpwrapper.Response{
 			Status: int(problemDetail.GetStatus()),
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, SMContextState Change State:", smContext.SMContextState.String())
+		jsonData := models.NewSmContextUpdateError(problemDetail)
 		errResponse := models.UpdateSmContext400Response{
-			JsonData: &models.SmContextUpdateError{
-				Error: problemDetail,
-			},
+			JsonData: jsonData,
 		}
 		if buf, err := smf_context.BuildGSMPDUSessionReleaseReject(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(buf)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln(err)
+			} else {
+				errResponse.SetBinaryDataN1SmMessage(tmpFile)
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(buf); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			errResponse.BinaryDataN1SmMessage = &tmpFile
 		}
 
-		errResponse.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"}
+		if errResponse.HasBinaryDataN1SmMessage() {
+			errResponse.JsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"})
+		}
 		httpResponse.Body = errResponse
 	}
 
@@ -800,92 +777,70 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {
 	// N1N2 Request towards AMF
-	n1n2Request := models.N1N2MessageTransferRequest{}
+	n1n2Request := models.NewN1N2MessageTransferRequest()
+	defer util.CleanupMultipartTempFiles(n1n2Request)
 
 	// N2 Container Info
-	n2InfoContainer := models.N2InfoContainer{
-		N2InformationClass: models.N2INFORMATIONCLASS_SM,
-		SmInfo: &models.N2SmInformation{
-			PduSessionId: smContext.PDUSessionID,
-			N2InfoContent: &models.N2InfoContent{
-				NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr(),
-				NgapData: models.RefToBinaryData{
-					ContentId: "N2SmInformation",
-				},
-			},
-			SNssai: smContext.Snssai,
-		},
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_SETUP_REQ)
+	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
+	smInfo.SetN2InfoContent(*n2InfoContent)
+	if smContext.Snssai != nil {
+		smInfo.SetSNssai(*smContext.Snssai)
 	}
+	n2InfoContainer := models.NewN2InfoContainer(models.N2INFORMATIONCLASS_SM)
+	n2InfoContainer.SetSmInfo(*smInfo)
 
 	// N1 Container Info
-	n1MsgContainer := models.N1MessageContainer{
-		N1MessageClass:   "SM",
-		N1MessageContent: models.RefToBinaryData{ContentId: "GSM_NAS"},
-	}
+	n1MsgContainer := models.NewN1MessageContainer("SM", models.RefToBinaryData{ContentId: "GSM_NAS"})
 
 	// N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
-		PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
-	}
+	jsonData := models.NewN1N2MessageTransferReqData()
+	jsonData.SetPduSessionId(smContext.PDUSessionID)
+	n1n2Request.SetJsonData(*jsonData)
 
 	if success {
 		if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
 			logger.PduSessLog.Errorf("build GSM PDUSessionEstablishmentAccept failed: %s", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(smNasBuf)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln(err)
+			} else {
+				n1n2Request.SetBinaryDataN1Message(tmpFile)
+				jsonData := n1n2Request.GetJsonData()
+				jsonData.SetN1MessageContainer(*n1MsgContainer)
+				n1n2Request.SetJsonData(jsonData)
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(smNasBuf); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 		}
 
 		if n2Pdu, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
 			logger.PduSessLog.Errorf("build PDUSessionResourceSetupRequestTransfer failed: %s", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(n2Pdu)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln(err)
+			} else {
+				n1n2Request.SetBinaryDataN2Information(tmpFile)
+				jsonData := n1n2Request.GetJsonData()
+				jsonData.SetN2InfoContainer(*n2InfoContainer)
+				n1n2Request.SetJsonData(jsonData)
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(n2Pdu); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			n1n2Request.BinaryDataN2Information = &tmpFile
-			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
 		}
 	} else {
 		if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 			nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
 			logger.PduSessLog.Errorf("build GSM PDUSessionEstablishmentReject failed: %s", err)
 		} else {
-			// Create a temporary file
-			tmpFile, err := os.CreateTemp("", "prefix")
+			tmpFile, err := util.CreatePayloadTempFile(smNasBuf)
 			if err != nil {
 				smContext.SubPduSessLog.Errorln(err)
+			} else {
+				n1n2Request.SetBinaryDataN1Message(tmpFile)
+				jsonData := n1n2Request.GetJsonData()
+				jsonData.SetN1MessageContainer(*n1MsgContainer)
+				n1n2Request.SetJsonData(jsonData)
 			}
-			defer tmpFile.Close()
-			if _, err := tmpFile.Write(smNasBuf); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				smContext.SubPduSessLog.Errorln(err)
-			}
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
 		}
 	}
 
@@ -999,26 +954,17 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		// It is just a template
+		jsonData := models.NewSmContextUpdateError(smferrors.N1SmError)
 		httpResponse = &httpwrapper.Response{
 			Status: http.StatusForbidden,
 			Body: models.UpdateSmContext400Response{
-				JsonData: &models.SmContextUpdateError{
-					Error: smferrors.N1SmError,
-				},
+				JsonData: jsonData,
 			}, // Depends on the reason why N4 fail
 		}
 	case smf_context.SessionUpdateTimeout:
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, PFCP Session Modification Timeout")
 
-		/* TODO: exact http error response code for this usecase is 504, so relevant cause for
-		   this usecase is 500. If it gets added in spec 29.502 new release that can be added
-		*/
-		problemDetail := models.ExtProblemDetails{
-			Title:  openapi.PtrString("PFCP Session Mod Timeout"),
-			Status: openapi.PtrInt32(http.StatusInternalServerError),
-			Detail: openapi.PtrString("PFCP Session Modification Timeout"),
-			Cause:  openapi.PtrString("UPF_NOT_RESPONDING"),
-		}
+		problemDetail := smferrors.NewExtProblemDetailsWithCause("PFCP Session Mod Timeout", http.StatusGatewayTimeout, "PFCP Session Modification Timeout", "UPF_NOT_RESPONDING")
 		var n1buf, n2buf []byte
 		var err error
 		if n1buf, err = smf_context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
@@ -1040,18 +986,23 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 		if err1 != nil {
 			smContext.SubPduSessLog.Errorln(err1)
 		}
+		jsonData := models.NewSmContextUpdateError(problemDetail)
+		responseBody := models.UpdateSmContext400Response{
+			JsonData: jsonData,
+		}
+		if tmpFile != nil {
+			jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD})
+			responseBody.SetBinaryDataN1SmMessage(tmpFile)
+		}
+		if tmpFile1 != nil {
+			jsonData.SetN2SmInfo(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD})
+			jsonData.SetN2SmInfoType(models.N2SMINFOTYPE_PDU_RES_REL_CMD)
+			responseBody.SetBinaryDataN2SmInformation(tmpFile1)
+		}
+
 		httpResponse = &httpwrapper.Response{
-			Status: http.StatusServiceUnavailable,
-			Body: models.UpdateSmContext400Response{
-				JsonData: &models.SmContextUpdateError{
-					Error:        problemDetail,
-					N1SmMsg:      &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-					N2SmInfo:     &models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_CMD},
-					N2SmInfoType: models.N2SMINFOTYPE_PDU_RES_REL_CMD.Ptr(),
-				},
-				BinaryDataN1SmMessage:     &tmpFile,
-				BinaryDataN2SmInformation: &tmpFile1,
-			}, // Depends on the reason why N4 fail
+			Status: http.StatusGatewayTimeout,
+			Body:   responseBody, // Depends on the reason why N4 fail
 		}
 
 		err = SendPfcpSessionReleaseReq(smContext)

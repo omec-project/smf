@@ -13,6 +13,7 @@ import (
 	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/openapi/v2/models"
 	nrfCache "github.com/omec-project/openapi/v2/nrfcache"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -310,19 +311,16 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// -------------------------------
 	// Prepare N2 container info (NGAP message)
 	// -------------------------------
-	n2InfoContainer := models.N2InfoContainer{
-		N2InformationClass: models.N2INFORMATIONCLASS_SM, // SM information for NGAP
-		SmInfo: &models.N2SmInformation{
-			PduSessionId: smContext.PDUSessionID, // PDU session ID
-			N2InfoContent: &models.N2InfoContent{
-				NgapIeType: models.NGAPIETYPE_PDU_RES_MOD_REQ.Ptr(), // NGAP IE type for PDUSessionResourceModifyRequest
-				NgapData: models.RefToBinaryData{
-					ContentId: "N2SmInformation", // Reference ID for binary data
-				},
-			},
-			SNssai: smContext.Snssai, // Slice information
-		},
+	// N2 Container Info
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_MOD_REQ)
+	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
+	smInfo.SetN2InfoContent(*n2InfoContent)
+	if smContext.Snssai != nil {
+		smInfo.SetSNssai(*smContext.Snssai)
 	}
+	n2InfoContainer := models.NewN2InfoContainer(models.N2INFORMATIONCLASS_SM)
+	n2InfoContainer.SetSmInfo(*smInfo)
 
 	// -------------------------------
 	// Prepare N1 container info (NAS message)
@@ -354,8 +352,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
 			return err2
 		} else {
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
+			n1n2Request.SetBinaryDataN1Message(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN1MessageContainer(*n1MsgContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 
@@ -372,8 +372,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
 			return err1
 		} else {
-			n1n2Request.BinaryDataN2Information = &tmpFile
-			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
+			n1n2Request.SetBinaryDataN2Information(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN2InfoContainer(*n2InfoContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 
@@ -429,10 +431,7 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	logger.ProducerLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
 
 	if notificationData.Event == "" || notificationData.NfInstanceUri == "" {
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusBadRequest)
-		problemDetails.SetCause("MANDATORY_IE_MISSING") // Defined in TS 29.510 6.1.6.2.17
-		problemDetails.SetDetail("Missing IE [Event]/[NfInstanceUri] in NotificationData")
+		problemDetails := utils.ProblemDetailsMandatoryIeMissing("Missing IE [Event]/[NfInstanceUri] in NotificationData")
 		return problemDetails
 	}
 	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]

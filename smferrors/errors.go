@@ -10,6 +10,7 @@ import (
 	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 )
 
 var (
@@ -103,6 +104,11 @@ var (
 		Cause:         openapi.PtrString("REQUEST_REJECTED"),
 		InvalidParams: nil,
 	}
+	SMContextNotFound = models.ExtProblemDetails{
+		Type:   openapi.PtrString("Resource Not Found"),
+		Title:  openapi.PtrString("SMContext Ref is not found"),
+		Status: openapi.PtrInt32(http.StatusNotFound),
+	}
 	PduSessionTypeNotSupported = models.ExtProblemDetails{
 		Title:         openapi.PtrString("PduSession Type Not Supported"),
 		Status:        openapi.PtrInt32(http.StatusForbidden),
@@ -126,6 +132,33 @@ var ErrorType = map[string]models.ExtProblemDetails{
 	"ApplySMPolicyFailure":          ApplySMPolicyFailure,
 	"AMFDiscoveryFailure":           AMFDiscoveryFailure,
 	"PDUSessionTypeIPv4OnlyAllowed": PduSessionTypeNotSupported,
+}
+
+// NewExtProblemDetails creates an ExtProblemDetails with basic fields
+func NewExtProblemDetails(title string, status int, detail string) models.ExtProblemDetails {
+	return models.ExtProblemDetails{
+		Title:  openapi.PtrString(title),
+		Status: openapi.PtrInt32(int32(status)),
+		Detail: openapi.PtrString(detail),
+	}
+}
+
+// NewExtProblemDetailsWithCause creates an ExtProblemDetails with cause
+func NewExtProblemDetailsWithCause(title string, status int, detail string, cause string) models.ExtProblemDetails {
+	return models.ExtProblemDetails{
+		Title:  openapi.PtrString(title),
+		Status: openapi.PtrInt32(int32(status)),
+		Detail: openapi.PtrString(detail),
+		Cause:  openapi.PtrString(cause),
+	}
+}
+
+// NewExtProblemDetailsSystemFailure creates a system failure ExtProblemDetails
+func NewExtProblemDetailsSystemFailure() models.ExtProblemDetails {
+	return models.ExtProblemDetails{
+		Status: openapi.PtrInt32(int32(http.StatusInternalServerError)),
+		Cause:  openapi.PtrString(utils.CauseSystemFailure),
+	}
 }
 
 var ErrorCause = map[string]uint8{
