@@ -99,8 +99,7 @@ func (smContext *SMContext) HandlePDUSessionEstablishmentRequest(req *nasMessage
 			case nasMessage.MSSupportOfLocalAddressInTFTIndicatorUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type MSSupportOfLocalAddressInTFTIndicatorUL")
 			case nasMessage.PCSCFReSelectionSupportUL:
-				smContext.ProtocolConfigurationOptions.PCSCFIPv4Request = true
-				smContext.SubGsmLog.Infoln("PCSCFIPv4AddressRequestUL has been set true")
+				smContext.SubGsmLog.Infoln("Didn't Implement container type PCSCFReSelectionSupportUL")
 			case nasMessage.NBIFOMRequestIndicatorUL:
 				smContext.SubGsmLog.Infoln("Didn't Implement container type NBIFOMRequestIndicatorUL")
 			case nasMessage.NBIFOMModeUL:
