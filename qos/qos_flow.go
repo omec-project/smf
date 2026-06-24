@@ -305,7 +305,7 @@ func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *
 
 	// Operation Code
 	qfd.SetQoSFlowDescOpCode(QFDOpModify)
-	logger.QosLog.Infof("OpCode after setting: 0x%02x\n", qfd.OpCode)
+	logger.QosLog.Infof("OpCode after setting: 0x%02x", qfd.OpCode)
 
 	// Modify Params - only add parameters that need to be modified
 	// 5QI (if changed)
