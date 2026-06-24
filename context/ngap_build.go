@@ -296,13 +296,18 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	if shouldSendReleaseOnly {
 		ctx.SubPduSessLog.Info("PCC rule ID is nil, sending only QosFlowToReleaseList")
 
-		// Get QFI from session rule for release
-		sessRule := ctx.SelectedSessionRule()
-		if sessRule == nil || sessRule.AuthDefQos == nil {
-			ctx.SubPduSessLog.Error("SelectedSessionRule is nil")
-			return nil, fmt.Errorf("sessRule is nil")
+		// Determine QFI to release from the existing SM context QoS data (QosId carries the QFI)
+		var qfi int32
+		for _, qd := range ctx.SmPolicyData.SmCtxtQosData.QosData {
+			if qd != nil && qd.GetDefQosFlowIndication() {
+				qfi = int32(qos.GetQosFlowIdFromQosId(qd.GetQosId()))
+				break
+			}
 		}
-		qfi := sessRule.AuthDefQos.GetVar5qi()
+		if qfi == 0 {
+			ctx.SubPduSessLog.Error("could not determine default QFI to release from SM context")
+			return nil, fmt.Errorf("default QFI not found")
+		}
 
 		// Build QoS Flow Release List
 		qosFlowToReleaseList := ngapType.QosFlowListWithCause{}
@@ -358,12 +363,20 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	gbdownlink := ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Downlink)
 	gbuplink := ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Uplink)
 
-	// Default QoS params from session rule
+	// Default QoS params
 	var qfi int32
 	var qi int32
 	priority := int32(8)
+
+	// Prefer deriving QFI from existing SM context QoS data (QosId carries the QFI)
+	for _, qd := range ctx.SmPolicyData.SmCtxtQosData.QosData {
+		if qd != nil && qd.GetDefQosFlowIndication() {
+			qfi = int32(qos.GetQosFlowIdFromQosId(qd.GetQosId()))
+			break
+		}
+	}
+
 	if sessRule.AuthDefQos != nil {
-		qfi = sessRule.AuthDefQos.GetVar5qi()
 		qi = sessRule.AuthDefQos.GetVar5qi()
 		if sessRule.AuthDefQos.Arp != nil {
 			if v := sessRule.AuthDefQos.Arp.GetPriorityLevel(); v > 0 {
