@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/omec-project/nas/v2/nasMessage"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -469,19 +468,16 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	}
 	smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", pfcpErr.Error())
 	// N1N2 Request towards AMF
-	n1n2Request := models.N1N2MessageTransferRequest{}
+	n1n2Request := models.NewN1N2MessageTransferRequest()
 
 	// N1 Container Info
-	n1MsgContainer := models.N1MessageContainer{
-		N1MessageClass:   "SM",
-		N1MessageContent: models.RefToBinaryData{ContentId: "GSM_NAS"},
-	}
+	n1MsgContainer := models.NewN1MessageContainer("SM", models.RefToBinaryData{ContentId: "GSM_NAS"})
 
 	// N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
-		PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
-	}
-	defer util.CleanupMultipartTempFiles(&n1n2Request)
+	jsonData := models.NewN1N2MessageTransferReqData()
+	jsonData.SetPduSessionId(smContext.PDUSessionID)
+	n1n2Request.SetJsonData(*jsonData)
+	defer util.CleanupMultipartTempFiles(n1n2Request)
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
@@ -499,8 +495,10 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 			smf_context.RemoveSMContext(smContext.Ref)
 			return
 		} else {
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+			n1n2Request.SetBinaryDataN1Message(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN1MessageContainer(*n1MsgContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 

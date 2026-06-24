@@ -81,19 +81,15 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	defer util.CleanupMultipartTempFiles(&n1n2Request)
 
 	// N2 Container Info
-	n2InfoContainer := models.N2InfoContainer{
-		N2InformationClass: models.N2INFORMATIONCLASS_SM,
-		SmInfo: &models.N2SmInformation{
-			PduSessionId: smContext.PDUSessionID,
-			N2InfoContent: &models.N2InfoContent{
-				NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr(),
-				NgapData: models.RefToBinaryData{
-					ContentId: "N2SmInformation",
-				},
-			},
-			SNssai: smContext.Snssai,
-		},
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_SETUP_REQ)
+	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
+	smInfo.SetN2InfoContent(*n2InfoContent)
+	if smContext.Snssai != nil {
+		smInfo.SetSNssai(*smContext.Snssai)
 	}
+	n2InfoContainer := models.NewN2InfoContainer(models.N2INFORMATIONCLASS_SM)
+	n2InfoContainer.SetSmInfo(*smInfo)
 
 	// N1 Container Info
 	n1MessageClass, err := models.NewN1MessageClassFromValue("SM")
@@ -118,8 +114,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 			smContext.SubPduSessLog.Errorf("failed to create temp file: %s", err2.Error())
 			return err2
 		} else {
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = n1MsgContainer
+			n1n2Request.SetBinaryDataN1Message(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN1MessageContainer(*n1MsgContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 
@@ -134,8 +132,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
 			return err1
 		} else {
-			n1n2Request.BinaryDataN2Information = &tmpFile
-			n1n2Request.JsonData.N2InfoContainer = &n2InfoContainer
+			n1n2Request.SetBinaryDataN2Information(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN2InfoContainer(*n2InfoContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 

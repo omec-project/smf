@@ -40,9 +40,8 @@ import (
 // Post /sm-contexts
 // Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
-	logger.PduSessLog.Infoln("Handle Post /sm-contexts")
+	logger.PduSessLog.Infoln("handle Post /sm-contexts")
 	var err error
-	var request models.PostSmContextsRequest
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
 	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
 	if err != nil {
@@ -50,6 +49,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 		return
 	}
 
+	request := models.PostSmContextsRequest{}
 	request.SetJsonData(models.SmContextCreateData{})
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
@@ -85,14 +85,11 @@ func HTTPPostSmContexts(c *gin.Context) {
 	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
 	if !ok || HTTPResponse == nil {
 		logger.PduSessLog.Errorf("create SM Context transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := utils.ProblemDetailsSystemFailure("create SM Context terminated before building an HTTP response")
 		HTTPResponse = &httpwrapper.Response{
 			Header: nil,
 			Status: http.StatusInternalServerError,
-			Body: &models.ProblemDetails{
-				Title:  openapi.PtrString("SMF transaction failure"),
-				Status: openapi.PtrInt32(http.StatusInternalServerError),
-				Detail: openapi.PtrString("create SM Context terminated before building an HTTP response"),
-			},
+			Body:   problemDetails,
 		}
 	}
 	var smContext *smf_context.SMContext
