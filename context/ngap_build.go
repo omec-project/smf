@@ -388,25 +388,27 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// ----------------------------------------------------
 	// Step 4: Check QoS Policy Decision overrides
 	// ----------------------------------------------------
-	policyDecision := ctx.SmPolicyUpdates[0].SmPolicyDecision
-	if policyDecision != nil {
-		for _, qos := range policyDecision.GetQosDecs() {
-			ctx.SubPduSessLog.Infof(
-				"QoSId=%s, Var5QI=%d, GBR: UL=%s, DL=%s, MBR: UL=%s, DL=%s",
-				qos.GetQosId(), qos.GetVar5qi(), qos.GetGbrUl(), qos.GetGbrDl(), qos.GetMaxbrUl(), qos.GetMaxbrDl(),
-			)
-			// Override AMBR with GBR if available
-			if qos.GetGbrDl() != "" {
-				if val, err := StringToBitRate(qos.GetGbrDl()); err == nil {
-					gbdownlink = int64(val)
+	if len(ctx.SmPolicyUpdates) > 0 {
+		policyDecision := ctx.SmPolicyUpdates[0].SmPolicyDecision
+		if policyDecision != nil {
+			for _, qos := range policyDecision.GetQosDecs() {
+				ctx.SubPduSessLog.Infof(
+					"QoSId=%s, Var5QI=%d, GBR: UL=%s, DL=%s, MBR: UL=%s, DL=%s",
+					qos.GetQosId(), qos.GetVar5qi(), qos.GetGbrUl(), qos.GetGbrDl(), qos.GetMaxbrUl(), qos.GetMaxbrDl(),
+				)
+				// Override AMBR with GBR if available
+				if qos.GetGbrDl() != "" {
+					if val, err := StringToBitRate(qos.GetGbrDl()); err == nil {
+						gbdownlink = int64(val)
+					}
 				}
-			}
-			if qos.GetGbrUl() != "" {
-				if val, err := StringToBitRate(qos.GetGbrUl()); err == nil {
-					gbuplink = int64(val)
+				if qos.GetGbrUl() != "" {
+					if val, err := StringToBitRate(qos.GetGbrUl()); err == nil {
+						gbuplink = int64(val)
+					}
 				}
+				qi = qos.GetVar5qi()
 			}
-			qi = qos.GetVar5qi()
 		}
 	}
 	ctx.SubPduSessLog.Infof("Using QoS: DL = %d bps, UL = %d bps, qfi = %d , arp = %d ",
@@ -566,8 +568,11 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 // but internally the SMF/UPF and PFCP signaling require numeric values in bps.
 //
 // Supported units:
+//   - "bps"  → bits per second (multiplied by 1)
 //   - "kbps" → kilobits per second (multiplied by 1,000)
 //   - "mbps" → megabits per second (multiplied by 1,000,000)
+//   - "gbps" → gigabits per second (multiplied by 1,000,000,000)
+//   - "tbps" → terabits per second (multiplied by 1,000,000,000,000)
 func StringToBitRate(s string) (uint64, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 

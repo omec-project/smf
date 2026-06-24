@@ -144,9 +144,9 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 				smContext.SubGsmLog.Warn("PCSCFInfo.IPv4Addr is empty in global SMF context, using config fallback")
 			}
 			smContext.SubGsmLog.Infof("PCSCF Ip: %v", pcsfIpStr)
-			pcscfIP := net.ParseIP(pcsfIpStr)
+			pcscfIP := net.ParseIP(pcsfIpStr).To4()
 			if pcscfIP == nil {
-				smContext.SubGsmLog.Warnln("Invalid P-CSCF IP address")
+				smContext.SubGsmLog.Warnln("Invalid P-CSCF IPv4 address")
 			} else {
 				err := protocolConfigurationOptions.AddPCSCFIPv4Address(pcscfIP)
 				if err != nil {
