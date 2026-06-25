@@ -290,7 +290,6 @@ func InitSmfContext(config *factory.Config) *SMFContext {
 
 	smfContext.PCSCFInfo = PCSCFInfo(configuration.PCSCFInfo)
 
-	logger.CtxLog.Infof("Configuration PCSCF Info: %v", configuration.PCSCFInfo)
 	logger.CtxLog.Infof("SMF Context PCSCF Info: %v", smfContext.PCSCFInfo)
 
 	smfContext.PodIp = os.Getenv("POD_IP")
