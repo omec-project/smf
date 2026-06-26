@@ -13,6 +13,7 @@ import (
 
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -757,26 +758,17 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 					},
 				}
 
-				apiN1N2MessageTransferRequest := smContext.CommunicationClient.N1N2MessageCollectionCollectionAPI.N1N2MessageTransfer(context.Background(), smContext.Supi)
-				apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
-				if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
-					apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
+				rspData, n1n2Err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, &n1n2Request)
+				if n1n2Err != nil {
+					smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed: %v", n1n2Err)
 				}
-				if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
-					apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
-				}
-				var rspData *models.N1N2MessageTransferRspData
-				rspData, _, err = smContext.CommunicationClient.N1N2MessageCollectionCollectionAPI.N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
-				if err != nil {
-					smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
-				}
-				if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
+				if n1n2Err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
 					smContext.SubPfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
 
 					pfcpSRflag.Drobu = false
 					cause = ie.CauseRequestAccepted
 				}
-				if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
+				if n1n2Err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
 					smContext.SubPfcpLog.Infof("Receive %v, UE is not responding to N1N2 transfer message", rspData.Cause)
 					// TODO: TS 23.502 4.2.3.3 3c. Failure indication
 				}

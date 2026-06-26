@@ -22,6 +22,7 @@ import (
 
 	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -502,24 +503,14 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 		}
 	}
 
-	// Send N1N2 Reject request
-	apiN1N2MessageTransferRequest := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransfer(context.Background(), smContext.Supi)
-	apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
-	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
-	}
-	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
-	}
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
+	// Send N1N2 Reject request. Hold SMLock across the transfer (AMF re-discovery may
+	// mutate AMFProfile/ServingNfId/CommunicationClient) and the state transition so the
+	// SMContext stays consistent against concurrent users.
+	smContext.SMLock.Lock()
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	smContext.ChangeState(smf_context.SmStateInit)
 	smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+	smContext.SMLock.Unlock()
 	if err != nil {
 		smContext.SubPfcpLog.Warnln("send N1N2Transfer failed")
 	}
