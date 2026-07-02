@@ -323,6 +323,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
 			return nil
 		}
+		smContext.RebuildCommunicationClient()
 	} else {
 		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
 		return nil
