@@ -31,10 +31,12 @@ const (
 )
 
 const (
-	DefaultDQR = 0 // Default value for Delete QoS Rule flag
+	// DQR is the "Delete QoS Rule" flag (TS 24.501). It must be set when encoding
+	// OperationCodeDeleteExistingQoSRule.
+	DefaultDQR uint8 = 1
 
-	DefaultQFI = 0 // Default QFI when deleting a QoS Rule
-
+	// QFI is not included for delete (see MarshalBinary), keep as zero for clarity.
+	DefaultQFI uint8 = 0
 )
 
 // TS 24.501 Table 9.11.4.13.1
@@ -108,7 +110,7 @@ type QosRule struct {
 func BuildAddDefaultQosRule(defQFI uint8) *QosRule {
 	defQosRule := &QosRule{
 		Identifier:    255,
-		DQR:           0x01,
+		DQR:           0x00,
 		OperationCode: OperationCodeCreateNewQoSRule,
 		Precedence:    255,
 		QFI:           defQFI,
@@ -308,7 +310,7 @@ func BuildModifyQosRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosD
 
 	qRule := QosRule{
 		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
-		DQR:           btou(qosData.GetDefQosFlowIndication()),
+		DQR:           0,
 		OperationCode: pccRuleOpCode,
 		Precedence:    uint8(pccRule.GetPrecedence()),
 		QFI:           GetQosFlowIdFromQosId(qosData.GetQosId()),

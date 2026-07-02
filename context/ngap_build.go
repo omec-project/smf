@@ -392,6 +392,12 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		policyDecision := ctx.SmPolicyUpdates[0].SmPolicyDecision
 		if policyDecision != nil {
 			for _, qos := range policyDecision.GetQosDecs() {
+				// Use the default QoS flow to derive session-level parameters to avoid
+				// nondeterminism when multiple QoS decisions exist.
+				if !qos.GetDefQosFlowIndication() {
+					continue
+				}
+
 				ctx.SubPduSessLog.Infof(
 					"QoSId=%s, Var5QI=%d, GBR: UL=%s, DL=%s, MBR: UL=%s, DL=%s",
 					qos.GetQosId(), qos.GetVar5qi(), qos.GetGbrUl(), qos.GetGbrDl(), qos.GetMaxbrUl(), qos.GetMaxbrDl(),
@@ -408,6 +414,7 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 					}
 				}
 				qi = qos.GetVar5qi()
+				break
 			}
 		}
 	}
@@ -600,6 +607,9 @@ func StringToBitRate(s string) (uint64, error) {
 	val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	if err != nil {
 		return 0, err
+	}
+	if val < 0 {
+		return 0, fmt.Errorf("negative bitrate: %q", strings.TrimSpace(s))
 	}
 	return uint64(val*mult + 0.5), nil
 }
