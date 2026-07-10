@@ -24,12 +24,6 @@ const (
 	PTI uint8 = 0 // indicates that the request is initiated by the core network.
 )
 
-type AuthorizedQosRules struct {
-	Iei    uint8
-	Len    uint16
-	Buffer []uint8
-}
-
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
 	m := nas.NewMessage()
 	m.GsmMessage = nas.NewGsmMessage()
@@ -349,9 +343,4 @@ func BuildGSMPDUSessionReleaseRejectWithCause(smContext *SMContext, pduSessionID
 	uint8Cause := errors.ErrorCause[cause]
 	pDUSessionReleaseRejectWithCause.SetCauseValue(uint8Cause)
 	return m.PlainNasEncode()
-}
-
-func (a *AuthorizedQosRules) SetQosRule(qosRule []uint8) {
-	a.Buffer = make([]byte, len(qosRule)) // fresh buffer
-	copy(a.Buffer, qosRule)
 }

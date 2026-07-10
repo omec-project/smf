@@ -373,15 +373,21 @@ func BuildPfcpSessionModificationRequest(
 	}
 
 	for _, pdr := range removePDR {
-		ies = append(ies, buildRemovePDRIE(pdr))
+		if pdr != nil {
+			ies = append(ies, buildRemovePDRIE(pdr))
+		}
 	}
 
 	for _, far := range removeFAR {
-		ies = append(ies, buildRemoveFARIE(far))
+		if far != nil {
+			ies = append(ies, buildRemoveFARIE(far))
+		}
 	}
 
 	for _, qer := range removeQER {
-		ies = append(ies, buildRemoveQERIE(qer))
+		if qer != nil {
+			ies = append(ies, buildRemoveQERIE(qer))
+		}
 	}
 	return message.NewSessionModificationRequest(
 		0,
