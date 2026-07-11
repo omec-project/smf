@@ -300,7 +300,7 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 	return nil
 }
 
-func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSmContext200Response) error {
+func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
 	smContextUpdateData := body.JsonData
@@ -364,6 +364,31 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		}
 		if err := context.HandleHandoverRequestAcknowledgeTransfer(fileBytes, smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, handle HandoverRequestAcknowledgeTransfer failed: %+v", err)
+		}
+
+		// Trigger PFCP session modification so the UPF DL path is switched to the
+		// target gNB (3GPP TS 23.502 §4.9.1.3.3, steps 9a/10a).
+		// The FAR OuterHeaderCreation fields were just populated by
+		// HandleHandoverRequestAcknowledgeTransfer above.
+		if smContext.Tunnel != nil {
+			smContext.PendingUPF = make(context.PendingUPF)
+			for _, dataPath := range smContext.Tunnel.DataPathPool {
+				if dataPath.Activated {
+					ANUPF := dataPath.FirstDPNode
+					for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+						pfcpParam.pdrList = append(pfcpParam.pdrList, DLPDR)
+						pfcpParam.farList = append(pfcpParam.farList, DLPDR.FAR)
+						if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
+							smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+						}
+					}
+				}
+			}
+			if len(pfcpParam.farList) > 0 {
+				pfcpAction.sendPfcpModify = true
+				smContext.ChangeState(context.SmStatePfcpModify)
+				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
+			}
 		}
 
 		if n2Buf, err := context.BuildHandoverCommandTransfer(smContext); err != nil {

@@ -444,7 +444,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	}
 
 	// Ho state handling
-	if err := HandleUpdateHoState(txn, &response); err != nil {
+	if err := HandleUpdateHoState(txn, &response, pfcpAction, pfcpParam); err != nil {
 		return err
 	}
 
