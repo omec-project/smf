@@ -113,7 +113,6 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 			advertisedRegisterIPv4 = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
 	}
-	now := time.Now()
 	nfServices := make([]models.NFService, 0, len(serviceNames))
 	for _, serviceName := range serviceNames {
 		nfServices = append(nfServices, models.NFService{
@@ -125,7 +124,6 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 			Versions: []models.NFServiceVersion{{
 				ApiVersionInUri: "v1",
 				ApiFullVersion:  fmt.Sprintf("%s://%s:%d/nsmf-pdusession/v1", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort),
-				Expiry:          &now,
 			}},
 			AllowedPlmns: plmnList,
 		})
