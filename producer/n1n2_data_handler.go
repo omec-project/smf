@@ -63,6 +63,34 @@ func buildAccessForwardingParameters(smContext *context.SMContext,
 	return forwardingParameters
 }
 
+// collectHoFARsForPFCPModify iterates over activated data path DL FARs that are
+// marked RULE_UPDATE (set by HandleHandoverRequestAcknowledgeTransfer) and
+// accumulates them into param. It returns a PendingUPF map; the caller should
+// assign it to smContext.PendingUPF only when a PFCP modify will be sent.
+func collectHoFARsForPFCPModify(tunnel *context.UPTunnel, param *pfcpParam) context.PendingUPF {
+	pendingUPF := make(context.PendingUPF)
+	if tunnel == nil {
+		return pendingUPF
+	}
+	for _, dataPath := range tunnel.DataPathPool {
+		if !dataPath.Activated {
+			continue
+		}
+		ANUPF := dataPath.FirstDPNode
+		for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+			if DLPDR.FAR.State != context.RULE_UPDATE {
+				continue
+			}
+			param.pdrList = append(param.pdrList, DLPDR)
+			param.farList = append(param.farList, DLPDR.FAR)
+			if _, exist := pendingUPF[ANUPF.GetNodeIP()]; !exist {
+				pendingUPF[ANUPF.GetNodeIP()] = true
+			}
+		}
+	}
+	return pendingUPF
+}
+
 func readBinaryN2SmInformation(file **os.File) ([]byte, error) {
 	if file == nil || *file == nil {
 		return nil, nil
@@ -370,25 +398,12 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		// target gNB (3GPP TS 23.502 §4.9.1.3.3, steps 9a/10a).
 		// The FAR OuterHeaderCreation fields were just populated by
 		// HandleHandoverRequestAcknowledgeTransfer above.
-		if smContext.Tunnel != nil {
-			smContext.PendingUPF = make(context.PendingUPF)
-			for _, dataPath := range smContext.Tunnel.DataPathPool {
-				if dataPath.Activated {
-					ANUPF := dataPath.FirstDPNode
-					for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
-						pfcpParam.pdrList = append(pfcpParam.pdrList, DLPDR)
-						pfcpParam.farList = append(pfcpParam.farList, DLPDR.FAR)
-						if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-							smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-						}
-					}
-				}
-			}
-			if len(pfcpParam.farList) > 0 {
-				pfcpAction.sendPfcpModify = true
-				smContext.ChangeState(context.SmStatePfcpModify)
-				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
-			}
+		pendingUPF := collectHoFARsForPFCPModify(smContext.Tunnel, pfcpParam)
+		if len(pfcpParam.farList) > 0 {
+			smContext.PendingUPF = pendingUPF
+			pfcpAction.sendPfcpModify = true
+			smContext.ChangeState(context.SmStatePfcpModify)
+			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		}
 
 		if n2Buf, err := context.BuildHandoverCommandTransfer(smContext); err != nil {

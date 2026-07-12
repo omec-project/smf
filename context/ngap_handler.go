@@ -132,7 +132,10 @@ func HandleHandoverRequestAcknowledgeTransfer(b []byte, ctx *SMContext) (err err
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 				if DLPDR.FAR.ForwardingParameters == nil {
-					DLPDR.FAR.ForwardingParameters = &ForwardingParameters{}
+					DLPDR.FAR.ForwardingParameters = &ForwardingParameters{
+						DestinationInterface: DestinationInterface{InterfaceValue: DestinationInterfaceAccess},
+						NetworkInstance:      []byte(ctx.Dnn),
+					}
 				}
 				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(OuterHeaderCreation)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation

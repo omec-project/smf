@@ -10,6 +10,94 @@ import (
 	smf_context "github.com/omec-project/smf/context"
 )
 
+func makeTestTunnel(farState smf_context.RuleState, activated bool) *smf_context.UPTunnel {
+	upf := &smf_context.UPF{
+		NodeID: *smf_context.NewNodeID("10.0.0.1"),
+	}
+	far := &smf_context.FAR{
+		State: farState,
+	}
+	pdr := &smf_context.PDR{FAR: far}
+	gtpTunnel := &smf_context.GTPTunnel{
+		PDR: map[string]*smf_context.PDR{"default": pdr},
+	}
+	node := &smf_context.DataPathNode{
+		UPF:            upf,
+		DownLinkTunnel: gtpTunnel,
+	}
+	dataPath := &smf_context.DataPath{
+		FirstDPNode: node,
+		Activated:   activated,
+	}
+	tunnel := smf_context.NewUPTunnel()
+	tunnel.AddDataPath(dataPath)
+	return tunnel
+}
+
+func TestCollectHoFARsForPFCPModifyWithRuleUpdate(t *testing.T) {
+	tunnel := makeTestTunnel(smf_context.RULE_UPDATE, true)
+	param := &pfcpParam{}
+
+	pendingUPF := collectHoFARsForPFCPModify(tunnel, param)
+
+	if len(param.farList) != 1 {
+		t.Fatalf("expected 1 FAR collected, got %d", len(param.farList))
+	}
+	if len(param.pdrList) != 1 {
+		t.Fatalf("expected 1 PDR collected, got %d", len(param.pdrList))
+	}
+	if len(pendingUPF) != 1 {
+		t.Fatalf("expected 1 entry in PendingUPF, got %d", len(pendingUPF))
+	}
+}
+
+func TestCollectHoFARsForPFCPModifySkipsNonUpdatedFARs(t *testing.T) {
+	for _, state := range []smf_context.RuleState{
+		smf_context.RULE_INITIAL,
+		smf_context.RULE_CREATE,
+		smf_context.RULE_REMOVE,
+	} {
+		tunnel := makeTestTunnel(state, true)
+		param := &pfcpParam{}
+
+		pendingUPF := collectHoFARsForPFCPModify(tunnel, param)
+
+		if len(param.farList) != 0 {
+			t.Errorf("state %v: expected 0 FARs collected, got %d", state, len(param.farList))
+		}
+		if len(pendingUPF) != 0 {
+			t.Errorf("state %v: expected empty PendingUPF, got %d entries", state, len(pendingUPF))
+		}
+	}
+}
+
+func TestCollectHoFARsForPFCPModifySkipsInactivePaths(t *testing.T) {
+	tunnel := makeTestTunnel(smf_context.RULE_UPDATE, false /* not activated */)
+	param := &pfcpParam{}
+
+	pendingUPF := collectHoFARsForPFCPModify(tunnel, param)
+
+	if len(param.farList) != 0 {
+		t.Fatalf("expected 0 FARs for inactive path, got %d", len(param.farList))
+	}
+	if len(pendingUPF) != 0 {
+		t.Fatalf("expected empty PendingUPF for inactive path, got %d entries", len(pendingUPF))
+	}
+}
+
+func TestCollectHoFARsForPFCPModifyNilTunnel(t *testing.T) {
+	param := &pfcpParam{}
+
+	pendingUPF := collectHoFARsForPFCPModify(nil, param)
+
+	if len(param.farList) != 0 {
+		t.Fatalf("expected 0 FARs for nil tunnel, got %d", len(param.farList))
+	}
+	if len(pendingUPF) != 0 {
+		t.Fatalf("expected empty PendingUPF for nil tunnel, got %d entries", len(pendingUPF))
+	}
+}
+
 func TestBuildAccessForwardingParametersPreservesOuterHeaderCreation(t *testing.T) {
 	smContext := &smf_context.SMContext{
 		Dnn:    "internet",
