@@ -25,7 +25,7 @@ func TestNewExtProblemDetails(t *testing.T) {
 }
 
 func TestNewExtProblemDetailsWithCause(t *testing.T) {
-	pd := NewExtProblemDetailsWithCause("Request Rejected", http.StatusForbidden, "Invalid request", "REQUEST_REJECTED")
+	pd := NewExtProblemDetailsWithCause("Request Rejected", http.StatusForbidden, "Invalid request", utils.CauseRequestRejected)
 
 	if pd.GetTitle() != "Request Rejected" {
 		t.Fatalf("expected title %q, got %q", "Request Rejected", pd.GetTitle())
@@ -36,8 +36,8 @@ func TestNewExtProblemDetailsWithCause(t *testing.T) {
 	if pd.GetDetail() != "Invalid request" {
 		t.Fatalf("expected detail %q, got %q", "Invalid request", pd.GetDetail())
 	}
-	if pd.GetCause() != "REQUEST_REJECTED" {
-		t.Fatalf("expected cause %q, got %q", "REQUEST_REJECTED", pd.GetCause())
+	if pd.GetCause() != utils.CauseRequestRejected {
+		t.Fatalf("expected cause %q, got %q", utils.CauseRequestRejected, pd.GetCause())
 	}
 }
 
