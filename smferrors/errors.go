@@ -52,56 +52,56 @@ var (
 		Title:         openapi.PtrString("Subscription Data Fetch error"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in fetching subscription data."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	SubscriptionDataLenError = models.ExtProblemDetails{
 		Title:         openapi.PtrString("Subscription Data Fetch error"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to not receiving any subscription data.  "),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	UDMDiscoveryFailure = models.ExtProblemDetails{
 		Title:         openapi.PtrString("UDM Discovery Failure"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in UDM discovery."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	UPFDataPathError = models.ExtProblemDetails{
 		Title:         openapi.PtrString("UPF Data Path Failure"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in fetching UPF data path."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	PCFDiscoveryFailure = models.ExtProblemDetails{
 		Title:         openapi.PtrString("PCF Discovery Failure"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in PCF discovery."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	PCFPolicyCreateFailure = models.ExtProblemDetails{
 		Title:         openapi.PtrString("PCF Policy Create Failure"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in creating PCF policy."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	AMFDiscoveryFailure = models.ExtProblemDetails{
 		Title:         openapi.PtrString("AMF Discovery Failure"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
-		Detail:        openapi.PtrString("The request cannot be provided due to failure in AMF discovery ."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Detail:        openapi.PtrString("The request cannot be provided due to failure in AMF discovery."),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	ApplySMPolicyFailure = models.ExtProblemDetails{
 		Title:         openapi.PtrString("Apply SM Policy Error"),
 		Status:        openapi.PtrInt32(http.StatusInternalServerError),
 		Detail:        openapi.PtrString("The request cannot be provided due to failure in applying SM policy."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 	SMContextNotFound = models.ExtProblemDetails{
@@ -113,7 +113,7 @@ var (
 		Title:         openapi.PtrString("PduSession Type Not Supported"),
 		Status:        openapi.PtrInt32(http.StatusForbidden),
 		Detail:        openapi.PtrString("Unstructured PDU Type is not Supported."),
-		Cause:         openapi.PtrString("REQUEST_REJECTED"),
+		Cause:         openapi.PtrString(utils.CauseRequestRejected),
 		InvalidParams: nil,
 	}
 )

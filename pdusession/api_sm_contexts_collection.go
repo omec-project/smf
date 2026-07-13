@@ -56,7 +56,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	switch s[0] {
 	case "application/json":
 		err = c.ShouldBindJSON(request.JsonData)
-	case "multipart/related", "multipart/form-data":
+	case "multipart/related":
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")

@@ -39,7 +39,6 @@ import (
 
 var (
 	multipartRelated string = "multipart/related"
-	multipartForm    string = "multipart/form-data"
 	applicationJson  string = "application/json"
 )
 
@@ -87,7 +86,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	switch s[0] {
 	case applicationJson:
 		err = c.ShouldBindJSON(request.JsonData)
-	case multipartRelated, multipartForm:
+	case multipartRelated:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
@@ -164,7 +163,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	switch s[0] {
 	case applicationJson:
 		err = c.ShouldBindJSON(request.JsonData)
-	case multipartRelated, multipartForm:
+	case multipartRelated:
 		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
