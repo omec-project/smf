@@ -8,6 +8,7 @@ package producer
 import (
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 
@@ -399,8 +400,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		// The FAR OuterHeaderCreation fields were just populated by
 		// HandleHandoverRequestAcknowledgeTransfer above.
 		pendingUPF := collectHoFARsForPFCPModify(smContext.Tunnel, pfcpParam)
-		if len(pfcpParam.farList) > 0 {
-			smContext.PendingUPF = pendingUPF
+		if len(pendingUPF) > 0 {
+			if smContext.PendingUPF == nil {
+				smContext.PendingUPF = make(context.PendingUPF)
+			}
+			maps.Copy(smContext.PendingUPF, pendingUPF)
 			pfcpAction.sendPfcpModify = true
 			smContext.ChangeState(context.SmStatePfcpModify)
 			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())

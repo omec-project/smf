@@ -46,6 +46,9 @@ func TestCollectHoFARsForPFCPModifyWithRuleUpdate(t *testing.T) {
 	if len(param.pdrList) != 1 {
 		t.Fatalf("expected 1 PDR collected, got %d", len(param.pdrList))
 	}
+	// Non-empty pendingUPF is the correct gate condition for the PFCP-modify
+	// trigger (not len(pfcpParam.farList), which may include FARs from earlier
+	// handlers in the same UpdateSmContextRequest dispatch).
 	if len(pendingUPF) != 1 {
 		t.Fatalf("expected 1 entry in PendingUPF, got %d", len(pendingUPF))
 	}
@@ -159,6 +162,33 @@ func TestBuildAccessForwardingParametersFallsBackToAnTunnel(t *testing.T) {
 
 	if got := forwardingParameters.OuterHeaderCreation.Ipv4Address.String(); got != "172.20.0.2" {
 		t.Fatalf("expected reconstructed outer header IP 172.20.0.2, got %s", got)
+	}
+}
+
+// TestCollectHoFARsForPFCPModifyMergeNotOverwrite verifies that the caller
+// merges the returned pendingUPF into smContext.PendingUPF rather than
+// overwriting it, so entries set by earlier handlers in the same request are
+// preserved (TS 23.502 §4.9.1.3.3).
+func TestCollectHoFARsForPFCPModifyMergeNotOverwrite(t *testing.T) {
+	tunnel := makeTestTunnel(smf_context.RULE_UPDATE, true)
+	param := &pfcpParam{}
+
+	pendingUPF := collectHoFARsForPFCPModify(tunnel, param)
+
+	// Simulate a PendingUPF map already populated by an earlier handler
+	// (e.g. HandleUpCnxState) within the same UpdateSmContextRequest.
+	existing := smf_context.PendingUPF{"192.168.1.1": true}
+
+	// Merge as the fixed caller does — must NOT overwrite.
+	for k, v := range pendingUPF {
+		existing[k] = v
+	}
+
+	if _, ok := existing["192.168.1.1"]; !ok {
+		t.Error("pre-existing PendingUPF entry was lost after merge")
+	}
+	if _, ok := existing["10.0.0.1"]; !ok {
+		t.Error("handover PendingUPF entry is missing after merge")
 	}
 }
 
