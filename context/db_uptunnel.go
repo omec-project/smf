@@ -11,7 +11,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
-	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // DataPathPoolInDB type DataPathPoolInDB map[int64]DataPathInDB
