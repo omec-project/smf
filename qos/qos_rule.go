@@ -339,6 +339,10 @@ func BuildDeleteQosRuleFromPccRule(pccRuleId string) *QosRule {
 	}
 
 	qosRuleID := GetQosRuleIdFromPccRuleId(pccRuleId)
+	if qosRuleID == 0 {
+		logger.QosLog.Warnf("BuildDeleteQosRuleFromPccRule: invalid PCC rule ID %q (cannot derive QoS Rule Identifier), skipping", pccRuleId)
+		return nil
+	}
 	qRule := QosRule{
 		Identifier:    qosRuleID,
 		OperationCode: OperationCodeDeleteExistingQoSRule,

@@ -119,26 +119,29 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	// Initialize map to track UPFs pending PFCP configuration
 	smContext.PendingUPF = make(smfContext.PendingUPF)
 
-	// Determine if we only need to release existing rules (no new policy)
+	// Determine if we only need to release existing rules (no new policy).
+	// A valid rule is one where both the map key and PccRuleId are non-empty.
+	// Release-only when PccRules is present but contains no valid rules.
 	shouldSendReleaseOnly := false
 	ruleid := "default"
 
 	if len(smContext.SmPolicyUpdates) > 0 && smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules != nil {
-		if len(smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules) == 0 {
-			shouldSendReleaseOnly = true
-		} else {
-			for ruleId, rule := range smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules {
-				logger.PduSessLog.Infof("[BuildPfcpParam] Checking PCC RuleId=%s, Rule=%+v", ruleId, rule)
-				ruleid = ruleId
-				// If any PCC rule is invalid or empty, we treat this as release-only
-				if ruleId == "" || rule.PccRuleId == "" {
-					shouldSendReleaseOnly = true
-					break
-				}
+		validRuleID := ""
+		for ruleId, rule := range smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules {
+			logger.PduSessLog.Infof("[BuildPfcpParam] Checking PCC RuleId=%s, Rule=%+v", ruleId, rule)
+			if ruleId != "" && rule.GetPccRuleId() != "" {
+				validRuleID = ruleId
+				break
 			}
+			logger.PduSessLog.Warnf("[BuildPfcpParam] Skipping invalid PCC rule: key=%q, PccRuleId=%q", ruleId, rule.GetPccRuleId())
+		}
+		if validRuleID != "" {
+			ruleid = validRuleID
+		} else {
+			shouldSendReleaseOnly = true
 		}
 	}
-	logger.PduSessLog.Infof("[BuildPfcpParam] Checking PCC RuleId=%s", ruleid)
+	logger.PduSessLog.Infof("[BuildPfcpParam] Using PCC RuleId=%s, releaseOnly=%v", ruleid, shouldSendReleaseOnly)
 
 	// Iterate over all active data paths in the SM context
 	for dpIndex, dataPath := range smContext.Tunnel.DataPathPool {
@@ -149,17 +152,17 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		}
 
 		ANUPF := dataPath.FirstDPNode
-		var dedQER *smfContext.QER
+		var dedQERs []*smfContext.QER
 		var err error
 		logger.PduSessLog.Infof("Processing DataPath with UPF Node: %s", ANUPF.GetNodeIP())
 
 		// Only create/activate QERs and tunnels if not release-only
 		if !shouldSendReleaseOnly {
-			dedQER, err = ANUPF.CreateDedicatedQosQer(smContext)
+			dedQERs, err = ANUPF.CreateDedicatedQosQer(smContext)
 			if err != nil {
 				logger.PduSessLog.Warnf("[BuildPfcpParam] CreateSessRuleQer failed: %v", err)
 			} else {
-				logger.PduSessLog.Infof("[BuildPfcpParam] Created default QER: %+v", dedQER)
+				logger.PduSessLog.Infof("[BuildPfcpParam] Created %d dedicated QER(s)", len(dedQERs))
 			}
 
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
@@ -198,9 +201,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				continue
 			}
 
-			// Attach dedicated QER to DL PDR
-			if dedQER != nil {
-				dlPDR.QER = []*smfContext.QER{dedQER}
+			// Attach dedicated QERs to DL PDR
+			if len(dedQERs) > 0 {
+				dlPDR.QER = dedQERs
 			}
 			if dlPDR.Precedence == 0 {
 				dlPDR.Precedence = 1
@@ -228,8 +231,8 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			} else {
 				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
 			}
-			if dedQER != nil {
-				pfcpParam.qerList = append(pfcpParam.qerList, dedQER)
+			if len(dedQERs) > 0 {
+				pfcpParam.qerList = append(pfcpParam.qerList, dedQERs...)
 			} else {
 				logger.PduSessLog.Errorf("dedicated QER is nil")
 			}
@@ -253,9 +256,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				continue
 			}
 
-			// Attach dedicated QER to UL PDR
-			if dedQER != nil {
-				ulPDR.QER = []*smfContext.QER{dedQER}
+			// Attach dedicated QERs to UL PDR
+			if len(dedQERs) > 0 {
+				ulPDR.QER = dedQERs
 			}
 			if ulPDR.Precedence == 0 {
 				ulPDR.Precedence = 1

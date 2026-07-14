@@ -487,8 +487,8 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 
 // CreateDedicatedQosQer creates a dedicated QER (QoS Enforcement Rule) for a PDU session in the given UPF.
 // It processes the SM Policy decision for the UE and creates QERs for each dedicated QoS flow (non-default).
-func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) (*QER, error) {
-	var createdQER *QER
+func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER, error) {
+	var createdQERs []*QER
 
 	// Log start of QER creation
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: start for UE [%s], PDU Session ID [%d]",
@@ -569,21 +569,21 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) (*QER, e
 				newQER.QERID, newQER.QFI.QFI, smContext.Supi, qosData.GetQosId())
 
 			// Track the last created QER
-			createdQER = newQER
+			createdQERs = append(createdQERs, newQER)
 		}
 	}
 
-	// If no dedicated QER was created, log a warning
-	if createdQER == nil {
+	// If no dedicated QERs was created, log a warning
+	if len(createdQERs) == 0 {
 		logger.PduSessLog.Warnf("CreateDedicatedQosQer: no dedicated QER created for UE [%s]", smContext.Supi)
 		return nil, nil
 	}
 
 	// Log success with last created QER
-	logger.PduSessLog.Infof("CreateDedicatedQosQer: success, last created QER [QER-ID=%d, QFI=%d] for UE [%s]",
-		createdQER.QERID, createdQER.QFI.QFI, smContext.Supi)
+	logger.PduSessLog.Infof("CreateDedicatedQosQer: success, created %d QER(s) for UE [%s]",
+		len(createdQERs), smContext.Supi)
 
-	return createdQER, nil
+	return createdQERs, nil
 }
 
 // ActivateUpLinkPdr

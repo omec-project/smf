@@ -375,6 +375,10 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			break
 		}
 	}
+	if qfi == 0 {
+		ctx.SubPduSessLog.Error("could not determine default QFI from SM context")
+		return nil, fmt.Errorf("default QFI not found")
+	}
 
 	if sessRule.AuthDefQos != nil {
 		qi = sessRule.AuthDefQos.GetVar5qi()
