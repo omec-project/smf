@@ -30,6 +30,15 @@ const (
 	PacketFilterDirectionBidirectional uint8 = 3
 )
 
+const (
+	// DQR is the "Delete QoS Rule" flag (TS 24.501). It must be set when encoding
+	// OperationCodeDeleteExistingQoSRule.
+	DefaultDQR uint8 = 1
+
+	// QFI is not included for delete (see MarshalBinary), keep as zero for clarity.
+	DefaultQFI uint8 = 0
+)
+
 // TS 24.501 Table 9.11.4.13.1
 const (
 	PFComponentTypeMatchAll                       uint8 = 0x01
@@ -98,6 +107,31 @@ type QosRule struct {
 	Length           uint8
 }
 
+func BuildAddDefaultQosRule(defQFI uint8) *QosRule {
+	defQosRule := &QosRule{
+		Identifier:    255,
+		DQR:           0x00,
+		OperationCode: OperationCodeCreateNewQoSRule,
+		Precedence:    255,
+		QFI:           defQFI,
+		PacketFilterList: []PacketFilter{
+			{
+				Identifier: 255,
+				Direction:  PacketFilterDirectionBidirectional,
+			},
+		},
+	}
+
+	defPfc := PacketFilterComponent{
+		ComponentType: PFComponentTypeMatchAll,
+		// ComponentValue: NA for Match All
+	}
+	defQosRule.PacketFilterList[0].Content = []PacketFilterComponent{defPfc}
+	defQosRule.PacketFilterList[0].ContentLength = 0x01
+
+	return defQosRule
+}
+
 func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	qosRules := QoSRules{}
 
@@ -105,7 +139,7 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 	pccRulesUpdate := smPolicyUpdates.PccRuleUpdate
 
 	// New Rules to be added
-	if pccRulesUpdate != nil {
+	if pccRulesUpdate != nil && pccRulesUpdate.add != nil {
 		for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
 			logger.QosLog.Infof("building QoS Rule from PCC rule [%s]", pccRuleName)
 			if len(pccRuleVal.GetRefQosData()) == 0 {
@@ -122,19 +156,130 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 		}
 	}
 
-	//Add default Matchall QosRule as well
-	/*
-		if smPolicyUpdates.SessRuleUpdate != nil {
-			defQosRule := BuildAddDefaultQosRule(uint8(smPolicyUpdates.SessRuleUpdate.ActiveSessRule.AuthDefQos.Var5qi))
-			qosRules = append(qosRules, *defQosRule)
+	if pccRulesUpdate != nil && pccRulesUpdate.mod != nil {
+		for pccRuleName, pccRuleVal := range pccRulesUpdate.mod {
+			logger.QosLog.Infof("building QoS Rule from modified PCC rule [%s]", pccRuleName)
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
+			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
+			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
+			qosRules = append(qosRules, *qosRule)
 		}
-	*/
-
-	// Rules to be modified
-	// TODO
+	}
 
 	// Rules to be deleted
-	// TODO
+	if pccRulesUpdate != nil && pccRulesUpdate.del != nil {
+		for id := range pccRulesUpdate.del {
+			logger.QosLog.Infof("building delete QoS Rule for PCC rule [%s]", id)
+
+			qosRule := BuildDeleteQosRuleFromPccRule(id)
+			if qosRule != nil {
+				qosRules = append(qosRules, *qosRule)
+			}
+		}
+	}
+	return qosRules
+}
+
+// BuildQosRulesPDUMod constructs a list of QoS rules for a PDU Session Modification Command
+// based on policy updates (add, modify, delete) from the SM Policy Decision.
+// It returns a slice of QoSRules ready to be encoded in NAS messages.
+func BuildQosRulesPDUMod(smPolicyUpdates *PolicyUpdate) QoSRules {
+	qosRules := QoSRules{}
+
+	// Extract the SM Policy Decision and PCC Rule updates
+	smPolicyDecision := smPolicyUpdates.SmPolicyDecision
+	pccRulesUpdate := smPolicyUpdates.PccRuleUpdate
+
+	// ===============================
+	// Add new QoS rules
+	// ===============================
+	if pccRulesUpdate != nil && pccRulesUpdate.add != nil {
+		for pccRuleName, pccRuleVal := range pccRulesUpdate.add {
+			logger.QosLog.Infof("building QoS Rule from PCC rule [%s]", pccRuleName)
+
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
+			// Get reference QoS data from SM Policy Decision using the RefQosData index
+			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
+
+			// Build a new QoS rule from the PCC rule and reference QoS data
+			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
+			// Append the constructed rule to the list
+			qosRules = append(qosRules, *qosRule)
+		}
+	}
+
+	// ===============================
+	// Modify existing QoS rules
+	// ===============================
+	if pccRulesUpdate != nil && pccRulesUpdate.mod != nil {
+		for pccRuleName, pccRuleVal := range pccRulesUpdate.mod {
+			logger.QosLog.Infof("building QoS Rule from modified PCC rule [%s]", pccRuleName)
+
+			// Get reference QoS data for modification
+			if len(pccRuleVal.GetRefQosData()) == 0 {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS reference", pccRuleName)
+				continue
+			}
+			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
+
+			// Build a QoS rule for modification (OperationCode can be same as create depending on implementation)
+			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
+			if qosRule == nil {
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				continue
+			}
+
+			// Append modified rule to the list
+			qosRules = append(qosRules, *qosRule)
+		}
+	}
+
+	// ===============================
+	//  Delete QoS rules
+	// ===============================
+	if pccRulesUpdate != nil && pccRulesUpdate.del != nil {
+		for id, pccRuleName := range pccRulesUpdate.del {
+			logger.QosLog.Infof("Processing PCC rule deletion: ID='%s', Rule=%+v", id, pccRuleName)
+
+			// Build a delete QoS rule based on the PCC rule ID
+			qosRule := BuildDeleteQosRuleFromPccRule(id)
+
+			// Only append if the rule was successfully created
+			if qosRule != nil {
+				qosRules = append(qosRules, *qosRule)
+
+				logger.QosLog.Infof(
+					"Built Delete QoS Rule -> Identifier=%d, OperationCode=%d, DQR=%d, QFI=%d",
+					qosRule.Identifier, qosRule.OperationCode, qosRule.DQR, qosRule.QFI,
+				)
+			} else {
+				logger.QosLog.Warnf("Skipping QoS rule build for PCC rule ID='%s' (nil returned)", id)
+			}
+		}
+
+		for i, qr := range qosRules {
+			logger.QosLog.Infof("Final QoS Rule[%d] -> Identifier=%d, OperationCode=%d, DQR=%d, QFI=%d",
+				i, qr.Identifier, qr.OperationCode, qr.DQR, qr.QFI)
+		}
+
+		logger.QosLog.Infof("Total delete QoS Rules built: %d", len(qosRules))
+	}
+
+	// Return the complete list of QoS rules (added, modified, deleted)
 	return qosRules
 }
 
@@ -152,6 +297,58 @@ func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData
 	}
 
 	qRule.BuildPacketFilterListFromPccRule(pccRule)
+
+	return &qRule
+}
+
+// BuildModifyQosRuleFromPccRule constructs a QoSRule modification based on
+// PCC rule updates and QoS data.
+func BuildModifyQosRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
+	if pccRule == nil || qosData == nil {
+		return nil
+	}
+
+	qRule := QosRule{
+		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
+		DQR:           0,
+		OperationCode: pccRuleOpCode,
+		Precedence:    uint8(pccRule.GetPrecedence()),
+		QFI:           GetQosFlowIdFromQosId(qosData.GetQosId()),
+	}
+
+	// Only build packet filter list if the operation involves packet filter changes
+	switch pccRuleOpCode {
+	case OperationCodeModifyExistingQoSRuleAndAddPacketFilters,
+		OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters,
+		OperationCodeModifyExistingQoSRuleAndDeletePacketFilters:
+		qRule.BuildPacketFilterListFromPccRule(pccRule)
+	case OperationCodeModifyExistingQoSRuleWithoutModifyingPacketFilters:
+		// No packet filter changes needed
+	}
+
+	return &qRule
+}
+
+// BuildDeleteQosRuleFromPccRule constructs a QoSRule deletion request for a given PCC rule.
+// This is used when the PCC rule is removed and the corresponding QoS rule
+// needs to be deleted.
+func BuildDeleteQosRuleFromPccRule(pccRuleId string) *QosRule {
+	if pccRuleId == "" {
+		logger.QosLog.Warnf("BuildDeleteQosRuleFromPccRule: empty PCC rule ID, skipping")
+		return nil
+	}
+
+	qosRuleID := GetQosRuleIdFromPccRuleId(pccRuleId)
+	if qosRuleID == 0 {
+		logger.QosLog.Warnf("BuildDeleteQosRuleFromPccRule: invalid PCC rule ID %q (cannot derive QoS Rule Identifier), skipping", pccRuleId)
+		return nil
+	}
+	qRule := QosRule{
+		Identifier:    qosRuleID,
+		OperationCode: OperationCodeDeleteExistingQoSRule,
+		DQR:           DefaultDQR,
+		QFI:           DefaultQFI,
+	}
 
 	return &qRule
 }
@@ -195,13 +392,19 @@ func GetPacketFilterFromFlowInfo(flowInfo *models.FlowInformation) PacketFilter 
 	return *pf
 }
 
-func GetPfId(ids string) uint8 {
-	if id, err := strconv.Atoi(ids); err != nil {
-		// TODO: Error Log
+func GetPfId(pfID string) uint8 {
+	if pfID == "" {
+		logger.QosLog.Warn("PackFiltId is empty, defaulting to 0")
 		return 0
-	} else {
-		return (uint8(id) & PacketFilterIdBitmask)
 	}
+
+	id, err := strconv.Atoi(pfID)
+	if err != nil {
+		logger.QosLog.Errorf("Error converting PackFiltId [%s] to int: %v. Defaulting to 0", pfID, err)
+		return 0
+	}
+
+	return uint8(id) & PacketFilterIdBitmask
 }
 
 // Get Packet Filter Directions
@@ -559,16 +762,15 @@ func (r *QosRule) MarshalBinary() ([]byte, error) {
 	if _, err := ruleContentBuffer.ReadFrom(packetFilterListBuffer); err != nil {
 		return nil, err
 	}
-
-	// write precedence
-	if err := ruleContentBuffer.WriteByte(r.Precedence); err != nil {
-		return nil, err
-	}
-
-	// write Segregation and QFI
-	segregationAndQFIByte := r.Segregation<<6 | r.QFI
-	if err := ruleContentBuffer.WriteByte(segregationAndQFIByte); err != nil {
-		return nil, err
+	if r.OperationCode != OperationCodeDeleteExistingQoSRule {
+		// Only for Create/Modify
+		if err := ruleContentBuffer.WriteByte(r.Precedence); err != nil {
+			return nil, err
+		}
+		segregationAndQFIByte := r.Segregation<<6 | r.QFI
+		if err := ruleContentBuffer.WriteByte(segregationAndQFIByte); err != nil {
+			return nil, err
+		}
 	}
 
 	ruleBuffer := bytes.NewBuffer(nil)
@@ -581,6 +783,7 @@ func (r *QosRule) MarshalBinary() ([]byte, error) {
 	if err := binary.Write(ruleBuffer, binary.BigEndian, uint16(ruleContentBuffer.Len())); err != nil {
 		return nil, err
 	}
+
 	// write QoS rule Content
 	if _, err := ruleBuffer.ReadFrom(ruleContentBuffer); err != nil {
 		return nil, err

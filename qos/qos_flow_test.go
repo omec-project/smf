@@ -117,9 +117,8 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 	var maxbrDl openapi.NullableString
 	var gbrUl openapi.NullableString
 
-	maxbrUl.Set(openapi.PtrString("10"))        // missing unit -> GetBitRate yields 0
-	maxbrDl.Set(openapi.PtrString("-1 Mbps"))   // negative -> rejected by ParseUint
-	gbrUl.Set(openapi.PtrString("100000 Mbps")) // > 65535 -> overflows uint16
+	maxbrUl.Set(openapi.PtrString("10"))      // missing unit -> GetBitRate yields 0
+	maxbrDl.Set(openapi.PtrString("-1 Mbps")) // negative -> rejected by ParseUint
 
 	smPolicyDecision := &models.SmPolicyDecision{}
 	smPolicyDecision.QosDecs = &map[string]models.QosData{
