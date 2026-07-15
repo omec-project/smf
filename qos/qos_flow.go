@@ -313,24 +313,24 @@ func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *
 		qfd.AddQosFlowParam5Qi(uint8(qosData.GetVar5qi()))
 	}
 
-	// MFBR uplink (if changed)
-	if qosData.GetMaxbrUl() != "" {
-		qfd.addQosFlowRateParam(qosData.GetMaxbrUl(), QFDParameterIdMfbrUl)
+	// MFBR uplink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.MaxbrUl); ok && !isZeroBitRate(rate) {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrUl)
 	}
 
-	// MFBR downlink (if changed)
-	if qosData.GetMaxbrDl() != "" {
-		qfd.addQosFlowRateParam(qosData.GetMaxbrDl(), QFDParameterIdMfbrDl)
+	// MFBR downlink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.MaxbrDl); ok && !isZeroBitRate(rate) {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdMfbrDl)
 	}
 
-	// GFBR uplink (if changed)
-	if qosData.GetGbrUl() != "" {
-		qfd.addQosFlowRateParam(qosData.GetGbrUl(), QFDParameterIdGfbrUl)
+	// GFBR uplink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.GbrUl); ok && !isZeroBitRate(rate) {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrUl)
 	}
 
-	// GFBR downlink (if changed)
-	if qosData.GetGbrDl() != "" {
-		qfd.addQosFlowRateParam(qosData.GetGbrDl(), QFDParameterIdGfbrDl)
+	// GFBR downlink (omitted for unset, empty or zero rates; see isZeroBitRate)
+	if rate, ok := getNullableString(qosData.GbrDl); ok && !isZeroBitRate(rate) {
+		qfd.addQosFlowRateParam(rate, QFDParameterIdGfbrDl)
 	}
 
 	// Set E-Bit of QFD for the "modify existing QoS flow description" operation
