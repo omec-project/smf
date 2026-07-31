@@ -688,12 +688,11 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 		if err != nil {
 			logger.PduSessLog.Errorln(err)
 		} else {
-			body := httpResponse.Body.(models.PostSmContexts400Response)
+			body := httpResponse.Body.(*models.PostSmContexts400Response)
 			body.SetBinaryDataN1SmMessage(tmpFile)
 			jsonData := body.GetJsonData()
 			jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "n1SmMsg"})
 			body.SetJsonData(jsonData)
-			httpResponse.Body = body
 		}
 	}
 
