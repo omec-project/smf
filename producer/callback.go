@@ -308,8 +308,8 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// -------------------------------
 	// Initialize N1N2 Message Transfer Request
 	// -------------------------------
-	n1n2Request := models.N1N2MessageTransferRequest{}
-	defer util.CleanupMultipartTempFiles(&n1n2Request)
+	n1n2Request := models.NewN1N2MessageTransferRequest()
+	defer util.CleanupMultipartTempFiles(n1n2Request)
 
 	// -------------------------------
 	// Prepare N2 container info (NGAP message)
@@ -340,8 +340,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// -------------------------------
 	// Fill JsonData for N1N2 transfer
 	// -------------------------------
-	n1n2Request.JsonData = models.NewN1N2MessageTransferReqData()
-	n1n2Request.JsonData.SetPduSessionId(smContext.PDUSessionID)
+	n1n2Request.SetJsonData(*models.NewN1N2MessageTransferReqData())
+	jsonData := n1n2Request.GetJsonData()
+	jsonData.SetPduSessionId(smContext.PDUSessionID)
+	n1n2Request.SetJsonData(jsonData)
 
 	// -------------------------------
 	// Build N1 (NAS) PDU Session Modification Command
@@ -367,7 +369,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// -------------------------------
 	n2Pdu, err := smfContext.BuildPDUSessionResourceModifyRequestTransfer(smContext)
 	if err != nil {
-		smContext.SubPduSessLog.Errorf("Build PDUSessionResourceModifyRequestTransfer failed: %s", err.Error())
+		smContext.SubPduSessLog.Errorf("build PDUSessionResourceModifyRequestTransfer failed: %s", err.Error())
 		return err
 	} else {
 		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
@@ -386,10 +388,10 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// Hold SMLock across the transfer so AMF re-discovery's mutation of
 	// AMFProfile/ServingNfId/CommunicationClient doesn't race with other SMContext users.
 	smContext.SMLock.Lock()
-	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, &n1n2Request)
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	smContext.SMLock.Unlock()
 	if err != nil {
-		smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed: %v", err.Error())
+		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed: %v", err.Error())
 		return err
 	}
 	// -------------------------------
@@ -423,13 +425,14 @@ func HandleNfSubscriptionStatusNotify(request *httpwrapper.Request) *httpwrapper
 func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationData) *models.ProblemDetails {
 	logger.ProducerLog.Debugf("NfSubscriptionStatusNotify: %+v", notificationData)
 
-	if notificationData.Event == "" || notificationData.NfInstanceUri == "" {
+	if notificationData.GetEvent() == "" || notificationData.GetNfInstanceUri() == "" {
 		problemDetails := utils.ProblemDetailsMandatoryIeMissing("Missing IE [Event]/[NfInstanceUri] in NotificationData")
 		return problemDetails
 	}
-	nfInstanceId := notificationData.NfInstanceUri[strings.LastIndex(notificationData.NfInstanceUri, "/")+1:]
+	nfInstanceUri := notificationData.GetNfInstanceUri()
+	nfInstanceId := nfInstanceUri[strings.LastIndex(nfInstanceUri, "/")+1:]
 
-	logger.ProducerLog.Infof("Received Subscription Status Notification from NRF: %v", notificationData.Event)
+	logger.ProducerLog.Infof("Received Subscription Status Notification from NRF: %v", notificationData.GetEvent())
 	// If nrf caching is enabled, go ahead and delete the entry from the cache.
 	// This will force the PCF to do nf discovery and get the updated nf profile from the NRF.
 	if notificationData.GetEvent() == models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED {

@@ -112,7 +112,7 @@ func TestGetNfProfile(t *testing.T) {
 					t.Errorf("did not expect error, got: %v", err)
 				}
 				if tc.validate != nil {
-					tc.validate(profile, t)
+					tc.validate(*profile, t)
 				}
 			}
 		})

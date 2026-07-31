@@ -710,8 +710,8 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 				smContext.SubPfcpLog.Warnln("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
 			}
 
-			n1n2Request := models.N1N2MessageTransferRequest{}
-			defer util.CleanupMultipartTempFiles(&n1n2Request)
+			n1n2Request := models.NewN1N2MessageTransferRequest()
+			defer util.CleanupMultipartTempFiles(n1n2Request)
 			cause = ie.CauseRequestRejected
 			pfcpSRflag.Drobu = true
 
@@ -758,7 +758,7 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 					},
 				}
 
-				rspData, n1n2Err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, &n1n2Request)
+				rspData, n1n2Err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 				if n1n2Err != nil {
 					smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed: %v", n1n2Err)
 				}

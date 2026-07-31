@@ -33,13 +33,11 @@ func postSMContextStatusNotification(ctx context.Context, uri string, request mo
 
 func SendSMContextStatusNotification(uri string) (*models.ProblemDetails, error) {
 	if uri != "" {
-		request := models.SmContextStatusNotification{}
-		request.StatusInfo = models.StatusInfo{
-			ResourceStatus: models.RESOURCESTATUS_RELEASED,
-		}
+		statusInfo := models.NewStatusInfo(models.RESOURCESTATUS_RELEASED)
+		request := models.NewSmContextStatusNotification(*statusInfo)
 
 		logger.CtxLog.Infoln("[SMF] Send SMContext Status Notification")
-		httpResp, localErr := postSMContextStatusNotification(context.Background(), uri, request)
+		httpResp, localErr := postSMContextStatusNotification(context.Background(), uri, *request)
 		if httpResp != nil && httpResp.Body != nil {
 			defer func() {
 				if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {

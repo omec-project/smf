@@ -402,12 +402,13 @@ func TestHeartbeatNF_Success(t *testing.T) {
 	}()
 
 	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
-		return &models.NFProfile{}, nil, nil
+		return models.NewNFProfileWithDefaults(), nil, nil
 	}
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		calledRegister = true
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
-		return &profile, "", nil
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
+		return profile, "", nil
 	}
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}
 	heartbeatNF(sessionManagementConfig)
@@ -441,13 +442,14 @@ func TestHeartbeatNF_WhenNfUpdateFails_ThenNfRegistersIsCalled(t *testing.T) {
 	}()
 
 	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
-		return &models.NFProfile{}, nil, errors.New("mock error")
+		return models.NewNFProfileWithDefaults(), nil, errors.New("mock error")
 	}
 
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
 		calledRegister = true
-		return &profile, "", nil
+		return profile, "", nil
 	}
 
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}

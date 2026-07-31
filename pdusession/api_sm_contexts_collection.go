@@ -49,15 +49,15 @@ func HTTPPostSmContexts(c *gin.Context) {
 		return
 	}
 
-	request := models.PostSmContextsRequest{}
-	request.SetJsonData(models.SmContextCreateData{})
+	request := models.NewPostSmContextsRequest()
+	request.SetJsonData(*models.NewSmContextCreateDataWithDefaults())
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
 	switch s[0] {
 	case "application/json":
 		err = c.ShouldBindJSON(request.JsonData)
 	case "multipart/related":
-		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+		err = c.ShouldBindWith(request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
 		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
@@ -78,7 +78,7 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	req := httpwrapper.NewRequest(c.Request, request)
-	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.CreateSmContext)
+	txn := transaction.NewTransaction(*req.Body.(*models.PostSmContextsRequest), nil, svcmsgtypes.CreateSmContext)
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF

@@ -669,14 +669,14 @@ func (smContextState SMContextState) String() string {
 }
 
 func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
+	responseBody := models.NewPostSmContexts400Response()
+	responseBody.SetJsonData(models.SmContextCreateError{
+		Error: errors.ErrorType[cause],
+	})
 	httpResponse := &httpwrapper.Response{
 		Header: nil,
 		Status: int(*errors.ErrorType[cause].Status),
-		Body: models.PostSmContexts400Response{
-			JsonData: &models.SmContextCreateError{
-				Error: errors.ErrorType[cause],
-			},
-		},
+		Body:   responseBody,
 	}
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
@@ -689,8 +689,10 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 			logger.PduSessLog.Errorln(err)
 		} else {
 			body := httpResponse.Body.(models.PostSmContexts400Response)
-			body.BinaryDataN1SmMessage = &tmpFile
-			body.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "n1SmMsg"}
+			body.SetBinaryDataN1SmMessage(tmpFile)
+			jsonData := body.GetJsonData()
+			jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "n1SmMsg"})
+			body.SetJsonData(jsonData)
 			httpResponse.Body = body
 		}
 	}
