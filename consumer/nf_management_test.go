@@ -45,13 +45,14 @@ func makeSMFContext() *smfContext.SMFContext {
 }
 
 func validateBasicProfile(profile models.NFProfile, t *testing.T) {
-	if profile.NfInstanceId != "test-nf-id" {
-		t.Errorf("expected NfInstanceId to be 'test-nf-id', got %s", profile.NfInstanceId)
+	if profile.GetNfInstanceId() != "test-nf-id" {
+		t.Errorf("expected NfInstanceId to be 'test-nf-id', got %s", profile.GetNfInstanceId())
 	}
-	if len(profile.NfServices) == 0 {
+	if len(profile.GetNfServices()) == 0 {
 		t.Error("expected non-nil and non-empty NfServices")
 	}
-	if profile.SmfInfo == nil || profile.SmfInfo.SNssaiSmfInfoList == nil {
+	smfInfo := profile.GetSmfInfo()
+	if !profile.HasSmfInfo() || len(smfInfo.GetSNssaiSmfInfoList()) == 0 {
 		t.Error("expected non-nil SmfInfo and SNssaiSmfInfoList")
 	}
 }
@@ -112,7 +113,7 @@ func TestGetNfProfile(t *testing.T) {
 					t.Errorf("did not expect error, got: %v", err)
 				}
 				if tc.validate != nil {
-					tc.validate(profile, t)
+					tc.validate(*profile, t)
 				}
 			}
 		})

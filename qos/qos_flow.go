@@ -521,8 +521,8 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 	qfd.QFDLen += 5 //(Id-1 + len-1 + Content-3)
 }
 
-func GetQosFlowDescUpdate(pcfQosData *map[string]models.QosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
-	if pcfQosData == nil || len(*pcfQosData) == 0 {
+func GetQosFlowDescUpdate(pcfQosData map[string]models.QosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
+	if len(pcfQosData) == 0 {
 		return nil
 	}
 
@@ -533,7 +533,7 @@ func GetQosFlowDescUpdate(pcfQosData *map[string]models.QosData, ctxtQosData map
 	}
 
 	// Iterate through pcf qos data to identify find add/mod/del qos flows
-	for name, pcfQF := range *pcfQosData {
+	for name, pcfQF := range pcfQosData {
 		qosData := pcfQF
 		// if pcfQF is null then rule is deleted
 		if qosData.GetQosId() == "" {
@@ -616,11 +616,12 @@ func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, ref
 		logger.PduSessLog.Errorln("smPolicyDecision is nil")
 		return nil
 	}
-	if smPolicyDecision.QosDecs == nil {
+	if !smPolicyDecision.HasQosDecs() {
 		logger.PduSessLog.Errorln("QosDecs map is nil")
 		return nil
 	}
-	qosData, exists := (*smPolicyDecision.QosDecs)[refQosData]
+	qosDecMap := smPolicyDecision.GetQosDecs()
+	qosData, exists := qosDecMap[refQosData]
 	if !exists {
 		logger.PduSessLog.Errorf("QoS Data [%s] not found in QosDecs", refQosData)
 		return nil

@@ -16,7 +16,7 @@ func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	}
 	ctxtRules := map[string]*models.SessionRule{}
 
-	update := GetSessionRulesUpdate(&pcfRules, ctxtRules)
+	update := GetSessionRulesUpdate(pcfRules, ctxtRules)
 	if update == nil {
 		t.Fatal("expected non-nil update")
 		return
@@ -45,7 +45,7 @@ func TestGetSessionRulesUpdateDeletePointersRemainDistinct(t *testing.T) {
 		"del-b": {},
 	}
 
-	update := GetSessionRulesUpdate(&pcfRules, map[string]*models.SessionRule{})
+	update := GetSessionRulesUpdate(pcfRules, map[string]*models.SessionRule{})
 	if update.del["del-a"] == update.del["del-b"] {
 		t.Fatal("expected distinct delete pointers")
 	}
@@ -81,7 +81,7 @@ func TestGetQosFlowDescUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	}
 	ctxtQos := map[string]*models.QosData{}
 
-	update := GetQosFlowDescUpdate(&pcfQos, ctxtQos)
+	update := GetQosFlowDescUpdate(pcfQos, ctxtQos)
 	if update.add["add"] == update.add["add-2"] {
 		t.Fatal("expected distinct add pointers")
 	}
@@ -102,7 +102,7 @@ func TestGetTrafficControlUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	}
 	ctxtTc := map[string]*models.TrafficControlData{}
 
-	update := GetTrafficControlUpdate(&pcfTc, ctxtTc)
+	update := GetTrafficControlUpdate(pcfTc, ctxtTc)
 	if update.add["add"] == update.add["add-2"] {
 		t.Fatal("expected distinct add pointers")
 	}

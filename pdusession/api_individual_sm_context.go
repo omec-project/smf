@@ -79,15 +79,16 @@ func HTTPReleaseSmContext(c *gin.Context) {
 		return
 	}
 
-	var request models.ReleaseSmContextRequest
-	request.JsonData = models.NewSmContextReleaseData()
+	request := models.NewReleaseSmContextRequest()
+	request.SetJsonData(*models.NewSmContextReleaseData())
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
 	switch s[0] {
 	case applicationJson:
-		err = c.ShouldBindJSON(request.JsonData)
+		jsonData, _ := request.GetJsonDataOk()
+		err = c.ShouldBindJSON(jsonData)
 	case multipartRelated:
-		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+		err = c.ShouldBindWith(request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
 		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
@@ -111,7 +112,7 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	req.Params["smContextRef"] = c.Params.ByName("smContextRef")
 
 	smContextRef := req.Params["smContextRef"]
-	txn := transaction.NewTransaction(req.Body.(models.ReleaseSmContextRequest), nil, svcmsgtypes.ReleaseSmContext)
+	txn := transaction.NewTransaction(*req.Body.(*models.ReleaseSmContextRequest), nil, svcmsgtypes.ReleaseSmContext)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status
@@ -156,15 +157,16 @@ func HTTPUpdateSmContext(c *gin.Context) {
 		return
 	}
 
-	var request models.UpdateSmContextRequest
-	request.JsonData = models.NewSmContextUpdateData()
+	request := models.NewUpdateSmContextRequest()
+	request.SetJsonData(*models.NewSmContextUpdateData())
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
 	switch s[0] {
 	case applicationJson:
-		err = c.ShouldBindJSON(request.JsonData)
+		jsonData, _ := request.GetJsonDataOk()
+		err = c.ShouldBindJSON(jsonData)
 	case multipartRelated:
-		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+		err = c.ShouldBindWith(request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
 		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
@@ -190,7 +192,7 @@ func HTTPUpdateSmContext(c *gin.Context) {
 
 	smContextRef := req.Params["smContextRef"]
 
-	txn := transaction.NewTransaction(req.Body.(models.UpdateSmContextRequest), nil, svcmsgtypes.UpdateSmContext)
+	txn := transaction.NewTransaction(*req.Body.(*models.UpdateSmContextRequest), nil, svcmsgtypes.UpdateSmContext)
 	txn.CtxtKey = smContextRef
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status

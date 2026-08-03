@@ -518,7 +518,7 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 		smContext.SubPfcpLog.Warnln("send N1N2Transfer failed")
 	}
 	if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_N1_MSG_NOT_TRANSFERRED {
-		smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
+		smContext.SubPfcpLog.Warnf("%v", rspData.GetCause())
 	}
 	smContext.SubPfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 

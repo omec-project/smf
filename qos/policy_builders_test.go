@@ -13,16 +13,15 @@ import (
 
 func TestSamplePolicyDecisionBuilders(t *testing.T) {
 	decision := MakeSamplePolicyDecision()
-	if decision == nil || len(decision.PccRules) == 0 || len(decision.GetQosDecs()) == 0 {
+	if decision == nil || len(decision.GetPccRules()) == 0 || len(decision.GetQosDecs()) == 0 {
 		t.Fatalf("unexpected sample policy decision: %+v", decision)
 	}
 }
 
 // MakeSamplePolicyDecision builds sample policy decision data for QoS tests.
 func MakeSamplePolicyDecision() *models.SmPolicyDecision {
-	decision := &models.SmPolicyDecision{
-		PccRules: MakePccRules(),
-	}
+	decision := models.NewSmPolicyDecision()
+	decision.SetPccRules(MakePccRules())
 	decision.SetSessRules(MakeSessionRule())
 	decision.SetQosDecs(MakeQosData())
 	decision.SetTraffContDecs(MakeTrafficControlData())

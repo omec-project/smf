@@ -273,15 +273,15 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// Step 1: Check if only QosFlowToReleaseList should be sent
 	// ----------------------------------------------------
 	shouldSendReleaseOnly := false
-	if len(ctx.SmPolicyUpdates) > 0 && ctx.SmPolicyUpdates[0].SmPolicyDecision.PccRules != nil {
+	if len(ctx.SmPolicyUpdates) > 0 && ctx.SmPolicyUpdates[0].SmPolicyDecision.HasPccRules() {
 		// If PccRules map is empty → release only
-		if len(ctx.SmPolicyUpdates[0].SmPolicyDecision.PccRules) == 0 {
+		if len(ctx.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules()) == 0 {
 			shouldSendReleaseOnly = true
 			logger.PduSessLog.Warnln("PccRules map is empty, setting shouldSendReleaseOnly = true")
 		} else {
 			// If any PCC rule is invalid (nil or empty ID) → release only
-			for ruleId, rule := range ctx.SmPolicyUpdates[0].SmPolicyDecision.PccRules {
-				if ruleId == "" || rule.PccRuleId == "" {
+			for ruleId, rule := range ctx.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules() {
+				if ruleId == "" || rule.GetPccRuleId() == "" {
 					shouldSendReleaseOnly = true
 					logger.PduSessLog.Warnf("Invalid PCC Rule found (ruleId='%s'), setting shouldSendReleaseOnly = true", ruleId)
 					break

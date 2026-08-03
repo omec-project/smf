@@ -15,13 +15,13 @@ import (
 
 func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 	// make SM Policy Decision
-	smPolicyDecision := &models.SmPolicyDecision{}
+	smPolicyDecision := models.NewSmPolicyDecision()
 
 	// make Sm ctxt Policy Data
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 
-	smPolicyDecision.PccRules = makeSamplePccRules()
-	smPolicyDecision.QosDecs = makeSampleQosData()
+	smPolicyDecision.SetPccRules(makeSamplePccRules())
+	smPolicyDecision.SetQosDecs(*makeSampleQosData())
 
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(smCtxtPolData, smPolicyDecision)
 
@@ -49,8 +49,8 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 	gbrUl.Set(nil)
 	gbrDl.Set(nil)
 
-	smPolicyDecision := &models.SmPolicyDecision{}
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision := models.NewSmPolicyDecision()
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"null-rates": {
 			QosId:   "5",
 			Var5qi:  openapi.PtrInt32(5),
@@ -59,7 +59,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 			GbrUl:   gbrUl,
 			GbrDl:   gbrDl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -84,15 +84,15 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsZeroRates(t *testing.T) {
 	maxbrUl.Set(openapi.PtrString("0 Mbps"))
 	maxbrDl.Set(openapi.PtrString("0 Mbps"))
 
-	smPolicyDecision := &models.SmPolicyDecision{}
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision := models.NewSmPolicyDecision()
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"zero-rates": {
 			QosId:   "9",
 			Var5qi:  openapi.PtrInt32(9),
 			MaxbrUl: maxbrUl,
 			MaxbrDl: maxbrDl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -120,8 +120,8 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 	maxbrUl.Set(openapi.PtrString("10"))      // missing unit -> GetBitRate yields 0
 	maxbrDl.Set(openapi.PtrString("-1 Mbps")) // negative -> rejected by ParseUint
 
-	smPolicyDecision := &models.SmPolicyDecision{}
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision := models.NewSmPolicyDecision()
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"malformed-rates": {
 			QosId:   "9",
 			Var5qi:  openapi.PtrInt32(9),
@@ -129,7 +129,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 			MaxbrDl: maxbrDl,
 			GbrUl:   gbrUl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()

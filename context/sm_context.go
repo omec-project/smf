@@ -460,8 +460,8 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.NfServices {
-		if service.ServiceName == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
 			cfg := Npcf_SMPolicyControl.NewConfiguration()
 			serverConfig := &cfg.Servers[0]
 			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
@@ -669,14 +669,14 @@ func (smContextState SMContextState) String() string {
 }
 
 func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
+	responseBody := models.NewPostSmContexts400Response()
+	responseBody.SetJsonData(models.SmContextCreateError{
+		Error: errors.ErrorType[cause],
+	})
 	httpResponse := &httpwrapper.Response{
 		Header: nil,
 		Status: int(*errors.ErrorType[cause].Status),
-		Body: models.PostSmContexts400Response{
-			JsonData: &models.SmContextCreateError{
-				Error: errors.ErrorType[cause],
-			},
-		},
+		Body:   responseBody,
 	}
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
@@ -688,10 +688,11 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 		if err != nil {
 			logger.PduSessLog.Errorln(err)
 		} else {
-			body := httpResponse.Body.(models.PostSmContexts400Response)
-			body.BinaryDataN1SmMessage = &tmpFile
-			body.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "n1SmMsg"}
-			httpResponse.Body = body
+			body := httpResponse.Body.(*models.PostSmContexts400Response)
+			body.SetBinaryDataN1SmMessage(tmpFile)
+			jsonData := body.GetJsonData()
+			jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "n1SmMsg"})
+			body.SetJsonData(jsonData)
 		}
 	}
 

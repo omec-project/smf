@@ -16,8 +16,8 @@ type SessRulesUpdate struct {
 }
 
 // Get Session rule changes delta
-func GetSessionRulesUpdate(pcfSessRules *map[string]models.SessionRule, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
-	if pcfSessRules == nil || len(*pcfSessRules) == 0 {
+func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessRules map[string]*models.SessionRule) *SessRulesUpdate {
+	if len(pcfSessRules) == 0 {
 		return nil
 	}
 
@@ -29,7 +29,7 @@ func GetSessionRulesUpdate(pcfSessRules *map[string]models.SessionRule, ctxtSess
 
 	// TODO: Iterate through all session rules from PCF and check against ctxt session rules
 	// Get only active session Rule for now
-	for name, sessRule := range *pcfSessRules {
+	for name, sessRule := range pcfSessRules {
 		rule := sessRule
 		// Rules to be deleted
 		if rule.GetSessRuleId() == "" {
