@@ -20,8 +20,8 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 	// make Sm ctxt Policy Data
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 
-	smPolicyDecision.PccRules = makeSamplePccRules()
-	smPolicyDecision.QosDecs = makeSampleQosData()
+	smPolicyDecision.SetPccRules(makeSamplePccRules())
+	smPolicyDecision.SetQosDecs(*makeSampleQosData())
 
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(smCtxtPolData, smPolicyDecision)
 
@@ -50,7 +50,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 	gbrDl.Set(nil)
 
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"null-rates": {
 			QosId:   "5",
 			Var5qi:  openapi.PtrInt32(5),
@@ -59,7 +59,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 			GbrUl:   gbrUl,
 			GbrDl:   gbrDl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -85,14 +85,14 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsZeroRates(t *testing.T) {
 	maxbrDl.Set(openapi.PtrString("0 Mbps"))
 
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"zero-rates": {
 			QosId:   "9",
 			Var5qi:  openapi.PtrInt32(9),
 			MaxbrUl: maxbrUl,
 			MaxbrDl: maxbrDl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -121,7 +121,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 	maxbrDl.Set(openapi.PtrString("-1 Mbps")) // negative -> rejected by ParseUint
 
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.QosDecs = &map[string]models.QosData{
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{
 		"malformed-rates": {
 			QosId:   "9",
 			Var5qi:  openapi.PtrInt32(9),
@@ -129,7 +129,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 			MaxbrDl: maxbrDl,
 			GbrUl:   gbrUl,
 		},
-	}
+	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()

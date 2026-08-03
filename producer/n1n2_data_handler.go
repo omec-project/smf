@@ -95,25 +95,26 @@ func collectHoFARsForPFCPModify(tunnel *context.UPTunnel, param *pfcpParam) cont
 	return pendingUPF
 }
 
-func readBinaryN2SmInformation(file **os.File) ([]byte, error) {
-	if file == nil || *file == nil {
+func readBinaryN2SmInformation(file *os.File) ([]byte, error) {
+	if file == nil {
 		return nil, nil
 	}
 
-	if _, err := (*file).Seek(0, io.SeekStart); err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
 
-	return io.ReadAll(*file)
+	return io.ReadAll(file)
 }
 
 func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
 
-	if body.BinaryDataN1SmMessage != nil {
+	if body.HasBinaryDataN1SmMessage() {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage isn't nil")
-		if *body.BinaryDataN1SmMessage == nil {
+		file := body.GetBinaryDataN1SmMessage()
+		if file == nil {
 			err := fmt.Errorf("binary N1 SM message payload is nil")
 			errBody := models.NewUpdateSmContext400Response()
 			errBody.SetJsonData(models.SmContextUpdateError{Error: smferrors.N1SmError})
@@ -124,7 +125,6 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			return err
 		}
 		m := nas.NewMessage()
-		file := *body.BinaryDataN1SmMessage
 		_, err := file.Seek(0, io.SeekStart) // Ensure the file pointer is at the beginning
 		if err != nil {
 			errBody := models.NewUpdateSmContext400Response()
@@ -255,11 +255,11 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
-	smContextUpdateData := body.JsonData
+	smContextUpdateData := body.GetJsonData()
 
 	switch smContextUpdateData.GetUpCnxState() {
 	case models.UPCNXSTATE_ACTIVATING:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.UpCnxState)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.GetUpCnxState())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
 			// TODO: implement sleep wait in concurrent architecture
@@ -287,7 +287,7 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 		}
 		response.SetBinaryDataN2SmInformation(tmpFile)
 	case models.UPCNXSTATE_DEACTIVATED:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.UpCnxState)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.GetUpCnxState())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes Active again
 			// TODO: implement sleep wait in concurrent architecture
@@ -299,8 +299,9 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 			jd := response.GetJsonData()
 			jd.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
 			response.SetJsonData(jd)
-			smContext.UpCnxState = body.JsonData.GetUpCnxState()
-			smContext.UeLocation = body.JsonData.UeLocation
+			reqJsonData := body.GetJsonData()
+			smContext.UpCnxState = reqJsonData.GetUpCnxState()
+			smContext.UeLocation = reqJsonData.UeLocation
 			// TODO: Deactivate N2 downlink tunnel
 			// Set FAR and An, N3 Release Info
 			farList := []*context.FAR{}
@@ -338,11 +339,11 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
-	smContextUpdateData := body.JsonData
+	smContextUpdateData := body.GetJsonData()
 
 	switch smContextUpdateData.GetHoState() {
 	case models.HOSTATE_PREPARING:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.HoState)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_PREPARING")
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
@@ -353,7 +354,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		smContext.HoState = models.HOSTATE_PREPARING
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -379,7 +380,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		jd.SetHoState(models.HOSTATE_PREPARING)
 		response.SetJsonData(jd)
 	case models.HOSTATE_PREPARED:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.HoState)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_PREPARED")
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
@@ -393,7 +394,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		jd := response.GetJsonData()
 		jd.SetHoState(models.HOSTATE_PREPARED)
 		response.SetJsonData(jd)
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -432,7 +433,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 			}
 		}
 	case models.HOSTATE_COMPLETED:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.HoState)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_COMPLETED")
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
@@ -453,11 +454,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
-	smContextUpdateData := body.JsonData
+	smContextUpdateData := body.GetJsonData()
 
 	switch smContextUpdateData.GetCause() {
 	case models.CAUSE_REL_DUE_TO_DUPLICATE_SESSION_ID:
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, update cause %v received", smContextUpdateData.Cause)
+		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, update cause %v received", smContextUpdateData.GetCause())
 		//* release PDU Session Here
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
@@ -499,13 +500,13 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
-	smContextUpdateData := body.JsonData
+	smContextUpdateData := body.GetJsonData()
 	tunnel := smContext.Tunnel
 
 	switch smContextUpdateData.GetN2SmInfoType() {
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_RSP:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
+			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes Active again
 			// TODO: implement sleep wait in concurrent architecture
@@ -540,7 +541,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				}
 			}
 		}
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -560,8 +561,8 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_FAIL:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+			smContextUpdateData.GetN2SmInfoType())
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -574,7 +575,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 	case models.N2SMINFOTYPE_PDU_RES_REL_RSP:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
+			smContextUpdateData.GetN2SmInfoType())
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 PDUSession Release Complete ")
 		if smContext.PDUSessionRelease_DUE_TO_DUP_PDU_ID {
 			if smContext.SMContextState != context.SmStateInActivePending {
@@ -617,7 +618,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 	case models.N2SMINFOTYPE_PATH_SWITCH_REQ:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
+			smContextUpdateData.GetN2SmInfoType())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, handle Path Switch Request")
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes Active again
@@ -628,7 +629,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -681,7 +682,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 	case models.N2SMINFOTYPE_PATH_SWITCH_SETUP_FAIL:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
+			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
 			// TODO: implement sleep wait in concurrent architecture
@@ -690,7 +691,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 		smContext.ChangeState(context.SmStateModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
-		fileBytes, err := readBinaryN2SmInformation(body.BinaryDataN2SmInformation)
+		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 		if err != nil {
 			smContext.SubCtxLog.Errorf("failed to read file: %v", err)
 			return err
@@ -700,7 +701,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		}
 	case models.N2SMINFOTYPE_HANDOVER_REQUIRED:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
-			smContextUpdateData.N2SmInfoType)
+			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
 			// TODO: implement sleep wait in concurrent architecture

@@ -50,12 +50,13 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	request := models.NewPostSmContextsRequest()
-	request.SetJsonData(*models.NewSmContextCreateDataWithDefaults())
+	request.SetJsonData(models.SmContextCreateData{})
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
 	switch s[0] {
 	case "application/json":
-		err = c.ShouldBindJSON(request.JsonData)
+		jsonData, _ := request.GetJsonDataOk()
+		err = c.ShouldBindJSON(jsonData)
 	case "multipart/related":
 		err = c.ShouldBindWith(request, openapi.MultipartRelatedBinding{})
 	default:

@@ -125,9 +125,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	shouldSendReleaseOnly := false
 	ruleid := "default"
 
-	if len(smContext.SmPolicyUpdates) > 0 && smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules != nil {
+	if len(smContext.SmPolicyUpdates) > 0 && smContext.SmPolicyUpdates[0].SmPolicyDecision.HasPccRules() {
 		validRuleID := ""
-		for ruleId, rule := range smContext.SmPolicyUpdates[0].SmPolicyDecision.PccRules {
+		for ruleId, rule := range smContext.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules() {
 			logger.PduSessLog.Infof("[BuildPfcpParam] Checking PCC RuleId=%s, Rule=%+v", ruleId, rule)
 			if ruleId != "" && rule.GetPccRuleId() != "" {
 				validRuleID = ruleId
@@ -398,8 +398,8 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// Check response cause
 	// -------------------------------
 	if rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_N1_MSG_NOT_TRANSFERRED {
-		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure: %v", rspData.Cause)
-		return fmt.Errorf("N1N2MessageTransfer failure: %v", rspData.Cause)
+		smContext.SubPfcpLog.Errorf("N1N2MessageTransfer failure: %v", rspData.GetCause())
+		return fmt.Errorf("N1N2MessageTransfer failure: %v", rspData.GetCause())
 	}
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 Transfer completed")

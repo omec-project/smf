@@ -81,26 +81,25 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	}
 
 	// User location info
-	if smDelReq.JsonData.UeLocation != nil {
-		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.UeLocation
-	} else if smDelReq.JsonData.AddUeLocation != nil {
-		smPolicyDelData.UserLocationInfo = smDelReq.JsonData.AddUeLocation
+	jd := smDelReq.GetJsonData()
+	if jd.HasUeLocation() {
+		smPolicyDelData.SetUserLocationInfo(jd.GetUeLocation())
+	} else if jd.HasAddUeLocation() {
+		smPolicyDelData.SetUserLocationInfo(jd.GetAddUeLocation())
 	}
 
 	// UE Time Zone
-	if smDelReq.JsonData.GetUeTimeZone() != "" {
-		smPolicyDelData.UeTimeZone = smDelReq.JsonData.UeTimeZone
+	if jd.GetUeTimeZone() != "" {
+		smPolicyDelData.SetUeTimeZone(jd.GetUeTimeZone())
 	}
 
 	// RAN/NAS Release Cause
-	ranNasRelCause := models.RanNasRelCause{
-		Var5gMmCause: smDelReq.JsonData.Var5gMmCauseValue,
-		// Var5gSmCause:
+	ranNasRelCause := models.NewRanNasRelCause()
+	ranNasRelCause.SetVar5gMmCause(jd.GetVar5gMmCauseValue())
+	if jd.HasNgApCause() {
+		ranNasRelCause.SetNgApCause(jd.GetNgApCause())
 	}
-	if smDelReq.JsonData.NgApCause != nil {
-		ranNasRelCause.NgApCause = smDelReq.JsonData.NgApCause
-	}
-	smPolicyDelData.RanNasRelCauses = []models.RanNasRelCause{ranNasRelCause}
+	smPolicyDelData.SetRanNasRelCauses([]models.RanNasRelCause{*ranNasRelCause})
 
 	// Policy Id (supi-pduSessId)
 	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)

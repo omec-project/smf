@@ -72,19 +72,19 @@ func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *mode
 	update.SmPolicyDecision = smPolicyDecision
 
 	// Qos Flows update
-	update.QosFlowUpdate = GetQosFlowDescUpdate(smPolicyDecision.QosDecs, smCtxtPolData.SmCtxtQosData.QosData)
+	update.QosFlowUpdate = GetQosFlowDescUpdate(smPolicyDecision.GetQosDecs(), smCtxtPolData.SmCtxtQosData.QosData)
 
 	// Pcc Rules update
-	update.PccRuleUpdate = GetPccRulesUpdate(smPolicyDecision.PccRules, smCtxtPolData.SmCtxtPccRules.PccRules)
+	update.PccRuleUpdate = GetPccRulesUpdate(smPolicyDecision.GetPccRules(), smCtxtPolData.SmCtxtPccRules.PccRules)
 
 	// Session Rules update
-	update.SessRuleUpdate = GetSessionRulesUpdate(smPolicyDecision.SessRules, smCtxtPolData.SmCtxtSessionRules.SessionRules)
+	update.SessRuleUpdate = GetSessionRulesUpdate(smPolicyDecision.GetSessRules(), smCtxtPolData.SmCtxtSessionRules.SessionRules)
 
 	// Traffic Control Data update
-	update.TCUpdate = GetTrafficControlUpdate(smPolicyDecision.TraffContDecs, smCtxtPolData.SmCtxtTCData.TrafficControlData)
+	update.TCUpdate = GetTrafficControlUpdate(smPolicyDecision.GetTraffContDecs(), smCtxtPolData.SmCtxtTCData.TrafficControlData)
 
 	// Condition Data update
-	update.CondDataUpdate = GetConditionDataUpdate(smPolicyDecision.Conds, smCtxtPolData.SmCtxtCondData.CondData)
+	update.CondDataUpdate = GetConditionDataUpdate(smPolicyDecision.GetConds(), smCtxtPolData.SmCtxtCondData.CondData)
 
 	return update
 }

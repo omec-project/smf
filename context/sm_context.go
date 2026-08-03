@@ -460,8 +460,8 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.NfServices {
-		if service.ServiceName == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
 			cfg := Npcf_SMPolicyControl.NewConfiguration()
 			serverConfig := &cfg.Servers[0]
 			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {

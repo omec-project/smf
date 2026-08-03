@@ -10,8 +10,8 @@ type TrafficControlUpdate struct {
 	add, mod, del map[string]*models.TrafficControlData
 }
 
-func GetTrafficControlUpdate(tcData *map[string]models.TrafficControlData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
-	if tcData == nil || len(*tcData) == 0 {
+func GetTrafficControlUpdate(tcData map[string]models.TrafficControlData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
+	if len(tcData) == 0 {
 		return nil
 	}
 
@@ -22,7 +22,7 @@ func GetTrafficControlUpdate(tcData *map[string]models.TrafficControlData, ctxtT
 	}
 
 	// Compare against Ctxt rules to get added or modified rules
-	for name, pcfTc := range *tcData {
+	for name, pcfTc := range tcData {
 		tc := pcfTc
 		// if pcfRule is nil then it need to be deleted
 		if tc.GetTcId() == "" {
@@ -144,7 +144,7 @@ func compareUpPathChgEvent(a, b *models.UpPathChgEvent) bool {
 }
 
 func GetTcDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refTcData string) *models.TrafficControlData {
-	if smPolicyDecision.TraffContDecs == nil {
+	if smPolicyDecision == nil || !smPolicyDecision.HasTraffContDecs() {
 		return nil
 	}
 

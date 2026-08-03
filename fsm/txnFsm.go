@@ -34,7 +34,7 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 	switch txn.MsgType {
 	case svcmsgtypes.CreateSmContext:
 		req := txn.Req.(models.PostSmContextsRequest)
-		createData := req.JsonData
+		createData, _ := req.GetJsonDataOk()
 		if smCtxtRef, err := smf_context.ResolveRef(createData.GetSupi(), createData.GetPduSessionId()); err == nil {
 			// Previous context exist
 			err := producer.HandlePduSessionContextReplacement(smCtxtRef)
@@ -217,12 +217,12 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 
 			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
 			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
+			errBody := models.NewUpdateSmContext400Response()
+			errBody.SetJsonData(*jsonData)
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
-				Body: models.UpdateSmContext400Response{
-					JsonData: jsonData,
-				},
+				Body:   errBody,
 			}
 			txn.Rsp = httpResponse
 		}

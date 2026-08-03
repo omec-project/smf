@@ -51,10 +51,11 @@ func HTTPNfSubscriptionStatusNotify(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, problemDetails)
 	} else {
 		c.Data(rsp.Status, "application/json", responseBody.Bytes())
-		if nfSubscriptionStatusNotification.Event != models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED {
+		if nfSubscriptionStatusNotification.GetEvent() != models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED {
 			return
 		}
-		nfID := nfSubscriptionStatusNotification.NfProfile.NfInstanceId
+		nfProfile := nfSubscriptionStatusNotification.GetNfProfile()
+		nfID := nfProfile.GetNfInstanceId()
 		value, found := smfContext.SMF_Self().NfStatusSubscriptions.Load(nfID)
 		if !found {
 			logger.ConsumerLog.Warnf("no subscriptionId found for NF instance %s", nfID)

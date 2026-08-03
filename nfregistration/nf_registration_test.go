@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
@@ -222,7 +221,8 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 	registrations := []nfConfigApi.SessionManagement{}
 	registerCalled := make(chan struct{}, 1)
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
 		registrationMu.Lock()
 		registrations = append(registrations, sessionManagementConfig...)
 		registrationMu.Unlock()
@@ -230,7 +230,7 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 		case registerCalled <- struct{}{}:
 		default:
 		}
-		return &profile, "", nil
+		return profile, "", nil
 	}
 
 	newConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
@@ -265,7 +265,9 @@ func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T
 	var attempts atomic.Int32
 	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		attempts.Add(1)
-		return &models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}, "", errors.New("mock error")
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
+		return profile, "", errors.New("mock error")
 	}
 	defer func() {
 		cancel()
