@@ -130,10 +130,7 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	if factory.SmfConfig.Configuration.EnableDbStore {
 		smContextPool := smf_context.GetSmContextPool()
-		val, ok := smContextPool.Load(smContext.Ref)
-		if ok {
-			txn.TxnFsmLog.Infoln("db - smContext in smContextPool", val)
-		} else {
+		if _, ok := smContextPool.Load(smContext.Ref); !ok {
 			smf_context.StoreSmContextPool(smContext)
 		}
 	}
@@ -256,9 +253,10 @@ func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, e
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		smf_context.StoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
-		// clear sm context in memory for test
-		// smf_context.ClearSMContextInMem(txn.Ctxt.(*smf_context.SMContext).Ref)
+		// Serialize while locked, write to MongoDB asynchronously.
+		// txn.Status was already sent in TxnSuccess, so the HTTP response has already
+		// been returned; the DB write does not need to be on the critical path.
+		smf_context.AsyncStoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
 	}
 	return transaction.TxnEventEnd, nil
 }

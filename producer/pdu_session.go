@@ -160,7 +160,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 
 	// Create SM context
 	// smContext := smf_context.NewSMContext(createData.Supi, createData.PduSessionId)
-	smContext.SubPduSessLog.Infoln("PDUSessionSMContextCreate, SM context created")
+	smContext.SubPduSessLog.Debugln("PDUSessionSMContextCreate, SM context created")
 	// smContext.ChangeState(smf_context.SmStateActivePending)
 	smContext.SubCtxLog.Debugln("PDUSessionSMContextCreate, SMContextState change state:", smContext.SMContextState.String())
 	smContext.SetCreateData(createData)
@@ -188,7 +188,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UDMDiscoveryFailure")
 		return fmt.Errorf("UdmError")
 	} else {
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, send NF Discovery Serving UDM Successful")
+		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Successful")
 	}
 
 	// IP Allocation
@@ -198,7 +198,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		return fmt.Errorf("IpAllocError")
 	} else {
 		smContext.PDUAddress = &smf_context.UeIpAddr{Ip: ip, UpfProvided: false}
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, IP alloc success IP[%s]",
+		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, IP alloc success IP[%s]",
 			smContext.PDUAddress.Ip.String())
 	}
 
@@ -207,7 +207,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	if createData.ServingNetwork.HasNid() {
 		*smPlmnID = createData.GetServingNetwork()
 	} else {
-		smContext.SubPduSessLog.Infoln("ServingNetwork not received from AMF, so taking from guami")
+		smContext.SubPduSessLog.Warnln("ServingNetwork not received from AMF, so taking from guami")
 		*smPlmnID = createData.Guami.GetPlmnId()
 	}
 	smfSelf := smf_context.SMF_Self()
@@ -248,7 +248,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 			slice := *sessSubData.ArrayOfSessionManagementSubscriptionData
 			dnnConf := *slice[0].DnnConfigurations
 			smContext.DnnConfiguration = dnnConf[smContext.Dnn]
-			smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, subscription data retrieved from UDM")
+			smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, subscription data retrieved from UDM")
 		} else {
 			metrics.IncrementSvcUdmMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), err.Error())
 			smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, get SessionManagementSubscriptionData error: ", err)
@@ -266,7 +266,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 			slice := *sessSubData.ArrayOfSessionManagementSubscriptionData
 			dnnConf := *slice[0].DnnConfigurations
 			smContext.DnnConfiguration = dnnConf[smContext.Dnn]
-			smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, subscription data retrieved from UDM")
+			smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, subscription data retrieved from UDM")
 		} else {
 			metrics.IncrementSvcUdmMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SessionManagementSubscriptionData from UDM is nil")
@@ -294,7 +294,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFDiscoveryFailure")
 		return fmt.Errorf("PcfError")
 	}
-	smContext.SubPduSessLog.Infoln("PDUSessionSMContextCreate, send NF Discovery Serving PCF success")
+	smContext.SubPduSessLog.Debugln("PDUSessionSMContextCreate, send NF Discovery Serving PCF success")
 
 	// PCF Policy Association
 	var smPolicyDecision *models.SmPolicyDecision
@@ -310,15 +310,15 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFPolicyCreateFailure")
 		return fmt.Errorf("PcfAssoError")
 	} else {
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, Policy association create success")
+		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, Policy association create success")
 		smPolicyDecision = smPolicyDecisionRsp
 
 		// smPolicyDecision = qos.TestMakeSamplePolicyDecision()
 		// Derive QoS change(compare existing vs received Policy Decision)
-		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, received SM policy data: %v",
+		smContext.SubQosLog.Debugf("PDUSessionSMContextCreate, received SM policy data: %v",
 			qos.SmPolicyDecisionString(smPolicyDecision))
 		policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, smPolicyDecision)
-		smContext.SubQosLog.Infof("PDUSessionSMContextCreate, generated SM policy update: %v",
+		smContext.SubQosLog.Debugf("PDUSessionSMContextCreate, generated SM policy update: %v",
 			policyUpdates)
 		smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, policyUpdates)
 	}
@@ -335,7 +335,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	}
 
 	if smfSelf.ULCLSupport && smfSelf.UeRoutingManager != nil && smfSelf.UeRoutingManager.HasPath(createData.GetSupi()) {
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate: SUPI[%s] has pre-configured route", createData.Supi)
+		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate: SUPI[%s] has pre-configured route", createData.Supi)
 		uePreConfigPaths := smfSelf.UeRoutingManager.GetPath(createData.GetSupi())
 		smContext.Tunnel.DataPathPool = uePreConfigPaths.DataPathPool
 		smContext.Tunnel.PathIDGenerator = uePreConfigPaths.PathIDGenerator
@@ -351,7 +351,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	} else {
 		// UE has no pre-config path.
 		// Use default route
-		smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, no pre-config route")
+		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, no pre-config route")
 		defaultUPPath := smf_context.GetUserPlaneInformation().GetDefaultUserPlanePathByDNN(upfSelectionParams)
 		defaultPath = smf_context.GenerateDataPath(defaultUPPath)
 		if defaultPath != nil {
@@ -413,7 +413,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
-	smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, update received")
+	smContext.SubPduSessLog.Debugf("PDUSessionSMContextUpdate, update received")
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
