@@ -5,9 +5,9 @@
 package context
 
 import (
-	"encoding/json"
 	"net"
 
+	"github.com/bytedance/sonic"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
@@ -138,18 +138,14 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 }
 
 func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
-	// Marshal data into json format
-	tmp, err := json.Marshal(data)
+	tmp, err := sonic.Marshal(data)
 	if err != nil {
-		logger.DataRepoLog.Errorf("ToBsonMNodeInDB marshall error: %v", err)
+		logger.DataRepoLog.Errorf("ToBsonMNodeInDB marshal error: %v", err)
+		return
 	}
-
-	// unmarshal data into bson format
-	err = json.Unmarshal(tmp, &ret)
-	if err != nil {
-		logger.DataRepoLog.Errorf("ToBsonMNodeInDB unmarshall error: %v", err)
+	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+		logger.DataRepoLog.Errorf("ToBsonMNodeInDB unmarshal error: %v", err)
 	}
-
 	return
 }
 
@@ -177,7 +173,7 @@ func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInD
 	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf state json:", result)
 	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf dataPathNodeInDB:", dataPathNodeInDB)
 
-	err := json.Unmarshal(mapToByte(result), dataPathNodeInDB)
+	err := sonic.Unmarshal(mapToByte(result), dataPathNodeInDB)
 	if err != nil {
 		logger.DataRepoLog.Errorf("GetNodeInDBFromDB unmarshall error: %v", err)
 		return nil

@@ -3,13 +3,14 @@ module github.com/omec-project/smf
 go 1.25.0
 
 require (
+	github.com/bytedance/sonic v1.15.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/nas/v2 v2.2.0
 	github.com/omec-project/ngap/v2 v2.1.3
 	github.com/omec-project/openapi/v2 v2.1.5
-	github.com/omec-project/util v1.8.2
+	github.com/omec-project/util v1.8.4
 	github.com/prometheus/client_golang v1.24.1
 	github.com/segmentio/kafka-go v0.4.51
 	github.com/urfave/cli/v3 v3.10.1
@@ -22,7 +23,6 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
-	github.com/bytedance/sonic v1.15.2 // indirect
 	github.com/bytedance/sonic/loader v0.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.7 // indirect

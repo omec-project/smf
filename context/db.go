@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/bytedance/sonic"
+	"github.com/omec-project/openapi/v2/Namf_Communication"
+	"github.com/omec-project/openapi/v2/Npcf_SMPolicyControl"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
@@ -65,6 +68,8 @@ func SetupSmfCollection() {
 	if setEnvErr != nil {
 		logger.DataRepoLog.Errorln("setting SMF_COUNT env variable is failed")
 	}
+
+	startSmContextWriteWorkers()
 }
 
 // print out sm context
@@ -124,13 +129,13 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 	var bpJSON json.RawMessage
 	if smContext.BPManager != nil {
 		var err error
-		bpJSON, err = json.Marshal(smContext.BPManager)
+		bpJSON, err = sonic.Marshal(smContext.BPManager)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return json.Marshal(&struct {
+	return sonic.Marshal(&struct {
 		*Alias
 		PFCPContext PFCPContextInDB `json:"pfcpContext"`
 		Tunnel      UPTunnelInDB    `json:"tunnel"`
@@ -145,7 +150,7 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON customized unmarshaller for sm context
 func (smContext *SMContext) UnmarshalJSON(data []byte) error {
-	logger.DataRepoLog.Infoln("db - in UnmarshalJSON")
+	logger.DataRepoLog.Debugln("db - in UnmarshalJSON")
 	type Alias SMContext
 	aux := &struct {
 		*Alias
@@ -155,7 +160,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(smContext),
 	}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := sonic.Unmarshal(data, &aux); err != nil {
 		logger.DataRepoLog.Errorln("err in customized unMarshall")
 		return err
 	}
@@ -215,49 +220,146 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 }
 
 func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
-	// Marshal data into json format
-	tmp, err := json.Marshal(data)
+	tmp, err := sonic.Marshal(data)
 	if err != nil {
-		logger.DataRepoLog.Errorf("SMContext marshall error: %v", err)
+		logger.DataRepoLog.Errorf("SMContext marshal error: %v", err)
+		return
 	}
-
-	// unmarshal data into bson format
-	err = json.Unmarshal(tmp, &ret)
-	if err != nil {
-		logger.DataRepoLog.Errorf("SMContext unmarshall error: %v", err)
+	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+		logger.DataRepoLog.Errorf("SMContext unmarshal error: %v", err)
 	}
-
 	return
 }
 
+// smContextAlias is a type alias that breaks the json.Marshaler interface, letting sonic
+// encode it as a plain struct instead of going through EncodeJsonMarshaler.
+type smContextAlias SMContext
+
+// smContextForDB is the DB serialization form with complex fields pre-transformed.
+type smContextForDB struct {
+	*smContextAlias
+	PFCPContext PFCPContextInDB `json:"pfcpContext"`
+	Tunnel      UPTunnelInDB    `json:"tunnel"`
+	BPManager   json.RawMessage `json:"bpManager,omitempty"`
+	// Shadow with nil so sonic skips these unreconstructable API handles; they
+	// are rebuilt from AMFProfile / SelectedPCFProfile on context recovery.
+	SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty"`
+	CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty"`
+}
+
 func ToBsonM(data *SMContext) (ret bson.M) {
-	// Marshal data into json format
-	logger.DataRepoLog.Infoln("db - in ToBsonM before marshal")
-	tmp, err := json.Marshal(data)
-	if err != nil {
-		logger.DataRepoLog.Errorf("SMContext marshall error: %v", err)
-	}
-	// unmarshal data into bson format
-	err = json.Unmarshal(tmp, &ret)
-	if err != nil {
-		logger.DataRepoLog.Errorf("SMContext unmarshall error: %v", err)
+	var upTunnelVal UPTunnelInDB
+	if data.Tunnel != nil {
+		upTunnelVal.ANInformation = data.Tunnel.ANInformation
+		if data.Tunnel.DataPathPool != nil {
+			pool := make(DataPathPoolInDB, len(data.Tunnel.DataPathPool))
+			for key, dp := range data.Tunnel.DataPathPool {
+				pool[key] = &DataPathInDB{
+					Activated:         dp.Activated,
+					IsDefaultPath:     dp.IsDefaultPath,
+					Destination:       dp.Destination,
+					HasBranchingPoint: dp.HasBranchingPoint,
+					FirstDPNode:       StoreDataPathNode(dp.FirstDPNode),
+				}
+			}
+			upTunnelVal.DataPathPool = pool
+		}
 	}
 
-	return
+	pfcpContextVal := make(PFCPContextInDB, len(data.PFCPContext))
+	var pfcpEntry PFCPSessionContextInDB
+	for key, pfcpCtx := range data.PFCPContext {
+		pfcpEntry.NodeID = pfcpCtx.NodeID
+		pfcpEntry.PDRs = pfcpCtx.PDRs
+		pfcpEntry.LocalSEID = SeidConv(pfcpCtx.LocalSEID)
+		pfcpEntry.RemoteSEID = SeidConv(pfcpCtx.RemoteSEID)
+		pfcpContextVal[key] = pfcpEntry
+	}
+
+	var bpJSON json.RawMessage
+	if data.BPManager != nil {
+		var err error
+		bpJSON, err = sonic.Marshal(data.BPManager)
+		if err != nil {
+			logger.DataRepoLog.Errorf("BPManager marshal error: %v", err)
+			return ret
+		}
+	}
+
+	dbDoc := smContextForDB{
+		smContextAlias: (*smContextAlias)(data),
+		PFCPContext:    pfcpContextVal,
+		Tunnel:         upTunnelVal,
+		BPManager:      bpJSON,
+	}
+	tmp, err := sonic.Marshal(&dbDoc)
+	if err != nil {
+		logger.DataRepoLog.Errorf("SMContext marshal error: %v", err)
+		return ret
+	}
+	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+		logger.DataRepoLog.Errorf("SMContext unmarshal error: %v", err)
+	}
+	return ret
 }
 
 // StoreSmContextInDB Store SmContext In DB
 func StoreSmContextInDB(smContext *SMContext) {
-	logger.DataRepoLog.Infoln("db - Store SMContext In DB w ref")
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 	smContextBsonA := ToBsonM(smContext)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Debugf("StoreSmContextInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
 	if postErr != nil {
 		logger.DataRepoLog.Warnln(postErr)
+	}
+}
+
+type smContextWriteReq struct {
+	bsonDoc bson.M
+	ref     string
+}
+
+// smContextWriteQueue feeds the fixed pool of DB write workers started by
+// startSmContextWriteWorkers. Sized to absorb bursts without blocking callers.
+var smContextWriteQueue chan smContextWriteReq
+
+// startSmContextWriteWorkers launches a fixed pool of goroutines that drain
+// smContextWriteQueue. Called once from SetupSmfCollection so the workers are
+// only active when DB storage is enabled.
+func startSmContextWriteWorkers() {
+	const (
+		workers   = 4
+		queueSize = 500
+	)
+	smContextWriteQueue = make(chan smContextWriteReq, queueSize)
+	for range workers {
+		go func() {
+			for req := range smContextWriteQueue {
+				filter := bson.M{"ref": req.ref}
+				if _, err := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, req.bsonDoc); err != nil {
+					logger.DataRepoLog.Warnln(err)
+				}
+			}
+		}()
+	}
+}
+
+// AsyncStoreSmContextInDB serializes the context while locked, then enqueues
+// the write to a fixed worker pool so the transaction lifecycle is not blocked
+// on network I/O and goroutine creation overhead is eliminated.
+func AsyncStoreSmContextInDB(smContext *SMContext) {
+	smContext.SMLock.Lock()
+	bsonDoc := ToBsonM(smContext)
+	ref := smContext.Ref
+	smContext.SMLock.Unlock()
+
+	select {
+	case smContextWriteQueue <- smContextWriteReq{bsonDoc: bsonDoc, ref: ref}:
+	default:
+		logger.DataRepoLog.Warnln("db write queue full, dropping context write for ref:", ref)
 	}
 }
 
@@ -280,7 +382,7 @@ func StoreSeidContextInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"seid": seid}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Debugf("StoreSeidContextInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SeidSmContextCol, filter, itemBsonA)
 	if postErr != nil {
@@ -297,7 +399,7 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 	}
 	itemBsonA := ToBsonMSeidRef(item)
 	filter := bson.M{"ref": smContext.Ref}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
+	logger.DataRepoLog.Debugf("StoreRefToSeidInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(RefSeidCol, filter, itemBsonA)
 	if postErr != nil {
@@ -324,6 +426,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 			return nil
 		}
 		smContext.RebuildCommunicationClient()
+		smContext.RebuildSMPolicyClient()
 	} else {
 		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
 		return nil

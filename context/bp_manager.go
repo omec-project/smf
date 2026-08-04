@@ -5,8 +5,9 @@
 package context
 
 import (
-	"encoding/json"
 	"reflect"
+
+	"github.com/bytedance/sonic"
 )
 
 type BPManager struct {
@@ -123,7 +124,7 @@ func (bpMGR *BPManager) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	return json.Marshal(&SimpleBPManager{
+	return sonic.Marshal(&SimpleBPManager{
 		ULCL:                  bpMGR.ULCL,
 		ActivatingPath:        bpMGR.ActivatingPath,
 		UpdatedBranchingPoint: converted,

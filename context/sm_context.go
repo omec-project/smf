@@ -393,6 +393,24 @@ func (smContext *SMContext) RebuildCommunicationClient() {
 	}
 }
 
+// RebuildSMPolicyClient reconstructs the Npcf_SMPolicyControl API client
+// from the stored SelectedPCFProfile after recovering an SMContext from MongoDB.
+func (smContext *SMContext) RebuildSMPolicyClient() {
+	smContext.SMPolicyClient = nil
+	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+			cfg := Npcf_SMPolicyControl.NewConfiguration()
+			serverConfig := &cfg.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
+			}
+			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
+			return
+		}
+	}
+}
+
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
 	createdData = models.NewSmContextCreatedData()
 	createdData.SNssai = smContext.Snssai
