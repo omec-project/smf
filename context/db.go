@@ -10,6 +10,7 @@ package context
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"os"
 	"reflect"
@@ -137,9 +138,11 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 	return sonic.Marshal(&struct {
 		*Alias
-		PFCPContext PFCPContextInDB `json:"pfcpContext"`
-		Tunnel      UPTunnelInDB    `json:"tunnel"`
-		BPManager   json.RawMessage `json:"bpManager,omitempty"`
+		PFCPContext         PFCPContextInDB                 `json:"pfcpContext"`
+		Tunnel              UPTunnelInDB                    `json:"tunnel"`
+		BPManager           json.RawMessage                 `json:"bpManager,omitempty"`
+		SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty"`
+		CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty"`
 	}{
 		Alias:       (*Alias)(smContext),
 		PFCPContext: PFCPContextVal,
@@ -173,12 +176,12 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key].PDRs = pfcpCtxInDB.PDRs
 		localSeid, err := strconv.ParseUint(pfcpCtxInDB.LocalSEID, 16, 64)
 		if err != nil {
-			logger.DataRepoLog.Errorf("localSEID unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("localSEID unmarshal error: %v", err)
 		}
 		smContext.PFCPContext[key].LocalSEID = localSeid
 		remoteSeid, err := strconv.ParseUint(pfcpCtxInDB.RemoteSEID, 16, 64)
 		if err != nil {
-			logger.DataRepoLog.Errorf("remoteSEID unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("remoteSEID unmarshal error: %v", err)
 		}
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
 	}
@@ -322,45 +325,46 @@ type smContextWriteReq struct {
 	ref     string
 }
 
-// smContextWriteQueue feeds the fixed pool of DB write workers started by
-// startSmContextWriteWorkers. Sized to absorb bursts without blocking callers.
-var smContextWriteQueue chan smContextWriteReq
+// smContextWriteQueues is a per-worker shard of write queues; a stable hash of
+// ref routes each SMContext to the same shard, preserving per-ref write order.
+var smContextWriteQueues []chan smContextWriteReq
 
 // startSmContextWriteWorkers launches a fixed pool of goroutines that drain
-// smContextWriteQueue. Called once from SetupSmfCollection so the workers are
+// smContextWriteQueues. Called once from SetupSmfCollection so the workers are
 // only active when DB storage is enabled.
 func startSmContextWriteWorkers() {
 	const (
 		workers   = 4
 		queueSize = 500
 	)
-	smContextWriteQueue = make(chan smContextWriteReq, queueSize)
-	for range workers {
-		go func() {
-			for req := range smContextWriteQueue {
+	smContextWriteQueues = make([]chan smContextWriteReq, workers)
+	for i := range workers {
+		q := make(chan smContextWriteReq, queueSize)
+		smContextWriteQueues[i] = q
+		go func(q chan smContextWriteReq) {
+			for req := range q {
 				filter := bson.M{"ref": req.ref}
 				if _, err := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, req.bsonDoc); err != nil {
 					logger.DataRepoLog.Warnln(err)
 				}
 			}
-		}()
+		}(q)
 	}
 }
 
 // AsyncStoreSmContextInDB serializes the context while locked, then enqueues
-// the write to a fixed worker pool so the transaction lifecycle is not blocked
-// on network I/O and goroutine creation overhead is eliminated.
+// the write to the per-ref shard worker. Blocks if the shard queue is full to
+// preserve ordering; the HTTP response was already returned in TxnSuccess.
 func AsyncStoreSmContextInDB(smContext *SMContext) {
 	smContext.SMLock.Lock()
 	bsonDoc := ToBsonM(smContext)
 	ref := smContext.Ref
 	smContext.SMLock.Unlock()
 
-	select {
-	case smContextWriteQueue <- smContextWriteReq{bsonDoc: bsonDoc, ref: ref}:
-	default:
-		logger.DataRepoLog.Warnln("db write queue full, dropping context write for ref:", ref)
-	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(ref))
+	q := smContextWriteQueues[h.Sum32()%uint32(len(smContextWriteQueues))]
+	q <- smContextWriteReq{bsonDoc: bsonDoc, ref: ref}
 }
 
 type SeidSmContextRef struct {
@@ -420,9 +424,9 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	}
 
 	if result != nil {
-		err := json.Unmarshal(mapToByte(result), smContext)
+		err := sonic.Unmarshal(mapToByte(result), smContext)
 		if err != nil {
-			logger.DataRepoLog.Errorf("smContext unmarshall error: %v", err)
+			logger.DataRepoLog.Errorf("smContext unmarshal error: %v", err)
 			return nil
 		}
 		smContext.RebuildCommunicationClient()
@@ -492,7 +496,7 @@ func DeleteSmContextInDBByRef(ref string) {
 }
 
 func mapToByte(data map[string]interface{}) (ret []byte) {
-	ret, err := json.Marshal(data)
+	ret, err := sonic.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("map to byte error: %v", err)
 	}

@@ -175,7 +175,7 @@ func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInD
 
 	err := sonic.Unmarshal(mapToByte(result), dataPathNodeInDB)
 	if err != nil {
-		logger.DataRepoLog.Errorf("GetNodeInDBFromDB unmarshall error: %v", err)
+		logger.DataRepoLog.Errorf("GetNodeInDBFromDB unmarshal error: %v", err)
 		return nil
 	}
 	return dataPathNodeInDB

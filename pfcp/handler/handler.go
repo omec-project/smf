@@ -278,7 +278,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		}
 
 		if rsp.UPFunctionFeatures != nil {
-			UPFunctionFeatures, err := ies.UnmarshallUserPlaneFunctionFeatures(rsp.UPFunctionFeatures.Payload)
+			UPFunctionFeatures, err := ies.UnmarshalUserPlaneFunctionFeatures(rsp.UPFunctionFeatures.Payload)
 			if err != nil {
 				logger.PfcpLog.Warnf("failed to get UPFunctionFeatures: %+v", err)
 				return
