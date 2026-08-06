@@ -49,6 +49,19 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 		AllowAutoTopicCreation: true,
 		Balancer:               &kafka.LeastBytes{},
 		BatchTimeout:           10 * time.Millisecond,
+		// Async keeps metric publishing off the request goroutine. Without it
+		// WriteMessages blocks the caller until the batch flushes (up to
+		// BatchTimeout), and PublishMsgEvent is called inline in the SM-context
+		// create/update/release handlers — so every PDU-session transaction
+		// paid a synchronous Kafka round trip. Metrics must never pace signalling.
+		Async: true,
+		// With Async, WriteMessages returns before the send completes, so its
+		// error return is always nil; delivery errors surface here instead.
+		Completion: func(msgs []kafka.Message, err error) {
+			if err != nil {
+				logger.KafkaLog.Errorf("kafka async delivery error for %d message(s): %s", len(msgs), err.Error())
+			}
+		},
 	}
 
 	StatWriter = Writer{
