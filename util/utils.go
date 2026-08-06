@@ -116,7 +116,7 @@ func cleanupMultipartTempFile(file *os.File, visited map[string]struct{}) {
 	}
 	visited[name] = struct{}{}
 
-	if err := file.Close(); err != nil {
+	if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 		logger.ConsumerLog.Errorf("temp file close failed: %+v", err)
 	}
 	if err := os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
