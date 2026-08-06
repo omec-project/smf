@@ -738,7 +738,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 
 func releaseTunnel(smContext *smf_context.SMContext) bool {
 	if smContext.Tunnel == nil {
-		smContext.SubPduSessLog.Errorf("releaseTunnel, pfcp tunnel already released")
+		smContext.SubPduSessLog.Warnln("releaseTunnel, pfcp tunnel already released")
 		return false
 	}
 	deletedPFCPNode := make(map[string]bool)
