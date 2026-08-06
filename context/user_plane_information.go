@@ -275,10 +275,21 @@ func linkUpfToGnbNodes(upi *UserPlaneInformation, upNode *UPNode, gnbNames []str
 	}
 }
 
+// nodeInLinks reports whether node is already linked.
+//
+// Membership is node identity, not reachability, so it compares NodeIDs rather
+// than resolved addresses. Resolving was imprecise: an AN node carries the gNB
+// name as an FQDN NodeID, and gNB names are configuration labels from the
+// slice's site-info with no DNS record, so ResolveNodeIdToIp returned
+// net.IPv4zero for each of them (nodeid.go) and any two compared equal. A UPF
+// configured with several gNBs was therefore linked only to the first.
+//
+// It was also expensive. Failed lookups are not cached, so the cost was repaid
+// on every comparison, and it was paid while UpdateSmfContext holds the SMF
+// context lock, delaying the rest of the configuration apply.
 func nodeInLinks(links []*UPNode, node *UPNode) bool {
-	targetIP := node.NodeID.ResolveNodeIdToIp().String()
 	for _, l := range links {
-		if l.NodeID.ResolveNodeIdToIp().String() == targetIP {
+		if l.NodeID.Equal(node.NodeID) {
 			return true
 		}
 	}
