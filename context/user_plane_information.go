@@ -664,6 +664,15 @@ func getPathBetween(cur *UPNode, dest *UPNode, visited map[*UPNode]bool,
 
 	for _, nodes := range cur.Links {
 		if !visited[nodes] {
+			// Only UPFs carry a UPF config, and a user-plane path never routes
+			// through an access node, so skip anything that is not a UPF rather
+			// than dereferencing a nil UPF below. A UPF's links include every
+			// gNB configured against it, so this branch is reached whenever the
+			// search steps onto a UPF that is not the destination.
+			if nodes.Type != UPNODE_UPF || nodes.UPF == nil {
+				visited[nodes] = true
+				continue
+			}
 			if !nodes.UPF.isSupportSnssai(selectedSNssai) {
 				visited[nodes] = true
 				continue
