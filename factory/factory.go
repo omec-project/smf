@@ -46,6 +46,8 @@ func InitConfigFactory(f string) error {
 		SmfConfig.Configuration.KafkaInfo.EnableKafka = &enableKafka
 	}
 
+	setT3591Defaults()
+
 	if SmfConfig.Configuration.WebuiUri == "" {
 		SmfConfig.Configuration.WebuiUri = "http://webui:5001"
 		logger.CfgLog.Infof("webuiUri not set in configuration file. Using %v", SmfConfig.Configuration.WebuiUri)
@@ -103,4 +105,22 @@ func CheckConfigVersion() error {
 	logger.CfgLog.Infof("UE-Routing config version [%s]", currentVersion)
 
 	return nil
+}
+
+// setT3591Defaults fills in the T3591 block so that an absent or partial configuration behaves
+// as the specification requires rather than as a zero value. ExpireTime is deliberately left at
+// zero when unset: that is what selects automatic resolution, and only an explicit value
+// overrides it.
+func setT3591Defaults() {
+	if SmfConfig.Configuration == nil {
+		return
+	}
+	if SmfConfig.Configuration.T3591 == nil {
+		SmfConfig.Configuration.T3591 = &TimerValue{Enable: true}
+	}
+	if SmfConfig.Configuration.T3591.MaxRetryTimes <= 0 {
+		// TS 24.501 table 10.3.2 NOTE 1: the procedure is aborted on the fifth expiry, so the
+		// command is retransmitted on the first four.
+		SmfConfig.Configuration.T3591.MaxRetryTimes = 4
+	}
 }

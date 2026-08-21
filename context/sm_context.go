@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nas/v2/nasConvert"
@@ -106,9 +107,19 @@ type SMContext struct {
 	SelectedPCFProfile models.NFProfileDiscovery `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
 	AnType             models.AccessType         `json:"anType" yaml:"anType" bson:"anType"`
 	RatType            models.RatType            `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
-	PresenceInLadn     models.PresenceState      `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
-	HoState            models.HoState            `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
-	DnnConfiguration   models.DnnConfiguration   `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
+
+	// ExtendedNasSmTimer is the AMF's indication that the extended NAS timer values for access
+	// via a satellite NG-RAN cell apply to this session (TS 24.501 subclause 4.23.4).
+	ExtendedNasSmTimer bool `json:"extendedNasSmTimer,omitempty" yaml:"extendedNasSmTimer" bson:"extendedNasSmTimer,omitempty"`
+
+	// T3591Value and T3591Source are resolved once when the session is created, as subclause
+	// 4.23.4 requires the value to be calculated at the start of a procedure and not
+	// recalculated until it completes, restarts or aborts.
+	T3591Value       time.Duration           `json:"t3591Value,omitempty" yaml:"t3591Value" bson:"t3591Value,omitempty"`
+	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`
+	PresenceInLadn   models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	HoState          models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
+	DnnConfiguration models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
 	Snssai         *models.Snssai       `json:"snssai" yaml:"snssai" bson:"snssai"`
 	HplmnSnssai    *models.Snssai       `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
@@ -373,6 +384,12 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.ServingNetwork = createData.GetServingNetwork()
 	smContext.AnType = createData.GetAnType()
 	smContext.RatType = createData.GetRatType()
+	smContext.ExtendedNasSmTimer = createData.GetExtendedNasSmTimerInd()
+	smContext.T3591Value, smContext.T3591Source = ResolveT3591(
+		factory.SmfConfig.Configuration.T3591, smContext.ExtendedNasSmTimer)
+	smContext.SubCtxLog.Infof("T3591 for this session is %s, decided by %s",
+		smContext.T3591Value, smContext.T3591Source)
+	metrics.IncrementNasTimerStats("T3591", string(smContext.T3591Source), smContext.T3591Value.String())
 	smContext.PresenceInLadn = createData.GetPresenceInLadn()
 	smContext.UeLocation = createData.UeLocation
 	smContext.UeTimeZone = createData.GetUeTimeZone()
