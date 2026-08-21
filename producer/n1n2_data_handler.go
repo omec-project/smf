@@ -229,6 +229,26 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
+		case nas.MsgTypePDUSessionModificationComplete:
+			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
+			// The modification is complete only now. Committing on the UE's acknowledgement rather
+			// than when the command was sent is what keeps the SMF's record of the session in step
+			// with what the UE is actually running, so the next modification computes its delta
+			// against the parameters in force.
+			if err := smContext.CommitSmPolicyDecision(true); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
+			}
+
+		case nas.MsgTypePDUSessionModificationCommandReject:
+			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
+			// The UE will not apply the parameters it was given. Discard the pending update so the
+			// session keeps the ones it has; leaving it pending would let a later commit apply a
+			// modification the UE has already refused.
+			if err := smContext.CommitSmPolicyDecision(false); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, discarding the refused modification failed: %v", err)
+			}
+
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
 			if smContext.SMContextState != context.SmStateInActivePending {
