@@ -16,40 +16,63 @@ import "github.com/omec-project/openapi/v2/models"
 // Rules are dropped alongside their flows deliberately. A PCC rule whose referenced QoS data was
 // never established would be recorded as active while nothing enforces it, which is the same
 // class of divergence in a different place.
-func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) {
+// It returns a delete-only update describing what it removed, or nil if it removed nothing. That
+// is what the corrective modification is built from: the UE was told these flows were authorized
+// and has to be told they are not, and their identities are only available here.
+func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 	if u == nil || len(refused) == 0 {
-		return
+		return nil
 	}
 
 	removedQosIDs := make(map[string]bool)
+	removedFlows := make(map[string]*models.QosData)
+	removedRules := make(map[string]*models.PccRule)
 
 	if u.QosFlowUpdate != nil {
 		for _, flows := range []map[string]*models.QosData{u.QosFlowUpdate.add, u.QosFlowUpdate.mod} {
-			for qosID := range flows {
+			for qosID, flow := range flows {
 				if refused[GetQosFlowIdFromQosId(qosID)] {
 					removedQosIDs[qosID] = true
+					removedFlows[qosID] = flow
 					delete(flows, qosID)
 				}
 			}
 		}
 	}
 
-	if u.PccRuleUpdate == nil || len(removedQosIDs) == 0 {
-		return
+	if len(removedQosIDs) == 0 {
+		return nil
 	}
 
-	for _, rules := range []map[string]*models.PccRule{u.PccRuleUpdate.add, u.PccRuleUpdate.mod} {
-		for ruleID, rule := range rules {
-			if rule == nil {
-				continue
-			}
-			for _, qosID := range rule.RefQosData {
-				if removedQosIDs[qosID] {
-					delete(rules, ruleID)
-					break
+	if u.PccRuleUpdate != nil {
+		for _, rules := range []map[string]*models.PccRule{u.PccRuleUpdate.add, u.PccRuleUpdate.mod} {
+			for ruleID, rule := range rules {
+				if rule == nil {
+					continue
+				}
+				for _, qosID := range rule.RefQosData {
+					if removedQosIDs[qosID] {
+						removedRules[ruleID] = rule
+						delete(rules, ruleID)
+						break
+					}
 				}
 			}
 		}
+	}
+
+	return &PolicyUpdate{
+		QosFlowUpdate: &QosFlowsUpdate{
+			add: map[string]*models.QosData{},
+			mod: map[string]*models.QosData{},
+			del: removedFlows,
+		},
+		PccRuleUpdate: &PccRulesUpdate{
+			add: map[string]*models.PccRule{},
+			mod: map[string]*models.PccRule{},
+			del: removedRules,
+		},
+		SmPolicyDecision: u.SmPolicyDecision,
 	}
 }
 

@@ -20,7 +20,10 @@ func updateWithFlows(qosIDs ...string) *PolicyUpdate {
 func TestRemoveFlowsDropsOnlyTheRefusedOnes(t *testing.T) {
 	u := updateWithFlows("1", "2", "3")
 
-	u.RemoveFlows(RefusedFlowSet([]int64{3}))
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{3}))
+	if corrective == nil || corrective.QosFlowUpdate.del["3"] == nil {
+		t.Fatal("the refused flow must come back as a deletion the UE can be told about")
+	}
 
 	if _, still := u.QosFlowUpdate.add["3"]; still {
 		t.Error("a refused flow must not be recorded as established")
@@ -42,7 +45,10 @@ func TestRemoveFlowsDropsRulesThatReferencedThem(t *testing.T) {
 		mod: map[string]*models.PccRule{},
 	}
 
-	u.RemoveFlows(RefusedFlowSet([]int64{2}))
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{2}))
+	if corrective == nil || corrective.PccRuleUpdate.del["drop"] == nil {
+		t.Fatal("the rule referencing a refused flow must come back as a deletion")
+	}
 
 	if _, still := u.PccRuleUpdate.add["drop"]; still {
 		t.Error("a rule referencing a refused flow must not be recorded as active; nothing would enforce it")
@@ -54,7 +60,9 @@ func TestRemoveFlowsDropsRulesThatReferencedThem(t *testing.T) {
 
 func TestRemoveFlowsIsANoOpWithoutRefusals(t *testing.T) {
 	u := updateWithFlows("1", "2")
-	u.RemoveFlows(RefusedFlowSet(nil))
+	if corrective := u.RemoveFlows(RefusedFlowSet(nil)); corrective != nil {
+		t.Error("nothing refused means nothing to correct")
+	}
 
 	if len(u.QosFlowUpdate.add) != 2 {
 		t.Errorf("flows = %d, want both kept when nothing was refused", len(u.QosFlowUpdate.add))
@@ -63,7 +71,11 @@ func TestRemoveFlowsIsANoOpWithoutRefusals(t *testing.T) {
 
 func TestRemoveFlowsToleratesAnEmptyUpdate(t *testing.T) {
 	var u *PolicyUpdate
-	u.RemoveFlows(RefusedFlowSet([]int64{1}))
+	if corrective := u.RemoveFlows(RefusedFlowSet([]int64{1})); corrective != nil {
+		t.Error("a nil update has nothing to correct")
+	}
 
-	(&PolicyUpdate{}).RemoveFlows(RefusedFlowSet([]int64{1}))
+	if corrective := (&PolicyUpdate{}).RemoveFlows(RefusedFlowSet([]int64{1})); corrective != nil {
+		t.Error("an empty update has nothing to correct")
+	}
 }
