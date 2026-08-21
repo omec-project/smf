@@ -28,6 +28,11 @@ import (
 var (
 	NRFCacheRemoveNfProfileFromNrfCache = nrfCache.RemoveNfProfileFromNrfCache
 	SendRemoveSubscription              = consumer.SendRemoveSubscription
+
+	// Seams for fault injection. Every behaviour this file adds is a failure path, and a test
+	// that only exercises the successful modification demonstrates none of them.
+	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
+	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -152,6 +157,15 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	logger.PduSessLog.Infof("[BuildPfcpParam] Using PCC RuleId=%s, releaseOnly=%v", ruleid, shouldSendReleaseOnly)
 
 	// Iterate over all active data paths in the SM context
+	if smContext.Tunnel == nil {
+		// A session with no tunnel has no rules to program. Reachable on the failure paths, where
+		// a modification can be reverted for a session that is being torn down concurrently, and
+		// the release handling elsewhere in this producer already treats a nil tunnel as a real
+		// state rather than an impossible one.
+		smContext.SubPduSessLog.Warnln("no tunnel for this session; nothing to program")
+		return pfcpParam
+	}
+
 	for dpIndex, dataPath := range smContext.Tunnel.DataPathPool {
 		logger.PduSessLog.Infof("[BuildPfcpParam] Processing DataPath[%d], Activated=%v", dpIndex, dataPath.Activated)
 		if !dataPath.Activated {
@@ -539,7 +553,7 @@ func revertModification(smContext *smfContext.SMContext, path, cause string) {
 	pfcpParam := BuildPfcpParam(smContext)
 	smContext.SMLock.Unlock()
 
-	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; releasing the session rather than leaving it enforcing parameters the network does not believe it has", err)
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
