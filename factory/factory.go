@@ -116,7 +116,11 @@ func setT3591Defaults() {
 		return
 	}
 	if SmfConfig.Configuration.T3591 == nil {
-		SmfConfig.Configuration.T3591 = &TimerValue{Enable: true}
+		SmfConfig.Configuration.T3591 = &TimerValue{}
+	}
+	if SmfConfig.Configuration.T3591.Enable == nil {
+		enable := true
+		SmfConfig.Configuration.T3591.Enable = &enable
 	}
 	if SmfConfig.Configuration.T3591.MaxRetryTimes <= 0 {
 		// TS 24.501 table 10.3.2 NOTE 1: the procedure is aborted on the fifth expiry, so the

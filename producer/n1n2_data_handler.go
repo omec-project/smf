@@ -231,6 +231,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			}
 		case nas.MsgTypePDUSessionModificationComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
+			smContext.SMLock.Lock()
+			smContext.StopT3591()
+			smContext.SMLock.Unlock()
 			// The modification is complete only now. Committing on the UE's acknowledgement rather
 			// than when the command was sent is what keeps the SMF's record of the session in step
 			// with what the UE is actually running, so the next modification computes its delta
@@ -242,12 +245,13 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		case nas.MsgTypePDUSessionModificationCommandReject:
 			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
 			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
-			// The UE will not apply the parameters it was given. Discard the pending update so the
-			// session keeps the ones it has; leaving it pending would let a later commit apply a
-			// modification the UE has already refused.
-			if err := smContext.CommitSmPolicyDecision(false); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, discarding the refused modification failed: %v", err)
-			}
+			smContext.SMLock.Lock()
+			smContext.StopT3591()
+			smContext.SMLock.Unlock()
+			// The UE will not apply the parameters it was given. This is an abandonment with its
+			// own cause rather than a timeout, and it is reported on the same path as one, so that
+			// a modification the network could not apply is countable however it failed.
+			abandonModification(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
 
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")

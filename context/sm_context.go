@@ -115,7 +115,11 @@ type SMContext struct {
 	// T3591Value and T3591Source are resolved once when the session is created, as subclause
 	// 4.23.4 requires the value to be calculated at the start of a procedure and not
 	// recalculated until it completes, restarts or aborts.
-	T3591Value       time.Duration           `json:"t3591Value,omitempty" yaml:"t3591Value" bson:"t3591Value,omitempty"`
+	T3591Value time.Duration `json:"t3591Value,omitempty" yaml:"t3591Value" bson:"t3591Value,omitempty"`
+
+	// T3591 is the live retransmission timer for a modification awaiting the UE's answer. It is
+	// a goroutine handle, so it is neither serialised nor restored with the session.
+	T3591            *Timer                  `json:"-" yaml:"-" bson:"-"`
 	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`
 	PresenceInLadn   models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
 	HoState          models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
@@ -862,4 +866,16 @@ func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.Subscri
 	default:
 		return "unknown", mi.SubsOpDel
 	}
+}
+
+// StopT3591 stops the modification retransmission timer if one is running. It is safe to call
+// when no modification is in flight and safe to call more than once, because both happen: an
+// acknowledgement can arrive after the timer has already abandoned the procedure, and a UE can
+// retransmit that acknowledgement.
+func (smContext *SMContext) StopT3591() {
+	if smContext.T3591 == nil {
+		return
+	}
+	smContext.T3591.Stop()
+	smContext.T3591 = nil
 }
