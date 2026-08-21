@@ -119,7 +119,11 @@ type SMContext struct {
 
 	// T3591 is the live retransmission timer for a modification awaiting the UE's answer. It is
 	// a goroutine handle, so it is neither serialised nor restored with the session.
-	T3591            *Timer                  `json:"-" yaml:"-" bson:"-"`
+	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
+
+	// Realign is set when the radio access network established only part of a modification. It is
+	// acted on once the UE acknowledges that modification, not before.
+	Realign          *PendingRealignment     `json:"-" yaml:"-" bson:"-"`
 	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`
 	PresenceInLadn   models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
 	HoState          models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`

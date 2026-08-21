@@ -16,6 +16,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/smf/util"
@@ -240,6 +241,18 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// against the parameters in force.
 			if err := smContext.CommitSmPolicyDecision(true); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
+			}
+			// The UE has acknowledged. If the radio access network established only part of what it
+			// was told about, this is the point TS 23.502 clause 4.3.3.2 places the corrective
+			// procedure at.
+			smContext.SMLock.Lock()
+			realign := smContext.Realign
+			smContext.Realign = nil
+			smContext.SMLock.Unlock()
+			if realign != nil {
+				smContext.SubPduSessLog.Errorf("session needs realignment: the UE was told about flows %v but the radio access network established only %v; the corrective modification is not implemented yet, so the UE's view is wider than the session until it is",
+					append(append([]int64{}, realign.EstablishedQFIs...), realign.RefusedQFIs...), realign.EstablishedQFIs)
+				metrics.IncrementModificationAbandonedStats("realignment_pending", "not_implemented")
 			}
 
 		case nas.MsgTypePDUSessionModificationCommandReject:
@@ -528,6 +541,12 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	tunnel := smContext.Tunnel
 
 	switch smContextUpdateData.GetN2SmInfoType() {
+	case models.N2SMINFOTYPE_PDU_RES_MOD_RSP:
+		return handleModifyResponse(smContext, body)
+
+	case models.N2SMINFOTYPE_PDU_RES_MOD_FAIL:
+		return handleModifyFailure(smContext, body)
+
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_RSP:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
@@ -740,4 +759,79 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	}
 
 	return nil
+}
+
+// handleModifyResponse acts on what the radio access network made of a modification.
+//
+// A whole refusal means the UE never received the authorized parameters, so the modification is
+// abandoned and the user plane is not left carrying it. A partial refusal means the UE was told
+// about flows that were not established, and it is owed a further modification saying which are
+// actually in force — a distinct procedure, not a retry, because the parameters it carries
+// describe what exists rather than what was attempted.
+func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("reading the modify response failed: %v", err)
+		return err
+	}
+
+	result, err := context.HandlePDUSessionResourceModifyResponseTransfer(fileBytes, smContext)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("decoding the modify response failed: %v", err)
+		return err
+	}
+
+	switch {
+	case result.WhollyRejected():
+		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
+		smContext.SMLock.Lock()
+		smContext.StopT3591()
+		smContext.SMLock.Unlock()
+		abandonModification(smContext, "ran_whole_rejection", "no_flow_established")
+
+	case result.PartiallyRejected():
+		smContext.SubPduSessLog.Warnf("radio access network established flows %v and refused %v; realigning the UE",
+			result.AcceptedQFIs, result.RejectedQFIs)
+		realignAfterPartialRejection(smContext, result)
+
+	default:
+		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)
+	}
+
+	return nil
+}
+
+// handleModifyFailure acts on the radio access network refusing a modification outright, which
+// it reports as a failure rather than as a response with an empty accepted list.
+func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("reading the modify failure failed: %v", err)
+		return err
+	}
+
+	cause, err := context.HandlePDUSessionResourceModifyUnsuccessfulTransfer(fileBytes, smContext)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("decoding the modify failure failed: %v", err)
+		return err
+	}
+
+	smContext.SMLock.Lock()
+	smContext.StopT3591()
+	smContext.SMLock.Unlock()
+	abandonModification(smContext, "ran_whole_rejection", fmt.Sprintf("ngap_cause_present_%d", cause.Present))
+
+	return nil
+}
+
+// realignAfterPartialRejection records that the UE's view of the session is wider than what the
+// radio access network established. The corrective modification runs once the UE has
+// acknowledged the first one, per TS 23.502 clause 4.3.3.2, which places it after step 11.
+func realignAfterPartialRejection(smContext *context.SMContext, result context.ModifyResponse) {
+	smContext.SMLock.Lock()
+	smContext.Realign = &context.PendingRealignment{
+		EstablishedQFIs: result.AcceptedQFIs,
+		RefusedQFIs:     result.RejectedQFIs,
+	}
+	smContext.SMLock.Unlock()
 }
