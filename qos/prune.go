@@ -3,7 +3,10 @@
 
 package qos
 
-import "github.com/omec-project/openapi/v2/models"
+import (
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/logger"
+)
 
 // RemoveFlows drops the given QoS flow identifiers from an update that has not been committed,
 // together with any PCC rule that referenced them.
@@ -78,9 +81,19 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 
 // RefusedFlowSet turns the radio access network's refused QoS flow identifiers into the form
 // RemoveFlows expects.
+//
+// Values outside the valid QoS flow identifier range are dropped rather than narrowed. TS 23.501
+// table 5.7.1.1 gives the range as 1 to 63; 0 is not assignable. That matters here because
+// GetQosFlowIdFromQosId returns 0 for a QoS identifier it cannot parse, so admitting 0 would let
+// an unparseable identifier and a malformed report from the gNB combine to delete a flow the
+// radio access network never refused.
 func RefusedFlowSet(qfis []int64) map[uint8]bool {
 	set := make(map[uint8]bool, len(qfis))
 	for _, qfi := range qfis {
+		if qfi < 1 || qfi > 63 {
+			logger.CtxLog.Warnf("ignoring out-of-range QoS flow identifier %d reported as refused", qfi)
+			continue
+		}
 		set[uint8(qfi)] = true
 	}
 	return set

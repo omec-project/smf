@@ -128,7 +128,11 @@ type SMContext struct {
 	// collision as one arriving later, and would otherwise be refused instead of disregarded.
 	//
 	// Read and written under SMLock.
-	NwModificationPending bool
+	// Not persisted, for the same reason T3591 and Realign are not: it describes a procedure that
+	// is in flight right now. Restoring it from the database would leave a session with a
+	// modification permanently pending — no timer, no procedure, and every UE modification request
+	// for that session disregarded from then on.
+	NwModificationPending bool `json:"-" yaml:"-" bson:"-"`
 
 	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
 

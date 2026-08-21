@@ -4,7 +4,9 @@
 package context
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/omec-project/smf/qos"
@@ -63,5 +65,24 @@ func TestCommitSmPolicyDecisionTwiceIsSafe(t *testing.T) {
 	// A retransmitted acknowledgement takes this path a second time.
 	if err := sm.CommitSmPolicyDecision(true); err != nil {
 		t.Fatalf("second commit returned %v, want it tolerated", err)
+	}
+}
+
+// An in-flight modification must not survive being written to the database and read back.
+//
+// The SM context is persisted with sonic.Marshal, so a field without a json:"-" tag is stored. A
+// restored session that still believed the network were modifying it would have no timer and no
+// procedure, and would disregard every UE modification request for the rest of its life. T3591
+// and Realign are excluded for the same reason; this pins the third.
+func TestInFlightModificationStateIsNotPersisted(t *testing.T) {
+	encoded, err := json.Marshal(&SMContext{NwModificationPending: true})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	for _, transient := range []string{"NwModificationPending", "Realign", "T3591"} {
+		if strings.Contains(string(encoded), transient) {
+			t.Errorf("%s is persisted; a restored session would carry a modification that is not running", transient)
+		}
 	}
 }
