@@ -17,6 +17,7 @@ import (
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/smf/util"
@@ -239,20 +240,25 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// than when the command was sent is what keeps the SMF's record of the session in step
 			// with what the UE is actually running, so the next modification computes its delta
 			// against the parameters in force.
-			if err := smContext.CommitSmPolicyDecision(true); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
-			}
-			// The UE has acknowledged. If the radio access network established only part of what it
-			// was told about, this is the point TS 23.502 clause 4.3.3.2 places the corrective
-			// procedure at.
+			// Take the realignment marker before committing. Where the radio access network
+			// established only part of this modification, what it established is what the session
+			// has, so the pending update is pruned to that before it becomes the record. Committing
+			// the whole of it first would record flows that do not exist and leave the next
+			// modification computing its delta against them.
 			smContext.SMLock.Lock()
 			realign := smContext.Realign
 			smContext.Realign = nil
+			if realign != nil && len(smContext.SmPolicyUpdates) > 0 {
+				smContext.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet(realign.RefusedQFIs))
+			}
 			smContext.SMLock.Unlock()
+
+			if err := smContext.CommitSmPolicyDecision(true); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
+			}
+
 			if realign != nil {
-				smContext.SubPduSessLog.Errorf("session needs realignment: the UE was told about flows %v but the radio access network established only %v; the corrective modification is not implemented yet, so the UE's view is wider than the session until it is",
-					append(append([]int64{}, realign.EstablishedQFIs...), realign.RefusedQFIs...), realign.EstablishedQFIs)
-				metrics.IncrementModificationAbandonedStats("realignment_pending", "not_implemented")
+				realignSession(smContext, realign)
 			}
 
 		case nas.MsgTypePDUSessionModificationCommandReject:
@@ -834,4 +840,35 @@ func realignAfterPartialRejection(smContext *context.SMContext, result context.M
 		RefusedQFIs:     result.RejectedQFIs,
 	}
 	smContext.SMLock.Unlock()
+}
+
+// realignSession brings the session into agreement with what the radio access network actually
+// established, after a modification it accepted only part of.
+//
+// The record is already correct by this point: the pending update was pruned to the established
+// flows before it was committed. What remains is the user plane, which was programmed before the
+// radio access network answered and so still carries rules for flows that were never built, and
+// the UE, which acknowledged a set of parameters wider than the session has.
+func realignSession(smContext *context.SMContext, realign *context.PendingRealignment) {
+	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
+		realign.EstablishedQFIs, realign.RefusedQFIs)
+
+	// The user plane follows the record, so rebuilding from the committed context yields rules for
+	// the established flows only.
+	smContext.SMLock.Lock()
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.SMLock.Unlock()
+
+	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		smContext.SubPduSessLog.Errorf("removing the refused flows from the user plane failed: %v; the session is enforcing flows the radio access network never established", err)
+		metrics.IncrementModificationAbandonedStats("realignment", "user_plane_not_corrected")
+		return
+	}
+
+	// The UE still believes the refused flows exist. TS 23.502 clause 4.3.3.2 requires a further
+	// modification telling it which are in force. That command is not built yet, so the divergence
+	// is reported rather than left silent.
+	smContext.SubPduSessLog.Errorf("UE has not been realigned: it acknowledged flows %v that the radio access network refused, and the corrective modification is not implemented",
+		realign.RefusedQFIs)
+	metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
 }
