@@ -84,7 +84,10 @@ type Configuration struct {
 // it is a deliberate operator override of that resolution, for deployments whose RAN does not
 // advertise the information the indication is derived from.
 type TimerValue struct {
-	Enable        bool          `yaml:"enable"`
+	// Enable is a pointer so that an absent key means "on" rather than "off". With a plain bool
+	// a configuration that set only expireTime would silently disable the timer, which is the
+	// opposite of what writing a value expresses. This follows EnableKafka above.
+	Enable        *bool         `yaml:"enable,omitempty"`
 	ExpireTime    time.Duration `yaml:"expireTime"`
 	MaxRetryTimes int           `yaml:"maxRetryTimes,omitempty"`
 }
