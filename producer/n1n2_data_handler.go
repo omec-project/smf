@@ -231,6 +231,41 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
+		case nas.MsgTypePDUSessionModificationRequest:
+			// TS 23.502 subclause 4.3.3.2 step 3a: the refusal goes back in the UpdateSmContext
+			// response. BuildAndSendQosN1N2TransferMsg is the step 3b helper for a
+			// network-requested modification and must not be used here.
+			pduSessIDModReq := int32(m.PDUSessionModificationRequest.GetPDUSessionID())
+			pti := m.PDUSessionModificationRequest.GetPTI()
+			cause := "ModificationNotSupported"
+			switch {
+			case pduSessIDModReq != smContext.PDUSessionID:
+				// An identity the SMF does not hold for this context.
+				cause = "InvalidPDUSessionIdentity"
+			case smContext.SMContextState == context.SmStateInit,
+				smContext.SMContextState == context.SmStateInActivePending:
+				// Established but on the way out, or never established. TS 24.501 subclause
+				// 6.4.2.6 item b: an inactive PDU session identity takes #43, not the refusal.
+				cause = "InvalidPDUSessionIdentity"
+			}
+			smContext.SubPduSessLog.Warnf(
+				"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
+				pduSessIDModReq, pti, smContext.SMContextState.String(), cause)
+
+			if buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessIDModReq, pti, cause); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
+			} else {
+				tmpFile, err := util.CreatePayloadTempFile(buf)
+				if err != nil {
+					smContext.SubPduSessLog.Errorln(err)
+				} else {
+					response.SetBinaryDataN1SmMessage(tmpFile)
+					jsonData := response.GetJsonData()
+					jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionModificationReject"})
+					response.SetJsonData(jsonData)
+				}
+			}
+
 		case nas.MsgTypePDUSessionModificationComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
 			smContext.SMLock.Lock()
@@ -288,6 +323,15 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
 			response.SetJsonData(jsonData)
 			smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
+
+		default:
+			// Every unhandled type before this branch existed was decoded, debug-logged and
+			// dropped, and the SMF answered 200 with no N1 or N2 content. The UE then retransmits
+			// until its timer expires and gives up, which looks like a UE fault. Log loudly so the
+			// next missing case is found from a log line rather than from a packet capture.
+			smContext.SubPduSessLog.Errorf(
+				"PDUSessionSMContextUpdate, unhandled N1 SM message type 0x%02x; the SMF will answer with no N1 content and the UE will retransmit until it gives up",
+				m.GsmHeader.GetMessageType())
 		}
 	} else {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage is nil")
