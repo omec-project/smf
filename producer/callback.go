@@ -31,6 +31,11 @@ var (
 
 	// Seams for fault injection. Every behaviour this file adds is a failure path, and a test
 	// that only exercises the successful modification demonstrates none of them.
+	// Every modification path sends through these rather than calling the functions directly, so a
+	// test can observe what the network decided to send without opening a PFCP association or an
+	// N1N2 transfer. Three call sites on this file's modification paths were calling the underlying
+	// functions directly, which left the main network-initiated path — the one an operator policy
+	// change takes — as the only one with no test.
 	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
 	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
 )
@@ -64,7 +69,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 
 	smContext.SMLock.Unlock()
 
-	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 		smContext.SMLock.Lock()
 
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
@@ -83,7 +88,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
-	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
+	if err := sendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
 		// The user plane was programmed before this. Leaving it there would have the session
 		// enforcing parameters the UE was never told about, which is the divergence this whole
@@ -498,7 +503,7 @@ func startT3591(smContext *smfContext.SMContext) {
 		func(expireTimes int32) {
 			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
 				expireTimes, maxRetries)
-			if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
+			if err := sendQosN1N2TransferMsg(smContext); err != nil {
 				smContext.SubPduSessLog.Errorf("retransmitting the modification command failed: %v", err)
 			}
 		},
