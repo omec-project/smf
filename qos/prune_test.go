@@ -79,3 +79,75 @@ func TestRemoveFlowsToleratesAnEmptyUpdate(t *testing.T) {
 		t.Error("an empty update has nothing to correct")
 	}
 }
+
+// The realignment exists for the case a single flow cannot produce. This pins what a
+// multi-flow partial rejection leaves behind on both sides: the record keeps only what the
+// radio access network established, and the corrective update carries exactly what it refused.
+func TestMultiFlowPartialRejectionSplitsCleanly(t *testing.T) {
+	u := updateWithFlows("1", "2", "3", "4")
+	u.PccRuleUpdate = &PccRulesUpdate{
+		add: map[string]*models.PccRule{
+			"r1": {PccRuleId: "r1", RefQosData: []string{"1"}},
+			"r2": {PccRuleId: "r2", RefQosData: []string{"2"}},
+			"r3": {PccRuleId: "r3", RefQosData: []string{"3"}},
+			"r4": {PccRuleId: "r4", RefQosData: []string{"4"}},
+		},
+		mod: map[string]*models.PccRule{},
+	}
+
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{2, 4}))
+
+	// What stays is what exists.
+	for _, established := range []string{"1", "3"} {
+		if _, ok := u.QosFlowUpdate.add[established]; !ok {
+			t.Errorf("flow %s was established and must remain in the update that becomes the record", established)
+		}
+	}
+	for _, refused := range []string{"2", "4"} {
+		if _, still := u.QosFlowUpdate.add[refused]; still {
+			t.Errorf("flow %s was refused and must not be recorded as established", refused)
+		}
+	}
+	if len(u.PccRuleUpdate.add) != 2 {
+		t.Errorf("rules kept = %d, want the two whose flows were established", len(u.PccRuleUpdate.add))
+	}
+
+	// What goes back is exactly what the UE has to be told about.
+	if corrective == nil {
+		t.Fatal("a partial rejection must yield a corrective update")
+	}
+	if len(corrective.QosFlowUpdate.del) != 2 {
+		t.Errorf("flows to delete = %d, want 2", len(corrective.QosFlowUpdate.del))
+	}
+	for _, refused := range []string{"2", "4"} {
+		if corrective.QosFlowUpdate.del[refused] == nil {
+			t.Errorf("flow %s was refused and the UE must be told to drop it", refused)
+		}
+	}
+	if len(corrective.PccRuleUpdate.del) != 2 {
+		t.Errorf("rules to delete = %d, want the two whose flows were refused", len(corrective.PccRuleUpdate.del))
+	}
+}
+
+// Committing a pruned update must leave the session's policy data describing the established
+// flows only — that is what a later modification computes its delta against.
+func TestCommittingAPrunedUpdateRecordsOnlyEstablishedFlows(t *testing.T) {
+	u := updateWithFlows("1", "2", "3")
+	u.RemoveFlows(RefusedFlowSet([]int64{3}))
+
+	polData := SmCtxtPolicyData{}
+	polData.Initialize()
+
+	if err := CommitSmPolicyDecision(&polData, u); err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	if _, recorded := polData.SmCtxtQosData.QosData["3"]; recorded {
+		t.Error("a refused flow must not reach the record; the next modification would compute its delta against it")
+	}
+	for _, established := range []string{"1", "2"} {
+		if _, ok := polData.SmCtxtQosData.QosData[established]; !ok {
+			t.Errorf("flow %s was established and must be recorded", established)
+		}
+	}
+}
