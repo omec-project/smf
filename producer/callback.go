@@ -16,7 +16,9 @@ import (
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/smf/util"
@@ -89,6 +91,8 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMContextState.String())
 
 	smContext.SMLock.Unlock()
+
+	startT3591(smContext)
 
 	txn.Rsp = &httpwrapper.Response{
 		Status: http.StatusOK,
@@ -457,4 +461,58 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	}
 
 	return nil
+}
+
+// startT3591 arms the retransmission timer for a modification command that has just been sent.
+// TS 24.501 subclause 6.3.2.5 item a: the command is resent on each of the first four expiries
+// and the procedure is abandoned on the fifth.
+func startT3591(smContext *smfContext.SMContext) {
+	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
+	if !enabled {
+		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
+		return
+	}
+
+	smContext.SMLock.Lock()
+	// A previous attempt on this session must not keep running alongside this one.
+	smContext.StopT3591()
+	smContext.T3591 = smfContext.NewTimer(smContext.T3591Value, maxRetries,
+		func(expireTimes int32) {
+			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
+				expireTimes, maxRetries)
+			if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("retransmitting the modification command failed: %v", err)
+			}
+		},
+		func() {
+			abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+		})
+	smContext.SMLock.Unlock()
+
+	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
+		smContext.T3591Value, maxRetries)
+}
+
+// abandonModification gives up on a modification and leaves the session on the parameters it
+// already had, by discarding the pending policy update rather than committing it.
+//
+// Nothing re-drives the change afterwards. On a link where a fade can outlast the whole
+// retransmission sequence, abandonment is an ordinary outcome rather than a rare one, so the
+// site stays on its old policy until someone re-issues it — which is why this is reported
+// rather than only logged at debug.
+func abandonModification(smContext *smfContext.SMContext, path, cause string) {
+	smContext.SubPduSessLog.Errorf("abandoning PDU session modification: supi %s, pdu session %d, path %s, cause %s; the session keeps its previous parameters and the change is not retried",
+		smContext.Supi, smContext.PDUSessionID, path, cause)
+	metrics.IncrementModificationAbandonedStats(path, cause)
+
+	if err := smContext.CommitSmPolicyDecision(false); err != nil {
+		smContext.SubPduSessLog.Errorf("discarding the abandoned modification failed: %v", err)
+	}
+
+	smContext.SMLock.Lock()
+	// The timer goroutine has already returned; drop the handle and leave the session settled so
+	// a later modification of the same session can be attempted.
+	smContext.T3591 = nil
+	smContext.ChangeState(smfContext.SmStateActive)
+	smContext.SMLock.Unlock()
 }

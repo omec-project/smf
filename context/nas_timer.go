@@ -18,6 +18,10 @@ const (
 	// restricts it to satellite NG-RAN RAT type NR(MEO) or NR(GEO); NR(LEO) is not named
 	// and therefore takes T3591Default, as does NR(OTHER_SAT).
 	T3591Satellite = 22 * time.Second
+
+	// T3591MaxRetriesDefault: NOTE 1 of that table — "Typically, the procedures are aborted on
+	// the fifth expiry of the relevant timer" — so the command is retransmitted on the first four.
+	T3591MaxRetriesDefault = 4
 )
 
 // NasTimerSource records which layer decided a NAS timer value. The value alone is not enough
@@ -54,4 +58,23 @@ func ResolveT3591(cfg *factory.TimerValue, extendedNasSmTimer bool) (time.Durati
 		return T3591Satellite, NasTimerSourceIndication
 	}
 	return T3591Default, NasTimerSourceDefault
+}
+
+// EffectiveT3591 reports whether the retransmission timer should run for a session and how many
+// times the command may be retransmitted, tolerating a configuration block that was never
+// populated.
+//
+// An absent block means defaults, not "disabled". The timer is the only thing that stops an
+// unacknowledged modification from being recorded as applied, so whether it runs must not depend
+// on init-time defaulting having been reached. Only an explicit enable: false turns it off.
+func EffectiveT3591(cfg *factory.TimerValue) (enabled bool, maxRetries int) {
+	if cfg == nil {
+		return true, T3591MaxRetriesDefault
+	}
+	enabled = cfg.Enable == nil || *cfg.Enable
+	maxRetries = cfg.MaxRetryTimes
+	if maxRetries <= 0 {
+		maxRetries = T3591MaxRetriesDefault
+	}
+	return enabled, maxRetries
 }

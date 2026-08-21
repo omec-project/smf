@@ -13,7 +13,7 @@ func TestSetT3591DefaultsFillsAnAbsentBlock(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("T3591 configuration must not be left nil")
 	}
-	if !cfg.Enable {
+	if cfg.Enable == nil || !*cfg.Enable {
 		t.Error("T3591 must be enabled when no configuration is supplied")
 	}
 	if cfg.MaxRetryTimes != 4 {
@@ -33,9 +33,35 @@ func TestSetT3591DefaultsToleratesAbsentConfiguration(t *testing.T) {
 	}
 }
 
+// An operator who sets only a value must still get a timer. With a plain bool the absent
+// enable key would have read as false and silently disabled it.
+func TestSetT3591DefaultsEnablesWhenOnlyAValueIsGiven(t *testing.T) {
+	SmfConfig = Config{Configuration: &Configuration{}}
+	SmfConfig.Configuration.T3591 = &TimerValue{ExpireTime: 22_000_000_000}
+	setT3591Defaults()
+
+	cfg := SmfConfig.Configuration.T3591
+	if cfg.Enable == nil || !*cfg.Enable {
+		t.Error("a block that sets only expireTime must leave the timer enabled")
+	}
+}
+
+// An explicit false is still honoured.
+func TestSetT3591DefaultsHonoursAnExplicitDisable(t *testing.T) {
+	SmfConfig = Config{Configuration: &Configuration{}}
+	disable := false
+	SmfConfig.Configuration.T3591 = &TimerValue{Enable: &disable}
+	setT3591Defaults()
+
+	if cfg := SmfConfig.Configuration.T3591; cfg.Enable == nil || *cfg.Enable {
+		t.Error("an explicit enable: false must be preserved")
+	}
+}
+
 func TestSetT3591DefaultsKeepsAnExplicitValue(t *testing.T) {
 	SmfConfig = Config{Configuration: &Configuration{}}
-	SmfConfig.Configuration.T3591 = &TimerValue{Enable: true, ExpireTime: 22_000_000_000, MaxRetryTimes: 2}
+	enable := true
+	SmfConfig.Configuration.T3591 = &TimerValue{Enable: &enable, ExpireTime: 22_000_000_000, MaxRetryTimes: 2}
 	setT3591Defaults()
 
 	cfg := SmfConfig.Configuration.T3591
