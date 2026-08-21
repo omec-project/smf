@@ -245,7 +245,8 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// ignored, and the UE would apply the back-off #32 asks for on a session that is
 			// about to change anyway.
 			smContext.SMLock.Lock()
-			collision := smContext.NwModificationPending && pduSessIDModReq == smContext.PDUSessionID
+			sessionID, state := smContext.PDUSessionID, smContext.SMContextState
+			collision := smContext.NwModificationPending && pduSessIDModReq == sessionID
 			smContext.SMLock.Unlock()
 			if collision {
 				// Sub-item i would have the URSP rule enforcement reports IE consumed before
@@ -258,20 +259,22 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				break
 			}
 
+			// Decided from the snapshot taken above rather than re-read: the state is written under
+			// SMLock by other goroutines, and choosing the cause from one value while logging
+			// another would make the log unusable for exactly the case worth investigating.
 			cause := "ModificationNotSupported"
 			switch {
-			case pduSessIDModReq != smContext.PDUSessionID:
+			case pduSessIDModReq != sessionID:
 				// An identity the SMF does not hold for this context.
 				cause = "InvalidPDUSessionIdentity"
-			case smContext.SMContextState == context.SmStateInit,
-				smContext.SMContextState == context.SmStateInActivePending:
+			case state == context.SmStateInit, state == context.SmStateInActivePending:
 				// Established but on the way out, or never established. TS 24.501 subclause
 				// 6.4.2.6 item b: an inactive PDU session identity takes #43, not the refusal.
 				cause = "InvalidPDUSessionIdentity"
 			}
 			smContext.SubPduSessLog.Warnf(
 				"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
-				pduSessIDModReq, pti, smContext.SMContextState.String(), cause)
+				pduSessIDModReq, pti, state.String(), cause)
 
 			if buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessIDModReq, pti, cause); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
@@ -289,19 +292,20 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 
 		case nas.MsgTypePDUSessionModificationComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
-			smContext.SMLock.Lock()
-			smContext.StopT3591()
-			smContext.SMLock.Unlock()
 			// The modification is complete only now. Committing on the UE's acknowledgement rather
 			// than when the command was sent is what keeps the SMF's record of the session in step
 			// with what the UE is actually running, so the next modification computes its delta
 			// against the parameters in force.
-			// Take the realignment marker before committing. Where the radio access network
-			// established only part of this modification, what it established is what the session
-			// has, so the pending update is pruned to that before it becomes the record. Committing
-			// the whole of it first would record flows that do not exist and leave the next
-			// modification computing its delta against them.
+			//
+			// Stopping the timer and taking the realignment marker happen together, under one hold
+			// of the lock. Where the radio access network established only part of this
+			// modification, what it established is what the session has, so the pending update is
+			// pruned to that before it becomes the record — committing the whole of it would record
+			// flows that do not exist. Releasing the lock between the two would let a modification
+			// starting on another goroutine replace the pending update in the gap, and this would
+			// then prune and commit that one instead.
 			smContext.SMLock.Lock()
+			smContext.StopT3591()
 			realign := smContext.Realign
 			smContext.Realign = nil
 			var corrective *qos.PolicyUpdate
