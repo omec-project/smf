@@ -80,6 +80,10 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 
 	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
+		// The user plane was programmed before this. Leaving it there would have the session
+		// enforcing parameters the UE was never told about, which is the divergence this whole
+		// path exists to avoid.
+		revertModification(smContext, "delivery_failure", "n1n2_transfer_failed")
 		txn.Err = err
 		return err
 	}
@@ -515,4 +519,34 @@ func abandonModification(smContext *smfContext.SMContext, path, cause string) {
 	smContext.T3591 = nil
 	smContext.ChangeState(smfContext.SmStateActive)
 	smContext.SMLock.Unlock()
+}
+
+// revertModification returns the user plane to the parameters the session had before a
+// modification that could not be delivered, and abandons the modification.
+//
+// The discard comes first and does the heavy lifting: the pending policy update was never
+// committed, so once it is dropped the session's policy state already describes the
+// pre-modification session, and rebuilding the PFCP parameters from it yields exactly the rules
+// that were in force. Nothing is snapshotted and nothing is copied.
+//
+// If the user plane cannot be put back, the session is released. That is the one case where
+// releasing is right: the alternative is a session the network believes is running one set of
+// parameters while the user plane enforces another, with nothing to reveal the difference.
+func revertModification(smContext *smfContext.SMContext, path, cause string) {
+	abandonModification(smContext, path, cause)
+
+	smContext.SMLock.Lock()
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.SMLock.Unlock()
+
+	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; releasing the session rather than leaving it enforcing parameters the network does not believe it has", err)
+		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
+		smContext.SMLock.Lock()
+		smContext.ChangeState(smfContext.SmStatePfcpRelease)
+		smContext.SMLock.Unlock()
+		return
+	}
+
+	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 }
