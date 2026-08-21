@@ -237,6 +237,27 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// network-requested modification and must not be used here.
 			pduSessIDModReq := int32(m.PDUSessionModificationRequest.GetPDUSessionID())
 			pti := m.PDUSessionModificationRequest.GetPTI()
+
+			// TS 24.501 subclause 6.3.2.5 item d: a UE request for the session the network is
+			// already modifying is disregarded, not refused. The network's own procedure carries
+			// on as if the request had never arrived — so no reject, no state change, and T3591
+			// keeps running. Refusing here would answer a procedure the UE is entitled to have
+			// ignored, and the UE would apply the back-off #32 asks for on a session that is
+			// about to change anyway.
+			smContext.SMLock.Lock()
+			collision := smContext.NwModificationPending && pduSessIDModReq == smContext.PDUSessionID
+			smContext.SMLock.Unlock()
+			if collision {
+				// Sub-item i would have the URSP rule enforcement reports IE consumed before
+				// ignoring the rest. github.com/omec-project/nas/v2 does not decode that IE — the
+				// message struct has no field for it — so no report can reach this point and
+				// sub-item ii is the whole of the reachable behaviour.
+				smContext.SubPduSessLog.Infof(
+					"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d) while the network is modifying it; disregarding it per TS 24.501 subclause 6.3.2.5 item d",
+					pduSessIDModReq, pti)
+				break
+			}
+
 			cause := "ModificationNotSupported"
 			switch {
 			case pduSessIDModReq != smContext.PDUSessionID:

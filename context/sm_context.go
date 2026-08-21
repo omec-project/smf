@@ -119,6 +119,17 @@ type SMContext struct {
 
 	// T3591 is the live retransmission timer for a modification awaiting the UE's answer. It is
 	// a goroutine handle, so it is neither serialised nor restored with the session.
+	// NwModificationPending is true from the moment the network commits to modifying this session
+	// until the procedure ends, however it ends. It is what makes a colliding UE request
+	// recognisable, per TS 24.501 subclause 6.3.2.5 item d.
+	//
+	// T3591 alone will not do. It is armed only once the Command has gone out, and the procedure
+	// starts a PFCP round trip earlier — a UE request arriving in that window is just as much a
+	// collision as one arriving later, and would otherwise be refused instead of disregarded.
+	//
+	// Read and written under SMLock.
+	NwModificationPending bool
+
 	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
 
 	// Realign is set when the radio access network established only part of a modification. It is
@@ -877,6 +888,10 @@ func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.Subscri
 // acknowledgement can arrive after the timer has already abandoned the procedure, and a UE can
 // retransmit that acknowledgement.
 func (smContext *SMContext) StopT3591() {
+	// Cleared before the nil check, not after: the network's procedure is pending from the moment
+	// it commits, which is a PFCP round trip before T3591 is armed. A terminus reached inside that
+	// window still has to settle the session.
+	smContext.NwModificationPending = false
 	if smContext.T3591 == nil {
 		return
 	}
