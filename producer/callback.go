@@ -61,6 +61,10 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], policyUpdates)
 
+	// From here the network owns this session's modification, and a UE request for the same session
+	// is a collision to be disregarded rather than refused.
+	smContext.NwModificationPending = true
+
 	// Build PFCP params while locked (if it reads shared state)
 	pfcpParam := BuildPfcpParam(smContext)
 
@@ -73,6 +77,9 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMLock.Lock()
 
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
+		// The procedure never got started, so it must not leave the session looking as though one
+		// were running: every later UE request would be disregarded, silently and forever.
+		smContext.NwModificationPending = false
 
 		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
@@ -493,6 +500,13 @@ func startT3591(smContext *smfContext.SMContext) {
 	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
 	if !enabled {
 		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
+		// With no timer there is nothing to end the procedure if the UE never answers. Stop tracking
+		// it as pending rather than disregarding every later UE request for the rest of the session:
+		// a colliding request is then refused, which is what this element did before, instead of
+		// vanishing.
+		smContext.SMLock.Lock()
+		smContext.NwModificationPending = false
+		smContext.SMLock.Unlock()
 		return
 	}
 
@@ -510,6 +524,8 @@ func startT3591(smContext *smfContext.SMContext) {
 		func() {
 			abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
 		})
+	// StopT3591 above cleared it; the procedure is still running.
+	smContext.NwModificationPending = true
 	smContext.SMLock.Unlock()
 
 	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
@@ -536,6 +552,7 @@ func abandonModification(smContext *smfContext.SMContext, path, cause string) {
 	// The timer goroutine has already returned; drop the handle and leave the session settled so
 	// a later modification of the same session can be attempted.
 	smContext.T3591 = nil
+	smContext.NwModificationPending = false
 	smContext.ChangeState(smfContext.SmStateActive)
 	smContext.SMLock.Unlock()
 }

@@ -4,6 +4,7 @@
 package producer
 
 import (
+	"errors"
 	"net"
 	"os"
 	"strings"
@@ -23,6 +24,8 @@ import (
 
 // craftModificationRequest encodes a real PDU SESSION MODIFICATION REQUEST (0xC9), the message the
 // SMF used to decode, debug-log and drop.
+const testSupi = "imsi-208930100007487"
+
 func craftModificationRequest(t *testing.T, pduSessionID int32, pti uint8) []byte {
 	t.Helper()
 
@@ -250,12 +253,12 @@ func TestNetworkInitiatedModificationSendsTheCommandAndArmsT3591(t *testing.T) {
 	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { commandSent++; return nil }
 
 	smContext := activeSmContext(10)
-	smContext.Supi = "imsi-208930100007487"
+	smContext.Supi = testSupi
 	smContext.T3591Value = 16 * time.Second
 	// ChangeState reads these when leaving SmStateActive, to label the session metric. A session
 	// that reached SmStateActive always has them, so this is fixture rather than new exposure.
 	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
-	smContext.Identifier = "imsi-208930100007487"
+	smContext.Identifier = testSupi
 
 	t.Cleanup(func() { smContext.StopT3591() })
 
@@ -275,5 +278,180 @@ func TestNetworkInitiatedModificationSendsTheCommandAndArmsT3591(t *testing.T) {
 	}
 	if smContext.T3591 == nil {
 		t.Error("T3591 was not armed, so an unanswered command would never be retransmitted or abandoned")
+	}
+}
+
+// A UE request arriving while the network is modifying the same session is disregarded, not
+// refused. TS 24.501 subclause 6.3.2.5 item d.
+//
+// Three things have to hold together, and asserting only the first would miss the point: the UE
+// gets no reject, the network's own procedure is untouched, and T3591 keeps running so the
+// Command is still retransmitted and still abandoned on time.
+func TestCollidingUeRequestIsDisregardedNotRefused(t *testing.T) {
+	smContext := activeSmContext(10)
+	smContext.T3591Value = 16 * time.Second
+	smContext.NwModificationPending = true
+	smContext.T3591 = smf_context.NewTimer(smContext.T3591Value, 4, func(int32) {}, func() {})
+	t.Cleanup(func() { smContext.StopT3591() })
+
+	response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
+
+	if file := response.GetBinaryDataN1SmMessage(); file != nil {
+		t.Error("the UE was answered; a colliding request must be disregarded, and a reject would have it back off on a session that is about to change")
+	}
+	if !smContext.NwModificationPending {
+		t.Error("the network's own modification was cancelled by the UE's request")
+	}
+	if smContext.T3591 == nil {
+		t.Error("T3591 was stopped, so the network's command would never be retransmitted or abandoned")
+	}
+}
+
+// The collision exception is specific to the session the network is modifying. A request for a
+// different session is still refused, or a second session could never be told anything while any
+// other one was mid-modification.
+func TestCollisionExceptionAppliesOnlyToTheSessionBeingModified(t *testing.T) {
+	smContext := activeSmContext(10)
+	smContext.NwModificationPending = true
+
+	response := postUpdateSmContext(t, craftModificationRequest(t, 11, 5), smContext)
+	m := decodeReject(t, response)
+
+	if got := m.PDUSessionModificationReject.GetCauseValue(); got != nasMessage.Cause5GSMInvalidPDUSessionIdentity {
+		t.Errorf("5GSM cause = #%d, want #43: a different session is not the collision case", got)
+	}
+}
+
+// With no network modification running, a UE request is refused as usual. This is what stops the
+// indicator from being read the wrong way round.
+func TestUeRequestIsRefusedWhenNoNetworkModificationIsRunning(t *testing.T) {
+	smContext := activeSmContext(10)
+	if smContext.NwModificationPending {
+		t.Fatal("fixture is wrong: nothing should be pending")
+	}
+
+	response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
+	m := decodeReject(t, response)
+
+	if got := m.PDUSessionModificationReject.GetCauseValue(); got != smferrors.Cause5GSMServiceOptionNotSupported {
+		t.Errorf("5GSM cause = #%d, want #32", got)
+	}
+}
+
+// A modification that fails before it starts must not leave the session looking as though one were
+// running. If it did, every later UE request for that session would be disregarded silently and
+// for good — a worse failure than the refusal this replaced.
+func TestFailedNetworkModificationDoesNotLeaveTheSessionLookingBusy(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		return errors.New("upf unreachable")
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	smContext := activeSmContext(10)
+	smContext.Supi = testSupi
+	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
+	smContext.Identifier = testSupi
+
+	txn := &transaction.Transaction{
+		Req:  models.SmPolicyNotification{SmPolicyDecision: &models.SmPolicyDecision{}},
+		Ctxt: smContext,
+	}
+	if err := HandleSMPolicyUpdateNotify(txn); err == nil {
+		t.Fatal("expected the PFCP failure to be reported")
+	}
+
+	if smContext.NwModificationPending {
+		t.Fatal("the session still looks as though the network were modifying it, so every later UE request would be disregarded for good")
+	}
+
+	// And prove it by the behaviour, not only the flag.
+	response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
+	if response.GetBinaryDataN1SmMessage() == nil {
+		t.Error("a UE request after the failed modification was disregarded rather than refused")
+	}
+}
+
+// The collision, end to end: the network's own procedure marks the session, and a UE request that
+// arrives while it is running is disregarded.
+//
+// The other collision test sets the indicator on the fixture directly, so it cannot see whether
+// the real path ever sets it — removing the assignment leaves that test passing. This one drives
+// HandleSMPolicyUpdateNotify first, so the two halves are joined.
+func TestNetworkProcedureMarksTheSessionSoAUeRequestCollides(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	smContext := activeSmContext(10)
+	smContext.Supi = testSupi
+	smContext.Identifier = testSupi
+	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
+	smContext.T3591Value = 16 * time.Second
+	t.Cleanup(func() { smContext.StopT3591() })
+
+	txn := &transaction.Transaction{
+		Req:  models.SmPolicyNotification{SmPolicyDecision: &models.SmPolicyDecision{}},
+		Ctxt: smContext,
+	}
+	if err := HandleSMPolicyUpdateNotify(txn); err != nil {
+		t.Fatalf("the network's modification failed to start: %v", err)
+	}
+
+	response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
+
+	if response.GetBinaryDataN1SmMessage() != nil {
+		t.Error("the UE was refused during the network's own modification; TS 24.501 subclause 6.3.2.5 item d says disregard it")
+	}
+	if smContext.T3591 == nil {
+		t.Error("the network's procedure lost its timer to the UE's request")
+	}
+}
+
+// A UE request arriving while the network's PFCP round trip is still in flight is already a
+// collision, before T3591 exists.
+//
+// This is the whole reason the session carries its own indicator rather than being read off
+// T3591. The timer is armed only after the Command goes out; the procedure begins a PFCP exchange
+// earlier, and on a satellite bench that exchange is not brief. A request landing in that window
+// is disregarded by the specification just the same, and would otherwise be refused.
+//
+// The colliding request is sent from inside the PFCP stub, which is exactly where the window is.
+func TestUeRequestDuringThePfcpRoundTripIsAlreadyACollision(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+	smContext := activeSmContext(10)
+	smContext.Supi = testSupi
+	smContext.Identifier = testSupi
+	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
+	smContext.T3591Value = 16 * time.Second
+	t.Cleanup(func() { smContext.StopT3591() })
+
+	var refusedMidFlight bool
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		// Mid-procedure: the Command has not been sent, so T3591 is not armed yet.
+		if smContext.T3591 != nil {
+			t.Error("T3591 is already armed inside the PFCP round trip; this test no longer covers the window it was written for")
+		}
+		response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
+		refusedMidFlight = response.GetBinaryDataN1SmMessage() != nil
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	txn := &transaction.Transaction{
+		Req:  models.SmPolicyNotification{SmPolicyDecision: &models.SmPolicyDecision{}},
+		Ctxt: smContext,
+	}
+	if err := HandleSMPolicyUpdateNotify(txn); err != nil {
+		t.Fatalf("the network's modification failed to start: %v", err)
+	}
+
+	if refusedMidFlight {
+		t.Error("a UE request arriving during the PFCP round trip was refused; the procedure had already begun, so it is a collision to be disregarded")
 	}
 }
