@@ -151,3 +151,26 @@ func TestCommittingAPrunedUpdateRecordsOnlyEstablishedFlows(t *testing.T) {
 		}
 	}
 }
+
+// A QoS flow identifier outside the assignable range is dropped, not narrowed.
+//
+// GetQosFlowIdFromQosId returns 0 for a QoS identifier it cannot parse. If 0 were admitted here,
+// an unparseable identifier on one side and a malformed report on the other would combine to
+// delete a flow the radio access network never refused — and the session would then be recorded
+// as missing a flow that is in fact established.
+func TestRefusedFlowSetRejectsIdentifiersOutsideTheAssignableRange(t *testing.T) {
+	set := RefusedFlowSet([]int64{0, 1, 63, 64, 256, -1})
+
+	for _, valid := range []uint8{1, 63} {
+		if !set[valid] {
+			t.Errorf("QFI %d is assignable and must be kept", valid)
+		}
+	}
+	if len(set) != 2 {
+		t.Errorf("set has %d entries, want only the two assignable ones: %v", len(set), set)
+	}
+	// 256 truncates to 0 in a uint8, so this catches the narrowing as well as the reserved value.
+	if set[0] {
+		t.Error("QFI 0 was admitted; it is reserved, and it is also what an unparseable QoS identifier becomes")
+	}
+}
