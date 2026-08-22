@@ -497,20 +497,23 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 // TS 24.501 subclause 6.3.2.5 item a: the command is resent on each of the first four expiries
 // and the procedure is abandoned on the fifth.
 func startT3591(smContext *smfContext.SMContext) {
-	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	enabled, maxRetries := effectiveT3591Retries(smContext)
 	if !enabled {
-		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
-		// With no timer there is nothing to end the procedure if the UE never answers. Stop tracking
-		// it as pending rather than disregarding every later UE request for the rest of the session:
-		// a colliding request is then refused, which is what this element did before, instead of
-		// vanishing.
-		smContext.SMLock.Lock()
-		smContext.NwModificationPending = false
-		smContext.SMLock.Unlock()
 		return
 	}
+	startT3591Locked(smContext, maxRetries)
 
-	smContext.SMLock.Lock()
+	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
+		smContext.T3591Value, maxRetries)
+}
+
+// startT3591Locked arms the retransmission timer for a caller that already holds SMLock. The N1
+// and N2 update handlers all run under it, so they must use this rather than startT3591: SMLock
+// is not reentrant, and taking it twice wedges the session for good.
+func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 	// A previous attempt on this session must not keep running alongside this one.
 	smContext.StopT3591()
 	smContext.T3591 = smfContext.NewTimer(smContext.T3591Value, maxRetries,
@@ -522,14 +525,22 @@ func startT3591(smContext *smfContext.SMContext) {
 			}
 		},
 		func() {
+			// The timer goroutine holds no lock, so this takes it.
 			abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
 		})
 	// StopT3591 above cleared it; the procedure is still running.
 	smContext.NwModificationPending = true
-	smContext.SMLock.Unlock()
+}
 
-	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
-		smContext.T3591Value, maxRetries)
+// effectiveT3591Retries reports whether the timer is enabled and how many retransmissions it
+// allows, so a caller holding SMLock can arm it without re-reading configuration.
+func effectiveT3591Retries(smContext *smfContext.SMContext) (bool, int) {
+	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
+	if !enabled {
+		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
+		smContext.NwModificationPending = false
+	}
+	return enabled, maxRetries
 }
 
 // abandonModification gives up on a modification and leaves the session on the parameters it
@@ -540,21 +551,39 @@ func startT3591(smContext *smfContext.SMContext) {
 // site stays on its old policy until someone re-issues it — which is why this is reported
 // rather than only logged at debug.
 func abandonModification(smContext *smfContext.SMContext, path, cause string) {
-	smContext.SubPduSessLog.Errorf("abandoning PDU session modification: supi %s, pdu session %d, path %s, cause %s; the session keeps its previous parameters and the change is not retried",
-		smContext.Supi, smContext.PDUSessionID, path, cause)
-	metrics.IncrementModificationAbandonedStats(path, cause)
+	reportAbandonment(smContext, path, cause)
 
-	if err := smContext.CommitSmPolicyDecision(false); err != nil {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	abandonModificationLocked(smContext)
+}
+
+// abandonModificationLocked is the state half of abandonModification, for a caller that already
+// holds SMLock. The N1 and N2 update handlers are all called with it held.
+func abandonModificationLocked(smContext *smfContext.SMContext) {
+	if err := smContext.CommitSmPolicyDecisionLocked(false); err != nil {
 		smContext.SubPduSessLog.Errorf("discarding the abandoned modification failed: %v", err)
 	}
 
-	smContext.SMLock.Lock()
-	// The timer goroutine has already returned; drop the handle and leave the session settled so
-	// a later modification of the same session can be attempted.
+	// Drop the timer handle and leave the session settled so a later modification of the same
+	// session can be attempted.
 	smContext.T3591 = nil
 	smContext.NwModificationPending = false
 	smContext.ChangeState(smfContext.SmStateActive)
-	smContext.SMLock.Unlock()
+}
+
+// reportAbandonment logs and counts an abandonment without touching session state, so the two
+// halves can be used separately by callers that differ only in whether they hold SMLock.
+func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
+	smContext.SubPduSessLog.Errorf("abandoning PDU session modification: supi %s, pdu session %d, path %s, cause %s; the session keeps its previous parameters and the change is not retried",
+		smContext.Supi, smContext.PDUSessionID, path, cause)
+	metrics.IncrementModificationAbandonedStats(path, cause)
+}
+
+// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock.
+func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
+	reportAbandonment(smContext, path, cause)
+	abandonModificationLocked(smContext)
 }
 
 // revertModification returns the user plane to the parameters the session had before a
