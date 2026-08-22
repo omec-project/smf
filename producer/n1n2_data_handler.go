@@ -244,10 +244,10 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// keeps running. Refusing here would answer a procedure the UE is entitled to have
 			// ignored, and the UE would apply the back-off #32 asks for on a session that is
 			// about to change anyway.
-			smContext.SMLock.Lock()
+			// Read directly: HandlePDUSessionSMContextUpdate holds SMLock across this whole
+			// function, and taking it again would deadlock the session permanently.
 			sessionID, state := smContext.PDUSessionID, smContext.SMContextState
 			collision := smContext.NwModificationPending && pduSessIDModReq == sessionID
-			smContext.SMLock.Unlock()
 			if collision {
 				// Sub-item i would have the URSP rule enforcement reports IE consumed before
 				// ignoring the rest. github.com/omec-project/nas/v2 does not decode that IE — the
@@ -304,7 +304,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// flows that do not exist. Releasing the lock between the two would let a modification
 			// starting on another goroutine replace the pending update in the gap, and this would
 			// then prune and commit that one instead.
-			smContext.SMLock.Lock()
+			// SMLock is already held by HandlePDUSessionSMContextUpdate for the whole of this
+			// function, so nothing here may take it. Everything below is therefore one atomic
+			// section by construction rather than by locking.
 			smContext.StopT3591()
 			realign := smContext.Realign
 			smContext.Realign = nil
@@ -312,9 +314,8 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if realign != nil && len(smContext.SmPolicyUpdates) > 0 {
 				corrective = smContext.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet(realign.RefusedQFIs))
 			}
-			smContext.SMLock.Unlock()
 
-			if err := smContext.CommitSmPolicyDecision(true); err != nil {
+			if err := smContext.CommitSmPolicyDecisionLocked(true); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
 			}
 
@@ -325,13 +326,11 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		case nas.MsgTypePDUSessionModificationCommandReject:
 			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
 			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
-			smContext.SMLock.Lock()
 			smContext.StopT3591()
-			smContext.SMLock.Unlock()
 			// The UE will not apply the parameters it was given. This is an abandonment with its
 			// own cause rather than a timeout, and it is reported on the same path as one, so that
 			// a modification the network could not apply is countable however it failed.
-			abandonModification(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
+			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
 
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
@@ -860,10 +859,8 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 	switch {
 	case result.WhollyRejected():
 		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
-		smContext.SMLock.Lock()
 		smContext.StopT3591()
-		smContext.SMLock.Unlock()
-		abandonModification(smContext, "ran_whole_rejection", "no_flow_established")
+		abandonModificationUnderLock(smContext, "ran_whole_rejection", "no_flow_established")
 
 	case result.PartiallyRejected():
 		smContext.SubPduSessLog.Warnf("radio access network established flows %v and refused %v; realigning the UE",
@@ -892,10 +889,8 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 		return err
 	}
 
-	smContext.SMLock.Lock()
 	smContext.StopT3591()
-	smContext.SMLock.Unlock()
-	abandonModification(smContext, "ran_whole_rejection", fmt.Sprintf("ngap_cause_present_%d", cause.Present))
+	abandonModificationUnderLock(smContext, "ran_whole_rejection", fmt.Sprintf("ngap_cause_present_%d", cause.Present))
 
 	return nil
 }
@@ -904,12 +899,10 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 // radio access network established. The corrective modification runs once the UE has
 // acknowledged the first one, per TS 23.502 clause 4.3.3.2, which places it after step 11.
 func realignAfterPartialRejection(smContext *context.SMContext, result context.ModifyResponse) {
-	smContext.SMLock.Lock()
 	smContext.Realign = &context.PendingRealignment{
 		EstablishedQFIs: result.AcceptedQFIs,
 		RefusedQFIs:     result.RejectedQFIs,
 	}
-	smContext.SMLock.Unlock()
 }
 
 // realignSession brings the session into agreement with what the radio access network actually
@@ -925,9 +918,7 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 
 	// The user plane follows the record, so rebuilding from the committed context yields rules for
 	// the established flows only.
-	smContext.SMLock.Lock()
 	pfcpParam := BuildPfcpParam(smContext)
-	smContext.SMLock.Unlock()
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 		smContext.SubPduSessLog.Errorf("removing the refused flows from the user plane failed: %v; the session is enforcing flows the radio access network never established", err)
@@ -943,14 +934,12 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 		return
 	}
 
-	smContext.SMLock.Lock()
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, corrective)
-	smContext.SMLock.Unlock()
 
 	if err := sendQosN1N2TransferMsg(smContext); err != nil {
 		smContext.SubPduSessLog.Errorf("sending the corrective modification failed: %v; the UE still believes flows %v exist", err, realign.RefusedQFIs)
 		metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
-		if discardErr := smContext.CommitSmPolicyDecision(false); discardErr != nil {
+		if discardErr := smContext.CommitSmPolicyDecisionLocked(false); discardErr != nil {
 			smContext.SubPduSessLog.Errorf("discarding the corrective update failed: %v", discardErr)
 		}
 		return
@@ -958,6 +947,8 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 
 	// The corrective modification is a modification like any other: it is retransmitted and
 	// abandoned on the same terms, and committed when the UE acknowledges it.
-	startT3591(smContext)
+	if enabled, maxRetries := effectiveT3591Retries(smContext); enabled {
+		startT3591Locked(smContext, maxRetries)
+	}
 	smContext.SubPduSessLog.Infof("corrective modification sent, telling the UE to drop flows %v", realign.RefusedQFIs)
 }

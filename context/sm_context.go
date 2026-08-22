@@ -784,11 +784,20 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 	return httpResponse
 }
 
+// CommitSmPolicyDecision applies or discards the pending policy update, taking SMLock itself.
+//
+// Callers that already hold SMLock must use CommitSmPolicyDecisionLocked instead. SMLock is a
+// plain mutex and is not reentrant, so calling this from under it deadlocks the session — and
+// because the update path holds the lock with a defer, the session stays wedged and its HTTP
+// handler never returns.
 func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
-	// Lock SM context
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
+	return smContext.CommitSmPolicyDecisionLocked(status)
+}
 
+// CommitSmPolicyDecisionLocked is CommitSmPolicyDecision for a caller that already holds SMLock.
+func (smContext *SMContext) CommitSmPolicyDecisionLocked(status bool) error {
 	if len(smContext.SmPolicyUpdates) == 0 {
 		// Nothing pending. Reachable whenever a message that commits or discards arrives without
 		// a modification in flight — a retransmitted PDU SESSION MODIFICATION COMPLETE is the
