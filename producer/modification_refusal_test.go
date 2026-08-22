@@ -455,3 +455,80 @@ func TestUeRequestDuringThePfcpRoundTripIsAlreadyACollision(t *testing.T) {
 		t.Error("a UE request arriving during the PFCP round trip was refused; the procedure had already begun, so it is a collision to be disregarded")
 	}
 }
+
+// The N1 handlers run with SMLock already held, and must never take it again.
+//
+// This is the defect a cluster run found that the whole unit suite missed: every other test here
+// calls HandleUpdateN1Msg directly, so the lock is free and the handlers pass. In production
+// HandlePDUSessionSMContextUpdate takes SMLock with a defer and calls them under it, so a second
+// acquisition deadlocks — the session wedges permanently, its HTTP handler never returns, and the
+// AMF is left waiting. A UE that answered a modification correctly was what triggered it.
+//
+// The test holds the lock the way the real caller does. It fails by timing out rather than by
+// asserting, because a deadlock has no return value.
+func TestN1HandlersDoNotRetakeTheSessionLock(t *testing.T) {
+	cases := map[string][]byte{
+		"modification complete": craftModificationComplete(t, 10, 0),
+		"modification request":  craftModificationRequest(t, 10, 7),
+	}
+
+	for name, n1 := range cases {
+		t.Run(name, func(t *testing.T) {
+			smContext := activeSmContext(10)
+			smContext.Supi = testSupi
+			smContext.Identifier = testSupi
+			smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
+
+			file, err := os.CreateTemp(t.TempDir(), "n1sm")
+			if err != nil {
+				t.Fatalf("could not create the payload file: %v", err)
+			}
+			if _, err := file.Write(n1); err != nil {
+				t.Fatalf("could not write the payload: %v", err)
+			}
+			body := models.UpdateSmContextRequest{}
+			body.SetBinaryDataN1SmMessage(file)
+			txn := &transaction.Transaction{Req: body, Ctxt: smContext}
+
+			done := make(chan struct{})
+			go func() {
+				// Exactly what HandlePDUSessionSMContextUpdate does before dispatching.
+				smContext.SMLock.Lock()
+				defer smContext.SMLock.Unlock()
+				if err := HandleUpdateN1Msg(txn, models.NewUpdateSmContext200Response(), &pfcpAction{}); err != nil {
+					t.Errorf("handler returned an error: %v", err)
+				}
+				close(done)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the handler did not return with SMLock held: it deadlocked, which wedges the session and never answers the AMF")
+			}
+		})
+	}
+}
+
+// craftModificationComplete encodes a PDU SESSION MODIFICATION COMPLETE at PTI 0, which is what a
+// UE sends to acknowledge a network-requested modification.
+func craftModificationComplete(t *testing.T, pduSessionID int32, pti uint8) []byte {
+	t.Helper()
+
+	m := nas.NewMessage()
+	m.GsmMessage = nas.NewGsmMessage()
+	m.GsmHeader.SetMessageType(nas.MsgTypePDUSessionModificationComplete)
+	m.GsmHeader.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	m.PDUSessionModificationComplete = nasMessage.NewPDUSessionModificationComplete(0x0)
+	c := m.PDUSessionModificationComplete
+	c.SetMessageType(nas.MsgTypePDUSessionModificationComplete)
+	c.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
+	c.SetPDUSessionID(uint8(pduSessionID))
+	c.SetPTI(pti)
+
+	buf, err := m.PlainNasEncode()
+	if err != nil {
+		t.Fatalf("could not encode a modification complete: %v", err)
+	}
+	return buf
+}
