@@ -6,6 +6,7 @@ package qos
 
 import (
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/logger"
 )
 
 // Handle Session Rule related info
@@ -73,7 +74,27 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 		}
 	}
 
-	// Set Active Rule
-	smCtxtPolData.SmCtxtSessionRules.ActiveRule = update.ActiveSessRule
-	smCtxtPolData.SmCtxtSessionRules.ActiveRuleName = update.activeRuleName
+	// Set the active rule, but only when this update actually names one.
+	//
+	// GetSessionRulesUpdate sets ActiveSessRule only in its add branch — when the rule is not
+	// already in the context. On a modification the rule exists, takes the mod branch, and
+	// ActiveSessRule is left nil. Assigning unconditionally therefore cleared the active rule on
+	// every modification that carried session rules: establishment set it, the first modification
+	// wiped it, and everything afterwards that needed it from committed state found nothing.
+	//
+	// Two symptoms traced back to this. A corrective modification could not be built at all,
+	// because the session AMBR comes from the active rule. And CreatePccRuleQer dereferenced it,
+	// which took the SMF down when an application function added a flow mid-session.
+	//
+	// An update that says nothing about session rules is not saying there are none.
+	if update.ActiveSessRule != nil {
+		smCtxtPolData.SmCtxtSessionRules.ActiveRule = update.ActiveSessRule
+		smCtxtPolData.SmCtxtSessionRules.ActiveRuleName = update.activeRuleName
+		return
+	}
+
+	if smCtxtPolData.SmCtxtSessionRules.ActiveRule != nil {
+		logger.CtxLog.Infof("keeping the active session rule %q: this update names none",
+			smCtxtPolData.SmCtxtSessionRules.ActiveRuleName)
+	}
 }
