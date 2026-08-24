@@ -532,29 +532,74 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		qfi, priority, arpPreemptCap, arpPreemptVul,
 	)
 
-	// Build QoS AddOrModify IE
+	// Build the QoS AddOrModify list from the flows this modification actually concerns.
+	//
+	// It used to carry exactly one item, whose QFI came from scanning for the session's *default*
+	// flow indication. So a modification that added or changed dedicated flows asked the radio
+	// about none of them: the UE was told about every flow over NAS while the radio was told about
+	// one, which is the divergence the realignment procedure exists to repair after the fact —
+	// manufactured here, in the request. Observed on a cluster: NAS rules built for QFI 2 and
+	// QFI 3, gNB asked about QFI 2 alone.
+	//
+	// The establishment path in this file has always built its list by iterating the policy delta.
+	// This does the same, over both the added and the modified flows, since a modification may do
+	// either. The single default flow remains the fallback for an update that names no flows at
+	// all — a session-level change — which is the only case the old behaviour was right for.
+	var modifyFlows []ngapType.QosFlowAddOrModifyRequestItem
+	if len(ctx.SmPolicyUpdates) > 0 && ctx.SmPolicyUpdates[0].QosFlowUpdate != nil {
+		flowUpdate := ctx.SmPolicyUpdates[0].QosFlowUpdate
+		for _, group := range []map[string]*models.QosData{flowUpdate.GetAdded(), flowUpdate.GetModified()} {
+			for _, qosFlow := range group {
+				if qosFlow == nil {
+					continue
+				}
+				modifyFlows = append(modifyFlows, ngapType.QosFlowAddOrModifyRequestItem{
+					QosFlowIdentifier: ngapType.QosFlowIdentifier{
+						Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.GetQosId())),
+					},
+					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
+						QosCharacteristics: ngapType.QosCharacteristics{
+							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
+							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
+								FiveQI: ngapType.FiveQI{Value: int64(qosFlow.GetVar5qi())},
+							},
+						},
+						AllocationAndRetentionPriority: buildAllocationAndRetentionPriority(qosFlow, sessRule),
+					},
+				})
+			}
+		}
+	}
+
+	if len(modifyFlows) == 0 {
+		ctx.SubPduSessLog.Infof("modification names no QoS flows; asking the radio about the default flow %d", qfi)
+		modifyFlows = []ngapType.QosFlowAddOrModifyRequestItem{{
+			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+			QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
+				QosCharacteristics: ngapType.QosCharacteristics{
+					Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
+					NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
+						FiveQI: ngapType.FiveQI{Value: int64(qi)},
+					},
+				},
+				AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
+					PriorityLevelARP:        ngapType.PriorityLevelARP{Value: int64(priority)},
+					PreEmptionCapability:    ngapType.PreEmptionCapability{Value: arpPreemptCap},
+					PreEmptionVulnerability: ngapType.PreEmptionVulnerability{Value: arpPreemptVul},
+				},
+			},
+		}}
+	}
+
+	ctx.SubPduSessLog.Infof("asking the radio to add or modify %d QoS flow(s)", len(modifyFlows))
+
 	ie = ngapType.PDUSessionResourceModifyRequestTransferIEs{
 		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList},
 		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
 		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
 			Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
 			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
-				List: []ngapType.QosFlowAddOrModifyRequestItem{{
-					QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
-					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
-						QosCharacteristics: ngapType.QosCharacteristics{
-							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
-							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
-								FiveQI: ngapType.FiveQI{Value: int64(qi)},
-							},
-						},
-						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
-							PriorityLevelARP:        ngapType.PriorityLevelARP{Value: int64(priority)},
-							PreEmptionCapability:    ngapType.PreEmptionCapability{Value: arpPreemptCap},
-							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{Value: arpPreemptVul},
-						},
-					},
-				}},
+				List: modifyFlows,
 			},
 		},
 	}
