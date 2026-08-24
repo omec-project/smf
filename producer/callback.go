@@ -488,6 +488,16 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 		// The procedure never got started, so it must not leave the session looking as though one
 		// were running: every later UE request would be disregarded, silently and forever.
 		smContext.NwModificationPending = false
+		// Nor may it leave the session mid-modification. The user plane was not programmed, so the
+		// pending update describes a change that never happened — discarding it puts the policy
+		// state back to what is actually in force, and the state back to what it was on entry.
+		// The path upstream reached this way left both behind; it was only ever driven by an
+		// operator policy change, and this function is now reached by the corrective modification
+		// after a partial rejection as well.
+		if discardErr := smContext.CommitSmPolicyDecisionLocked(false); discardErr != nil {
+			smContext.SubPduSessLog.Errorf("discarding the unprogrammed modification failed: %v", discardErr)
+		}
+		smContext.ChangeState(smfContext.SmStateActive)
 		smContext.SMLock.Unlock()
 		return fmt.Errorf("%w: %v", ErrPfcpModifyFailed, err)
 	}
@@ -534,7 +544,20 @@ func startT3591(smContext *smfContext.SMContext) {
 func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 	// A previous attempt on this session must not keep running alongside this one.
 	smContext.StopT3591()
-	smContext.T3591 = smfContext.NewTimer(smContext.T3591Value, maxRetries,
+
+	// The abandonment closure checks that it is still the session's timer before acting.
+	//
+	// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's
+	// own goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing
+	// most likely to be holding it is the acknowledgement that just arrived and superseded this
+	// procedure. Without this check the queued abort resumes afterwards and discards whatever
+	// modification is pending by then, which after a partial rejection is the corrective one that
+	// was started in the meantime.
+	//
+	// The window is narrow and it is exactly the satellite case: a UE that acknowledges at the
+	// fifth expiry, after a fade almost long enough to abandon the procedure.
+	var timer *smfContext.Timer
+	timer = smfContext.NewTimer(smContext.T3591Value, maxRetries,
 		func(expireTimes int32) {
 			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
 				expireTimes, maxRetries)
@@ -543,9 +566,9 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			}
 		},
 		func() {
-			// The timer goroutine holds no lock, so this takes it.
-			abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+			abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
 		})
+	smContext.T3591 = timer
 	// StopT3591 above cleared it; the procedure is still running.
 	smContext.NwModificationPending = true
 }
@@ -590,6 +613,26 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	smContext.ChangeState(smfContext.SmStateActive)
 }
 
+// abandonIfCurrent abandons the modification only if the expiring timer is still the session's.
+//
+// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's own
+// goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing most
+// likely to be holding it is the acknowledgement that just arrived and superseded this procedure.
+// Resuming afterwards, it would discard whatever modification is pending by then, which after a
+// partial rejection is the corrective one started in the meantime.
+func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
+	// The timer goroutine holds no lock, so this takes it.
+	smContext.SMLock.Lock()
+	superseded := smContext.T3591 != timer
+	smContext.SMLock.Unlock()
+
+	if superseded {
+		smContext.SubPduSessLog.Infof("a T3591 expiry arrived for a modification that has already finished; ignoring it rather than abandoning the one now in progress")
+		return
+	}
+	abandonModification(smContext, path, cause)
+}
+
 // reportAbandonment logs and counts an abandonment without touching session state, so the two
 // halves can be used separately by callers that differ only in whether they hold SMLock.
 func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
@@ -604,19 +647,13 @@ func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause s
 	abandonModificationLocked(smContext)
 }
 
-// revertModification returns the user plane to the parameters the session had before a
-// modification that could not be delivered, and abandons the modification.
+// revertModification gives up on a modification that could not be delivered and puts the user
+// plane back to the parameters the UE still believes are in force.
 //
 // The discard comes first and does the heavy lifting: the pending policy update was never
 // committed, so once it is dropped the session's policy state already describes the
 // pre-modification session, and rebuilding the PFCP parameters from it yields exactly the rules
 // that were in force. Nothing is snapshotted and nothing is copied.
-//
-// If the user plane cannot be put back, the session is released. That is the one case where
-// releasing is right: the alternative is a session the network believes is running one set of
-// parameters while the user plane enforces another, with nothing to reveal the difference.
-// revertModification gives up on a modification that could not be delivered and puts the user
-// plane back to the parameters the UE still believes are in force.
 //
 // The path is always "delivery_failure": that is what reverting means, as distinct from a
 // modification abandoned because the UE did not answer or the radio refused it. Only the cause
@@ -630,7 +667,19 @@ func revertModification(smContext *smfContext.SMContext, cause string) {
 	smContext.SMLock.Unlock()
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; releasing the session rather than leaving it enforcing parameters the network does not believe it has", err)
+		// The session is now genuinely divergent: the user plane still enforces the modification
+		// the UE was never told about, and putting it back has failed too. Releasing the session
+		// is the right answer and this is deliberately not the place that does it.
+		//
+		// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext
+		// plus notifying the AMF. That channel is a single-slot rendezvous with five existing
+		// readers, and this runs on a background goroutine — adding a sixth reader here would risk
+		// consuming another transaction's response to clean up after a rare double failure, which
+		// is a worse outcome than the divergence it repairs.
+		//
+		// So this marks and reports, and does not pretend to have released. The state is a label
+		// nothing acts on; the metric is what makes the session findable.
+		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about and needs releasing, which this path deliberately does not attempt", err)
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)

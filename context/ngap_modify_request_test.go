@@ -122,3 +122,44 @@ func TestModifyRequestFallsBackToTheDefaultFlowWhenNoFlowsAreNamed(t *testing.T)
 		t.Errorf("QFI = %d, want the default flow 1", got)
 	}
 }
+
+// A corrective modification carries only deletions, and the radio must not be asked to modify a
+// flow that was never in question.
+//
+// After a partial rejection the SMF withdraws the flows the radio refused. Those flows were never
+// built at the radio, so the correct N2 content is nothing — the UE needs the NAS withdrawal and
+// the user plane needs its rules removed, but the radio has no state to change. The no-flows
+// fallback above was written for a modification that names none at all, such as a session-AMBR
+// change, and a delete-only update reaches it too. Falling back there spends a radio
+// reconfiguration per partial rejection to re-assert a flow nobody asked about, which on a
+// constrained air interface is exactly the cost the rest of this work is careful about.
+func TestCorrectiveModificationDoesNotAskTheRadioAboutTheDefaultFlow(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	// The radio refused flow 3; RemoveFlows prunes the pending update to what was established and
+	// returns the delete-only corrective, which is what the realignment sends.
+	corrective := ctx.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{3}))
+	if corrective == nil {
+		t.Fatal("no corrective was produced, so the rest of this test would pass vacuously")
+	}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{corrective}
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("building the corrective transfer failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		return // nothing asked of the radio, which is the correct answer
+	}
+	var qfis []int64
+	for _, item := range list.List {
+		qfis = append(qfis, item.QosFlowIdentifier.Value)
+	}
+	t.Errorf("the corrective asked the radio to add or modify QoS flow(s) %v; it carries only deletions, so the radio should be asked for nothing",
+		qfis)
+}

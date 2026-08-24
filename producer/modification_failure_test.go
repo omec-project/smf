@@ -145,3 +145,39 @@ func TestTheUeIsNotToldWhenTheUserPlaneCannotBeProgrammed(t *testing.T) {
 		t.Error("the session still looks as though a modification were running")
 	}
 }
+
+// A modification the user plane refused must leave the session exactly as it was found.
+//
+// ApplyModification writes the pending update and moves the session to SmStatePfcpModify before it
+// programs anything. If the user plane then refuses, both have to be undone: the update describes
+// a change that never happened, and a session parked in SmStatePfcpModify never returns to Active
+// on its own. The path upstream reached this way left both behind, which mattered less when only
+// an operator policy change could reach it; the corrective modification after a partial rejection
+// reaches it too.
+func TestAFailedUserPlaneProgrammingLeavesTheSessionAsItWasFound(t *testing.T) {
+	smContext := modifyingSession()
+	smContext.ChangeState(smf_context.SmStateActive)
+
+	originalSend := sendPfcpSessionModifyReq
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		return errors.New("upf unreachable")
+	}
+	t.Cleanup(func() { sendPfcpSessionModifyReq = originalSend })
+
+	err := ApplyModification(smContext, &qos.PolicyUpdate{})
+	if err == nil || !errors.Is(err, ErrPfcpModifyFailed) {
+		t.Fatalf("error = %v, want ErrPfcpModifyFailed", err)
+	}
+
+	if smContext.SMContextState != smf_context.SmStateActive {
+		t.Errorf("state = %s, want SmStateActive: a session parked in SmStatePfcpModify never comes back on its own",
+			smContext.SMContextState.String())
+	}
+	if len(smContext.SmPolicyUpdates) != 0 {
+		t.Errorf("pending updates = %d, want 0: the update describes a change the user plane refused",
+			len(smContext.SmPolicyUpdates))
+	}
+	if smContext.NwModificationPending {
+		t.Error("the session still looks as though a network modification were running, so every later UE request would be disregarded")
+	}
+}
