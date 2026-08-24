@@ -14,6 +14,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/transaction"
 )
 
 // craftModifyResponseTransfer builds what a gNB puts on the wire to report the fate of each flow.
@@ -162,4 +163,74 @@ func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 			t.Error("T3591 was stopped, so the acknowledgement that triggers the correction can never arrive")
 		}
 	})
+}
+
+// A failure to deliver a modification must not take down the session it was modifying.
+//
+// HandlePduSessN1N2TransFailInd is shared with establishment, where dropping the data path is
+// right because the session was never usable. For a modification it is wrong: the session was
+// working, and only the news of a change to it failed to arrive. Dropping the path there turns a
+// routine delivery failure — ordinary on a satellite link — into an outage.
+func TestDeliveryFailureRevertsAModificationRatherThanDroppingTheSession(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+	var pfcpSent int
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { pfcpSent++; return nil }
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	smContext := modifyingSmContext(t)
+	smContext.Tunnel = makeCompleteTestTunnel()
+
+	txn := &transaction.Transaction{Ctxt: smContext}
+	if err := HandlePduSessN1N2TransFailInd(txn); err != nil {
+		t.Fatalf("HandlePduSessN1N2TransFailInd returned an error: %v", err)
+	}
+
+	// The revert programs the user plane back to the committed parameters.
+	if pfcpSent == 0 {
+		t.Error("no PFCP modification was sent, so the user plane still carries the undelivered change")
+	}
+	if len(smContext.SmPolicyUpdates) != 0 {
+		t.Error("the undelivered modification was left pending; the record and the UE now disagree")
+	}
+	if smContext.NwModificationPending {
+		t.Error("the session still looks as though a modification were running")
+	}
+
+	// The data path must survive. Dropping it is what this branch exists to prevent.
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+		for _, pdr := range dataPath.FirstDPNode.DownLinkTunnel.PDR {
+			if pdr.FAR != nil && pdr.FAR.ApplyAction.Drop {
+				t.Error("the downlink data path was dropped for a modification that merely could not be delivered")
+			}
+		}
+	}
+}
+
+// makeCompleteTestTunnel builds a data path with both directions present.
+//
+// The shared makeTestTunnel builds only the downlink, which is enough for the collector tests it
+// was written for. Rebuilding the user plane walks both, so a half-built tunnel fails as a nil
+// dereference that looks like a product fault and is not one.
+func makeCompleteTestTunnel() *smf_context.UPTunnel {
+	upf := &smf_context.UPF{NodeID: *smf_context.NewNodeID("10.0.0.1")}
+
+	newSide := func() *smf_context.GTPTunnel {
+		far := &smf_context.FAR{State: smf_context.RULE_INITIAL}
+		return &smf_context.GTPTunnel{
+			PDR: map[string]*smf_context.PDR{"default": {FAR: far, State: smf_context.RULE_INITIAL}},
+		}
+	}
+
+	node := &smf_context.DataPathNode{
+		UPF:            upf,
+		UpLinkTunnel:   newSide(),
+		DownLinkTunnel: newSide(),
+	}
+	dataPath := &smf_context.DataPath{FirstDPNode: node, Activated: true}
+
+	tunnel := smf_context.NewUPTunnel()
+	tunnel.AddDataPath(dataPath)
+	return tunnel
 }

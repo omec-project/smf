@@ -100,7 +100,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		// The user plane was programmed before this. Leaving it there would have the session
 		// enforcing parameters the UE was never told about, which is the divergence this whole
 		// path exists to avoid.
-		revertModification(smContext, "delivery_failure", "n1n2_transfer_failed")
+		revertModification(smContext, "n1n2_transfer_failed")
 		txn.Err = err
 		return err
 	}
@@ -597,7 +597,14 @@ func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause s
 // If the user plane cannot be put back, the session is released. That is the one case where
 // releasing is right: the alternative is a session the network believes is running one set of
 // parameters while the user plane enforces another, with nothing to reveal the difference.
-func revertModification(smContext *smfContext.SMContext, path, cause string) {
+// revertModification gives up on a modification that could not be delivered and puts the user
+// plane back to the parameters the UE still believes are in force.
+//
+// The path is always "delivery_failure": that is what reverting means, as distinct from a
+// modification abandoned because the UE did not answer or the radio refused it. Only the cause
+// varies, by how the delivery failed.
+func revertModification(smContext *smfContext.SMContext, cause string) {
+	const path = "delivery_failure"
 	abandonModification(smContext, path, cause)
 
 	smContext.SMLock.Lock()
