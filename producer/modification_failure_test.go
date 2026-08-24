@@ -73,50 +73,75 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 
 // A realignment is a modification like any other. If its command cannot be sent, the corrective
 // update must not be left pending, or a later commit would apply it silently.
-func TestRealignmentDiscardsItsUpdateWhenItCannotBeSent(t *testing.T) {
+// A modification that could not be delivered to the UE must not be left pending.
+//
+// Same move as the test above: this asserted realignSession's own N1N2 handling, which no longer
+// exists. The correction is an ordinary modification now, so the discard-on-delivery-failure
+// behaviour belongs to ApplyModification, which reverts through the same path every other
+// undelivered modification uses. Testing it there is synchronous and race-free; the old test read
+// state the correction's goroutine was writing.
+func TestAnUndeliverableModificationIsNotLeftPending(t *testing.T) {
 	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
-	defer func() {
+	t.Cleanup(func() {
 		sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2
-	}()
+	})
 
 	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
 	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
 
 	sm := modifyingSession()
-	sm.SmPolicyUpdates = nil
-	realign := &smf_context.PendingRealignment{EstablishedQFIs: []int64{1}, RefusedQFIs: []int64{2}}
 
-	realignSession(sm, realign, &qos.PolicyUpdate{})
+	if err := ApplyModification(sm, &qos.PolicyUpdate{}); err == nil {
+		t.Fatal("a modification that could not be delivered must be reported")
+	}
 
 	if len(sm.SmPolicyUpdates) != 0 {
-		t.Error("a corrective update that could not be sent must be discarded, not left pending")
+		t.Error("an update that could not be delivered must be discarded, not left pending: the record would then describe parameters the UE was never told about")
+	}
+	if sm.NwModificationPending {
+		t.Error("the session still looks as though a modification were running")
 	}
 }
 
 // The user plane must be corrected before the UE is told anything. If it cannot be, the session
 // is still enforcing flows the radio access network never established, and sending the UE a
 // correction would assert something untrue.
-func TestRealignmentStopsIfTheUserPlaneCannotBeCorrected(t *testing.T) {
+// The UE must not be told flows were withdrawn while the user plane still enforces them.
+//
+// This invariant used to live in realignSession, which did its own user-plane correction and
+// checked the result before sending N1N2. The correction is now one ordinary modification, so the
+// invariant lives in ApplyModification: it programs the user plane first and returns without
+// telling the UE if that fails. Testing it there is also what removes a data race — the
+// correction runs on its own goroutine now, and the old test read a flag the goroutine wrote.
+func TestTheUeIsNotToldWhenTheUserPlaneCannotBeProgrammed(t *testing.T) {
 	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
-	defer func() {
+	t.Cleanup(func() {
 		sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2
-	}()
+	})
 
 	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
 		return errors.New("upf unreachable")
 	}
-	var toldTheUE bool
+	toldTheUE := false
 	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error {
 		toldTheUE = true
 		return nil
 	}
 
 	sm := modifyingSession()
-	realign := &smf_context.PendingRealignment{EstablishedQFIs: []int64{1}, RefusedQFIs: []int64{2}}
 
-	realignSession(sm, realign, &qos.PolicyUpdate{})
+	err := ApplyModification(sm, &qos.PolicyUpdate{})
 
+	if err == nil {
+		t.Fatal("a user plane that could not be programmed must be reported")
+	}
+	if !errors.Is(err, ErrPfcpModifyFailed) {
+		t.Errorf("error = %v, want it to identify the user plane stage so the caller can answer differently", err)
+	}
 	if toldTheUE {
-		t.Error("the UE must not be told flows were removed while the user plane still enforces them")
+		t.Error("the UE was told about a change the user plane never took")
+	}
+	if sm.NwModificationPending {
+		t.Error("the session still looks as though a modification were running")
 	}
 }

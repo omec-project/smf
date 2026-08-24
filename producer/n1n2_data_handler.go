@@ -909,46 +909,43 @@ func realignAfterPartialRejection(smContext *context.SMContext, result context.M
 // established, after a modification it accepted only part of.
 //
 // The record is already correct by this point: the pending update was pruned to the established
-// flows before it was committed. What remains is the user plane, which was programmed before the
-// radio access network answered and so still carries rules for flows that were never built, and
-// the UE, which acknowledged a set of parameters wider than the session has.
+// flows before it was committed. What is left wrong is the UE, which acknowledged a wider set of
+// parameters than the session has, and the user plane, which was programmed before the radio
+// answered and still carries rules for flows that were never built. A downlink packet matching
+// one of those is classified onto a QoS flow with no radio bearer and dropped, rather than
+// falling back — so both halves matter.
+//
+// Both are corrected by one ordinary modification carrying the deletions. TS 23.502 clause
+// 4.3.3.2 calls for a further procedure rather than a retry of the one that was partly accepted,
+// and a deletion *is* such a procedure — so it goes through ApplyModification like any other
+// instead of this function rebuilding the user plane and sending N1N2 itself. It did both by hand
+// before, and got both wrong: the rebuild ran after the pruned update had been committed and so
+// programmed nothing, and the user-plane call blocked forever on a response the triggering
+// transaction had already taken.
+//
+// It runs on its own goroutine, and acquiring SMLock is what sequences it: the transaction that
+// brought the acknowledgement holds the lock for its whole life, so the correction cannot start
+// until that has finished and the user plane's response channel is free.
 func realignSession(smContext *context.SMContext, realign *context.PendingRealignment, corrective *qos.PolicyUpdate) {
 	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
 		realign.EstablishedQFIs, realign.RefusedQFIs)
 
-	// The user plane follows the record, so rebuilding from the committed context yields rules for
-	// the established flows only.
-	pfcpParam := BuildPfcpParam(smContext)
-
-	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		smContext.SubPduSessLog.Errorf("removing the refused flows from the user plane failed: %v; the session is enforcing flows the radio access network never established", err)
-		metrics.IncrementModificationAbandonedStats("realignment", "user_plane_not_corrected")
-		return
-	}
-
-	// The UE still believes the refused flows exist. TS 23.502 clause 4.3.3.2 requires a further
-	// modification telling it which are in force — a distinct procedure carrying deletions for
-	// what was refused, not a retry of the one that was partly accepted.
 	if corrective == nil {
-		smContext.SubPduSessLog.Warnf("no corrective update to send; the UE's view may still be wider than the session")
+		// Nothing to delete: the refused flows were not in the update being committed, so the
+		// record and the UE already agree. Worth saying, because the alternative reading is that
+		// the correction was skipped.
+		smContext.SubPduSessLog.Infof("no flows to withdraw; the UE's view already matches the session")
 		return
 	}
 
-	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates, corrective)
-
-	if err := sendQosN1N2TransferMsg(smContext); err != nil {
-		smContext.SubPduSessLog.Errorf("sending the corrective modification failed: %v; the UE still believes flows %v exist", err, realign.RefusedQFIs)
-		metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
-		if discardErr := smContext.CommitSmPolicyDecisionLocked(false); discardErr != nil {
-			smContext.SubPduSessLog.Errorf("discarding the corrective update failed: %v", discardErr)
+	refused := realign.RefusedQFIs
+	go func() {
+		if err := applyModification(smContext, corrective); err != nil {
+			smContext.SubPduSessLog.Errorf("withdrawing the refused flows %v failed: %v; the UE still believes they exist and downlink traffic matching them will be dropped",
+				refused, err)
+			metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
+			return
 		}
-		return
-	}
-
-	// The corrective modification is a modification like any other: it is retransmitted and
-	// abandoned on the same terms, and committed when the UE acknowledges it.
-	if enabled, maxRetries := effectiveT3591Retries(smContext); enabled {
-		startT3591Locked(smContext, maxRetries)
-	}
-	smContext.SubPduSessLog.Infof("corrective modification sent, telling the UE to drop flows %v", realign.RefusedQFIs)
+		smContext.SubPduSessLog.Infof("corrective modification sent, withdrawing flows %v", refused)
+	}()
 }
