@@ -457,11 +457,22 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLGate: gateStatus,
 		}
 
-		ulMbr := smContext.SelectedSessionRule().AuthSessAmbr.Uplink
+		// The session rule supplies the fallback rate when the QoS data names none. It can be
+		// absent: a modification that adds a PCC rule without changing session rules leaves
+		// SessRuleUpdate nil, and SelectedSessionRule then falls back to the committed active
+		// rule, which is itself nil on a session that never had one. Dereferencing it takes the
+		// SMF down on the ordinary case of an application function adding a flow mid-session.
+		var ulMbr, dlMbr string
+		if sessRule := smContext.SelectedSessionRule(); sessRule != nil && sessRule.AuthSessAmbr != nil {
+			ulMbr = sessRule.AuthSessAmbr.Uplink
+			dlMbr = sessRule.AuthSessAmbr.Downlink
+		} else {
+			logger.PduSessLog.Warnf("no session-level AMBR for UE [%s]; the flow's own rates are the only bound",
+				smContext.Supi)
+		}
 		if maxbrUl, ok := refQos.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
 			ulMbr = *maxbrUl
 		}
-		dlMbr := smContext.SelectedSessionRule().AuthSessAmbr.Downlink
 		if maxbrDl, ok := refQos.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
 			dlMbr = *maxbrDl
 		}
