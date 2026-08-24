@@ -6,6 +6,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -38,6 +39,12 @@ var (
 	// change takes — as the only one with no test.
 	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
 	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
+
+	// applyModification is behind a seam for the same reason as the two above, and for one more:
+	// the corrective modification after a partial rejection runs on its own goroutine, so without
+	// a seam a test cannot tell whether it was issued, and the goroutine outlives the test and
+	// reaches the real user plane.
+	applyModification = ApplyModification
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -58,62 +65,15 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.Supi, smContext.PDUSessionID)
 
 	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, request.SmPolicyDecision)
-
-	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], policyUpdates)
-
-	// From here the network owns this session's modification, and a UE request for the same session
-	// is a collision to be disregarded rather than refused.
-	smContext.NwModificationPending = true
-
-	// Build PFCP params while locked (if it reads shared state)
-	pfcpParam := BuildPfcpParam(smContext)
-
-	// Change state before sending PFCP
-	smContext.ChangeState(smfContext.SmStatePfcpModify)
-
 	smContext.SMLock.Unlock()
 
-	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		smContext.SMLock.Lock()
-
-		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
-		// The procedure never got started, so it must not leave the session looking as though one
-		// were running: every later UE request would be disregarded, silently and forever.
-		smContext.NwModificationPending = false
-
-		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
-			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
-
-		smContext.SMLock.Unlock()
-
-		httpResponse := makePduCtxtModifyErrRsp(smContext, err.Error())
+	if err := ApplyModification(smContext, policyUpdates); err != nil {
 		txn.Err = err
-		txn.Rsp = httpResponse
+		if errors.Is(err, ErrPfcpModifyFailed) {
+			txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
+		}
 		return err
 	}
-
-	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
-		smContext.Supi, smContext.PDUSessionID)
-
-	if err := sendQosN1N2TransferMsg(smContext); err != nil {
-		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
-		// The user plane was programmed before this. Leaving it there would have the session
-		// enforcing parameters the UE was never told about, which is the divergence this whole
-		// path exists to avoid.
-		revertModification(smContext, "n1n2_transfer_failed")
-		txn.Err = err
-		return err
-	}
-
-	smContext.SMLock.Lock()
-
-	smContext.ChangeState(smfContext.SmStateActive)
-	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
-		smContext.SMContextState.String())
-
-	smContext.SMLock.Unlock()
-
-	startT3591(smContext)
 
 	txn.Rsp = &httpwrapper.Response{
 		Status: http.StatusOK,
@@ -496,6 +456,64 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 // startT3591 arms the retransmission timer for a modification command that has just been sent.
 // TS 24.501 subclause 6.3.2.5 item a: the command is resent on each of the first four expiries
 // and the procedure is abandoned on the fifth.
+// ErrPfcpModifyFailed distinguishes a modification that could not be programmed into the user
+// plane from one that could not be delivered to the UE. The caller answers the two differently.
+var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
+
+// ApplyModification carries out a network-requested PDU session modification: program the user
+// plane, tell the UE, then arm the timer that governs the acknowledgement.
+//
+// It takes a prepared policy update rather than deriving one, so anything that can describe a
+// change to a session can drive a modification through the same path — including the corrective
+// modification that follows a partial rejection, which is a deletion of the refused flows and
+// nothing more exotic than that. Having one implementation is the point: the realignment used to
+// do its own user-plane rebuild and its own N1N2 send, and got both wrong in ways this path had
+// already got right.
+//
+// The caller must not hold SMLock. This blocks on the user plane's answer, and doing that under
+// the session lock is what wedges a session.
+func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
+	smContext.SMLock.Lock()
+	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
+	// From here the network owns this session's modification, and a UE request for the same session
+	// is a collision to be disregarded rather than refused.
+	smContext.NwModificationPending = true
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.ChangeState(smfContext.SmStatePfcpModify)
+	smContext.SMLock.Unlock()
+
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
+		smContext.SMLock.Lock()
+		// The procedure never got started, so it must not leave the session looking as though one
+		// were running: every later UE request would be disregarded, silently and forever.
+		smContext.NwModificationPending = false
+		smContext.SMLock.Unlock()
+		return fmt.Errorf("%w: %v", ErrPfcpModifyFailed, err)
+	}
+
+	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
+		smContext.Supi, smContext.PDUSessionID)
+
+	if err := sendQosN1N2TransferMsg(smContext); err != nil {
+		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
+		// The user plane was programmed before this. Leaving it there would have the session
+		// enforcing parameters the UE was never told about, which is the divergence this whole
+		// path exists to avoid.
+		revertModification(smContext, "n1n2_transfer_failed")
+		return err
+	}
+
+	smContext.SMLock.Lock()
+	smContext.ChangeState(smfContext.SmStateActive)
+	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
+		smContext.SMContextState.String())
+	smContext.SMLock.Unlock()
+
+	startT3591(smContext)
+	return nil
+}
+
 func startT3591(smContext *smfContext.SMContext) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
