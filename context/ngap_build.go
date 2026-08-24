@@ -571,7 +571,22 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		}
 	}
 
-	if len(modifyFlows) == 0 {
+	// A modification that names only deletions is a different case from one that names nothing.
+	//
+	// After a partial rejection the SMF withdraws the flows the radio refused. Those were never
+	// built at the radio, so there is nothing there to change: the UE needs the NAS withdrawal and
+	// the user plane needs its rules removed, but the radio does not. Falling through to the
+	// default flow below would spend a radio reconfiguration per partial rejection re-asserting a
+	// flow nobody asked about — on a constrained air interface, the same cost the pacing elsewhere
+	// in this work exists to avoid.
+	//
+	// The transfer is still built and sent: its other IEs carry the session-level changes, and
+	// every IE in it is optional, so omitting this one is well formed. A release list would be the
+	// fuller answer and the builder cannot express one yet; that is recorded as a limitation, and
+	// it does not bite here because the refused flows were never established.
+	deleteOnly := len(modifyFlows) == 0 && policyUpdateDeletesFlows(ctx)
+
+	if len(modifyFlows) == 0 && !deleteOnly {
 		ctx.SubPduSessLog.Infof("modification names no QoS flows; asking the radio about the default flow %d", qfi)
 		modifyFlows = []ngapType.QosFlowAddOrModifyRequestItem{{
 			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
@@ -591,20 +606,13 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		}}
 	}
 
-	ctx.SubPduSessLog.Infof("asking the radio to add or modify %d QoS flow(s)", len(modifyFlows))
-
-	ie = ngapType.PDUSessionResourceModifyRequestTransferIEs{
-		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList},
-		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
-		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
-			Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
-			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
-				List: modifyFlows,
-			},
-		},
+	if deleteOnly {
+		ctx.SubPduSessLog.Infof("modification carries only deletions; the radio is asked for nothing, since the flows it refused were never established there")
+	} else {
+		ctx.SubPduSessLog.Infof("asking the radio to add or modify %d QoS flow(s)", len(modifyFlows))
+		ie = buildQosFlowAddOrModifyIE(modifyFlows)
+		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
 	}
-
-	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
 
 	// ----------------------------------------------------
 	// Step 6: Encode NGAP message
@@ -769,4 +777,29 @@ func BuildHandoverCommandTransfer(ctx *SMContext) ([]byte, error) {
 		return nil, err1
 	}
 	return buf, nil
+}
+
+// buildQosFlowAddOrModifyIE wraps the flows the radio is being asked to add or modify.
+func buildQosFlowAddOrModifyIE(flows []ngapType.QosFlowAddOrModifyRequestItem) ngapType.PDUSessionResourceModifyRequestTransferIEs {
+	return ngapType.PDUSessionResourceModifyRequestTransferIEs{
+		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList},
+		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
+		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+			Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
+			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
+				List: flows,
+			},
+		},
+	}
+}
+
+// policyUpdateDeletesFlows reports whether the pending update withdraws QoS flows. It is what
+// separates a corrective modification, which names only deletions, from one that names nothing at
+// all — the two need opposite things from the radio.
+func policyUpdateDeletesFlows(ctx *SMContext) bool {
+	if len(ctx.SmPolicyUpdates) == 0 {
+		return false
+	}
+	update := ctx.SmPolicyUpdates[0]
+	return update != nil && update.QosFlowUpdate != nil && len(update.QosFlowUpdate.GetDeleted()) > 0
 }
