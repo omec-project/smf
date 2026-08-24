@@ -39,7 +39,7 @@ func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "delivery_failure", "n1n2_transfer_failed")
+	revertModification(sm, "n1n2_transfer_failed")
 
 	if !reverted {
 		t.Error("the user plane must be reprogrammed when a modification cannot be delivered")
@@ -63,7 +63,7 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "delivery_failure", "n1n2_transfer_failed")
+	revertModification(sm, "n1n2_transfer_failed")
 
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
 		t.Errorf("state = %s, want %s: a session whose user plane cannot be corrected must not keep running",

@@ -120,8 +120,15 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 
 	destUPF := node.UPF
 
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
@@ -173,8 +180,15 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	node.DownLinkTunnel.DestEndPoint = node
 
 	destUPF := node.UPF
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 		for name, rule := range addRules {
@@ -408,6 +422,14 @@ func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
 }
 
 func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData string, tcData string) (*QER, error) {
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
 	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
@@ -462,6 +484,14 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	sessionRule := smContext.SelectedSessionRule()
 
 	// Get Default Qos-Data for the session
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 
 	defQosData := qos.GetDefaultQoSDataFromPolicyDecision(smPolicyDec)
@@ -494,6 +524,14 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER,
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: start for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: total QoSData entries = %d", len(smPolicyDec.GetQosDecs()))
 
