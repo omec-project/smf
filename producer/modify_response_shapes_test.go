@@ -11,6 +11,7 @@ import (
 
 	"github.com/omec-project/ngap/v2/aper"
 	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/qos"
@@ -65,7 +66,18 @@ func modifyingSmContext(t *testing.T) *smf_context.SMContext {
 	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
 	smContext.T3591Value = 16 * time.Second
 	smContext.NwModificationPending = true
-	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
+	// A modification in flight carries flows; an empty update is a shape production does not
+	// produce, and RemoveFlows correctly finds nothing to withdraw from it. Built through the real
+	// delta function so the update has the same internals as a live one.
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
+		QosFlowUpdate: qos.GetQosFlowDescUpdate(
+			map[string]models.QosData{
+				"1": {QosId: "1", Var5qi: openapi.PtrInt32(9)},
+				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+			},
+			map[string]*models.QosData{},
+		),
+	}}
 	smContext.T3591 = smf_context.NewTimer(smContext.T3591Value, 4, func(int32) {}, func() {})
 	t.Cleanup(func() { smContext.StopT3591() })
 
@@ -144,6 +156,16 @@ func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 	})
 
 	t.Run("some flows established: a realignment is recorded, not an abandonment", func(t *testing.T) {
+		// The corrective modification runs on its own goroutine, so it is captured rather than
+		// executed: without this it outlives the test and reaches the real user plane.
+		original := applyModification
+		t.Cleanup(func() { applyModification = original })
+		corrected := make(chan *qos.PolicyUpdate, 1)
+		applyModification = func(_ *smf_context.SMContext, u *qos.PolicyUpdate) error {
+			corrected <- u
+			return nil
+		}
+
 		smContext := modifyingSmContext(t)
 
 		deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, []int64{1}, []int64{2}))
@@ -161,6 +183,37 @@ func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 		// clause 4.3.3.2, so the timer must still be running here.
 		if smContext.T3591 == nil {
 			t.Error("T3591 was stopped, so the acknowledgement that triggers the correction can never arrive")
+		}
+	})
+
+	t.Run("the correction is issued as an ordinary modification", func(t *testing.T) {
+		// The realignment used to rebuild the user plane and send N1N2 itself, and got both wrong.
+		// Re-issuing a deletion through the same path everything else uses is what fixes it, so
+		// this pins that it goes that way and carries the refused flow.
+		original := applyModification
+		t.Cleanup(func() { applyModification = original })
+		corrected := make(chan *qos.PolicyUpdate, 1)
+		applyModification = func(_ *smf_context.SMContext, u *qos.PolicyUpdate) error {
+			corrected <- u
+			return nil
+		}
+
+		smContext := modifyingSmContext(t)
+		smContext.Realign = &smf_context.PendingRealignment{
+			EstablishedQFIs: []int64{1},
+			RefusedQFIs:     []int64{2},
+		}
+		corrective := smContext.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{2}))
+
+		realignSession(smContext, smContext.Realign, corrective)
+
+		select {
+		case update := <-corrected:
+			if update == nil {
+				t.Fatal("the correction carried no update")
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no corrective modification was issued; the UE keeps believing the refused flow exists")
 		}
 	})
 }
