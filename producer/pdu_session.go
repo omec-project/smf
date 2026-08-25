@@ -874,13 +874,17 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 
 	var httpResponse *httpwrapper.Response
 
+	// Set only once a modification is actually on its way to the UPF: every path that
+	// does not send one must answer the notification instead of waiting for a response
+	// that cannot come.
+	awaitingModification := false
+
 	pdrList := []*smf_context.PDR{}
 	farList := []*smf_context.FAR{}
 	qerList := []*smf_context.QER{}
 	barList := []*smf_context.BAR{}
 
 	if smContext.Tunnel != nil {
-		smContext.PendingUPF = make(smf_context.PendingUPF)
 		for _, dataPath := range smContext.Tunnel.DataPathPool {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
@@ -890,7 +894,6 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 				} else {
 					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
 					DLPDR.FAR.State = smf_context.RULE_UPDATE
-					smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 					farList = append(farList, DLPDR.FAR)
 				}
 			}
@@ -899,11 +902,46 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 		ANUPF := defaultPath.FirstDPNode
 
+		// Await only the UPF this actually sends to. Marking one entry per data path
+		// while sending a single modification means the response handlers -- which
+		// signal only once PendingUPF is empty -- never signal for a session with more
+		// than one path, and the wait below does not end. The rules of the other paths
+		// are still in farList, as they were before: that they go to one UPF is a
+		// separate defect, and pretending to await answers that were never asked for
+		// does not fix it.
+		smContext.PendingUPF = make(smf_context.PendingUPF)
+		smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+
+		// The response handler only signals SBIPFCPCommunicationChan while the context
+		// is in this state. Without the transition the modification was answered, the
+		// signal was never sent, and the wait below never ended.
+		stateBeforeModify := smContext.SMContextState
+		smContext.ChangeState(smf_context.SmStatePfcpModify)
+
 		// Sending PFCP modification with flag set to DROP the packets.
 		err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.Port)
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("pfcp Session Modification Request failed: %v", err)
+
+			// Nothing is in flight, so nothing will move the state on. Leaving it in
+			// PfcpModify would strand the session for every later operation that expects
+			// to find it settled.
+			smContext.ChangeState(stateBeforeModify)
+		} else {
+			awaitingModification = true
 		}
+	}
+
+	if !awaitingModification {
+		// Nothing was sent, so nothing will arrive. Waiting anyway left the AMF's
+		// notification unanswered until its client gave up after 30 s, and left a reader
+		// parked on a channel of depth one that belongs to this session: the next
+		// modification, release or activation for it would have its response consumed
+		// here and its own waiter would hang instead.
+		smContext.SubPduSessLog.Infoln("no PFCP modification was sent, answering the notification without waiting")
+		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent}
+
+		return nil
 	}
 
 	// Listening PFCP modification response.

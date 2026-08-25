@@ -503,6 +503,24 @@ func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
 	return
 }
 
+// RemoteSEIDByLocalSEID returns the SEID the user-plane function assigned to the session
+// this element knows by seid.
+//
+// A PFCP message carries the SEID assigned by whoever receives it, so a request the UPF
+// sends arrives under this element's own SEID and the response to it has to go back under
+// the UPF's. Echoing the request's value instead -- which is what this element did, with a
+// TODO admitting it -- is inert only for as long as no cause is sent that makes the peer
+// read the field.
+func (smContext *SMContext) RemoteSEIDByLocalSEID(seid uint64) (uint64, bool) {
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID == seid {
+			return pfcpCtx.RemoteSEID, true
+		}
+	}
+
+	return 0, false
+}
+
 func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 	logger.PduSessLog.Debugln("in AllocateLocalSEIDForDataPath")
 	for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
