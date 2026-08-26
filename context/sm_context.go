@@ -72,13 +72,14 @@ func init() {
 }
 
 func incSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, 1)
-	return smContextActive
+	// The add returns the new value. Reading the variable again is a plain load racing with every
+	// other caller's atomic store, and it can return a count from a different moment than the one
+	// this call produced.
+	return atomic.AddUint64(&smContextActive, 1)
 }
 
 func decSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, ^uint64(0))
-	return smContextActive
+	return atomic.AddUint64(&smContextActive, ^uint64(0))
 }
 
 type UeIpAddr struct {
@@ -192,8 +193,6 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext = new(SMContext)
 	// Create Ref and identifier
 	smContext.Ref = uuid.New().URN()
-	smContextPool.Store(smContext.Ref, smContext)
-	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
 	smContext.SMContextState = SmStateInit
 	smContext.Identifier = identifier
@@ -209,6 +208,12 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv4Request: false,
 		DNSIPv6Request: false,
 	}
+
+	// Published only once it is fully built. Anything that finds the context -- by ref, by
+	// canonical name, or by ranging the pool -- would otherwise be able to observe one whose maps
+	// and channels have not been made yet, which is a data race on every field assigned above.
+	smContextPool.Store(smContext.Ref, smContext)
+	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
 	// Sess Stats
 	smContextActive := incSMContextActive()
