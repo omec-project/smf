@@ -296,6 +296,125 @@ func GetSMContext(ref string) (smContext *SMContext) {
 	return
 }
 
+// SessionsAnchoredOn returns the SM contexts that hold a PFCP session on the given node.
+//
+// There is no index from a user-plane node to the sessions anchored on it, so this ranges the
+// pool. The PFCP context of each session is keyed by the node's address, which is the same key
+// the session establishment path uses, so membership is a lookup rather than a walk of the data
+// path.
+//
+// The result is a snapshot. Sessions established after it are already correct on a node that has
+// just restarted and must not be re-installed, and sessions released after it must not be
+// resurrected — so callers work from the list as taken and re-check liveness before acting on any
+// entry.
+// The second return names the sessions that could not be examined, rather than counting them.
+//
+// A session whose lock could not be taken cannot have its PFCPContext read, so there is no way to
+// tell whether it is anchored on this node or on another one -- and counting it against this node
+// makes a UPF with nothing on it report sessions it does not have. The references are returned so
+// the caller can decide which of them it has previously seen on this node; Ref is assigned before
+// the context is published to the pool and never changes, so reading it without the lock is safe.
+// The third return counts sessions anchored here whose first establishment is still outstanding.
+// They are excluded from restoration deliberately -- reissuing over an establishment in flight
+// overwrites it -- but a caller that sees no anchored sessions must not conclude the node is empty
+// when this is non-zero.
+func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
+	nodeIP := nodeID.ResolveNodeIdToIp().String()
+
+	anchored := make([]*SMContext, 0)
+	unexaminable := make([]string, 0)
+	scanned, superseded, establishing := 0, 0, 0
+	otherKeys := make(map[string]int)
+	smContextPool.Range(func(_, value any) bool {
+		smContext, ok := value.(*SMContext)
+		if !ok || smContext == nil {
+			return true
+		}
+		scanned++
+
+		// TryLock, never Lock. This ranges every session in the pool, so blocking on one session's
+		// lock makes a global sweep wait on a single session's procedure. The codebase holds SMLock
+		// across network calls -- the N1N2 transfer to the AMF, among others -- so that wait is
+		// unbounded, and a sweep stuck behind it never returns. Observed on a cluster: one session
+		// held the lock and every subsequent restoration for that UPF stopped before its first log
+		// line.
+		//
+		// Skipping a session whose lock is held is the right answer rather than a concession. A
+		// session mid-procedure is being established, modified or torn down, and none of those is a
+		// session the restarted node was holding.
+		if !smContext.SMLock.TryLock() {
+			unexaminable = append(unexaminable, smContext.Ref)
+			return true
+		}
+		pfcpContext, onThisNode := smContext.PFCPContext[nodeIP]
+		// A session the node has never acknowledged is not a session it was holding. The entry is
+		// created when the rules are allocated and RemoteSEID is filled in only when the
+		// establishment response arrives, so a zero that restoration did not write means an
+		// establishment is still outstanding: a session being set up alongside the restart rather
+		// than one lost to it.
+		//
+		// Restoring one overwrites the establishment in flight. Seen on a cluster, three
+		// milliseconds either side of the race: the UE address was pinned to the SMF's placeholder
+		// before the UPF had chosen one, and the subscriber came up on an address outside the pool
+		// with no downlink -- a worse outcome than the stall this change exists to fix.
+		neverAcknowledged := onThisNode && pfcpContext.RemoteSEID == 0 && !pfcpContext.ClearedByRestoration
+		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
+		if !onThisNode {
+			for key := range smContext.PFCPContext {
+				otherKeys[key]++
+			}
+		}
+		smContext.SMLock.Unlock()
+
+		if !onThisNode {
+			return true
+		}
+		if neverAcknowledged {
+			establishing++
+			return true
+		}
+		if !isCurrent(identifier, pduSessionID, ref) {
+			superseded++
+			return true
+		}
+		anchored = append(anchored, smContext)
+		return true
+	})
+
+	// Logged unconditionally. A sweep that reports only when it skipped something is silent in the
+	// case that matters most -- finding nothing at all -- and that silence cost a diagnosis round:
+	// "no sessions anchored" with no way to tell an empty pool from a mis-keyed lookup.
+	logger.CtxLog.Infof("sessions anchored on %s: %d of %d scanned (%d could not be examined and may be "+
+		"on any node, %d superseded by a later session for the same subscriber, %d still being established)",
+		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing)
+	if len(anchored) == 0 && len(otherKeys) > 0 {
+		// Separates an empty pool from a lookup that did not match: if sessions are anchored under
+		// some other key, the node identity resolved differently here than when they were created.
+		logger.CtxLog.Warnf("no session matched %s, but the pool holds sessions anchored under %v",
+			nodeIP, otherKeys)
+	}
+	return anchored, unexaminable, establishing
+}
+
+// isCurrent reports whether this context is still the one the subscriber's PDU session resolves to.
+//
+// A context is superseded rather than released when a UE establishes the same PDU session again
+// without the old one being torn down -- a simulator restarted, a UE that re-attached after losing
+// the network. The canonical reference for that subscriber and session identifier is repointed at
+// the new context, and the old one stays in the pool describing a session nothing will ever use.
+//
+// Restoring one is worse than skipping it. It programs the recovered user plane with a rule for a UE
+// address that is gone, and it spends restoration effort the live session needed. Observed on a
+// cluster: the rule installed after a restart named a UE address two sessions out of date, while the
+// live session was never restored.
+func isCurrent(identifier string, pduSessionID int32, ref string) bool {
+	current, err := ResolveRef(identifier, pduSessionID)
+	if err != nil {
+		return false
+	}
+	return current == ref
+}
+
 // *** add unit test ***//
 func RemoveSMContext(ref string) {
 	var smContext *SMContext
