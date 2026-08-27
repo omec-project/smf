@@ -26,6 +26,20 @@ type SmfStats struct {
 	svcUdmMsg   *prometheus.CounterVec
 	sessions    *prometheus.GaugeVec
 	sessProfile *prometheus.GaugeVec
+
+	// upfRestoration counts what happened to each session after a UPF restarted, and
+	// upfUnrestored is how many of that UPF's sessions are currently not carrying traffic.
+	//
+	// These exist because the failure they describe is silent by construction. Before this,
+	// every signal an operator could read reported health after a UPF restart: the association
+	// reached its established state, heartbeats continued, and no error was logged, while every
+	// session on that UPF forwarded nothing. A restoration that partially succeeds reproduces
+	// exactly that ambiguity unless its outcome is counted.
+	//
+	// Labelled by UPF, never by subscriber. A per-session label here would put a SUPI in a
+	// metrics endpoint.
+	upfRestoration *prometheus.CounterVec
+	upfUnrestored  *prometheus.GaugeVec
 }
 
 var smfStats *SmfStats
@@ -69,6 +83,16 @@ func initSmfStats() *SmfStats {
 			Name: "smf_pdu_session_profile",
 			Help: "SMF PDU session Profile",
 		}, []string{"id", "ip", "state", "upf", "enterprise"}),
+
+		upfRestoration: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "smf_upf_restoration_sessions_total",
+			Help: "Sessions handled after a UPF restart, by outcome",
+		}, []string{"id", "upf", "outcome"}),
+
+		upfUnrestored: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "smf_upf_unrestored_sessions",
+			Help: "Sessions on a UPF that are not carrying traffic after a restart",
+		}, []string{"id", "upf"}),
 	}
 }
 
@@ -92,6 +116,12 @@ func (ps *SmfStats) register() error {
 		return err
 	}
 	if err := prometheus.Register(ps.sessProfile); err != nil {
+		return err
+	}
+	if err := prometheus.Register(ps.upfRestoration); err != nil {
+		return err
+	}
+	if err := prometheus.Register(ps.upfUnrestored); err != nil {
 		return err
 	}
 	return nil
@@ -147,4 +177,21 @@ func SetSessStats(nodeId string, count uint64) {
 // SetSessProfileStats maintains Session profile info
 func SetSessProfileStats(id, ip, state, upf, enterprise string, count uint64) {
 	smfStats.sessProfile.WithLabelValues(id, ip, state, upf, enterprise).Set(float64(count))
+}
+
+// AddUpfRestorationStats records the outcome for sessions handled after a UPF restart. The outcome
+// is one of "restored", "released" or "skipped": a restoration that restored some and released the
+// rest must not be reportable as simply having completed.
+func AddUpfRestorationStats(smfID, upf, outcome string, count int) {
+	if count <= 0 {
+		return
+	}
+	smfStats.upfRestoration.WithLabelValues(smfID, upf, outcome).Add(float64(count))
+}
+
+// SetUpfUnrestoredSessions records how many of a UPF's sessions are not carrying traffic. It is set
+// to zero on a restoration that leaves none behind, so a UPF that has recovered stops reporting a
+// backlog it no longer has.
+func SetUpfUnrestoredSessions(smfID, upf string, count int) {
+	smfStats.upfUnrestored.WithLabelValues(smfID, upf).Set(float64(count))
 }

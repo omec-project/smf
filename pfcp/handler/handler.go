@@ -99,13 +99,16 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 		upf.RecoveryTimeStamp = smf_context.RecoveryTimeStamp{
 			RecoveryTimeStamp: rspRecoveryTimeStamp,
 		}
-	} else if rspRecoveryTimeStamp != upf.RecoveryTimeStamp.RecoveryTimeStamp {
+	} else if upf.HasRestarted(rspRecoveryTimeStamp) {
 		// change UPF state to not associated so that
 		// PFCP Association can be initiated again
 		upf.UPFStatus = smf_context.NotAssociated
 		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed, previous [%v], new [%v] ", upf.NodeID, upf.RecoveryTimeStamp, *rsp.RecoveryTimeStamp)
 
-		// TODO: Session cleanup required and updated to AMF/PCF
+		if smf_context.OnRestart != nil {
+			smf_context.OnRestart(upf.NodeID, rspRecoveryTimeStamp)
+		}
+
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", "RecoveryTimeStamp_mismatch")
 	}
 
@@ -188,6 +191,20 @@ func HandlePfcpAssociationSetupRequest(msg *udp.Message) {
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
 
+	// A UPF that restarted announces itself with this message, carrying a recovery timestamp
+	// it did not have before. That is the path a crash takes, because the node is back before
+	// its absence has been noticed. Compare before the overwrite below: afterwards the
+	// evidence of the restart is gone, and what replaces it is the state that hides it — a
+	// current timestamp, a healthy-looking association, and sessions reported as active that
+	// the UPF knows nothing about.
+	if upf.HasRestarted(recoveryTimestamp) {
+		logger.PfcpLog.Warnf("PFCP Association Setup Request, upf [%v] recovery timestamp changed, previous [%v], new [%v]",
+			upf.NodeID, upf.RecoveryTimeStamp.RecoveryTimeStamp, recoveryTimestamp)
+		if smf_context.OnRestart != nil {
+			smf_context.OnRestart(upf.NodeID, recoveryTimestamp)
+		}
+	}
+
 	upf.RecoveryTimeStamp = smf_context.RecoveryTimeStamp{
 		RecoveryTimeStamp: recoveryTimestamp,
 	}
@@ -257,6 +274,18 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 			logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
 			return
 		}
+		// The other half of re-association: ProbeInactiveUpfs initiated this one for a UPF it
+		// had marked NotAssociated, and the response is where a restart becomes visible on
+		// that path. Compared before the overwrite, for the reason given in the request
+		// handler above.
+		if upf.HasRestarted(recoveryTimestamp) {
+			logger.PfcpLog.Warnf("PFCP Association Setup Response, upf [%v] recovery timestamp changed, previous [%v], new [%v]",
+				upf.NodeID, upf.RecoveryTimeStamp.RecoveryTimeStamp, recoveryTimestamp)
+			if smf_context.OnRestart != nil {
+				smf_context.OnRestart(upf.NodeID, recoveryTimestamp)
+			}
+		}
+
 		upf.RecoveryTimeStamp = smf_context.RecoveryTimeStamp{
 			RecoveryTimeStamp: recoveryTimestamp,
 		}
