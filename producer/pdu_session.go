@@ -923,10 +923,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("pfcp Session Modification Request failed: %v", err)
 
-			// Nothing is in flight, so nothing will move the state on. Leaving it in
-			// PfcpModify would strand the session for every later operation that expects
-			// to find it settled.
-			smContext.ChangeState(stateBeforeModify)
+			abandonPendingModify(smContext, stateBeforeModify)
 		} else {
 			awaitingModification = true
 		}
@@ -950,6 +947,21 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	httpResponse = HandlePFCPResponse(smContext, PFCPResponseStatus)
 	txn.Rsp = httpResponse
 	return nil
+}
+
+// abandonPendingModify undoes the bookkeeping for a modification that was never sent.
+//
+// Both halves matter and they have to stay together, which is why they are one function.
+// Leaving the state at PfcpModify strands the session for every later operation that expects
+// to find it settled. Leaving the pending entry is worse and less obvious: the handover path
+// merges into whatever PendingUPF already holds rather than replacing it
+// (collectHoFARsForPFCPModify in n1n2_data_handler.go), and the response handlers signal
+// SBIPFCPCommunicationChan only once the map is empty. An entry for a request that was never
+// sent is deleted by no answer, so the next operation to wait on that channel waits for good --
+// the indefinite wait this change exists to remove, reintroduced through its own failure path.
+func abandonPendingModify(smContext *smf_context.SMContext, previous smf_context.SMContextState) {
+	smContext.ChangeState(previous)
+	smContext.PendingUPF = make(smf_context.PendingUPF)
 }
 
 // Handles PFCP response depending upon response cause recevied.
