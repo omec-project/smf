@@ -15,7 +15,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.51
 	github.com/urfave/cli/v3 v3.11.0
 	github.com/wmnsk/go-pfcp v0.0.24
-	go.mongodb.org/mongo-driver/v2 v2.8.0
+	go.mongodb.org/mongo-driver/v2 v2.8.1
 	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
