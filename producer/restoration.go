@@ -580,6 +580,11 @@ func pinUplinkTunnelsToTheirExistingTeids(smContext *context.SMContext, nodeIP s
 				skipped++
 				continue
 			}
+			// Counted per node as well as in total. The line below names this node's TEID and
+			// address, so reporting the running total beside them would attribute another node's
+			// rules to this one -- and would log a pin for a node that pinned nothing, as soon as
+			// any earlier node had pinned something.
+			nodePinned := 0
 			for _, pdr := range node.UpLinkTunnel.PDR {
 				if pdr == nil || pdr.PDI.LocalFTeid == nil {
 					continue
@@ -589,11 +594,12 @@ func pinUplinkTunnelsToTheirExistingTeids(smContext *context.SMContext, nodeIP s
 					Teid:        node.UpLinkTunnel.TEID,
 					Ipv4Address: access,
 				}
-				pinned++
+				nodePinned++
 			}
-			if pinned > 0 {
+			pinned += nodePinned
+			if nodePinned > 0 {
 				smContext.SubPfcpLog.Infof("uplink tunnel pinned for UPF[%s]: TEID %#x at %s, %d rule(s)",
-					nodeIP, node.UpLinkTunnel.TEID, access, pinned)
+					nodeIP, node.UpLinkTunnel.TEID, access, nodePinned)
 			}
 		}
 	}
