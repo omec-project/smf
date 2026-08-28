@@ -130,7 +130,8 @@ func TestWholeAndPartialRejectionAreDistinct(t *testing.T) {
 
 // conformantModifyResponseTransfer is PDUSessionResourceModifyResponseTransfer as TS 38.413
 // defines it, with DL/UL NG-U UP TNL Information OPTIONAL. It stands in for what a real gNB
-// encodes against, so the deviation below can be demonstrated without one.
+// encodes against, so the test below decodes a peer's encoding rather than its own: encoder and
+// decoder agreeing with each other is precisely what hid the defect this guards against.
 type conformantModifyResponseTransfer struct {
 	DLNGUUPTNLInformation                *ngapType.UPTransportLayerInformation                                              `aper:"valueLB:0,valueUB:1,optional"`
 	ULNGUUPTNLInformation                *ngapType.UPTransportLayerInformation                                              `aper:"valueLB:0,valueUB:1,optional"`
@@ -140,49 +141,16 @@ type conformantModifyResponseTransfer struct {
 	IEExtensions                         *ngapType.ProtocolExtensionContainerPDUSessionResourceModifyResponseTransferExtIEs `aper:"optional"`
 }
 
-// The SMF cannot read a conformant gNB's modification response, and this shows it rather than
-// asserting it.
+// The SMF has to read a conformant gNB's modification response in both the form that omits the
+// tunnel information and the form that carries it.
 //
-// TS 38.413 makes DL/UL NG-U UP TNL Information OPTIONAL in
-// PDUSessionResourceModifyResponseTransfer. omec-project/ngap v2.1.3 generates both without the
-// aper "optional" tag, so the codec treats them as always present. Encoder and decoder agree with
-// each other, which is why every self-test passes; a real gNB does not agree with either.
-//
-// A modification that changes QoS without moving the tunnel — the ordinary case, and exactly what
-// this change produces — has a gNB omit both fields. Its encoding carries six optionality bits
-// where this decoder expects four, and the decode fails on the misalignment.
-//
-// The fix is two tags. It is not a trade: the corrected shape reads both a message that omits the
-// tunnel information and one that carries it, as the companion test shows.
-//
-// If this test starts failing, the generated type has been corrected upstream. Take that version
-// and delete both tests.
-func TestModifyResponseCannotDecodeAConformantGnbMessage(t *testing.T) {
-	peer := conformantModifyResponseTransfer{
-		QosFlowAddOrModifyResponseList: &ngapType.QosFlowAddOrModifyResponseList{
-			List: []ngapType.QosFlowAddOrModifyResponseItem{
-				{QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: 5}},
-			},
-		},
-	}
-
-	wire, err := aper.MarshalWithParams(peer, "valueExt")
-	if err != nil {
-		t.Fatalf("could not build a conformant peer's message: %v", err)
-	}
-
-	var got ngapType.PDUSessionResourceModifyResponseTransfer
-	err = aper.UnmarshalWithParams(wire, &got, "valueExt")
-	if err == nil {
-		t.Fatal("the shipped type now decodes a conformant gNB message; the generated type has " +
-			"been fixed upstream, so take that version and drop both tests")
-	}
-	t.Logf("as expected, a conformant gNB message (% x) is rejected: %v", wire, err)
-}
-
-// The two tags are sufficient, and cost nothing: the corrected shape reads a response that omits
-// the tunnel information and one that carries it.
-func TestCorrectedModifyResponseShapeReadsBothForms(t *testing.T) {
+// omec-project/ngap generated DL/UL NG-U UP TNL Information without the aper "optional" tag up to
+// and including v2.1.3, so the codec treated them as always present. A modification that changes
+// QoS without moving the tunnel — the ordinary case, and what this change produces — has a gNB omit
+// both fields, and its encoding then carries six optionality bits where that decoder expected four.
+// The decode failed on the misalignment. Fixed upstream in ngap#118 and released in v2.1.4, which
+// this module now requires; the two tests that documented the broken state are gone with it.
+func TestModifyResponseReadsAConformantGnbMessage(t *testing.T) {
 	base := conformantModifyResponseTransfer{
 		QosFlowAddOrModifyResponseList: &ngapType.QosFlowAddOrModifyResponseList{
 			List: []ngapType.QosFlowAddOrModifyResponseItem{
@@ -208,17 +176,18 @@ func TestCorrectedModifyResponseShapeReadsBothForms(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			wire, err := aper.MarshalWithParams(msg, "valueExt")
 			if err != nil {
-				t.Fatalf("encode failed: %v", err)
+				t.Fatalf("could not build a conformant peer's message: %v", err)
 			}
-			var got conformantModifyResponseTransfer
+
+			var got ngapType.PDUSessionResourceModifyResponseTransfer
 			if err := aper.UnmarshalWithParams(wire, &got, "valueExt"); err != nil {
-				t.Fatalf("the corrected shape could not decode it: %v", err)
+				t.Fatalf("the shipped type could not decode a conformant gNB message (% x): %v", wire, err)
 			}
 			if got.QosFlowAddOrModifyResponseList == nil || len(got.QosFlowAddOrModifyResponseList.List) != 1 {
 				t.Fatal("the QoS flow list was lost")
 			}
 			if (msg.DLNGUUPTNLInformation != nil) != (got.DLNGUUPTNLInformation != nil) {
-				t.Error("tunnel information presence did not survive the round trip")
+				t.Error("tunnel information presence did not survive the decode")
 			}
 		})
 	}
