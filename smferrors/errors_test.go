@@ -53,50 +53,6 @@ func TestNewExtProblemDetailsSystemFailure(t *testing.T) {
 	}
 }
 
-// valid5GSMCauses is the set of cause values defined for the 5GSM cause IE in 3GPP TS 24.501
-// clause 9.11.4.2 that the NAS library provides constants for.
-//
-// It is enumerated by value because these are untyped uint8 constants: Go keeps no name at
-// run time, so a test cannot ask whether a value "is a Cause5GSM* constant". Note that
-// nasMessage.Cause5GSMType is deliberately absent - despite the name it is the IEI of the
-// 5GSM cause IE, not a cause value.
-var valid5GSMCauses = map[uint8]string{
-	nasMessage.Cause5GSMInsufficientResources:                                       "Cause5GSMInsufficientResources",
-	nasMessage.Cause5GSMMissingOrUnknownDNN:                                         "Cause5GSMMissingOrUnknownDNN",
-	nasMessage.Cause5GSMUnknownPDUSessionType:                                       "Cause5GSMUnknownPDUSessionType",
-	nasMessage.Cause5GSMUserAuthenticationOrAuthorizationFailed:                     "Cause5GSMUserAuthenticationOrAuthorizationFailed",
-	nasMessage.Cause5GSMRequestRejectedUnspecified:                                  "Cause5GSMRequestRejectedUnspecified",
-	nasMessage.Cause5GSMServiceOptionTemporarilyOutOfOrder:                          "Cause5GSMServiceOptionTemporarilyOutOfOrder",
-	nasMessage.Cause5GSMPTIAlreadyInUse:                                             "Cause5GSMPTIAlreadyInUse",
-	nasMessage.Cause5GSMRegularDeactivation:                                         "Cause5GSMRegularDeactivation",
-	nasMessage.Cause5GSMReactivationRequested:                                       "Cause5GSMReactivationRequested",
-	nasMessage.Cause5GSMInvalidPDUSessionIdentity:                                   "Cause5GSMInvalidPDUSessionIdentity",
-	nasMessage.Cause5GSMSemanticErrorsInPacketFilter:                                "Cause5GSMSemanticErrorsInPacketFilter",
-	nasMessage.Cause5GSMSyntacticalErrorInPacketFilter:                              "Cause5GSMSyntacticalErrorInPacketFilter",
-	nasMessage.Cause5GSMOutOfLADNServiceArea:                                        "Cause5GSMOutOfLADNServiceArea",
-	nasMessage.Cause5GSMPTIMismatch:                                                 "Cause5GSMPTIMismatch",
-	nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed:                               "Cause5GSMPDUSessionTypeIPv4OnlyAllowed",
-	nasMessage.Cause5GSMPDUSessionTypeIPv6OnlyAllowed:                               "Cause5GSMPDUSessionTypeIPv6OnlyAllowed",
-	nasMessage.Cause5GSMPDUSessionDoesNotExist:                                      "Cause5GSMPDUSessionDoesNotExist",
-	nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN:                 "Cause5GSMInsufficientResourcesForSpecificSliceAndDNN",
-	nasMessage.Cause5GSMNotSupportedSSCMode:                                         "Cause5GSMNotSupportedSSCMode",
-	nasMessage.Cause5GSMInsufficientResourcesForSpecificSlice:                       "Cause5GSMInsufficientResourcesForSpecificSlice",
-	nasMessage.Cause5GSMMissingOrUnknownDNNInASlice:                                 "Cause5GSMMissingOrUnknownDNNInASlice",
-	nasMessage.Cause5GSMInvalidPTIValue:                                             "Cause5GSMInvalidPTIValue",
-	nasMessage.Cause5GSMMaximumDataRatePerUEForUserPlaneIntegrityProtectionIsTooLow: "Cause5GSMMaximumDataRatePerUEForUserPlaneIntegrityProtectionIsTooLow",
-	nasMessage.Cause5GSMSemanticErrorInTheQoSOperation:                              "Cause5GSMSemanticErrorInTheQoSOperation",
-	nasMessage.Cause5GSMSyntacticalErrorInTheQoSOperation:                           "Cause5GSMSyntacticalErrorInTheQoSOperation",
-	nasMessage.Cause5GSMInvalidMappedEPSBearerIdentity:                              "Cause5GSMInvalidMappedEPSBearerIdentity",
-	nasMessage.Cause5GSMSemanticallyIncorrectMessage:                                "Cause5GSMSemanticallyIncorrectMessage",
-	nasMessage.Cause5GSMInvalidMandatoryInformation:                                 "Cause5GSMInvalidMandatoryInformation",
-	nasMessage.Cause5GSMMessageTypeNonExistentOrNotImplemented:                      "Cause5GSMMessageTypeNonExistentOrNotImplemented",
-	nasMessage.Cause5GSMMessageTypeNotCompatibleWithTheProtocolState:                "Cause5GSMMessageTypeNotCompatibleWithTheProtocolState",
-	nasMessage.Cause5GSMInformationElementNonExistentOrNotImplemented:               "Cause5GSMInformationElementNonExistentOrNotImplemented",
-	nasMessage.Cause5GSMConditionalIEError:                                          "Cause5GSMConditionalIEError",
-	nasMessage.Cause5GSMMessageNotCompatibleWithTheProtocolState:                    "Cause5GSMMessageNotCompatibleWithTheProtocolState",
-	nasMessage.Cause5GSMProtocolErrorUnspecified:                                    "Cause5GSMProtocolErrorUnspecified",
-}
-
 // TestErrorCauseValuesAre5GSMCauses guards the whole ErrorCause table. Every value in it is
 // written into the 5GSM cause IE of a PDU SESSION ESTABLISHMENT REJECT or a PDU SESSION
 // RELEASE REJECT, so a value from another register - 5GMM causes are the easy mistake, since
@@ -107,7 +63,11 @@ var valid5GSMCauses = map[uint8]string{
 // silently collapses into the generic cause and the UE cannot tell the difference.
 func TestErrorCauseValuesAre5GSMCauses(t *testing.T) {
 	for key, value := range ErrorCause {
-		if name, ok := valid5GSMCauses[value]; !ok {
+		// Cause5GSMToString returns the empty string for a value TS 24.501 does not define, which
+		// is the same contract Cause5GMMToString has. The set used to be duplicated here; nas
+		// v2.2.1 carries it, so the library that owns the constants owns the answer too.
+		name := nasMessage.Cause5GSMToString(value)
+		if name == "" {
 			t.Errorf("ErrorCause[%q] = %#02x, which is not a cause value defined for the 5GSM cause IE; "+
 				"a UE would decode it as #31 \"request rejected, unspecified\" per TS 24.501 clause 9.11.4.2", key, value)
 		} else if testing.Verbose() {
