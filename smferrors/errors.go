@@ -162,8 +162,8 @@ func NewExtProblemDetailsSystemFailure() models.ExtProblemDetails {
 }
 
 var ErrorCause = map[string]uint8{
-	"DnnDeniedError":                nasMessage.Cause5GMMDNNNotSupportedOrNotSubscribedInTheSlice,
-	"DnnNotSupported":               nasMessage.Cause5GMMDNNNotSupportedOrNotSubscribedInTheSlice,
+	"DnnDeniedError":                nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
+	"DnnNotSupported":               nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
 	"InsufficientResourceSliceDnn":  nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
 	"IpAllocError":                  nasMessage.Cause5GSMInsufficientResources,
 	"SubscriptionDataFetchError":    nasMessage.Cause5GSMRequestRejectedUnspecified,
