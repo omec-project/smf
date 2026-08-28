@@ -15,7 +15,6 @@ import (
 	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -130,7 +129,7 @@ func TestUeRequestedModificationIsRefusedWithServiceOptionNotSupported(t *testin
 			got, nas.MsgTypePDUSessionModificationReject)
 	}
 	reject := m.PDUSessionModificationReject
-	if got := reject.GetCauseValue(); got != smferrors.Cause5GSMServiceOptionNotSupported {
+	if got := reject.GetCauseValue(); got != nasMessage.Cause5GSMServiceOptionNotSupported {
 		t.Errorf("5GSM cause = #%d, want #32 service option not supported", got)
 	}
 	if got := reject.GetPTI(); got != pti {
@@ -333,7 +332,7 @@ func TestUeRequestIsRefusedWhenNoNetworkModificationIsRunning(t *testing.T) {
 	response := postUpdateSmContext(t, craftModificationRequest(t, 10, 5), smContext)
 	m := decodeReject(t, response)
 
-	if got := m.PDUSessionModificationReject.GetCauseValue(); got != smferrors.Cause5GSMServiceOptionNotSupported {
+	if got := m.PDUSessionModificationReject.GetCauseValue(); got != nasMessage.Cause5GSMServiceOptionNotSupported {
 		t.Errorf("5GSM cause = #%d, want #32", got)
 	}
 }

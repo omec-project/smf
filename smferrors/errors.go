@@ -166,13 +166,6 @@ func NewExtProblemDetailsSystemFailure() models.ExtProblemDetails {
 	}
 }
 
-// Cause5GSMServiceOptionNotSupported is 5GSM cause #32 from TS 24.501 table 9.11.4.2.1.
-//
-// It is defined here because github.com/omec-project/nas/v2 carries no constant for it: its
-// Cause5GSM list runs from #31 (0x1f) straight to #34 (0x22), so #32 and #33 have no name in the
-// library even though both are assigned by the specification.
-const Cause5GSMServiceOptionNotSupported uint8 = 0x20
-
 var ErrorCause = map[string]uint8{
 	errKeyDnnDeniedError:            nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
 	errKeyDnnNotSupported:           nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
@@ -192,5 +185,5 @@ var ErrorCause = map[string]uint8{
 	// because TS 24.501 subclause 6.4.2.4.3 item a makes the UE back off on its own for #32 and
 	// #33 — with its configured SM Retry Timer, or 12 minutes by default — so the UE stops
 	// retransmitting until T3581 and then retrying. A generic cause leaves it retrying.
-	"ModificationNotSupported": Cause5GSMServiceOptionNotSupported,
+	"ModificationNotSupported": nasMessage.Cause5GSMServiceOptionNotSupported,
 }
