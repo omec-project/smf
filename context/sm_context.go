@@ -72,13 +72,14 @@ func init() {
 }
 
 func incSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, 1)
-	return smContextActive
+	// The add returns the new value. Reading the variable again is a plain load racing with every
+	// other caller's atomic store, and it can return a count from a different moment than the one
+	// this call produced.
+	return atomic.AddUint64(&smContextActive, 1)
 }
 
 func decSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, ^uint64(0))
-	return smContextActive
+	return atomic.AddUint64(&smContextActive, ^uint64(0))
 }
 
 type UeIpAddr struct {
@@ -192,8 +193,6 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext = new(SMContext)
 	// Create Ref and identifier
 	smContext.Ref = uuid.New().URN()
-	smContextPool.Store(smContext.Ref, smContext)
-	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
 	smContext.SMContextState = SmStateInit
 	smContext.Identifier = identifier
@@ -210,12 +209,21 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv6Request: false,
 	}
 
+	// initialise log tags
+	smContext.initLogTags()
+
+	// Published only once it is fully built, and this is the last thing built. Anything that finds
+	// the context -- by ref, by canonical name, or by ranging the pool -- would otherwise be able
+	// to observe one whose maps, channels or loggers have not been assigned yet: a data race on
+	// every field above, and a nil dereference on the Sub*Log fields, which every handler uses
+	// before it does anything else. Publishing after the maps but before initLogTags would close
+	// the first of those and leave the second.
+	smContextPool.Store(smContext.Ref, smContext)
+	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
+
 	// Sess Stats
 	smContextActive := incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
-
-	// initialise log tags
-	smContext.initLogTags()
 
 	return smContext
 }
