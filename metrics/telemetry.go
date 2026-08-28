@@ -179,9 +179,17 @@ func SetSessProfileStats(id, ip, state, upf, enterprise string, count uint64) {
 	smfStats.sessProfile.WithLabelValues(id, ip, state, upf, enterprise).Set(float64(count))
 }
 
-// AddUpfRestorationStats records the outcome for sessions handled after a UPF restart. The outcome
-// is one of "restored", "released" or "skipped": a restoration that restored some and released the
-// rest must not be reportable as simply having completed.
+// AddUpfRestorationStats records the outcome for sessions handled after a UPF restart. The counts
+// are kept apart on purpose: a restoration that restored some sessions and released the rest must
+// not be reportable as simply having completed.
+//
+// The outcome is one of five, and a dashboard should expect all of them:
+//
+//	restored     - re-installed on the node and carrying traffic again
+//	released     - torn down because the node would not accept it back
+//	skipped      - not attempted: busy, purged, or no longer live
+//	unexaminable - nothing could be learned about it, so it is not known to be healthy
+//	gone         - no longer anchored on this node when the wave reached it
 func AddUpfRestorationStats(smfID, upf, outcome string, count int) {
 	if count <= 0 {
 		return
