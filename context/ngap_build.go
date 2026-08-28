@@ -545,7 +545,15 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// This does the same, over both the added and the modified flows, since a modification may do
 	// either. The single default flow remains the fallback for an update that names no flows at
 	// all — a session-level change — which is the only case the old behaviour was right for.
+	//
+	// A flow whose identifier does not parse is dropped rather than narrowed, the same rule
+	// RefusedFlowSet applies to what the radio reports: GetQosFlowIdFromQosId returns 0 for an
+	// identifier it cannot read, and TS 23.501 table 5.7.1.1 gives the assignable range as 1 to
+	// 63. Sending 0 would put a malformed item in the request. Dropping every named flow is not a
+	// quiet fallback to the default flow, though - that would re-create the very divergence this
+	// block exists to prevent - so it fails the build instead.
 	var modifyFlows []ngapType.QosFlowAddOrModifyRequestItem
+	namedFlows := 0
 	if len(ctx.SmPolicyUpdates) > 0 && ctx.SmPolicyUpdates[0].QosFlowUpdate != nil {
 		flowUpdate := ctx.SmPolicyUpdates[0].QosFlowUpdate
 		for _, group := range []map[string]*models.QosData{flowUpdate.GetAdded(), flowUpdate.GetModified()} {
@@ -553,9 +561,16 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 				if qosFlow == nil {
 					continue
 				}
+				namedFlows++
+				flowID := qos.GetQosFlowIdFromQosId(qosFlow.GetQosId())
+				if flowID < 1 || flowID > 63 {
+					ctx.SubPduSessLog.Errorf("skipping QoS flow %q: %d is not an assignable QoS flow identifier",
+						qosFlow.GetQosId(), flowID)
+					continue
+				}
 				modifyFlows = append(modifyFlows, ngapType.QosFlowAddOrModifyRequestItem{
 					QosFlowIdentifier: ngapType.QosFlowIdentifier{
-						Value: int64(qos.GetQosFlowIdFromQosId(qosFlow.GetQosId())),
+						Value: int64(flowID),
 					},
 					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
@@ -584,6 +599,11 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// every IE in it is optional, so omitting this one is well formed. A release list would be the
 	// fuller answer and the builder cannot express one yet; that is recorded as a limitation, and
 	// it does not bite here because the refused flows were never established.
+	if namedFlows > 0 && len(modifyFlows) == 0 {
+		ctx.SubPduSessLog.Errorf("modification names %d QoS flow(s), none with a usable identifier", namedFlows)
+		return nil, fmt.Errorf("no usable QoS flow identifier among %d named flow(s)", namedFlows)
+	}
+
 	deleteOnly := len(modifyFlows) == 0 && policyUpdateDeletesFlows(ctx)
 
 	if len(modifyFlows) == 0 && !deleteOnly {

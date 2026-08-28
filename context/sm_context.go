@@ -896,8 +896,15 @@ func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.Subscri
 	}
 }
 
-// StopT3591 stops the modification retransmission timer if one is running. It is safe to call
-// when no modification is in flight and safe to call more than once, because both happen: an
+// StopT3591 stops the modification retransmission timer if one is running.
+//
+// The caller must hold SMLock. NwModificationPending and T3591 are session state like any other
+// here, and every current call site is already under it: the N1 and N2 update handlers run under
+// the lock HandlePDUSessionSMContextUpdate takes, and startT3591Locked is documented as requiring
+// it. There is deliberately no unlocked variant - SMLock is not reentrant, so one taken here would
+// wedge the session for its callers.
+//
+// It is idempotent, and safe to call when no modification is in flight, because both happen: an
 // acknowledgement can arrive after the timer has already abandoned the procedure, and a UE can
 // retransmit that acknowledgement.
 func (smContext *SMContext) StopT3591() {
