@@ -209,18 +209,21 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv6Request: false,
 	}
 
-	// Published only once it is fully built. Anything that finds the context -- by ref, by
-	// canonical name, or by ranging the pool -- would otherwise be able to observe one whose maps
-	// and channels have not been made yet, which is a data race on every field assigned above.
+	// initialise log tags
+	smContext.initLogTags()
+
+	// Published only once it is fully built, and this is the last thing built. Anything that finds
+	// the context -- by ref, by canonical name, or by ranging the pool -- would otherwise be able
+	// to observe one whose maps, channels or loggers have not been assigned yet: a data race on
+	// every field above, and a nil dereference on the Sub*Log fields, which every handler uses
+	// before it does anything else. Publishing after the maps but before initLogTags would close
+	// the first of those and leave the second.
 	smContextPool.Store(smContext.Ref, smContext)
 	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
 	// Sess Stats
 	smContextActive := incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
-
-	// initialise log tags
-	smContext.initLogTags()
 
 	return smContext
 }
