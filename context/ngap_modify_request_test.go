@@ -163,3 +163,47 @@ func TestCorrectiveModificationDoesNotAskTheRadioAboutTheDefaultFlow(t *testing.
 	t.Errorf("the corrective asked the radio to add or modify QoS flow(s) %v; it carries only deletions, so the radio should be asked for nothing",
 		qfis)
 }
+
+// A QoS identifier that does not parse must not reach the radio as QFI 0.
+//
+// GetQosFlowIdFromQosId returns 0 for an identifier it cannot read, and TS 23.501 table 5.7.1.1
+// gives the assignable range as 1 to 63, so 0 in the request is malformed. RefusedFlowSet already
+// drops out-of-range identifiers coming the other way; this is the same rule applied outbound.
+func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2":            {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"not-a-number": {QosId: "not-a-number", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		t.Fatal("no QoS flow add-or-modify list in the request")
+	}
+	for _, item := range list.List {
+		if item.QosFlowIdentifier.Value < 1 || item.QosFlowIdentifier.Value > 63 {
+			t.Errorf("QFI %d is not assignable and must not be sent", item.QosFlowIdentifier.Value)
+		}
+	}
+	if len(list.List) != 1 || list.List[0].QosFlowIdentifier.Value != 2 {
+		t.Errorf("request carries %d flow(s), want only QFI 2: the readable flow still has to be asked about", len(list.List))
+	}
+}
+
+// If nothing the modification names can be identified, the build fails rather than quietly
+// falling back to the default flow. The fallback is for an update that names no flows at all; using
+// it here would ask the radio about a flow the modification does not concern while saying nothing
+// about the ones it does - the divergence this builder was fixed to stop producing.
+func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"not-a-number": {QosId: "not-a-number", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	if _, err := BuildPDUSessionResourceModifyRequestTransfer(ctx); err == nil {
+		t.Fatal("build succeeded; a modification whose flows cannot be identified must not be sent")
+	}
+}

@@ -94,7 +94,10 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 	}
 
 	if smCtxtPolData.SmCtxtSessionRules.ActiveRule != nil {
-		logger.CtxLog.Infof("keeping the active session rule %q: this update names none",
+		// Debug, not Info: an update that carries session rules without naming a new active one is
+		// the ordinary modification, so this would be one line per modification in a running
+		// deployment.
+		logger.CtxLog.Debugf("keeping the active session rule %q: this update names none",
 			smCtxtPolData.SmCtxtSessionRules.ActiveRuleName)
 	}
 }
