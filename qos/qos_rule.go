@@ -531,45 +531,45 @@ func (pf *PacketFilter) GetPfContent(flowDesc string) {
 	}
 
 	// Protocol identifier/Next header type
-	if pfc, len := BuildPFCompProtocolId(ipf.protoId); pfc != nil {
+	if pfc, plen := BuildPFCompProtocolId(ipf.protoId); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Remote Addr
-	if pfc, len := buildPFCompAddr(false, ipf.sAddrv4); pfc != nil {
+	if pfc, plen := buildPFCompAddr(false, ipf.sAddrv4); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Remote Port
-	if pfc, len := buildPFCompPort(false, ipf.sPort); pfc != nil {
+	if pfc, plen := buildPFCompPort(false, ipf.sPort); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Remote Port range
-	if pfc, len := buildPFCompPortRange(false, ipf.sPortRange); pfc != nil {
+	if pfc, plen := buildPFCompPortRange(false, ipf.sPortRange); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Local Addr
-	if pfc, len := buildPFCompAddr(true, ipf.dAddrv4); pfc != nil {
+	if pfc, plen := buildPFCompAddr(true, ipf.dAddrv4); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Local Port
-	if pfc, len := buildPFCompPort(true, ipf.dPort); pfc != nil {
+	if pfc, plen := buildPFCompPort(true, ipf.dPort); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	// Local Port range
-	if pfc, len := buildPFCompPortRange(true, ipf.dPortRange); pfc != nil {
+	if pfc, plen := buildPFCompPortRange(true, ipf.dPortRange); pfc != nil {
 		pfcList = append(pfcList, *pfc)
-		pf.ContentLength += len
+		pf.ContentLength += plen
 	}
 
 	pf.Content = pfcList

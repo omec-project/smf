@@ -10,6 +10,8 @@ import (
 	smf_context "github.com/omec-project/smf/context"
 )
 
+const testDnn = "internet"
+
 func makeTestTunnel(farState smf_context.RuleState, activated bool) *smf_context.UPTunnel {
 	upf := &smf_context.UPF{
 		NodeID: *smf_context.NewNodeID("10.0.0.1"),
@@ -103,7 +105,7 @@ func TestCollectHoFARsForPFCPModifyNilTunnel(t *testing.T) {
 
 func TestBuildAccessForwardingParametersPreservesOuterHeaderCreation(t *testing.T) {
 	smContext := &smf_context.SMContext{
-		Dnn:    "internet",
+		Dnn:    testDnn,
 		Tunnel: &smf_context.UPTunnel{},
 	}
 	smContext.Tunnel.ANInformation.IPAddress = net.ParseIP("172.20.0.2")
@@ -125,7 +127,7 @@ func TestBuildAccessForwardingParametersPreservesOuterHeaderCreation(t *testing.
 			forwardingParameters.DestinationInterface.InterfaceValue)
 	}
 
-	if got := string(forwardingParameters.NetworkInstance); got != "internet" {
+	if got := string(forwardingParameters.NetworkInstance); got != testDnn {
 		t.Fatalf("expected network instance internet, got %q", got)
 	}
 
@@ -144,7 +146,7 @@ func TestBuildAccessForwardingParametersPreservesOuterHeaderCreation(t *testing.
 
 func TestBuildAccessForwardingParametersFallsBackToAnTunnel(t *testing.T) {
 	smContext := &smf_context.SMContext{
-		Dnn:    "internet",
+		Dnn:    testDnn,
 		Tunnel: &smf_context.UPTunnel{},
 	}
 	smContext.Tunnel.ANInformation.IPAddress = net.ParseIP("172.20.0.2")

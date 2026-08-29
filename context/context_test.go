@@ -14,6 +14,11 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
+const (
+	testGnb1 = "gnb1"
+	testGnb2 = "gnb2"
+)
+
 func makeSessionConfig(
 	sliceName, mcc, mnc, sst string,
 	sd string, dnnName, ueSubnet, hostname string, port int32,
@@ -46,7 +51,7 @@ func makeSessionConfig(
 			Hostname: hostname,
 			Port:     &port,
 		},
-		GnbNames: []string{"gnb1", "gnb2"},
+		GnbNames: []string{testGnb1, testGnb2},
 	}
 }
 
@@ -95,10 +100,10 @@ func TestUpdateSmfContext(t *testing.T) {
 				if _, ok := smCtx.UserPlaneInformation.UPNodes["upf-1"]; !ok {
 					return false, "expected UPNode for upf-1 to exist"
 				}
-				if _, ok := smCtx.UserPlaneInformation.AccessNetwork["gnb1"]; !ok {
+				if _, ok := smCtx.UserPlaneInformation.AccessNetwork[testGnb1]; !ok {
 					return false, "expected gnb1 in AccessNetwork"
 				}
-				if _, ok := smCtx.UserPlaneInformation.AccessNetwork["gnb2"]; !ok {
+				if _, ok := smCtx.UserPlaneInformation.AccessNetwork[testGnb2]; !ok {
 					return false, "expected gnb2 in AccessNetwork"
 				}
 				if len(smCtx.UserPlaneInformation.UPFIPToName) == 0 {

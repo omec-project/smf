@@ -609,9 +609,12 @@ func tryN1N2Transfer(ctx context.Context, smContext *smfContext.SMContext,
 	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
 		apiReq = apiReq.BinaryDataN2Information(binaryDataN2Information)
 	}
-	rspData, _, err := smContext.CommunicationClient.
+	rspData, res, err := smContext.CommunicationClient.
 		N1N2MessageCollectionCollectionAPI.
 		N1N2MessageTransferExecute(apiReq)
+	if res != nil {
+		defer res.Body.Close()
+	}
 	return rspData, err
 }
 
@@ -723,7 +726,7 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.Subscripti
 	apiCreateSubscriptionRequest = apiCreateSubscriptionRequest.SubscriptionData(nrfSubscriptionData)
 	nrfSubData, res, err = client.SubscriptionsCollectionAPI.CreateSubscriptionExecute(apiCreateSubscriptionRequest)
 	if res != nil {
-		defer util.CloseResponseBody(res)
+		defer res.Body.Close()
 	}
 	if err == nil {
 		return nrfSubData, nil, nil
@@ -753,7 +756,7 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 	apiRemoveSubscriptionRequest := client.SubscriptionIDDocumentAPI.RemoveSubscription(context.Background(), subscriptionId)
 	res, err = client.SubscriptionIDDocumentAPI.RemoveSubscriptionExecute(apiRemoveSubscriptionRequest)
 	if res != nil {
-		defer util.CloseResponseBody(res)
+		defer res.Body.Close()
 	}
 	if err == nil {
 		return nil, nil

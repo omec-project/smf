@@ -11,12 +11,14 @@ import (
 	"github.com/omec-project/smf/context"
 )
 
+const testDnn = "internet"
+
 func TestActivateUpLinkPdr(t *testing.T) {
 	smContext := &context.SMContext{
 		PDUAddress: &context.UeIpAddr{
 			Ip: net.IPv4(192, 168, 1, 1),
 		},
-		Dnn: "internet",
+		Dnn: testDnn,
 	}
 
 	defQER := &context.QER{}
@@ -62,7 +64,7 @@ func TestActivateUpLinkPdr(t *testing.T) {
 	if !pdr.PDI.UEIPAddress.Ipv4Address.Equal(net.IP{192, 168, 1, 1}) {
 		t.Errorf("expected pdr.PDI.UEIPAddress.Ipv4Address to be %v, got %v", net.IP{192, 168, 1, 1}, pdr.PDI.UEIPAddress.Ipv4Address)
 	}
-	if string(pdr.PDI.NetworkInstance) != "internet" {
+	if string(pdr.PDI.NetworkInstance) != testDnn {
 		t.Errorf("expected pdr.PDI.NetworkInstance to be 'internet', got %v", string(pdr.PDI.NetworkInstance))
 	}
 }
@@ -72,7 +74,7 @@ func TestActivateDlLinkPdr(t *testing.T) {
 		PDUAddress: &context.UeIpAddr{
 			Ip: net.IP{192, 168, 1, 1},
 		},
-		Dnn: "internet",
+		Dnn: testDnn,
 		Tunnel: &context.UPTunnel{
 			ANInformation: struct {
 				IPAddress net.IP

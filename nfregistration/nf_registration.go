@@ -82,12 +82,12 @@ func deepCopySessionManagement(input []nfConfigApi.SessionManagement) ([]nfConfi
 		return nil, fmt.Errorf("failed to marshal session management config: %w", err)
 	}
 
-	copy := []nfConfigApi.SessionManagement{}
-	if err := json.Unmarshal(b, &copy); err != nil {
+	cloned := []nfConfigApi.SessionManagement{}
+	if err := json.Unmarshal(b, &cloned); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session management config: %w", err)
 	}
 
-	return copy, nil
+	return cloned, nil
 }
 
 func IsRegistrationRequired(newConfigs, oldConfigs []nfConfigApi.SessionManagement) bool {

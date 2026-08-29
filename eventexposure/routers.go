@@ -46,6 +46,8 @@ type routeParamAlias struct {
 	original  string
 }
 
+const individualSubscriptionPattern = "/subscriptions/:subId"
+
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
 	router := utilLogger.NewGinWithZap(logger.GinLog)
@@ -137,19 +139,19 @@ func getRoutes() []Route {
 		{
 			"DeleteIndividualSubscription",
 			http.MethodDelete,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPDeleteIndividualSubscription,
 		},
 		{
 			"GetIndividualSubscription",
 			http.MethodGet,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPGetIndividualSubscription,
 		},
 		{
 			"ReplaceIndividualSubscription",
 			http.MethodPut,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPReplaceIndividualSubscription,
 		},
 		{

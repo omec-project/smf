@@ -61,11 +61,15 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicyExecute(apiCreateSMPolicyRequest); err != nil {
 		if httpRsp != nil {
 			httpRspStatusCode = httpRsp.StatusCode
+			httpRsp.Body.Close()
 		}
 		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
 	} else {
 		httpRspStatusCode = http.StatusCreated
 		smPolicyDecision = smPolicyDecisionFromPCF
+		if httpRsp != nil {
+			httpRsp.Body.Close()
+		}
 	}
 
 	if err := validateSmPolicyDecision(smPolicyDecision); err != nil {
@@ -109,8 +113,12 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	apiDeleteSMPolicyRequest = apiDeleteSMPolicyRequest.SmPolicyDeleteData(smPolicyDelData)
 	if httpRsp, err := smContext.SMPolicyClient.IndividualSMPolicyDocumentAPI.DeleteSMPolicyExecute(apiDeleteSMPolicyRequest); err != nil {
 		logger.ConsumerLog.Warnf("smf policy delete failed, [%v] ", err.Error())
+		if httpRsp != nil {
+			httpRsp.Body.Close()
+		}
 		return 0, err
 	} else {
+		defer httpRsp.Body.Close()
 		return httpRsp.StatusCode, nil
 	}
 }

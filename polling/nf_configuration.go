@@ -25,6 +25,7 @@ const (
 	pollingMaxBackoff      = 40 * time.Second
 	pollingBackoffFactor   = 2
 	pollingPath            = "/nfconfig/session-management"
+	contentTypeJSON        = "application/json"
 )
 
 type nfConfigPoller struct {
@@ -97,7 +98,7 @@ func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", contentTypeJSON)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -106,7 +107,7 @@ func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
+	if !strings.Contains(contentType, contentTypeJSON) {
 		return nil, fmt.Errorf("unexpected Content-Type: got %s, want application/json", contentType)
 	}
 

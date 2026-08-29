@@ -61,7 +61,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 		nfInstanceId                                         string
 		nfInstanceIdForSubscription                          string
 		subscriptionID                                       string
-		notificationEventType                                string
+		notificationEventType                                models.NotificationEventType
 		expectedCallCountSendRemoveSubscription              int
 		expectedCallCountNRFCacheRemoveNfProfileFromNrfCache int
 		enableNrfCaching                                     bool
@@ -73,7 +73,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			nfInstanceID,
 			nfInstanceID,
 			subscriptionID,
-			"NF_DEREGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED,
 			1,
 			1,
 			true,
@@ -85,7 +85,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			nfInstanceID,
 			"",
 			"",
-			"NF_DEREGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED,
 			0,
 			1,
 			true,
@@ -97,7 +97,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			nfInstanceID,
 			nfInstanceID,
 			subscriptionID,
-			"NF_DEREGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED,
 			1,
 			0,
 			false,
@@ -109,7 +109,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			nfInstanceID,
 			nfInstanceID,
 			subscriptionID,
-			"NF_REGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_REGISTERED,
 			0,
 			0,
 			true,
@@ -121,7 +121,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			nfInstanceID,
 			nfInstanceID,
 			subscriptionID,
-			"NF_DEREGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED,
 			1,
 			1,
 			true,
@@ -133,7 +133,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 			"",
 			"",
 			subscriptionID,
-			"NF_DEREGISTERED",
+			models.NOTIFICATIONEVENTTYPE_NF_DEREGISTERED,
 			0,
 			0,
 			true,
@@ -163,7 +163,7 @@ func TestNfSubscriptionStatusNotify(t *testing.T) {
 				smfContext.SMF_Self().EnableNrfCaching = prevEnableNrfCaching
 			})
 			notificationData := models.NotificationData{
-				Event:          models.NotificationEventType(parameters[i].notificationEventType),
+				Event:          parameters[i].notificationEventType,
 				NfInstanceUri:  parameters[i].nfInstanceId,
 				NfProfile:      udmProfile,
 				ProfileChanges: []models.ChangeItem{},

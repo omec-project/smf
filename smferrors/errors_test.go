@@ -85,7 +85,7 @@ func TestErrorCauseValuesAre5GSMCauses(t *testing.T) {
 // another slice - sending #27 would deny the subscriber a DNN that may be correctly configured
 // elsewhere.
 func TestDnnRejectCausesAreSliceScoped(t *testing.T) {
-	for _, key := range []string{"DnnNotSupported", "DnnDeniedError"} {
+	for _, key := range []string{errKeyDnnNotSupported, errKeyDnnDeniedError} {
 		got, ok := ErrorCause[key]
 		if !ok {
 			t.Fatalf("ErrorCause has no entry for %q", key)
