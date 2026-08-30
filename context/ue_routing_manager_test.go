@@ -11,6 +11,8 @@ import (
 	"github.com/omec-project/util/idgenerator"
 )
 
+const testSupiImsi001 = "imsi-001"
+
 func pathsEqual(a, b *UEPreConfigPaths) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -73,14 +75,14 @@ func TestUERoutingManager(t *testing.T) {
 	tests := []testCase{
 		{
 			name:       "Path exists",
-			preload:    map[string]*UEPreConfigPaths{"imsi-001": paths1},
-			querySUPI:  "imsi-001",
+			preload:    map[string]*UEPreConfigPaths{testSupiImsi001: paths1},
+			querySUPI:  testSupiImsi001,
 			expectPath: paths1,
 			expectOK:   true,
 		},
 		{
 			name:       "Path does not exist",
-			preload:    map[string]*UEPreConfigPaths{"imsi-001": paths1},
+			preload:    map[string]*UEPreConfigPaths{testSupiImsi001: paths1},
 			querySUPI:  "imsi-999",
 			expectPath: nil,
 			expectOK:   false,
@@ -88,13 +90,13 @@ func TestUERoutingManager(t *testing.T) {
 		{
 			name:       "Empty path pool",
 			preload:    map[string]*UEPreConfigPaths{},
-			querySUPI:  "imsi-001",
+			querySUPI:  testSupiImsi001,
 			expectPath: nil,
 			expectOK:   false,
 		},
 		{
 			name:       "Multiple entries, query one",
-			preload:    map[string]*UEPreConfigPaths{"imsi-001": paths3, "imsi-002": paths2},
+			preload:    map[string]*UEPreConfigPaths{testSupiImsi001: paths3, "imsi-002": paths2},
 			querySUPI:  "imsi-002",
 			expectPath: paths2,
 			expectOK:   true,
@@ -102,13 +104,13 @@ func TestUERoutingManager(t *testing.T) {
 		{
 			name: "Overwrite existing path",
 			preload: map[string]*UEPreConfigPaths{
-				"imsi-001": paths1,
+				testSupiImsi001: paths1,
 			},
-			querySUPI:  "imsi-001",
+			querySUPI:  testSupiImsi001,
 			expectPath: paths2,
 			expectOK:   true,
 			setup: func(mgr *UERoutingManager) {
-				mgr.AddPath("imsi-001", paths2)
+				mgr.AddPath(testSupiImsi001, paths2)
 			},
 		},
 	}

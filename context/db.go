@@ -32,6 +32,7 @@ const (
 	SeidSmContextCol  = "smf.data.seidSmContext"
 	NodeInDBCol       = "smf.data.nodeInDB"
 	RefSeidCol        = "smf.data.refToSeid"
+	refFilterKey      = "ref"
 )
 
 func SetupSmfCollection() {
@@ -50,7 +51,7 @@ func SetupSmfCollection() {
 
 	// UUID table
 	mongoapi.ConnectMongo(dbUrl, dbName)
-	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, "ref")
+	_, err := mongoapi.CommonDBClient.CreateIndex(SmContextDataColl, refFilterKey)
 	if err != nil {
 		logger.DataRepoLog.Errorln("create index failed on ref field")
 	}
@@ -311,7 +312,7 @@ func StoreSmContextInDB(smContext *SMContext) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 	smContextBsonA := ToBsonM(smContext)
-	filter := bson.M{"ref": smContext.Ref}
+	filter := bson.M{refFilterKey: smContext.Ref}
 	logger.DataRepoLog.Debugf("StoreSmContextInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, smContextBsonA)
@@ -343,7 +344,7 @@ func startSmContextWriteWorkers() {
 		smContextWriteQueues[i] = q
 		go func(q chan smContextWriteReq) {
 			for req := range q {
-				filter := bson.M{"ref": req.ref}
+				filter := bson.M{refFilterKey: req.ref}
 				if _, err := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, req.bsonDoc); err != nil {
 					logger.DataRepoLog.Warnln(err)
 				}
@@ -402,7 +403,7 @@ func StoreRefToSeidInDB(seidUint uint64, smContext *SMContext) {
 		Seid: seid,
 	}
 	itemBsonA := ToBsonMSeidRef(item)
-	filter := bson.M{"ref": smContext.Ref}
+	filter := bson.M{refFilterKey: smContext.Ref}
 	logger.DataRepoLog.Debugf("StoreRefToSeidInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(RefSeidCol, filter, itemBsonA)
@@ -416,7 +417,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	logger.DataRepoLog.Debugf("GetSMContextByRefInDB: Ref in DB %v", ref)
 	smContext = &SMContext{}
 	filter := bson.M{}
-	filter["ref"] = ref
+	filter[refFilterKey] = ref
 
 	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SmContextDataColl, filter)
 	if getOneErr != nil {
@@ -450,7 +451,7 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 		logger.DataRepoLog.Warnln(getOneErr)
 	}
 	if result != nil {
-		ref := result["ref"].(string)
+		ref := result[refFilterKey].(string)
 		logger.DataRepoLog.Debugln("StoreSeidContextInDB, result string:", ref)
 		return GetSMContext(ref)
 	} else {
@@ -471,7 +472,7 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 		logger.DataRepoLog.Warnln(getOneErr)
 	}
 	if result != nil {
-		ref := result["ref"].(string)
+		ref := result[refFilterKey].(string)
 
 		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
 		if delOneErr != nil {
@@ -486,7 +487,7 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 // DeleteSmContextInDBByRef Delete SMContext By ref from DB
 func DeleteSmContextInDBByRef(ref string) {
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB w ref")
-	filter := bson.M{"ref": ref}
+	filter := bson.M{refFilterKey: ref}
 	logger.DataRepoLog.Infof("filter: %+v", filter)
 
 	delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)

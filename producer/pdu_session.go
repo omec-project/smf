@@ -694,7 +694,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 
 		if errResponse.HasBinaryDataN1SmMessage() {
 			jd := errResponse.GetJsonData()
-			jd.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"})
+			jd.SetN1SmMsg(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_REJECT})
 			errResponse.SetJsonData(jd)
 		}
 		httpResponse.Body = errResponse
@@ -724,7 +724,7 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 
 		if errResponse.HasBinaryDataN1SmMessage() {
 			jd := errResponse.GetJsonData()
-			jd.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"})
+			jd.SetN1SmMsg(models.RefToBinaryData{ContentId: smf_context.PDU_SESS_REL_REJECT})
 			errResponse.SetJsonData(jd)
 		}
 		httpResponse.Body = errResponse

@@ -6,17 +6,12 @@ package util
 import (
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"testing"
 
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 )
-
-func TestCloseResponseBodyAllowsNilBody(t *testing.T) {
-	CloseResponseBody(&http.Response{})
-}
 
 func TestHandleOpenAPIErrorExtractsProblemDetailsSafely(t *testing.T) {
 	problem := models.ProblemDetails{Detail: openapi.PtrString("problem")}

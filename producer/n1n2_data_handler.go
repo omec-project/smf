@@ -222,7 +222,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					} else {
 						response.SetBinaryDataN1SmMessage(tmpFile)
 						jsonData := response.GetJsonData()
-						jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseReject"})
+						jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: context.PDU_SESS_REL_REJECT})
 						response.SetJsonData(jsonData)
 					}
 				}

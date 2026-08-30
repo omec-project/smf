@@ -13,6 +13,8 @@ import (
 	"github.com/omec-project/smf/qos"
 )
 
+const testQosData1 = "QosData1"
+
 var flowDesc = []string{
 	"permit out ip from 1.1.1.1 1000 to 2.2.2.2 2000",
 	"permit out ip from 1.1.1.1/24 1000 to 2.2.2.2/24 2000",
@@ -104,7 +106,7 @@ func makeSamplePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
 		Precedence: openapi.PtrInt32(200),
-		RefQosData: []string{"QosData1"},
+		RefQosData: []string{testQosData1},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
@@ -165,7 +167,7 @@ func makeSampleQosData() *map[string]models.QosData {
 	*/
 
 	qosDataMap := map[string]models.QosData{
-		"QosData1": qosData1,
+		testQosData1: qosData1,
 		//		"QosData2": &qosData2,
 	}
 

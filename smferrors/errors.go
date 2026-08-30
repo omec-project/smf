@@ -13,6 +13,11 @@ import (
 	"github.com/omec-project/openapi/v2/utils"
 )
 
+const (
+	errKeyDnnDeniedError  = "DnnDeniedError"
+	errKeyDnnNotSupported = "DnnNotSupported"
+)
+
 var (
 	N1SmError = models.ExtProblemDetails{
 		Title:  openapi.PtrString("Invalid N1 Message"),
@@ -119,8 +124,8 @@ var (
 )
 
 var ErrorType = map[string]models.ExtProblemDetails{
-	"DnnDeniedError":                DnnDeniedError,
-	"DnnNotSupported":               DnnNotSupported,
+	errKeyDnnDeniedError:            DnnDeniedError,
+	errKeyDnnNotSupported:           DnnNotSupported,
 	"InsufficientResourceSliceDnn":  InsufficientResourceSliceDnn,
 	"IpAllocError":                  IpAllocError,
 	"SubscriptionDataFetchError":    SubscriptionDataFetchError,
@@ -162,8 +167,8 @@ func NewExtProblemDetailsSystemFailure() models.ExtProblemDetails {
 }
 
 var ErrorCause = map[string]uint8{
-	"DnnDeniedError":                nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
-	"DnnNotSupported":               nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
+	errKeyDnnDeniedError:            nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
+	errKeyDnnNotSupported:           nasMessage.Cause5GSMMissingOrUnknownDNNInASlice,
 	"InsufficientResourceSliceDnn":  nasMessage.Cause5GSMInsufficientResourcesForSpecificSliceAndDNN,
 	"IpAllocError":                  nasMessage.Cause5GSMInsufficientResources,
 	"SubscriptionDataFetchError":    nasMessage.Cause5GSMRequestRejectedUnspecified,

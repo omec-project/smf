@@ -257,7 +257,11 @@ var SendDeregisterNFInstance = func() error {
 	res, err := client.NFInstanceIDDocumentAPI.DeregisterNFInstanceExecute(apiDeregisterNFInstanceRequest)
 	if err != nil {
 		if res != nil {
-			defer res.Body.Close()
+			defer func() {
+				if resCloseErr := res.Body.Close(); resCloseErr != nil {
+					logger.ConsumerLog.Errorf("DeregisterNFInstance response body cannot close: %+v", resCloseErr)
+				}
+			}()
 			metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", http.StatusText(res.StatusCode), err.Error())
 		} else {
 			metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", "Failure", "NoResponse")
@@ -265,7 +269,11 @@ var SendDeregisterNFInstance = func() error {
 		logger.ConsumerLog.Warnf("deregister failed: %v", err)
 		return err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if resCloseErr := res.Body.Close(); resCloseErr != nil {
+			logger.ConsumerLog.Errorf("DeregisterNFInstance response body cannot close: %+v", resCloseErr)
+		}
+	}()
 
 	if res.StatusCode == http.StatusNoContent {
 		metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", http.StatusText(res.StatusCode), "")
@@ -609,9 +617,16 @@ func tryN1N2Transfer(ctx context.Context, smContext *smfContext.SMContext,
 	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
 		apiReq = apiReq.BinaryDataN2Information(binaryDataN2Information)
 	}
-	rspData, _, err := smContext.CommunicationClient.
+	rspData, res, err := smContext.CommunicationClient.
 		N1N2MessageCollectionCollectionAPI.
 		N1N2MessageTransferExecute(apiReq)
+	if res != nil {
+		defer func() {
+			if resCloseErr := res.Body.Close(); resCloseErr != nil {
+				logger.ConsumerLog.Errorf("N1N2MessageTransfer response body cannot close: %+v", resCloseErr)
+			}
+		}()
+	}
 	return rspData, err
 }
 
@@ -723,7 +738,11 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.Subscripti
 	apiCreateSubscriptionRequest = apiCreateSubscriptionRequest.SubscriptionData(nrfSubscriptionData)
 	nrfSubData, res, err = client.SubscriptionsCollectionAPI.CreateSubscriptionExecute(apiCreateSubscriptionRequest)
 	if res != nil {
-		defer util.CloseResponseBody(res)
+		defer func() {
+			if resCloseErr := res.Body.Close(); resCloseErr != nil {
+				logger.ConsumerLog.Errorf("CreateSubscription response body cannot close: %+v", resCloseErr)
+			}
+		}()
 	}
 	if err == nil {
 		return nrfSubData, nil, nil
@@ -753,7 +772,11 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 	apiRemoveSubscriptionRequest := client.SubscriptionIDDocumentAPI.RemoveSubscription(context.Background(), subscriptionId)
 	res, err = client.SubscriptionIDDocumentAPI.RemoveSubscriptionExecute(apiRemoveSubscriptionRequest)
 	if res != nil {
-		defer util.CloseResponseBody(res)
+		defer func() {
+			if resCloseErr := res.Body.Close(); resCloseErr != nil {
+				logger.ConsumerLog.Errorf("RemoveSubscription response body cannot close: %+v", resCloseErr)
+			}
+		}()
 	}
 	if err == nil {
 		return nil, nil

@@ -48,7 +48,7 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 			name:     "Single slice basic default path",
 			existing: nil,
 			config: []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice1", "001", "02", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
+				makeTestSessionConfig("slice1", "001", "02", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{testGnb1}),
 			},
 			assertions: func(t *testing.T, upi *UserPlaneInformation) {
 				if len(upi.DefaultUserPlanePath) == 0 {
@@ -72,11 +72,11 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 			name:     "Multiple slices with overlapping gNBs",
 			existing: nil,
 			config: []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1", "gnb2"}),
-				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{"gnb1"}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{testGnb1, testGnb2}),
+				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{testGnb1}),
 			},
 			assertions: func(t *testing.T, upi *UserPlaneInformation) {
-				if _, ok := upi.AccessNetwork["gnb1"]; !ok {
+				if _, ok := upi.AccessNetwork[testGnb1]; !ok {
 					t.Error("expected gnb1 to be in AccessNetwork")
 				}
 				if len(upi.UPFs) != 2 {
@@ -89,7 +89,7 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 				if got := len(upi.UPNodes["10.1.1.1"].Links); got != 2 {
 					t.Errorf("len(UPNodes[10.1.1.1].Links) = %d, want 2", got)
 				}
-				if got := len(upi.UPNodes["gnb1"].Links); got != 2 {
+				if got := len(upi.UPNodes[testGnb1].Links); got != 2 {
 					t.Errorf("len(UPNodes[gnb1].Links) = %d, want 2", got)
 				}
 			},
@@ -98,8 +98,8 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 			name:     "DNNs are merged into the same SNSSAI entry",
 			existing: nil,
 			config: []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
-				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "iot", "10.0.2.0/24", "10.1.1.1", []string{"gnb2"}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{testGnb1}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "iot", "10.0.2.0/24", "10.1.1.1", []string{testGnb2}),
 			},
 			assertions: func(t *testing.T, upi *UserPlaneInformation) {
 				if len(upi.UPFs) != 1 {
@@ -114,7 +114,7 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 			name:     "Invalid UPF hostname",
 			existing: nil,
 			config: []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "invalid_host*name", []string{"gnb1"}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "invalid_host*name", []string{testGnb1}),
 			},
 			assertions: func(t *testing.T, upi *UserPlaneInformation) {
 				upf := upi.UPFs["invalid_host*name"]
@@ -126,10 +126,10 @@ func TestBuildUserPlaneInformation_DefaultPathScenarios(t *testing.T) {
 		{
 			name: "Reusing existing UserPlaneInformation",
 			existing: BuildUserPlaneInformationFromSessionManagement(nil, []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{"gnb1"}),
+				makeTestSessionConfig("slice1", "001", "01", "1", "010101", "internet", "10.0.0.0/24", "10.1.1.1", []string{testGnb1}),
 			}),
 			config: []nfConfigApi.SessionManagement{
-				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{"gnb2"}),
+				makeTestSessionConfig("slice2", "001", "01", "1", "010102", "iot", "10.0.1.0/24", "10.1.1.2", []string{testGnb2}),
 			},
 			assertions: func(t *testing.T, upi *UserPlaneInformation) {
 				if len(upi.UPFs) != 2 {
@@ -172,8 +172,8 @@ func TestNodeInLinksDistinguishesUnresolvableFqdnNodes(t *testing.T) {
 		}
 	}
 
-	gnb1 := fqdnNode("gnb1")
-	gnb2 := fqdnNode("gnb2")
+	gnb1 := fqdnNode(testGnb1)
+	gnb2 := fqdnNode(testGnb2)
 	links := []*UPNode{gnb1}
 
 	if !nodeInLinks(links, gnb1) {
@@ -184,7 +184,7 @@ func TestNodeInLinksDistinguishesUnresolvableFqdnNodes(t *testing.T) {
 	}
 
 	// A separately constructed value for the same gNB is the same node.
-	if !nodeInLinks(links, fqdnNode("gnb1")) {
+	if !nodeInLinks(links, fqdnNode(testGnb1)) {
 		t.Error("nodeInLinks(links, equal-valued gnb1) = false, want true: membership is NodeID equality, not pointer identity")
 	}
 }
@@ -192,7 +192,7 @@ func TestNodeInLinksDistinguishesUnresolvableFqdnNodes(t *testing.T) {
 // TestLinkUpfToGnbNodesLinksEveryGnb covers the user-visible consequence: a UPF
 // configured with several gNBs must end up linked to all of them.
 func TestLinkUpfToGnbNodesLinksEveryGnb(t *testing.T) {
-	gnbNames := []string{"gnb1", "gnb2", "gnb3"}
+	gnbNames := []string{testGnb1, testGnb2, "gnb3"}
 	upi := &UserPlaneInformation{
 		UPNodes:       make(map[string]*UPNode),
 		AccessNetwork: make(map[string]*UPNode),

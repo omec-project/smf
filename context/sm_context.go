@@ -38,10 +38,11 @@ import (
 )
 
 const (
-	CONNECTED               = "Connected"
-	DISCONNECTED            = "Disconnected"
-	IDLE                    = "Idle"
-	PDU_SESS_REL_CMD string = "PDUSessionReleaseCommand"
+	CONNECTED                  = "Connected"
+	DISCONNECTED               = "Disconnected"
+	IDLE                       = "Idle"
+	PDU_SESS_REL_CMD    string = "PDUSessionReleaseCommand"
+	PDU_SESS_REL_REJECT string = "PDUSessionReleaseReject"
 )
 
 var (
