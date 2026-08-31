@@ -55,11 +55,13 @@ func InitialiseKafkaStream(config *factory.Configuration) error {
 		// create/update/release handlers — so every PDU-session transaction
 		// paid a synchronous Kafka round trip. Metrics must never pace signalling.
 		Async: true,
-		// With Async, WriteMessages returns before the send completes, so its
-		// error return is always nil; delivery errors surface here instead.
+		// With Async, WriteMessages returns before the send completes, so
+		// delivery failures are not reported via its return value (it can
+		// still return pre-enqueue errors, e.g. a closed writer); they
+		// surface here instead.
 		Completion: func(msgs []kafka.Message, err error) {
 			if err != nil {
-				logger.KafkaLog.Errorf("kafka async delivery error for %d message(s): %s", len(msgs), err.Error())
+				logger.KafkaLog.Errorf("kafka async delivery error for %d message(s): %v", len(msgs), err)
 			}
 		},
 	}
