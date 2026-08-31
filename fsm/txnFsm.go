@@ -16,6 +16,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/producer"
+	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
 )
@@ -33,7 +34,7 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 	switch txn.MsgType {
 	case svcmsgtypes.CreateSmContext:
 		req := txn.Req.(models.PostSmContextsRequest)
-		createData := req.JsonData
+		createData, _ := req.GetJsonDataOk()
 		if smCtxtRef, err := smf_context.ResolveRef(createData.GetSupi(), createData.GetPduSessionId()); err == nil {
 			// Previous context exist
 			err := producer.HandlePduSessionContextReplacement(smCtxtRef)
@@ -129,10 +130,7 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 
 	if factory.SmfConfig.Configuration.EnableDbStore {
 		smContextPool := smf_context.GetSmContextPool()
-		val, ok := smContextPool.Load(smContext.Ref)
-		if ok {
-			txn.TxnFsmLog.Infoln("db - smContext in smContextPool", val)
-		} else {
+		if _, ok := smContextPool.Load(smContext.Ref); !ok {
 			smf_context.StoreSmContextPool(smContext)
 		}
 	}
@@ -214,19 +212,14 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
+			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
+			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
+			errBody := models.NewUpdateSmContext400Response()
+			errBody.SetJsonData(*jsonData)
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
-				Body: models.UpdateSmContext400Response{
-					JsonData: &models.SmContextUpdateError{
-						UpCnxState: models.UPCNXSTATE_DEACTIVATED.Ptr(),
-						Error: models.ExtProblemDetails{
-							Type:   openapi.PtrString("Resource Not Found"),
-							Title:  openapi.PtrString("SMContext Ref is not found"),
-							Status: openapi.PtrInt32(http.StatusNotFound),
-						},
-					},
-				},
+				Body:   errBody,
 			}
 			txn.Rsp = httpResponse
 		}
@@ -260,9 +253,10 @@ func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, e
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		smf_context.StoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
-		// clear sm context in memory for test
-		// smf_context.ClearSMContextInMem(txn.Ctxt.(*smf_context.SMContext).Ref)
+		// Serialize while locked, write to MongoDB asynchronously.
+		// txn.Status was already sent in TxnSuccess, so the HTTP response has already
+		// been returned; the DB write does not need to be on the critical path.
+		smf_context.AsyncStoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
 	}
 	return transaction.TxnEventEnd, nil
 }

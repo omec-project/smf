@@ -5,10 +5,8 @@
 package context
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 
 	"github.com/omec-project/ngap/v2/aper"
 	"github.com/omec-project/ngap/v2/ngapType"
@@ -124,21 +122,25 @@ func HandleHandoverRequestAcknowledgeTransfer(b []byte, ctx *SMContext) (err err
 	}
 	DLNGUUPTNLInformation := handoverRequestAcknowledgeTransfer.DLNGUUPTNLInformation
 	GTPTunnel := DLNGUUPTNLInformation.GTPTunnel
-	TEIDReader := bytes.NewBuffer(GTPTunnel.GTPTEID.Value)
 
-	teid, err := binary.ReadUvarint(TEIDReader)
-	if err != nil {
-		return fmt.Errorf("parse TEID error %s", err.Error())
-	}
+	// GTPTEID.Value is constrained to exactly 4 bytes (sizeLB:4,sizeUB:4) by the APER
+	// schema, so a successful UnmarshalWithParams above guarantees the length.
+	teid := binary.BigEndian.Uint32(GTPTunnel.GTPTEID.Value)
 
 	for _, dataPath := range ctx.Tunnel.DataPathPool {
 		if dataPath.Activated {
 			ANUPF := dataPath.FirstDPNode
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
+				if DLPDR.FAR.ForwardingParameters == nil {
+					DLPDR.FAR.ForwardingParameters = &ForwardingParameters{
+						DestinationInterface: DestinationInterface{InterfaceValue: DestinationInterfaceAccess},
+						NetworkInstance:      []byte(ctx.Dnn),
+					}
+				}
 				DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = new(OuterHeaderCreation)
 				dlOuterHeaderCreation := DLPDR.FAR.ForwardingParameters.OuterHeaderCreation
 				dlOuterHeaderCreation.OuterHeaderCreationDescription = OuterHeaderCreationGtpUUdpIpv4
-				dlOuterHeaderCreation.Teid = uint32(teid)
+				dlOuterHeaderCreation.Teid = teid
 				dlOuterHeaderCreation.Ipv4Address = GTPTunnel.TransportLayerAddress.Value.Bytes
 				DLPDR.FAR.State = RULE_UPDATE
 			}

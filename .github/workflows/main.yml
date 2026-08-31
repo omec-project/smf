@@ -2,7 +2,6 @@
 # Copyright 2023 Canonical Ltd.
 # Copyright 2024 Intel Corporation
 name: CI Pipeline
-
 on:
   pull_request:
     branches:
@@ -10,10 +9,8 @@ on:
   push:
     branches:
       - main
-
 permissions:
   contents: read
-
 jobs:
   build:
     permissions:
@@ -22,20 +19,18 @@ jobs:
       security-events: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/build.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/build.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   docker-build:
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/docker-build.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/docker-build.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   static-analysis:
     permissions:
       contents: read
@@ -43,60 +38,54 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/static-analysis.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/static-analysis.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   lint:
     permissions:
       contents: read
       checks: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/lint.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/lint.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
-      golangci_lint_version: 'v2.11.3'
+      golangci_lint_version: 'v2.12.2'
       branch_name: ${{ github.ref }}
-
   hadolint:
     permissions:
       contents: read
       security-events: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/hadolint.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/hadolint.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   license-check:
     permissions:
       contents: read
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/license-check.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/license-check.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   fossa-scan:
     permissions:
       contents: read
       security-events: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/fossa-scan.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/fossa-scan.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   unit-tests:
     permissions:
       contents: read
       checks: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/unit-test.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/unit-test.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   analysis:
     if: github.repository_owner == 'omec-project'
     permissions:
@@ -108,6 +97,7 @@ jobs:
       contents: read
       deployments: read
       discussions: read
+      drives: read
       id-token: write
       issues: read
       models: read
@@ -118,10 +108,9 @@ jobs:
       security-events: write
       statuses: read
       vulnerability-alerts: read
-    uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}
-
   e2e-tests:
     if: github.event_name == 'pull_request'
     permissions:
@@ -130,6 +119,6 @@ jobs:
       checks: write
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/e2e-test.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/e2e-test.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       branch_name: ${{ github.ref }}

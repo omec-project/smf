@@ -18,6 +18,7 @@ func TestGetInterfaceReturnsActualSliceElement(t *testing.T) {
 	iface := upf.GetInterface(models.UPINTERFACETYPE_N3, "internet")
 	if iface == nil {
 		t.Fatal("expected interface match")
+		return
 	}
 	iface.NetworkInstance = "changed"
 	if upf.N3Interfaces[0].NetworkInstance != "changed" {

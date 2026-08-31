@@ -11,15 +11,16 @@ import (
 	"github.com/wmnsk/go-pfcp/ie"
 )
 
-func TestUnmarshallUserPlaneFunctionFeaturesEmpty(t *testing.T) {
+func TestUnmarshalUserPlaneFunctionFeaturesEmpty(t *testing.T) {
 	userplaneIE := ie.NewUPFunctionFeatures()
-	functionFeatures, err := ies.UnmarshallUserPlaneFunctionFeatures(userplaneIE.Payload)
+	functionFeatures, err := ies.UnmarshalUserPlaneFunctionFeatures(userplaneIE.Payload)
 	if err != nil {
 		t.Errorf("error unmarshalling UE IP Information: %v", err)
 	}
 
 	if functionFeatures == nil {
 		t.Fatalf("error unmarshalling UE IP Information: %v", err)
+		return
 	}
 
 	if functionFeatures.SupportedFeatures != 0 {

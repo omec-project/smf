@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/omec-project/nas/v2/nasMessage"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -158,6 +158,11 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 			logger.PfcpLog.Errorf("send pfcp association msg to upf-adapter error [%v]", err.Error())
 			return err
 		} else {
+			defer func() {
+				if closeErr := rsp.Body.Close(); closeErr != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", closeErr)
+				}
+			}()
 			logger.PfcpLog.Debugf("send pfcp association response [%v]", rsp)
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
@@ -262,6 +267,11 @@ func SendPfcpSessionEstablishmentRequest(
 			HandlePfcpSendError(pfcpMsg, err)
 			return err
 		} else {
+			defer func() {
+				if closeErr := rsp.Body.Close(); closeErr != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", closeErr)
+				}
+			}()
 			logger.PfcpLog.Debugf("send pfcp session establish response [%v]", rsp)
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
@@ -304,6 +314,9 @@ func SendPfcpSessionModificationRequest(
 	farList []*smf_context.FAR,
 	barList []*smf_context.BAR,
 	qerList []*smf_context.QER,
+	removePDR []*smf_context.PDR,
+	removeFAR []*smf_context.FAR,
+	removeQER []*smf_context.QER,
 	upfPort uint16,
 ) error {
 	seqNum := getSeqNumber()
@@ -312,7 +325,7 @@ func SendPfcpSessionModificationRequest(
 	if !ok {
 		return fmt.Errorf("PFCP Context not found for NodeID[%s]", upNodeIDStr)
 	}
-	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList)
+	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList, removePDR, removeFAR, removeQER)
 	if err != nil {
 		return err
 	}
@@ -327,6 +340,11 @@ func SendPfcpSessionModificationRequest(
 			logger.PfcpLog.Errorf("send pfcp session modify msg to upf-adapter error [%v]", err.Error())
 			return err
 		} else {
+			defer func() {
+				if closeErr := rsp.Body.Close(); closeErr != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", closeErr)
+				}
+			}()
 			logger.PfcpLog.Debugf("send pfcp session modify response [%v]", rsp)
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
@@ -378,6 +396,11 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 			logger.PfcpLog.Errorf("send pfcp session delete msg to upf-adapter error [%v]", err.Error())
 			return err
 		} else {
+			defer func() {
+				if closeErr := rsp.Body.Close(); closeErr != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", closeErr)
+				}
+			}()
 			logger.PfcpLog.Debugf("send pfcp session delete response [%v]", rsp)
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
@@ -469,19 +492,16 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 	}
 	smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", pfcpErr.Error())
 	// N1N2 Request towards AMF
-	n1n2Request := models.N1N2MessageTransferRequest{}
+	n1n2Request := models.NewN1N2MessageTransferRequest()
 
 	// N1 Container Info
-	n1MsgContainer := models.N1MessageContainer{
-		N1MessageClass:   "SM",
-		N1MessageContent: models.RefToBinaryData{ContentId: "GSM_NAS"},
-	}
+	n1MsgContainer := models.NewN1MessageContainer("SM", models.RefToBinaryData{ContentId: "GSM_NAS"})
 
 	// N1N2 Json Data
-	n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
-		PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
-	}
-	defer util.CleanupMultipartTempFiles(&n1n2Request)
+	jsonData := models.NewN1N2MessageTransferReqData()
+	jsonData.SetPduSessionId(smContext.PDUSessionID)
+	n1n2Request.SetJsonData(*jsonData)
+	defer util.CleanupMultipartTempFiles(n1n2Request)
 
 	if smNasBuf, err := smf_context.BuildGSMPDUSessionEstablishmentReject(smContext,
 		nasMessage.Cause5GSMRequestRejectedUnspecified); err != nil {
@@ -499,34 +519,26 @@ func handleSendPfcpSessEstReqError(msg message.Message, pfcpErr error) {
 			smf_context.RemoveSMContext(smContext.Ref)
 			return
 		} else {
-			n1n2Request.BinaryDataN1Message = &tmpFile
-			n1n2Request.JsonData.N1MessageContainer = &n1MsgContainer
+			n1n2Request.SetBinaryDataN1Message(tmpFile)
+			jsonData := n1n2Request.GetJsonData()
+			jsonData.SetN1MessageContainer(*n1MsgContainer)
+			n1n2Request.SetJsonData(jsonData)
 		}
 	}
 
-	// Send N1N2 Reject request
-	apiN1N2MessageTransferRequest := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransfer(context.Background(), smContext.Supi)
-	apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
-	if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
-	}
-	if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
-		apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
-	}
-	rspData, _, err := smContext.
-		CommunicationClient.
-		N1N2MessageCollectionCollectionAPI.
-		N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
+	// Send N1N2 Reject request. Hold SMLock across the transfer (AMF re-discovery may
+	// mutate AMFProfile/ServingNfId/CommunicationClient) and the state transition so the
+	// SMContext stays consistent against concurrent users.
+	smContext.SMLock.Lock()
+	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	smContext.ChangeState(smf_context.SmStateInit)
 	smContext.SubCtxLog.Debugln("SMContextState Change State:", smContext.SMContextState.String())
+	smContext.SMLock.Unlock()
 	if err != nil {
 		smContext.SubPfcpLog.Warnln("send N1N2Transfer failed")
 	}
 	if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_N1_MSG_NOT_TRANSFERRED {
-		smContext.SubPfcpLog.Warnf("%v", rspData.Cause)
+		smContext.SubPfcpLog.Warnf("%v", rspData.GetCause())
 	}
 	smContext.SubPfcpLog.Errorf("PFCP send N1N2Transfer Reject initiated for id[%v], pduSessId[%v]", smContext.Identifier, smContext.PDUSessionID)
 

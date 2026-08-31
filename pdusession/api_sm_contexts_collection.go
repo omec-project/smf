@@ -40,9 +40,8 @@ import (
 // Post /sm-contexts
 // Create SM Context
 func HTTPPostSmContexts(c *gin.Context) {
-	logger.PduSessLog.Infoln("Handle Post /sm-contexts")
+	logger.PduSessLog.Infoln("handle Post /sm-contexts")
 	var err error
-	var request models.PostSmContextsRequest
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
 	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
 	if err != nil {
@@ -50,14 +49,16 @@ func HTTPPostSmContexts(c *gin.Context) {
 		return
 	}
 
+	request := models.NewPostSmContextsRequest()
 	request.SetJsonData(models.SmContextCreateData{})
 
 	s := strings.Split(c.GetHeader("Content-Type"), ";")
 	switch s[0] {
 	case "application/json":
-		err = c.ShouldBindJSON(request.JsonData)
-	case "multipart/related", "multipart/form-data":
-		err = c.ShouldBindWith(&request, openapi.MultipartRelatedBinding{})
+		jsonData, _ := request.GetJsonDataOk()
+		err = c.ShouldBindJSON(jsonData)
+	case "multipart/related":
+		err = c.ShouldBindWith(request, openapi.MultipartRelatedBinding{})
 	default:
 		problemDetail := "[Request Body] unsupported Content-Type: " + c.GetHeader("Content-Type")
 		rsp := utils.ProblemDetailsSystemFailure(problemDetail)
@@ -78,21 +79,18 @@ func HTTPPostSmContexts(c *gin.Context) {
 	}
 
 	req := httpwrapper.NewRequest(c.Request, request)
-	txn := transaction.NewTransaction(req.Body.(models.PostSmContextsRequest), nil, svcmsgtypes.CreateSmContext)
+	txn := transaction.NewTransaction(*req.Body.(*models.PostSmContextsRequest), nil, svcmsgtypes.CreateSmContext)
 
 	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
 	<-txn.Status // wait for txn to complete at SMF
 	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
 	if !ok || HTTPResponse == nil {
 		logger.PduSessLog.Errorf("create SM Context transaction finished without HTTP response: err=%v", txn.Err)
+		problemDetails := utils.ProblemDetailsSystemFailure("create SM Context terminated before building an HTTP response")
 		HTTPResponse = &httpwrapper.Response{
 			Header: nil,
 			Status: http.StatusInternalServerError,
-			Body: &models.ProblemDetails{
-				Title:  openapi.PtrString("SMF transaction failure"),
-				Status: openapi.PtrInt32(http.StatusInternalServerError),
-				Detail: openapi.PtrString("create SM Context terminated before building an HTTP response"),
-			},
+			Body:   problemDetails,
 		}
 	}
 	var smContext *smf_context.SMContext

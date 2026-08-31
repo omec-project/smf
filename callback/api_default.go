@@ -46,7 +46,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	if err != nil {
 		problemDetail := "[Request Body] " + err.Error()
 		rsp := utils.ProblemDetailsMalformedRequestSyntax(problemDetail)
-		logger.PduSessLog.Errorln("deserialize request failed")
+		logger.PduSessLog.Errorf("deserialize request failed: %s", err.Error())
 		c.JSON(http.StatusBadRequest, rsp)
 		return
 	}
@@ -64,11 +64,7 @@ func HTTPSmPolicyUpdateNotification(c *gin.Context) {
 	HTTPResponse, ok := txn.Rsp.(*httpwrapper.Response)
 	if !ok || HTTPResponse == nil {
 		logger.PduSessLog.Errorf("SM Policy update transaction finished without HTTP response: err=%v", txn.Err)
-		problemDetails := models.NewProblemDetails()
-		problemDetails.SetStatus(http.StatusInternalServerError)
-		problemDetails.SetCause("SYSTEM_FAILURE")
-		problemDetails.SetDetail("SM Policy update transaction failed")
-		c.JSON(http.StatusInternalServerError, problemDetails)
+		c.JSON(http.StatusInternalServerError, utils.ProblemDetailsSystemFailure("SM Policy update transaction failed"))
 		return
 	}
 

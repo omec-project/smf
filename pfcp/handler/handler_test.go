@@ -202,3 +202,85 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		t.Errorf("Expected ANInformation IP %v, got %v", expectedIP, smContext.Tunnel.ANInformation.IPAddress)
 	}
 }
+
+// TestHandlePfcpSessionEstablishmentResponseNilTunnel covers the defensive
+// guard for a stale Session Establishment Response arriving after the Tunnel
+// has been nilled (e.g. by releaseTunnel). The handler must not panic on the
+// nil Tunnel and must consume the pending PFCP txn on the ignore path so it is
+// not leaked.
+func TestHandlePfcpSessionEstablishmentResponseNilTunnel(t *testing.T) {
+	// AllocateLocalSEID reads factory.SmfConfig.Configuration.EnableDbStore, so
+	// the config must be initialized for the SEID allocation path not to panic
+	// when this test runs in isolation.
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("2.2.2.2")
+	smContext := context.NewSMContext("imsi-123456789012399", 20)
+
+	// Register the context in the SEID lookup map by allocating a local SEID
+	// for a data path, mirroring what HandlePDUSessionSMContextCreate does
+	// before sending the PFCP Establishment Request.
+	datapath := &context.DataPath{
+		FirstDPNode: &context.DataPathNode{
+			UPF: &context.UPF{NodeID: *nodeID},
+		},
+	}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+
+	// Read the allocated SEID back so the lookup in the handler succeeds
+	// regardless of the global allocation counter (test ordering).
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+
+	// Simulate the realistic failure case: Tunnel nilled while a stale
+	// Establishment Response is still in flight.
+	smContext.Tunnel = nil
+
+	const seq uint32 = 0x424242
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		localSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("2.2.2.2", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr: &net.UDPAddr{
+			IP:   net.ParseIP("2.2.2.2"),
+			Port: 8809,
+		},
+		PfcpMessage: rsp,
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("handler panicked on nil Tunnel (guard regression?): %v", r)
+		}
+	}()
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	if leaked := pfcp_message.FetchPfcpTxn(seq); leaked != nil {
+		t.Errorf("expected pending PFCP txn for seq %d to be consumed on the nil-Tunnel ignore path, but it was still present", seq)
+	}
+}

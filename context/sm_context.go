@@ -38,10 +38,11 @@ import (
 )
 
 const (
-	CONNECTED               = "Connected"
-	DISCONNECTED            = "Disconnected"
-	IDLE                    = "Idle"
-	PDU_SESS_REL_CMD string = "PDUSessionReleaseCommand"
+	CONNECTED                  = "Connected"
+	DISCONNECTED               = "Disconnected"
+	IDLE                       = "Idle"
+	PDU_SESS_REL_CMD    string = "PDUSessionReleaseCommand"
+	PDU_SESS_REL_REJECT string = "PDUSessionReleaseReject"
 )
 
 var (
@@ -72,13 +73,14 @@ func init() {
 }
 
 func incSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, 1)
-	return smContextActive
+	// The add returns the new value. Reading the variable again is a plain load racing with every
+	// other caller's atomic store, and it can return a count from a different moment than the one
+	// this call produced.
+	return atomic.AddUint64(&smContextActive, 1)
 }
 
 func decSMContextActive() uint64 {
-	atomic.AddUint64(&smContextActive, ^uint64(0))
-	return smContextActive
+	return atomic.AddUint64(&smContextActive, ^uint64(0))
 }
 
 type UeIpAddr struct {
@@ -192,8 +194,6 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext = new(SMContext)
 	// Create Ref and identifier
 	smContext.Ref = uuid.New().URN()
-	smContextPool.Store(smContext.Ref, smContext)
-	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
 
 	smContext.SMContextState = SmStateInit
 	smContext.Identifier = identifier
@@ -210,12 +210,21 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 		DNSIPv6Request: false,
 	}
 
+	// initialise log tags
+	smContext.initLogTags()
+
+	// Published only once it is fully built, and this is the last thing built. Anything that finds
+	// the context -- by ref, by canonical name, or by ranging the pool -- would otherwise be able
+	// to observe one whose maps, channels or loggers have not been assigned yet: a data race on
+	// every field above, and a nil dereference on the Sub*Log fields, which every handler uses
+	// before it does anything else. Publishing after the maps but before initLogTags would close
+	// the first of those and leave the second.
+	smContextPool.Store(smContext.Ref, smContext)
+	canonicalRef.Store(canonicalName(identifier, pduSessID), smContext.Ref)
+
 	// Sess Stats
 	smContextActive := incSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
-
-	// initialise log tags
-	smContext.initLogTags()
 
 	return smContext
 }
@@ -372,6 +381,45 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.ServingNfId = createData.GetServingNfId()
 }
 
+// RebuildCommunicationClient reconstructs the Namf_Communication API client
+// from the stored AMFProfile. This is needed after recovering an SMContext from
+// MongoDB, since CommunicationClient is not serializable.
+func (smContext *SMContext) RebuildCommunicationClient() {
+	// Clear any existing client first so stale data does not linger if the
+	// (re-discovered) AMF profile has no namf-comm service.
+	smContext.CommunicationClient = nil
+	for _, service := range smContext.AMFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NAMF_COMM {
+			communicationConf := Namf_Communication.NewConfiguration()
+			serverConfig := &communicationConf.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
+			}
+			smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
+			return
+		}
+	}
+}
+
+// RebuildSMPolicyClient reconstructs the Npcf_SMPolicyControl API client
+// from the stored SelectedPCFProfile after recovering an SMContext from MongoDB.
+func (smContext *SMContext) RebuildSMPolicyClient() {
+	smContext.SMPolicyClient = nil
+	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+			cfg := Npcf_SMPolicyControl.NewConfiguration()
+			serverConfig := &cfg.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
+			}
+			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
+			return
+		}
+	}
+}
+
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
 	createdData = models.NewSmContextCreatedData()
 	createdData.SNssai = smContext.Snssai
@@ -439,8 +487,8 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.NfServices {
-		if service.ServiceName == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
+	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
 			cfg := Npcf_SMPolicyControl.NewConfiguration()
 			serverConfig := &cfg.Servers[0]
 			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
@@ -462,6 +510,24 @@ func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
 	}
 
 	return
+}
+
+// RemoteSEIDByLocalSEID returns the SEID the user-plane function assigned to the session
+// this element knows by seid.
+//
+// A PFCP message carries the SEID assigned by whoever receives it, so a request the UPF
+// sends arrives under this element's own SEID and the response to it has to go back under
+// the UPF's. Echoing the request's value instead -- which is what this element did, with a
+// TODO admitting it -- is inert only for as long as no cause is sent that makes the peer
+// read the field.
+func (smContext *SMContext) RemoteSEIDByLocalSEID(seid uint64) (uint64, bool) {
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID == seid {
+			return pfcpCtx.RemoteSEID, true
+		}
+	}
+
+	return 0, false
 }
 
 func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
@@ -598,12 +664,27 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 
 // SelectedSessionRule - return the SMF selected session rule for this SM Context
 func (smContext *SMContext) SelectedSessionRule() *models.SessionRule {
-	// Policy update in progress
+	logger.CtxLog.Debugf("SelectedSessionRule len(smContext.SmPolicyUpdates): %v", len(smContext.SmPolicyUpdates))
+
 	if len(smContext.SmPolicyUpdates) > 0 {
-		return smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
-	} else {
-		return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
+		policyUpdate := smContext.SmPolicyUpdates[0]
+		if policyUpdate != nil {
+			logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0]: %v", policyUpdate)
+			if policyUpdate.SessRuleUpdate != nil {
+				logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0].SessRuleUpdate: %v", policyUpdate.SessRuleUpdate)
+				if policyUpdate.SessRuleUpdate.ActiveSessRule != nil {
+					logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule: %v", policyUpdate.SessRuleUpdate.ActiveSessRule)
+					return policyUpdate.SessRuleUpdate.ActiveSessRule
+				}
+			}
+		}
 	}
+
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData: %v", smContext.SmPolicyData)
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData.SmCtxtSessionRules: %v", smContext.SmPolicyData.SmCtxtSessionRules)
+	logger.CtxLog.Debugf("SelectedSessionRule smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule: %v", smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule)
+
+	return smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule
 }
 
 func (smContextState SMContextState) String() string {
@@ -633,14 +714,14 @@ func (smContextState SMContextState) String() string {
 }
 
 func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) *httpwrapper.Response {
+	responseBody := models.NewPostSmContexts400Response()
+	responseBody.SetJsonData(models.SmContextCreateError{
+		Error: errors.ErrorType[cause],
+	})
 	httpResponse := &httpwrapper.Response{
 		Header: nil,
 		Status: int(*errors.ErrorType[cause].Status),
-		Body: models.PostSmContexts400Response{
-			JsonData: &models.SmContextCreateError{
-				Error: errors.ErrorType[cause],
-			},
-		},
+		Body:   responseBody,
 	}
 
 	if buf, err := BuildGSMPDUSessionEstablishmentReject(
@@ -652,10 +733,11 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 		if err != nil {
 			logger.PduSessLog.Errorln(err)
 		} else {
-			body := httpResponse.Body.(models.PostSmContexts400Response)
-			body.BinaryDataN1SmMessage = &tmpFile
-			body.JsonData.N1SmMsg = &models.RefToBinaryData{ContentId: "n1SmMsg"}
-			httpResponse.Body = body
+			body := httpResponse.Body.(*models.PostSmContexts400Response)
+			body.SetBinaryDataN1SmMessage(tmpFile)
+			jsonData := body.GetJsonData()
+			jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "n1SmMsg"})
+			body.SetJsonData(jsonData)
 		}
 	}
 

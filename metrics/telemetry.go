@@ -30,32 +30,35 @@ type SmfStats struct {
 
 var smfStats *SmfStats
 
+// msgCounterLabels is the shared label set for the per-interface message counters below.
+var msgCounterLabels = []string{"smf_id", "msg_type", "direction", "result", "reason"}
+
 func initSmfStats() *SmfStats {
 	return &SmfStats{
 		n11Msg: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "n11_messages_total",
 			Help: "N11 interface counters",
-		}, []string{"smf_id", "msg_type", "direction", "result", "reason"}),
+		}, msgCounterLabels),
 
 		n4Msg: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "n4_messages_total",
 			Help: "N4 interface counters",
-		}, []string{"smf_id", "msg_type", "direction", "result", "reason"}),
+		}, msgCounterLabels),
 
 		svcNrfMsg: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "nrf_messages_total",
 			Help: "NRF service counters",
-		}, []string{"smf_id", "msg_type", "direction", "result", "reason"}),
+		}, msgCounterLabels),
 
 		svcPcfMsg: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "pcf_messages_total",
 			Help: "PCF service counters",
-		}, []string{"smf_id", "msg_type", "direction", "result", "reason"}),
+		}, msgCounterLabels),
 
 		svcUdmMsg: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "udm_messages_total",
 			Help: "UDM service counters",
-		}, []string{"smf_id", "msg_type", "direction", "result", "reason"}),
+		}, msgCounterLabels),
 
 		sessions: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "smf_pdu_sessions",

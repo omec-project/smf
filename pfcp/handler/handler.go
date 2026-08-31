@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -278,7 +278,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		}
 
 		if rsp.UPFunctionFeatures != nil {
-			UPFunctionFeatures, err := ies.UnmarshallUserPlaneFunctionFeatures(rsp.UPFunctionFeatures.Payload)
+			UPFunctionFeatures, err := ies.UnmarshalUserPlaneFunctionFeatures(rsp.UPFunctionFeatures.Payload)
 			if err != nil {
 				logger.PfcpLog.Warnf("failed to get UPFunctionFeatures: %+v", err)
 				return
@@ -406,6 +406,16 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
+
+	// If Tunnel is nil (e.g. a stale Establishment Response arrives after
+	// releaseTunnel nilled it), discard the response. Consume any pending
+	// txn entry on this path too so it can't be leaked if reached without
+	// having been deleted by the original response processing.
+	if smContext.Tunnel == nil {
+		pfcp_message.FetchPfcpTxn(rsp.Sequence())
+		smContext.SubPfcpLog.Errorln("HandlePfcpSessionEstablishmentResponse: Tunnel is nil, ignoring response")
+		return
+	}
 
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
@@ -688,105 +698,105 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
-	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED {
-		if req.ReportType.HasDLDR() {
-			downlinkServiceInfo, err := req.DownlinkDataReport.DownlinkDataServiceInformation()
-			if err != nil {
-				logger.PfcpLog.Warnln("DownlinkDataServiceInformation not found in DownlinkDataReport")
-			}
-
-			if downlinkServiceInfo != nil {
-				smContext.SubPfcpLog.Warnln("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
-			}
-
-			n1n2Request := models.N1N2MessageTransferRequest{}
-			defer util.CleanupMultipartTempFiles(&n1n2Request)
-			cause = ie.CauseRequestRejected
-			pfcpSRflag.Drobu = true
-
-			// TS 23.502 4.2.3.3 3a. Send Namf_Communication_N1N2MessageTransfer Request, SMF->AMF
-			n2SmBuf, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext)
-			if err != nil {
-				smContext.SubPduSessLog.Errorln("Build PDU Session Resource Setup Request Transfer failed:", err)
-			} else {
-				tmpFile, fileErr := util.CreatePayloadTempFile(n2SmBuf)
-				if fileErr != nil {
-					smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
-				} else {
-					n1n2Request.BinaryDataN2Information = &tmpFile
-				}
-			}
-
-			if n1n2Request.GetBinaryDataN2Information() != nil {
-				// n1n2FailureTxfNotifURI to be added in n1n2 request transfer.
-				// It is used as path by AMF to send failure notification message towards SMF
-				n1n2FailureTxfNotifURI := "/nsmf-callback/sm-n1n2failnotify/"
-				n1n2FailureTxfNotifURI += smContext.Ref
-
-				n1n2Request.JsonData = &models.N1N2MessageTransferReqData{
-					PduSessionId: openapi.PtrInt32(smContext.PDUSessionID),
-					SkipInd:      openapi.PtrBool(false),
-					// Temporarily assign SMF itself, TODO: TS 23.502 4.2.3.3 5. Namf_Communication_N1N2TransferFailureNotification
-					N1n2FailureTxfNotifURI: openapi.PtrString(fmt.Sprintf("%s://%s:%d%s",
-						smf_context.SMF_Self().URIScheme,
-						smf_context.SMF_Self().RegisterIPv4,
-						smf_context.SMF_Self().SBIPort,
-						n1n2FailureTxfNotifURI)),
-					N2InfoContainer: &models.N2InfoContainer{
-						N2InformationClass: models.N2INFORMATIONCLASS_SM,
-						SmInfo: &models.N2SmInformation{
-							PduSessionId: smContext.PDUSessionID,
-							N2InfoContent: &models.N2InfoContent{
-								NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr(),
-								NgapData: models.RefToBinaryData{
-									ContentId: "N2SmInformation",
-								},
-							},
-							SNssai: smContext.Snssai,
-						},
-					},
-				}
-
-				apiN1N2MessageTransferRequest := smContext.CommunicationClient.N1N2MessageCollectionCollectionAPI.N1N2MessageTransfer(context.Background(), smContext.Supi)
-				apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.N1N2MessageTransferReqData(n1n2Request.GetJsonData())
-				if binaryDataN1Message := n1n2Request.GetBinaryDataN1Message(); binaryDataN1Message != nil {
-					apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN1Message(binaryDataN1Message)
-				}
-				if binaryDataN2Information := n1n2Request.GetBinaryDataN2Information(); binaryDataN2Information != nil {
-					apiN1N2MessageTransferRequest = apiN1N2MessageTransferRequest.BinaryDataN2Information(binaryDataN2Information)
-				}
-				var rspData *models.N1N2MessageTransferRspData
-				rspData, _, err = smContext.CommunicationClient.N1N2MessageCollectionCollectionAPI.N1N2MessageTransferExecute(apiN1N2MessageTransferRequest)
-				if err != nil {
-					smContext.SubPfcpLog.Warnf("Send N1N2Transfer failed")
-				}
-				if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
-					smContext.SubPfcpLog.Infof("Receive %v, AMF is able to page the UE", rspData.Cause)
-
-					pfcpSRflag.Drobu = false
-					cause = ie.CauseRequestAccepted
-				}
-				if err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
-					smContext.SubPfcpLog.Infof("Receive %v, UE is not responding to N1N2 transfer message", rspData.Cause)
-					// TODO: TS 23.502 4.2.3.3 3c. Failure indication
-				}
-			} else {
-				smContext.SubPfcpLog.Warnln("skipping N1N2 transfer because N2 SM information is unavailable")
-			}
-
-			// Sending Session Report Response to UPF.
-			smContext.SubPfcpLog.Infof("Sending Session Report to UPF with Cause %v", cause)
-			err = pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, pfcpSRflag, seqFromUPF, SEID)
-			if err != nil {
-				logger.PfcpLog.Errorf("failed to send PFCP Session Report Response: %+v", err)
-			}
-		}
+	// Answer under the SEID the user plane assigned, not the one it addressed us by.
+	// See SMContext.RemoteSEIDByLocalSEID. The no-context branch above cannot do this --
+	// with no context there is nothing to look the value up in -- so it still echoes.
+	responseSEID := SEID
+	if remoteSEID, found := smContext.RemoteSEIDByLocalSEID(SEID); found {
+		responseSEID = remoteSEID
+	} else {
+		smContext.SubPfcpLog.Warnf("no PFCP context for local SEID[%d], answering the report under it", SEID)
 	}
 
-	// TS 23.502 4.2.3.3 2b. Send Data Notification Ack, SMF->UPF
-	//	cause.CauseValue = ie.CauseRequestAccepted
-	// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
-	// pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, seqFromUPF, SEID)
+	// Default to a rejection carrying DROBU: any path that cannot act on this report
+	// still answers it. TS 29.244 expects a response to every request, and silence left
+	// the UPF retransmitting into nothing while holding traffic it should have released.
+	cause = ie.CauseRequestRejected
+	pfcpSRflag.Drobu = true
+
+	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType.HasDLDR() {
+		downlinkServiceInfo, err := req.DownlinkDataReport.DownlinkDataServiceInformation()
+		if err != nil {
+			logger.PfcpLog.Warnln("DownlinkDataServiceInformation not found in DownlinkDataReport")
+		}
+
+		if downlinkServiceInfo != nil {
+			smContext.SubPfcpLog.Warnln("PFCP Session Report Request DownlinkDataServiceInformation handling is not implemented")
+		}
+
+		n1n2Request := models.NewN1N2MessageTransferRequest()
+		defer util.CleanupMultipartTempFiles(n1n2Request)
+
+		// TS 23.502 4.2.3.3 3a. Send Namf_Communication_N1N2MessageTransfer Request, SMF->AMF
+		n2SmBuf, err := smf_context.BuildPDUSessionResourceSetupRequestTransfer(smContext)
+		if err != nil {
+			smContext.SubPduSessLog.Errorln("build PDU Session Resource Setup Request Transfer failed:", err)
+		} else {
+			tmpFile, fileErr := util.CreatePayloadTempFile(n2SmBuf)
+			if fileErr != nil {
+				smContext.SubPduSessLog.Errorf("failed to create temp file: %v", fileErr)
+			} else {
+				n1n2Request.SetBinaryDataN2Information(tmpFile)
+			}
+		}
+
+		if n1n2Request.GetBinaryDataN2Information() != nil {
+			// n1n2FailureTxfNotifURI to be added in n1n2 request transfer.
+			// It is used as path by AMF to send failure notification message towards SMF
+			n1n2FailureTxfNotifURI := "/nsmf-callback/sm-n1n2failnotify/"
+			n1n2FailureTxfNotifURI += smContext.Ref
+
+			n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+			n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_SETUP_REQ)
+			smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
+			smInfo.SetN2InfoContent(*n2InfoContent)
+			if smContext.Snssai != nil {
+				smInfo.SetSNssai(*smContext.Snssai)
+			}
+			n2InfoContainer := models.NewN2InfoContainer(models.N2INFORMATIONCLASS_SM)
+			n2InfoContainer.SetSmInfo(*smInfo)
+
+			// Temporarily assign SMF itself, TODO: TS 23.502 4.2.3.3 5. Namf_Communication_N1N2TransferFailureNotification
+			jsonData := models.NewN1N2MessageTransferReqData()
+			jsonData.SetPduSessionId(smContext.PDUSessionID)
+			jsonData.SetSkipInd(false)
+			jsonData.SetN1n2FailureTxfNotifURI(fmt.Sprintf("%s://%s:%d%s",
+				smf_context.SMF_Self().URIScheme,
+				smf_context.SMF_Self().RegisterIPv4,
+				smf_context.SMF_Self().SBIPort,
+				n1n2FailureTxfNotifURI))
+			jsonData.SetN2InfoContainer(*n2InfoContainer)
+			n1n2Request.SetJsonData(*jsonData)
+
+			rspData, n1n2Err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
+			if n1n2Err != nil {
+				smContext.SubPfcpLog.Warnf("send N1N2Transfer failed: %v", n1n2Err)
+			}
+			if n1n2Err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_ATTEMPTING_TO_REACH_UE {
+				smContext.SubPfcpLog.Infof("receive %v, AMF is able to page the UE", rspData.GetCause())
+
+				pfcpSRflag.Drobu = false
+				cause = ie.CauseRequestAccepted
+			}
+			if n1n2Err == nil && rspData != nil && rspData.GetCause() == models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING {
+				smContext.SubPfcpLog.Infof("receive %v, UE is not responding to N1N2 transfer message", rspData.GetCause())
+				// TODO: TS 23.502 4.2.3.3 3c. Failure indication
+			}
+		} else {
+			smContext.SubPfcpLog.Warnln("skipping N1N2 transfer because N2 SM information is unavailable")
+		}
+	} else {
+		smContext.SubPfcpLog.Warnf("session report not actionable: UP connection state %v, report type %v",
+			smContext.UpCnxState, req.ReportType)
+	}
+
+	// TS 23.502 4.2.3.3 2b. Data Notification Ack, SMF->UPF. Sent on every path: the
+	// cause says whether the report was acted on, and a peer can interpret a cause.
+	smContext.SubPfcpLog.Infof("sending Session Report to UPF with Cause %v", cause)
+
+	if err := pfcp_message.SendPfcpSessionReportResponse(msg.RemoteAddr, cause, pfcpSRflag, seqFromUPF, responseSEID); err != nil {
+		logger.PfcpLog.Errorf("failed to send PFCP Session Report Response: %+v", err)
+	}
 }
 
 func HandlePfcpSessionReportResponse(msg *udp.Message) {

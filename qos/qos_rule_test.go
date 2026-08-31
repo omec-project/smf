@@ -13,6 +13,8 @@ import (
 	"github.com/omec-project/smf/qos"
 )
 
+const testQosData1 = "QosData1"
+
 var flowDesc = []string{
 	"permit out ip from 1.1.1.1 1000 to 2.2.2.2 2000",
 	"permit out ip from 1.1.1.1/24 1000 to 2.2.2.2/24 2000",
@@ -46,9 +48,9 @@ func TestBuildQosRules(t *testing.T) {
 	// make Sm ctxt Policy Data
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 
-	smPolicyDecision.PccRules = makeSamplePccRules()
-	smPolicyDecision.QosDecs = makeSampleQosData()
-	smPolicyDecision.SessRules = makeSampleSessionRule()
+	smPolicyDecision.SetPccRules(makeSamplePccRules())
+	smPolicyDecision.SetQosDecs(*makeSampleQosData())
+	smPolicyDecision.SetSessRules(*makeSampleSessionRule())
 
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(smCtxtPolData, smPolicyDecision)
 
@@ -87,12 +89,12 @@ func TestBuildAddQoSRuleFromPccRuleNilQosData(t *testing.T) {
 
 func TestBuildQosRules_SkipsPccRuleWithoutRefQosData(t *testing.T) {
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.PccRules = map[string]models.PccRule{
+	smPolicyDecision.SetPccRules(map[string]models.PccRule{
 		"missing-qos-ref": {
 			PccRuleId:  "missing-qos-ref",
 			Precedence: openapi.PtrInt32(1),
 		},
-	}
+	})
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(&qos.SmCtxtPolicyData{}, smPolicyDecision)
 
 	if got := qos.BuildQosRules(smPolicyUpdates); len(got) != 0 {
@@ -104,7 +106,7 @@ func makeSamplePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
 		Precedence: openapi.PtrInt32(200),
-		RefQosData: []string{"QosData1"},
+		RefQosData: []string{testQosData1},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
@@ -165,7 +167,7 @@ func makeSampleQosData() *map[string]models.QosData {
 	*/
 
 	qosDataMap := map[string]models.QosData{
-		"QosData1": qosData1,
+		testQosData1: qosData1,
 		//		"QosData2": &qosData2,
 	}
 

@@ -25,6 +25,15 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
 
+func marshalJSONForCompare(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal comparison value: %v", err)
+	}
+	return string(data)
+}
+
 func startTestPollingService(ctx context.Context, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement) (context.CancelFunc, <-chan struct{}) {
 	testCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -379,6 +388,12 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		t.Fail()
 	}
 
+	var expectedFetchedConfig []nfConfigApi.SessionManagement
+	err = json.Unmarshal(validJson, &expectedFetchedConfig)
+	if err != nil {
+		t.Fatalf("failed to unmarshal expectedFetchedConfig: %v", err)
+	}
+
 	tests := []struct {
 		name           string
 		statusCode     int
@@ -390,10 +405,10 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		{
 			name:           "200 OK with valid JSON",
 			statusCode:     http.StatusOK,
-			contentType:    "application/json",
+			contentType:    contentTypeJSON,
 			responseBody:   string(validJson),
 			expectedError:  "",
-			expectedResult: sessionConfigs,
+			expectedResult: expectedFetchedConfig,
 		},
 		{
 			name:          "200 OK with invalid Content-Type",
@@ -405,28 +420,28 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		{
 			name:          "400 Bad Request",
 			statusCode:    http.StatusBadRequest,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "server returned 400 error code",
 		},
 		{
 			name:          "500 Internal Server Error",
 			statusCode:    http.StatusInternalServerError,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "server returned 500 error code",
 		},
 		{
 			name:          "Unexpected Status Code 418",
 			statusCode:    http.StatusTeapot,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "",
 			expectedError: "unexpected status code: 418",
 		},
 		{
 			name:          "200 OK with invalid JSON",
 			statusCode:    http.StatusOK,
-			contentType:   "application/json",
+			contentType:   contentTypeJSON,
 			responseBody:  "{invalid-json}",
 			expectedError: "failed to parse JSON response:",
 		},
@@ -436,7 +451,7 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			handler := func(w http.ResponseWriter, r *http.Request) {
 				accept := r.Header.Get("Accept")
-				if accept != "application/json" {
+				if accept != contentTypeJSON {
 					t.Errorf("expected Accept header 'application/json', got '%s'", accept)
 				}
 
@@ -460,7 +475,7 @@ func TestFetchSessionManagementConfig(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected no error, got `%v`", err)
 				}
-				if !reflect.DeepEqual(tc.expectedResult, fetchedConfig) {
+				if marshalJSONForCompare(t, tc.expectedResult) != marshalJSONForCompare(t, fetchedConfig) {
 					t.Errorf("error in fetched config: expected `%v`, got `%v`", tc.expectedResult, fetchedConfig)
 				}
 			} else {

@@ -13,7 +13,7 @@ import (
 	"github.com/omec-project/smf/context"
 )
 
-func UnmarshallUserPlaneFunctionFeatures(data []byte) (*context.UPFunctionFeatures, error) {
+func UnmarshalUserPlaneFunctionFeatures(data []byte) (*context.UPFunctionFeatures, error) {
 	length := uint16(len(data))
 
 	u := &context.UPFunctionFeatures{}

@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/smf/logger"
 	utilLogger "github.com/omec-project/util/logger"
 )
@@ -45,6 +45,8 @@ type routeParamAlias struct {
 	canonical string
 	original  string
 }
+
+const individualSubscriptionPattern = "/subscriptions/:subId"
 
 // NewRouter returns a new router.
 func NewRouter() *gin.Engine {
@@ -90,10 +92,7 @@ func DefaultHandleFunc(c *gin.Context) {
 }
 
 func writeNotImplementedProblem(c *gin.Context, detail string) {
-	problemDetails := models.NewProblemDetails()
-	problemDetails.SetStatus(http.StatusNotImplemented)
-	problemDetails.SetCause("NOT_IMPLEMENTED")
-	problemDetails.SetDetail(detail)
+	problemDetails := utils.ProblemDetailsNotImplemented(detail)
 	c.JSON(http.StatusNotImplemented, problemDetails)
 }
 
@@ -140,19 +139,19 @@ func getRoutes() []Route {
 		{
 			"DeleteIndividualSubscription",
 			http.MethodDelete,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPDeleteIndividualSubscription,
 		},
 		{
 			"GetIndividualSubscription",
 			http.MethodGet,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPGetIndividualSubscription,
 		},
 		{
 			"ReplaceIndividualSubscription",
 			http.MethodPut,
-			"/subscriptions/:subId",
+			individualSubscriptionPattern,
 			HTTPReplaceIndividualSubscription,
 		},
 		{

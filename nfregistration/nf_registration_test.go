@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/consumer"
@@ -222,7 +221,8 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 	registrations := []nfConfigApi.SessionManagement{}
 	registerCalled := make(chan struct{}, 1)
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
 		registrationMu.Lock()
 		registrations = append(registrations, sessionManagementConfig...)
 		registrationMu.Unlock()
@@ -230,7 +230,7 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 		case registerCalled <- struct{}{}:
 		default:
 		}
-		return &profile, "", nil
+		return profile, "", nil
 	}
 
 	newConfig := []nfConfigApi.SessionManagement{sessionConfigOne}
@@ -265,7 +265,9 @@ func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T
 	var attempts atomic.Int32
 	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		attempts.Add(1)
-		return &models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}, "", errors.New("mock error")
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
+		return profile, "", errors.New("mock error")
 	}
 	defer func() {
 		cancel()
@@ -368,10 +370,19 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfC
 		// expected
 	}
 
-	if !reflect.DeepEqual(firstRegistration.config, []nfConfigApi.SessionManagement{firstConfig}) {
+	expectedFirstRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{firstConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize first expected config: %v", err)
+	}
+	expectedSecondRegistrationConfig, err := deepCopySessionManagement([]nfConfigApi.SessionManagement{secondConfig})
+	if err != nil {
+		t.Fatalf("failed to normalize second expected config: %v", err)
+	}
+
+	if !reflect.DeepEqual(firstRegistration.config, expectedFirstRegistrationConfig) {
 		t.Errorf("expected first config %+v, got %+v", firstConfig, firstRegistration.config)
 	}
-	if !reflect.DeepEqual(secondRegistration.config, []nfConfigApi.SessionManagement{secondConfig}) {
+	if !reflect.DeepEqual(secondRegistration.config, expectedSecondRegistrationConfig) {
 		t.Errorf("expected second config %+v, got %+v", secondConfig, secondRegistration.config)
 	}
 }
@@ -393,12 +404,13 @@ func TestHeartbeatNF_Success(t *testing.T) {
 	}()
 
 	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
-		return &models.NFProfile{}, nil, nil
+		return models.NewNFProfileWithDefaults(), nil, nil
 	}
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
 		calledRegister = true
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
-		return &profile, "", nil
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
+		return profile, "", nil
 	}
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}
 	heartbeatNF(sessionManagementConfig)
@@ -432,13 +444,14 @@ func TestHeartbeatNF_WhenNfUpdateFails_ThenNfRegistersIsCalled(t *testing.T) {
 	}()
 
 	consumer.SendUpdateNFInstance = func(patchItem []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
-		return &models.NFProfile{}, nil, errors.New("mock error")
+		return models.NewNFProfileWithDefaults(), nil, errors.New("mock error")
 	}
 
 	consumer.SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
-		profile := models.NFProfile{HeartBeatTimer: openapi.PtrInt32(60)}
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
 		calledRegister = true
-		return &profile, "", nil
+		return profile, "", nil
 	}
 
 	sessionManagementConfig := []nfConfigApi.SessionManagement{}

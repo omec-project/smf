@@ -82,6 +82,7 @@ func TestRun(t *testing.T) {
 	server := udp.GetServer()
 	if server == nil {
 		t.Fatal("expected PFCP server to be initialized")
+		return
 	}
 	if err := sender.SendPFCPMessage(req, server.Addr); err != nil {
 		t.Errorf("send PFCP: %v", err)

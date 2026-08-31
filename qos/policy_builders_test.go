@@ -11,18 +11,22 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 )
 
+const (
+	testTcData1 = "TC1"
+	testTcData2 = "TC2"
+)
+
 func TestSamplePolicyDecisionBuilders(t *testing.T) {
 	decision := MakeSamplePolicyDecision()
-	if decision == nil || len(decision.PccRules) == 0 || len(decision.GetQosDecs()) == 0 {
+	if decision == nil || len(decision.GetPccRules()) == 0 || len(decision.GetQosDecs()) == 0 {
 		t.Fatalf("unexpected sample policy decision: %+v", decision)
 	}
 }
 
 // MakeSamplePolicyDecision builds sample policy decision data for QoS tests.
 func MakeSamplePolicyDecision() *models.SmPolicyDecision {
-	decision := &models.SmPolicyDecision{
-		PccRules: MakePccRules(),
-	}
+	decision := models.NewSmPolicyDecision()
+	decision.SetPccRules(MakePccRules())
 	decision.SetSessRules(MakeSessionRule())
 	decision.SetQosDecs(MakeQosData())
 	decision.SetTraffContDecs(MakeTrafficControlData())
@@ -34,8 +38,8 @@ func MakePccRules() map[string]models.PccRule {
 	pccRuleDef := models.PccRule{
 		PccRuleId:  "255",
 		Precedence: openapi.PtrInt32(255),
-		RefQosData: []string{"QosData1"},
-		RefTcData:  []string{"TC1"},
+		RefQosData: []string{testQosData1},
+		RefTcData:  []string{testTcData1},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
@@ -52,8 +56,8 @@ func MakePccRules() map[string]models.PccRule {
 	pccRule1 := models.PccRule{
 		PccRuleId:  "1",
 		Precedence: openapi.PtrInt32(111),
-		RefQosData: []string{"QosData1"},
-		RefTcData:  []string{"TC1"},
+		RefQosData: []string{testQosData1},
+		RefTcData:  []string{testTcData1},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
@@ -77,7 +81,7 @@ func MakePccRules() map[string]models.PccRule {
 		PccRuleId:  "2",
 		Precedence: openapi.PtrInt32(222),
 		RefQosData: []string{"QosData2"},
-		RefTcData:  []string{"TC2"},
+		RefTcData:  []string{testTcData2},
 		FlowInfos:  make([]models.FlowInformation, 0),
 	}
 
@@ -139,8 +143,8 @@ func MakeQosData() map[string]models.QosData {
 	}
 
 	return map[string]models.QosData{
-		"QosData1": qosData1,
-		"QosData2": qosData2,
+		testQosData1: qosData1,
+		"QosData2":   qosData2,
 	}
 }
 
@@ -188,17 +192,17 @@ func MakeSessionRule() map[string]models.SessionRule {
 // MakeTrafficControlData builds sample traffic control data for QoS tests.
 func MakeTrafficControlData() map[string]models.TrafficControlData {
 	tc1 := models.TrafficControlData{
-		TcId:       "TC1",
+		TcId:       testTcData1,
 		FlowStatus: models.FLOWSTATUS_ENABLED.Ptr(),
 	}
 
 	tc2 := models.TrafficControlData{
-		TcId:       "TC2",
+		TcId:       testTcData2,
 		FlowStatus: models.FLOWSTATUS_ENABLED.Ptr(),
 	}
 
 	return map[string]models.TrafficControlData{
-		"TC1": tc1,
-		"TC2": tc2,
+		testTcData1: tc1,
+		testTcData2: tc2,
 	}
 }

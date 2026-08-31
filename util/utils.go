@@ -6,7 +6,6 @@ package util
 import (
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"reflect"
 
@@ -14,15 +13,6 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 )
-
-// CloseResponseBody safely closes the response body and logs any errors.
-func CloseResponseBody(res *http.Response) {
-	if res != nil && res.Body != nil {
-		if err := res.Body.Close(); err != nil {
-			logger.ConsumerLog.Errorf("response body cannot close: %+v", err)
-		}
-	}
-}
 
 // HandleOpenAPIError processes OpenAPI errors and extracts ProblemDetails if available.
 func HandleOpenAPIError(err error) (*models.ProblemDetails, error) {
@@ -116,7 +106,7 @@ func cleanupMultipartTempFile(file *os.File, visited map[string]struct{}) {
 	}
 	visited[name] = struct{}{}
 
-	if err := file.Close(); err != nil {
+	if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 		logger.ConsumerLog.Errorf("temp file close failed: %+v", err)
 	}
 	if err := os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {

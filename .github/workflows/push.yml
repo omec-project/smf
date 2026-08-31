@@ -2,26 +2,22 @@
 # Copyright 2024 Intel Corporation
 # Copyright 2025 Canonical Ltd.
 name: Release Pipeline
-
 on:
   push:
     branches:
       - main
     paths:
       - "VERSION"
-
 permissions:
   contents: read
-
 jobs:
   tag-github:
     permissions:
       contents: write
       actions: read
       id-token: write
-    uses: omec-project/.github/.github/workflows/tag-github.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/tag-github.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     secrets: inherit
-
   release-image:
     needs: tag-github
     permissions:
@@ -30,12 +26,11 @@ jobs:
       actions: read
       id-token: write
       attestations: write
-    uses: omec-project/.github/.github/workflows/release-image.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/release-image.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       changed: ${{ needs.tag-github.outputs.changed }}
       version: ${{ needs.tag-github.outputs.version }}
     secrets: inherit
-
   update-version:
     needs: tag-github
     permissions:
@@ -43,32 +38,30 @@ jobs:
       pull-requests: write
       actions: read
       id-token: write
-    uses: omec-project/.github/.github/workflows/update-version.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/update-version.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       changed: ${{ needs.tag-github.outputs.changed }}
       version: ${{ needs.tag-github.outputs.version }}
     secrets: inherit
-
   sbom-source:
     needs: tag-github
     permissions:
       contents: read
       actions: read
-    uses: omec-project/.github/.github/workflows/sbom-source.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/sbom-source.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       changed: ${{ needs.tag-github.outputs.changed }}
       branch_name: ${{ github.ref }}
       artifact_name: ${{ github.event.repository.name }}-${{ needs.tag-github.outputs.version }}.spdx.json
       sbom_format: spdx-json
       path: .
-
   grype-scan:
     needs: [tag-github, sbom-source]
     permissions:
       contents: read
       actions: read
       security-events: write # Required for SARIF upload to Code Scanning
-    uses: omec-project/.github/.github/workflows/grype-scan.yml@e05a6a6c35278d4b7f9f03da4474e49d869edf2f # v0.0.27
+    uses: omec-project/.github/.github/workflows/grype-scan.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
     with:
       changed: ${{ needs.tag-github.outputs.changed }}
       artifact_name: ${{ github.event.repository.name }}-${{ needs.tag-github.outputs.version }}.spdx.json

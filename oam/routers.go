@@ -22,7 +22,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 )
 
 // Route is the information for every URI.
@@ -61,10 +61,7 @@ func DefaultHandleFunc(c *gin.Context) {
 }
 
 func writeNotImplementedProblem(c *gin.Context, detail string) {
-	problemDetails := models.NewProblemDetails()
-	problemDetails.SetStatus(http.StatusNotImplemented)
-	problemDetails.SetCause("NOT_IMPLEMENTED")
-	problemDetails.SetDetail(detail)
+	problemDetails := utils.ProblemDetailsNotImplemented(detail)
 	c.JSON(http.StatusNotImplemented, problemDetails)
 }
 

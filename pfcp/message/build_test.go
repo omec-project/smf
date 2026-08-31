@@ -15,7 +15,10 @@ import (
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
 )
 
-const cpNodeID = "1.2.3.4"
+const (
+	cpNodeID          = "1.2.3.4"
+	testApplicationID = "app"
+)
 
 func outerHeaderRemovalSet(pdrIEs []*ie.IE) bool {
 	for _, pdrIE := range pdrIEs {
@@ -265,7 +268,7 @@ func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 				LocalFTeid:      &context.FTEID{},
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
-				ApplicationID:   "app",
+				ApplicationID:   testApplicationID,
 				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
@@ -330,7 +333,7 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 				LocalFTeid:      &context.FTEID{},
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
-				ApplicationID:   "app",
+				ApplicationID:   testApplicationID,
 				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
@@ -356,7 +359,7 @@ func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 	}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList)
+	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("error building PFCP session modification request: %v", err)
 	}
@@ -402,7 +405,7 @@ func TestBuildPfcpSessionModificationRequestNoOuterHeader(t *testing.T) {
 				LocalFTeid:      &context.FTEID{},
 				UEIPAddress:     &context.UEIPAddress{},
 				SDFFilter:       &context.SDFFilter{},
-				ApplicationID:   "app",
+				ApplicationID:   testApplicationID,
 				NetworkInstance: nasType.Dnn{},
 				SourceInterface: context.SourceInterface{
 					InterfaceValue: 0x11,
@@ -420,7 +423,7 @@ func TestBuildPfcpSessionModificationRequestNoOuterHeader(t *testing.T) {
 	}
 	qerList := []*context.QER{}
 
-	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList)
+	msg, err := message.BuildPfcpSessionModificationRequest(64, 1, 2, net.ParseIP("2.3.4.5"), pdrList, farList, qerList, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("error building PFCP session modification request: %v", err)
 	}
