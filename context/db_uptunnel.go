@@ -98,7 +98,7 @@ func RecoverTunnel(tunnelInfo *TunnelInfo) (tunnel *GTPTunnel) {
 		var nilValNode *DataPathNode = nil
 		empty_nodeID := &NodeIDInDB{}
 
-		if (tunnelInfo.DataPathNodeUPFNodeID.NodeIdType == empty_nodeID.NodeIdType) && (testEq(tunnelInfo.DataPathNodeUPFNodeID.NodeIdValue, empty_nodeID.NodeIdValue)) {
+		if (tunnelInfo.DataPathNodeUPFNodeID.NodeIdType == empty_nodeID.NodeIdType) && testEq(tunnelInfo.DataPathNodeUPFNodeID.NodeIdValue, empty_nodeID.NodeIdValue) {
 			endPoint := nilValNode
 			tunnel.SrcEndPoint = endPoint
 		} else {
