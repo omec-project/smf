@@ -15,7 +15,7 @@ import (
 
 func modifyingSession() *smf_context.SMContext {
 	sm := &smf_context.SMContext{
-		Supi:          "imsi-208930100007487",
+		Supi:          testSupi,
 		PDUSessionID:  10,
 		SubPduSessLog: zap.NewNop().Sugar(),
 		SubCtxLog:     zap.NewNop().Sugar(),

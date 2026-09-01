@@ -15,7 +15,7 @@ import (
 
 func TestAbandonModificationDiscardsAndSettlesTheSession(t *testing.T) {
 	smContext := &smf_context.SMContext{
-		Supi:          "imsi-208930100007487",
+		Supi:          testSupi,
 		PDUSessionID:  10,
 		SubPduSessLog: zap.NewNop().Sugar(),
 		SubCtxLog:     zap.NewNop().Sugar(),
@@ -43,7 +43,7 @@ func TestAbandonModificationDiscardsAndSettlesTheSession(t *testing.T) {
 // Abandoning twice must not panic. The timer can abort while an acknowledgement is in flight.
 func TestAbandonModificationTwiceIsSafe(t *testing.T) {
 	smContext := &smf_context.SMContext{
-		Supi:          "imsi-208930100007487",
+		Supi:          testSupi,
 		PDUSessionID:  10,
 		SubPduSessLog: zap.NewNop().Sugar(),
 		SubCtxLog:     zap.NewNop().Sugar(),
