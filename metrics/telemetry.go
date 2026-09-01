@@ -47,6 +47,9 @@ var smfStats *SmfStats
 // msgCounterLabels is the shared label set for the per-interface message counters below.
 var msgCounterLabels = []string{"smf_id", "msg_type", "direction", "result", "reason"}
 
+// labelUpf is the user-plane label shared by the counters below.
+const labelUpf = "upf"
+
 func initSmfStats() *SmfStats {
 	return &SmfStats{
 		n11Msg: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -82,17 +85,17 @@ func initSmfStats() *SmfStats {
 		sessProfile: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "smf_pdu_session_profile",
 			Help: "SMF PDU session Profile",
-		}, []string{"id", "ip", "state", "upf", "enterprise"}),
+		}, []string{"id", "ip", "state", labelUpf, "enterprise"}),
 
 		upfRestoration: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "smf_upf_restoration_sessions_total",
 			Help: "Sessions handled after a UPF restart, by outcome",
-		}, []string{"id", "upf", "outcome"}),
+		}, []string{"id", labelUpf, "outcome"}),
 
 		upfUnrestored: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "smf_upf_unrestored_sessions",
 			Help: "Sessions on a UPF that are not carrying traffic after a restart",
-		}, []string{"id", "upf"}),
+		}, []string{"id", labelUpf}),
 	}
 }
 

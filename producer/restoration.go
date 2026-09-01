@@ -878,7 +878,7 @@ func releaseUnrestorableSession(smContext *context.SMContext) error {
 func buildReleaseCommandForUE(smContext *context.SMContext) (*models.N1N2MessageTransferRequest, error) {
 	n1n2Request := models.NewN1N2MessageTransferRequest()
 
-	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: n2SmInformationContentID})
 	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_REL_CMD)
 	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
 	smInfo.SetN2InfoContent(*n2InfoContent)
