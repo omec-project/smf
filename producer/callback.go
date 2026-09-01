@@ -6,6 +6,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,7 +17,9 @@ import (
 	"github.com/omec-project/openapi/v2/utils"
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/smf/util"
@@ -26,6 +29,22 @@ import (
 var (
 	NRFCacheRemoveNfProfileFromNrfCache = nrfCache.RemoveNfProfileFromNrfCache
 	SendRemoveSubscription              = consumer.SendRemoveSubscription
+
+	// Seams for fault injection. Every behaviour this file adds is a failure path, and a test
+	// that only exercises the successful modification demonstrates none of them.
+	// Every modification path sends through these rather than calling the functions directly, so a
+	// test can observe what the network decided to send without opening a PFCP association or an
+	// N1N2 transfer. Three call sites on this file's modification paths were calling the underlying
+	// functions directly, which left the main network-initiated path — the one an operator policy
+	// change takes — as the only one with no test.
+	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
+	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
+
+	// applyModification is behind a seam for the same reason as the two above, and for one more:
+	// the corrective modification after a partial rejection runs on its own goroutine, so without
+	// a seam a test cannot tell whether it was issued, and the goroutine outlives the test and
+	// reaches the real user plane.
+	applyModification = ApplyModification
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -46,49 +65,15 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.Supi, smContext.PDUSessionID)
 
 	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, request.SmPolicyDecision)
-
-	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], policyUpdates)
-
-	// Build PFCP params while locked (if it reads shared state)
-	pfcpParam := BuildPfcpParam(smContext)
-
-	// Change state before sending PFCP
-	smContext.ChangeState(smfContext.SmStatePfcpModify)
-
 	smContext.SMLock.Unlock()
 
-	if err := SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		smContext.SMLock.Lock()
-
-		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
-
-		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
-			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
-
-		smContext.SMLock.Unlock()
-
-		httpResponse := makePduCtxtModifyErrRsp(smContext, err.Error())
+	if err := ApplyModification(smContext, policyUpdates); err != nil {
 		txn.Err = err
-		txn.Rsp = httpResponse
+		if errors.Is(err, ErrPfcpModifyFailed) {
+			txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
+		}
 		return err
 	}
-
-	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
-		smContext.Supi, smContext.PDUSessionID)
-
-	if err := BuildAndSendQosN1N2TransferMsg(smContext); err != nil {
-		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
-		txn.Err = err
-		return err
-	}
-
-	smContext.SMLock.Lock()
-
-	smContext.ChangeState(smfContext.SmStateActive)
-	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
-		smContext.SMContextState.String())
-
-	smContext.SMLock.Unlock()
 
 	txn.Rsp = &httpwrapper.Response{
 		Status: http.StatusOK,
@@ -144,6 +129,15 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	logger.PduSessLog.Infof("[BuildPfcpParam] Using PCC RuleId=%s, releaseOnly=%v", ruleid, shouldSendReleaseOnly)
 
 	// Iterate over all active data paths in the SM context
+	if smContext.Tunnel == nil {
+		// A session with no tunnel has no rules to program. Reachable on the failure paths, where
+		// a modification can be reverted for a session that is being torn down concurrently, and
+		// the release handling elsewhere in this producer already treats a nil tunnel as a real
+		// state rather than an impossible one.
+		smContext.SubPduSessLog.Warnln("no tunnel for this session; nothing to program")
+		return pfcpParam
+	}
+
 	for dpIndex, dataPath := range smContext.Tunnel.DataPathPool {
 		logger.PduSessLog.Infof("[BuildPfcpParam] Processing DataPath[%d], Activated=%v", dpIndex, dataPath.Activated)
 		if !dataPath.Activated {
@@ -457,4 +451,241 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	}
 
 	return nil
+}
+
+// startT3591 arms the retransmission timer for a modification command that has just been sent.
+// TS 24.501 subclause 6.3.2.5 item a: the command is resent on each of the first four expiries
+// and the procedure is abandoned on the fifth.
+// ErrPfcpModifyFailed distinguishes a modification that could not be programmed into the user
+// plane from one that could not be delivered to the UE. The caller answers the two differently.
+var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
+
+// ApplyModification carries out a network-requested PDU session modification: program the user
+// plane, tell the UE, then arm the timer that governs the acknowledgement.
+//
+// It takes a prepared policy update rather than deriving one, so anything that can describe a
+// change to a session can drive a modification through the same path — including the corrective
+// modification that follows a partial rejection, which is a deletion of the refused flows and
+// nothing more exotic than that. Having one implementation is the point: the realignment used to
+// do its own user-plane rebuild and its own N1N2 send, and got both wrong in ways this path had
+// already got right.
+//
+// The caller must not hold SMLock. This blocks on the user plane's answer, and doing that under
+// the session lock is what wedges a session.
+func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
+	smContext.SMLock.Lock()
+	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
+	// From here the network owns this session's modification, and a UE request for the same session
+	// is a collision to be disregarded rather than refused.
+	smContext.NwModificationPending = true
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.ChangeState(smfContext.SmStatePfcpModify)
+	smContext.SMLock.Unlock()
+
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
+		smContext.SMLock.Lock()
+		// The procedure never got started, so it must not leave the session looking as though one
+		// were running: every later UE request would be disregarded, silently and forever.
+		smContext.NwModificationPending = false
+		// Nor may it leave the session mid-modification. The user plane was not programmed, so the
+		// pending update describes a change that never happened — discarding it puts the policy
+		// state back to what is actually in force, and the state back to what it was on entry.
+		// The path upstream reached this way left both behind; it was only ever driven by an
+		// operator policy change, and this function is now reached by the corrective modification
+		// after a partial rejection as well.
+		if discardErr := smContext.CommitSmPolicyDecisionLocked(false); discardErr != nil {
+			smContext.SubPduSessLog.Errorf("discarding the unprogrammed modification failed: %v", discardErr)
+		}
+		smContext.ChangeState(smfContext.SmStateActive)
+		smContext.SMLock.Unlock()
+		return fmt.Errorf("%w: %v", ErrPfcpModifyFailed, err)
+	}
+
+	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
+		smContext.Supi, smContext.PDUSessionID)
+
+	if err := sendQosN1N2TransferMsg(smContext); err != nil {
+		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
+		// The user plane was programmed before this. Leaving it there would have the session
+		// enforcing parameters the UE was never told about, which is the divergence this whole
+		// path exists to avoid.
+		revertModification(smContext, "n1n2_transfer_failed")
+		return err
+	}
+
+	smContext.SMLock.Lock()
+	smContext.ChangeState(smfContext.SmStateActive)
+	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
+		smContext.SMContextState.String())
+	smContext.SMLock.Unlock()
+
+	startT3591(smContext)
+	return nil
+}
+
+func startT3591(smContext *smfContext.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	enabled, maxRetries := effectiveT3591Retries(smContext)
+	if !enabled {
+		return
+	}
+	startT3591Locked(smContext, maxRetries)
+
+	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
+		smContext.T3591Value, maxRetries)
+}
+
+// startT3591Locked arms the retransmission timer for a caller that already holds SMLock. The N1
+// and N2 update handlers all run under it, so they must use this rather than startT3591: SMLock
+// is not reentrant, and taking it twice wedges the session for good.
+func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
+	// A previous attempt on this session must not keep running alongside this one.
+	smContext.StopT3591()
+
+	// The abandonment closure checks that it is still the session's timer before acting.
+	//
+	// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's
+	// own goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing
+	// most likely to be holding it is the acknowledgement that just arrived and superseded this
+	// procedure. Without this check the queued abort resumes afterwards and discards whatever
+	// modification is pending by then, which after a partial rejection is the corrective one that
+	// was started in the meantime.
+	//
+	// The window is narrow and it is exactly the satellite case: a UE that acknowledges at the
+	// fifth expiry, after a fade almost long enough to abandon the procedure.
+	var timer *smfContext.Timer
+	timer = smfContext.NewTimer(smContext.T3591Value, maxRetries,
+		func(expireTimes int32) {
+			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
+				expireTimes, maxRetries)
+			if err := sendQosN1N2TransferMsg(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("retransmitting the modification command failed: %v", err)
+			}
+		},
+		func() {
+			abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
+		})
+	smContext.T3591 = timer
+	// StopT3591 above cleared it; the procedure is still running.
+	smContext.NwModificationPending = true
+}
+
+// effectiveT3591Retries reports whether the timer is enabled and how many retransmissions it
+// allows, so a caller holding SMLock can arm it without re-reading configuration.
+func effectiveT3591Retries(smContext *smfContext.SMContext) (bool, int) {
+	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
+	if !enabled {
+		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
+		smContext.NwModificationPending = false
+	}
+	return enabled, maxRetries
+}
+
+// abandonModification gives up on a modification and leaves the session on the parameters it
+// already had, by discarding the pending policy update rather than committing it.
+//
+// Nothing re-drives the change afterwards. On a link where a fade can outlast the whole
+// retransmission sequence, abandonment is an ordinary outcome rather than a rare one, so the
+// site stays on its old policy until someone re-issues it — which is why this is reported
+// rather than only logged at debug.
+func abandonModification(smContext *smfContext.SMContext, path, cause string) {
+	reportAbandonment(smContext, path, cause)
+
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	abandonModificationLocked(smContext)
+}
+
+// abandonModificationLocked is the state half of abandonModification, for a caller that already
+// holds SMLock. The N1 and N2 update handlers are all called with it held.
+func abandonModificationLocked(smContext *smfContext.SMContext) {
+	if err := smContext.CommitSmPolicyDecisionLocked(false); err != nil {
+		smContext.SubPduSessLog.Errorf("discarding the abandoned modification failed: %v", err)
+	}
+
+	// Drop the timer handle and leave the session settled so a later modification of the same
+	// session can be attempted.
+	smContext.T3591 = nil
+	smContext.NwModificationPending = false
+	smContext.ChangeState(smfContext.SmStateActive)
+}
+
+// abandonIfCurrent abandons the modification only if the expiring timer is still the session's.
+//
+// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's own
+// goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing most
+// likely to be holding it is the acknowledgement that just arrived and superseded this procedure.
+// Resuming afterwards, it would discard whatever modification is pending by then, which after a
+// partial rejection is the corrective one started in the meantime.
+func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
+	// The timer goroutine holds no lock, so this takes it.
+	smContext.SMLock.Lock()
+	superseded := smContext.T3591 != timer
+	smContext.SMLock.Unlock()
+
+	if superseded {
+		smContext.SubPduSessLog.Infof("a T3591 expiry arrived for a modification that has already finished; ignoring it rather than abandoning the one now in progress")
+		return
+	}
+	abandonModification(smContext, path, cause)
+}
+
+// reportAbandonment logs and counts an abandonment without touching session state, so the two
+// halves can be used separately by callers that differ only in whether they hold SMLock.
+func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
+	smContext.SubPduSessLog.Errorf("abandoning PDU session modification: supi %s, pdu session %d, path %s, cause %s; the session keeps its previous parameters and the change is not retried",
+		smContext.Supi, smContext.PDUSessionID, path, cause)
+	metrics.IncrementModificationAbandonedStats(path, cause)
+}
+
+// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock.
+func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
+	reportAbandonment(smContext, path, cause)
+	abandonModificationLocked(smContext)
+}
+
+// revertModification gives up on a modification that could not be delivered and puts the user
+// plane back to the parameters the UE still believes are in force.
+//
+// The discard comes first and does the heavy lifting: the pending policy update was never
+// committed, so once it is dropped the session's policy state already describes the
+// pre-modification session, and rebuilding the PFCP parameters from it yields exactly the rules
+// that were in force. Nothing is snapshotted and nothing is copied.
+//
+// The path is always "delivery_failure": that is what reverting means, as distinct from a
+// modification abandoned because the UE did not answer or the radio refused it. Only the cause
+// varies, by how the delivery failed.
+func revertModification(smContext *smfContext.SMContext, cause string) {
+	const path = "delivery_failure"
+	abandonModification(smContext, path, cause)
+
+	smContext.SMLock.Lock()
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.SMLock.Unlock()
+
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		// The session is now genuinely divergent: the user plane still enforces the modification
+		// the UE was never told about, and putting it back has failed too. Releasing the session
+		// is the right answer and this is deliberately not the place that does it.
+		//
+		// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext
+		// plus notifying the AMF. That channel is a single-slot rendezvous with five existing
+		// readers, and this runs on a background goroutine — adding a sixth reader here would risk
+		// consuming another transaction's response to clean up after a rare double failure, which
+		// is a worse outcome than the divergence it repairs.
+		//
+		// So this marks and reports, and does not pretend to have released. The state is a label
+		// nothing acts on; the metric is what makes the session findable.
+		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about and needs releasing, which this path deliberately does not attempt", err)
+		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
+		smContext.SMLock.Lock()
+		smContext.ChangeState(smfContext.SmStatePfcpRelease)
+		smContext.SMLock.Unlock()
+		return
+	}
+
+	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 }

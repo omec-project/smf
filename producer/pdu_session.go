@@ -872,6 +872,27 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 
 	smContext.SubPduSessLog.Infoln("in HandlePduSessN1N2TransFailInd, N1N2 Transfer Failure Notification received")
 
+	// A failure to deliver means something different depending on what was being delivered, and
+	// this handler is shared.
+	//
+	// For an establishment the session was never usable, so dropping the data path below is right.
+	// For a modification it is not: the session was working before the modification, and the only
+	// thing that failed was telling the UE about a change to it. Dropping the data path there takes
+	// down a working session because a QoS change could not be delivered — on a satellite link,
+	// where delivery failures are ordinary, that turns a routine event into an outage.
+	//
+	// So a modification is reverted instead: the pending update is discarded and the user plane is
+	// put back to the parameters the UE still believes are in force.
+	smContext.SMLock.Lock()
+	modifying := smContext.NwModificationPending
+	smContext.SMLock.Unlock()
+	if modifying {
+		smContext.SubPduSessLog.Warnf("the modification could not be delivered to the UE; reverting it and leaving the session on its previous parameters")
+		revertModification(smContext, "n1n2_transfer_failure_indication")
+		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent, Body: nil}
+		return nil
+	}
+
 	var httpResponse *httpwrapper.Response
 
 	// Set only once a modification is actually on its way to the UPF: every path that

@@ -120,8 +120,15 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 
 	destUPF := node.UPF
 
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
@@ -173,8 +180,15 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	node.DownLinkTunnel.DestEndPoint = node
 
 	destUPF := node.UPF
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 		for name, rule := range addRules {
@@ -408,6 +422,14 @@ func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
 }
 
 func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData string, tcData string) (*QER, error) {
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
 	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
@@ -435,11 +457,22 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLGate: gateStatus,
 		}
 
-		ulMbr := smContext.SelectedSessionRule().AuthSessAmbr.Uplink
+		// The session rule supplies the fallback rate when the QoS data names none. It can be
+		// absent: a modification that adds a PCC rule without changing session rules leaves
+		// SessRuleUpdate nil, and SelectedSessionRule then falls back to the committed active
+		// rule, which is itself nil on a session that never had one. Dereferencing it takes the
+		// SMF down on the ordinary case of an application function adding a flow mid-session.
+		var ulMbr, dlMbr string
+		if sessRule := smContext.SelectedSessionRule(); sessRule != nil && sessRule.AuthSessAmbr != nil {
+			ulMbr = sessRule.AuthSessAmbr.Uplink
+			dlMbr = sessRule.AuthSessAmbr.Downlink
+		} else {
+			logger.PduSessLog.Warnf("no session-level AMBR for UE [%s]; the flow's own rates are the only bound",
+				smContext.Supi)
+		}
 		if maxbrUl, ok := refQos.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
 			ulMbr = *maxbrUl
 		}
-		dlMbr := smContext.SelectedSessionRule().AuthSessAmbr.Downlink
 		if maxbrDl, ok := refQos.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
 			dlMbr = *maxbrDl
 		}
@@ -462,6 +495,14 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	sessionRule := smContext.SelectedSessionRule()
 
 	// Get Default Qos-Data for the session
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 
 	defQosData := qos.GetDefaultQoSDataFromPolicyDecision(smPolicyDec)
@@ -494,6 +535,14 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER,
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: start for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: total QoSData entries = %d", len(smPolicyDec.GetQosDecs()))
 
@@ -522,22 +571,9 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER,
 				ULGate: GateOpen,
 				DLGate: GateOpen,
 			}
-			var gbrul string
-			var gbrdl string
-			// Set Guaranteed Bit Rate (GBR) if configured
-			if gbrUl, ok := qosData.GetGbrUlOk(); ok && gbrUl != nil && *gbrUl != "" {
-				gbrul = *gbrUl
-			}
-			if gbrDl, ok := qosData.GetGbrDlOk(); ok && gbrDl != nil && *gbrDl != "" {
-				gbrdl = *gbrDl
-			}
-			if gbrul != "" && gbrdl != "" {
-				newQER.GBR = &GBR{
-					ULGBR: util.BitRateTokbps(util.NormalizeBitRate(gbrul)),
-					DLGBR: util.BitRateTokbps(util.NormalizeBitRate(gbrdl)),
-				}
-				logger.PduSessLog.Infof("CreateDedicatedQosQer: GBR set [UL=%d kbps, DL=%d kbps]",
-					newQER.GBR.ULGBR, newQER.GBR.DLGBR)
+			if newQER.GBR = BuildGBR(&qosData); newQER.GBR != nil {
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+					newQER.GBR.ULGBR, newQER.GBR.DLGBR, qosData.GetQosId())
 			} else {
 				logger.PduSessLog.Infof("CreateDedicatedQosQer: no GBR configured for QoSId [%s]", qosData.GetQosId())
 			}
@@ -818,4 +854,38 @@ func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
 	}
 
 	dataPath.Activated = false
+}
+
+// BuildGBR turns the guaranteed rates on a QoS decision into the PFCP GBR IE, or nil when neither
+// direction carries one.
+//
+// A guarantee in one direction only is honoured rather than discarded. Requiring both silently
+// dropped the whole guarantee when an operator configured one, which is a plausible thing to want
+// and the likelier one on a satellite link, where the return path is the scarce direction. TS
+// 29.244 carries both rates in the same IE and zero in a direction means no guaranteed rate there,
+// so the unconfigured direction is left at zero rather than invented.
+//
+// Each direction is converted only when it was configured. BitRateTokbps happens to return zero
+// for an empty string, by way of the error path in its Atoi, but that is incidental rather than
+// intended and is not something to build on.
+func BuildGBR(qosData *models.QosData) *GBR {
+	var gbrul, gbrdl string
+	if v, ok := qosData.GetGbrUlOk(); ok && v != nil {
+		gbrul = *v
+	}
+	if v, ok := qosData.GetGbrDlOk(); ok && v != nil {
+		gbrdl = *v
+	}
+	if gbrul == "" && gbrdl == "" {
+		return nil
+	}
+
+	gbr := &GBR{}
+	if gbrul != "" {
+		gbr.ULGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrul))
+	}
+	if gbrdl != "" {
+		gbr.DLGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrdl))
+	}
+	return gbr
 }
