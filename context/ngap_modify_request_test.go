@@ -16,6 +16,13 @@ import (
 
 // modifyingContext is a session with a modification pending that adds two dedicated QoS flows,
 // which is what an application function asking for audio and video produces.
+// Repeated across the context tests; goconst asks for names.
+const (
+	testRuleID1         = "rule-1"
+	testSessionAmbr     = "50 Mbps"
+	testUnparsableQosID = "not-a-number"
+)
+
 func modifyingContext(t *testing.T, added map[string]*models.QosData) *SMContext {
 	t.Helper()
 
@@ -26,8 +33,8 @@ func modifyingContext(t *testing.T, added map[string]*models.QosData) *SMContext
 		SubCtxLog:     zap.NewNop().Sugar(),
 	}
 	ctx.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		SessRuleId:   "rule-1",
-		AuthSessAmbr: &models.Ambr{Uplink: "50 Mbps", Downlink: "50 Mbps"},
+		SessRuleId:   testRuleID1,
+		AuthSessAmbr: &models.Ambr{Uplink: testSessionAmbr, Downlink: testSessionAmbr},
 		AuthDefQos:   &models.AuthorizedDefaultQos{Var5qi: openapi.PtrInt32(9)},
 	}
 	// A default flow exists, so the old behaviour had something to fall back on. If the list is
@@ -171,8 +178,8 @@ func TestCorrectiveModificationDoesNotAskTheRadioAboutTheDefaultFlow(t *testing.
 // drops out-of-range identifiers coming the other way; this is the same rule applied outbound.
 func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2":            {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"not-a-number": {QosId: "not-a-number", Var5qi: openapi.PtrInt32(2)},
+		"2":                 {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
 	})
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -200,7 +207,7 @@ func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
 // about the ones it does - the divergence this builder was fixed to stop producing.
 func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"not-a-number": {QosId: "not-a-number", Var5qi: openapi.PtrInt32(2)},
+		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
 	})
 
 	if _, err := BuildPDUSessionResourceModifyRequestTransfer(ctx); err == nil {

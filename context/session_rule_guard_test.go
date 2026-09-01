@@ -34,14 +34,14 @@ func TestSelectedSessionRuleIsNilWhenNothingSuppliesOne(t *testing.T) {
 // And when one is supplied, it is returned.
 func TestSelectedSessionRuleReturnsTheCommittedRule(t *testing.T) {
 	rule := &models.SessionRule{
-		SessRuleId:   "rule-1",
-		AuthSessAmbr: &models.Ambr{Uplink: "50 Mbps", Downlink: "50 Mbps"},
+		SessRuleId:   testRuleID1,
+		AuthSessAmbr: &models.Ambr{Uplink: testSessionAmbr, Downlink: testSessionAmbr},
 	}
 	smContext := &SMContext{SubCtxLog: zap.NewNop().Sugar()}
 	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = rule
 
 	got := smContext.SelectedSessionRule()
-	if got == nil || got.SessRuleId != "rule-1" {
+	if got == nil || got.SessRuleId != testRuleID1 {
 		t.Fatalf("SelectedSessionRule() = %+v, want the committed rule", got)
 	}
 }
