@@ -19,6 +19,9 @@ import (
 // panic when an application function added a flow mid-session.
 const establishedRuleID = "rule-1"
 
+// Repeated below; goconst asks for a name.
+const testRuleID2 = "rule-2"
+
 func TestCommittingAnUpdateWithNoSessionRuleKeepsTheActiveOne(t *testing.T) {
 	established := &models.SessionRule{
 		SessRuleId:   establishedRuleID,
@@ -63,8 +66,8 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{"rule-2": {
-			SessRuleId:   "rule-2",
+		map[string]models.SessionRule{testRuleID2: {
+			SessRuleId:   testRuleID2,
 			AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "100 Mbps"},
 		}},
 		polData.SmCtxtSessionRules.SessionRules,
@@ -75,7 +78,7 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 
 	CommitSessionRulesUpdate(polData, update)
 
-	if polData.SmCtxtSessionRules.ActiveRuleName != "rule-2" {
+	if polData.SmCtxtSessionRules.ActiveRuleName != testRuleID2 {
 		t.Errorf("active rule name = %q, want rule-2: a named rule must take effect",
 			polData.SmCtxtSessionRules.ActiveRuleName)
 	}
