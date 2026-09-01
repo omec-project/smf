@@ -315,7 +315,7 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// Prepare N2 container info (NGAP message)
 	// -------------------------------
 	// N2 Container Info
-	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: n2SmInformationContentID})
 	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_MOD_REQ)
 	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
 	smInfo.SetN2InfoContent(*n2InfoContent)

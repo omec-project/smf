@@ -140,6 +140,16 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 			logger.PfcpLog.Errorf("pfcp association setup response RecoveryTimeStamp error: %v", err)
 			return
 		}
+		// Compared before the overwrite below, for the same reason as on the native path: once the
+		// held value has been replaced the evidence of the restart is gone, and what remains is the
+		// state that hides it.
+		if upf.HasRestarted(recoveryTimestamp) {
+			logger.PfcpLog.Warnf("PFCP Association Setup Response, upf [%v] recovery timestamp changed", upf.NodeID)
+			if context.OnRestart != nil {
+				context.OnRestart(upf.NodeID, recoveryTimestamp)
+			}
+		}
+
 		upf.RecoveryTimeStamp = context.RecoveryTimeStamp{
 			RecoveryTimeStamp: recoveryTimestamp,
 		}
@@ -184,14 +194,15 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 		return
 	}
 
-	if recoveryTimestamp != upf.RecoveryTimeStamp.RecoveryTimeStamp {
+	if upf.HasRestarted(recoveryTimestamp) {
 		// change UPF state to not associated so that
 		// PFCP Association can be initiated again
 		upf.UPFStatus = context.NotAssociated
 		logger.PfcpLog.Warnf("PFCP Heartbeat Response, upf [%v] recovery timestamp changed", upf.NodeID)
 
-		// TODO: Session cleanup required and updated to AMF/PCF
-		// metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, pfcpmsgtypes.PfcpMsgTypeString(msg.PfcpMessage.Header.MessageType), "In", "Failure", "RecoveryTimeStamp_mismatch")
+		if context.OnRestart != nil {
+			context.OnRestart(upf.NodeID, recoveryTimestamp)
+		}
 	}
 
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0

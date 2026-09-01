@@ -36,6 +36,9 @@ const (
 	upfAssociationRetryInterval = 50 * time.Millisecond
 )
 
+// n2SmInformationContentID names the N2 SM information part of a multipart N1N2 transfer.
+const n2SmInformationContentID = "N2SmInformation"
+
 func ensureDataPathUpfAssociated(dataPath *smf_context.DataPath) error {
 	for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
 		if node.UPF == nil {
@@ -771,7 +774,7 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	defer util.CleanupMultipartTempFiles(n1n2Request)
 
 	// N2 Container Info
-	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: "N2SmInformation"})
+	n2InfoContent := models.NewN2InfoContent(models.RefToBinaryData{ContentId: n2SmInformationContentID})
 	n2InfoContent.SetNgapIeType(models.NGAPIETYPE_PDU_RES_SETUP_REQ)
 	smInfo := models.NewN2SmInformation(smContext.PDUSessionID)
 	smInfo.SetN2InfoContent(*n2InfoContent)
