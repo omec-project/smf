@@ -51,15 +51,20 @@ func nrfRejecting(t *testing.T) *httptest.Server {
 	svr.EnableHTTP2 = true
 	svr.StartTLS()
 	newNrfNFManagementHTTPClient = func() *http.Client { return svr.Client() }
-	t.Cleanup(func() {
-		newNrfNFManagementHTTPClient = originalHTTPClientFactory
-		svr.Close()
-	})
-
 	if err := factory.InitConfigFactory("../config/smfcfg.yaml"); err != nil {
 		t.Fatalf("could not read the example configuration file: %v", err)
 	}
+
+	// SendRemoveSubscription reads the NRF URI from the process-wide SMF context rather than
+	// taking it as an argument, so it is set here - and restored, because otherwise a later test
+	// in this package inherits a URL whose server has already been closed.
+	originalNrfURI := smfContext.SMF_Self().NrfUri
 	smfContext.SMF_Self().NrfUri = svr.URL
+	t.Cleanup(func() {
+		smfContext.SMF_Self().NrfUri = originalNrfURI
+		newNrfNFManagementHTTPClient = originalHTTPClientFactory
+		svr.Close()
+	})
 
 	return svr
 }
