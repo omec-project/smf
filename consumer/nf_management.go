@@ -748,9 +748,11 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.Subscripti
 		return nrfSubData, nil, nil
 	} else if res != nil {
 		// Logged for every error response now, not only for the ones the removed guard let
-		// through. The message was already true in both cases, and a failed subscription is
-		// worth a line either way.
-		logger.ConsumerLog.Errorf("SendCreateSubscription received error response: %v", res.Status)
+		// through. Warn rather than Error: with the guard gone, a response whose body decodes is
+		// returned to the caller as problem details and a nil error, so the caller decides whether
+		// that is an error and reports it. Logging it as one here would contradict the nil error
+		// and duplicate the caller's own line.
+		logger.ConsumerLog.Warnf("SendCreateSubscription received error response: %v", res.Status)
 		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
 			return nrfSubData, problem, nil
 		} else if handledErr != nil {
