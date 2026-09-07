@@ -267,32 +267,21 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// Decided from the snapshot taken above rather than re-read: the state is written under
 			// SMLock by other goroutines, and choosing the cause from one value while logging
 			// another would make the log unusable for exactly the case worth investigating.
-			cause := "ModificationNotSupported"
+			// Each arm passes its cause as a literal rather than assigning one variable, so that
+			// the error-key scan in smferrors can enumerate the keys this path uses.
 			switch {
 			case pduSessIDModReq != sessionID:
 				// An identity the SMF does not hold for this context.
-				cause = "InvalidPDUSessionIdentity"
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"InvalidPDUSessionIdentity")
 			case state == context.SmStateInit, state == context.SmStateInActivePending:
 				// Established but on the way out, or never established. TS 24.501 subclause
 				// 6.4.2.6 item b: an inactive PDU session identity takes #43, not the refusal.
-				cause = "InvalidPDUSessionIdentity"
-			}
-			smContext.SubPduSessLog.Warnf(
-				"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
-				pduSessIDModReq, pti, state.String(), cause)
-
-			if buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessIDModReq, pti, cause); err != nil {
-				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
-			} else {
-				tmpFile, err := util.CreatePayloadTempFile(buf)
-				if err != nil {
-					smContext.SubPduSessLog.Errorln(err)
-				} else {
-					response.SetBinaryDataN1SmMessage(tmpFile)
-					jsonData := response.GetJsonData()
-					jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionModificationReject"})
-					response.SetJsonData(jsonData)
-				}
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"InvalidPDUSessionIdentity")
+			default:
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"ModificationNotSupported")
 			}
 
 		case nas.MsgTypePDUSessionModificationComplete:
@@ -953,4 +942,37 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 		}
 		smContext.SubPduSessLog.Infof("corrective modification sent, withdrawing flows %v", refused)
 	}()
+}
+
+// refuseUeRequestedModification answers a UE-requested PDU session modification with a
+// MODIFICATION REJECT carrying cause, attached to the UpdateSmContext response per TS 23.502
+// subclause 4.3.3.2 step 3a.
+//
+// The cause arrives as a parameter rather than being computed at the builder call, which is what
+// lets the error-key scan in smferrors account for every key that reaches the tables: a key it
+// cannot enumerate would make it report the remaining literals as though the set were complete.
+func refuseUeRequestedModification(smContext *context.SMContext,
+	response *models.UpdateSmContext200Response, pduSessionID int32, pti uint8,
+	state context.SMContextState, cause string,
+) {
+	smContext.SubPduSessLog.Warnf(
+		"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
+		pduSessionID, pti, state.String(), cause)
+
+	buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessionID, pti, cause)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
+
+		return
+	}
+	tmpFile, err := util.CreatePayloadTempFile(buf)
+	if err != nil {
+		smContext.SubPduSessLog.Errorln(err)
+
+		return
+	}
+	response.SetBinaryDataN1SmMessage(tmpFile)
+	jsonData := response.GetJsonData()
+	jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionModificationReject"})
+	response.SetJsonData(jsonData)
 }
