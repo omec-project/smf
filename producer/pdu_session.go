@@ -159,6 +159,13 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		return fmt.Errorf("GsmMsgDecodeError")
 	}
 
+	// Record the procedure transaction identity as soon as the request is decoded, because the
+	// reject builders read it from the SM context and several refusals below are raised before
+	// HandlePDUSessionEstablishmentRequest, which is otherwise the only place it is stored. A
+	// rejection carrying an unassigned PTI is one the UE must ignore per TS 24.501 clause 7.3.1,
+	// UE procedures item e), so those refusals would reach the UE and be discarded.
+	smContext.Pti = m.PDUSessionEstablishmentRequest.GetPTI()
+
 	createData, _ := request.GetJsonDataOk()
 
 	// Create SM context

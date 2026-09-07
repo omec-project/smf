@@ -163,6 +163,11 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Request received")
 			pduSessIDRelReq := int32(m.PDUSessionReleaseRequest.GetPDUSessionID())
 			smContext.SubPduSessLog.Debugln("PDU Session ID in Rel Req:", pduSessIDRelReq)
+			// Record the procedure transaction identity before the PDU session id is compared: the
+			// mismatch branch answers with a release reject built from the SM context but never
+			// reaches HandlePDUSessionReleaseRequest, which is otherwise the only place it is
+			// stored, so the reject would carry an identity the UE cannot match to its request.
+			smContext.Pti = m.PDUSessionReleaseRequest.GetPTI()
 			pduSessIDSmCxt := smContext.PDUSessionID
 			smContext.SubPduSessLog.Debugln("PDU Session ID in SM Context:", pduSessIDSmCxt)
 			if smContext.SMContextState != context.SmStateActive {
