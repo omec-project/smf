@@ -483,6 +483,19 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLMBR: util.BitRateTokbps(dlMbr),
 		}
 
+		// The guaranteed rate is programmed here as well as on the policy-update path. Setting it
+		// only there means a configured guarantee reaches the UPF on a policy edit and is silently
+		// dropped when the session is established, so it disappears whenever the UE re-attaches —
+		// which reads as intermittent rather than as unimplemented. Unlike the maximum rate there
+		// is no session-level fallback: a guarantee is a commitment to one flow, and the session
+		// AMBR is a ceiling on all of them.
+		if newQER.GBR = BuildGBR(refQos); newQER.GBR != nil {
+			logger.PduSessLog.Infof("CreatePccRuleQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+				newQER.GBR.ULGBR, newQER.GBR.DLGBR, refQos.GetQosId())
+		} else {
+			logger.PduSessLog.Infof("CreatePccRuleQer: no GBR configured for QoSId [%s]", refQos.GetQosId())
+		}
+
 		flowQER = newQER
 	}
 
