@@ -24,10 +24,16 @@ const (
 )
 
 type PFCPSessionContext struct {
-	PDRs       map[uint16]*PDR
-	NodeID     NodeID
-	LocalSEID  uint64
+	PDRs      map[uint16]*PDR
+	NodeID    NodeID
+	LocalSEID uint64
+	// RemoteSEID is zero until the node acknowledges the session, and is set back to zero by
+	// restoration to make the next send an establishment rather than a modification. Those two
+	// cases look identical here, so ClearedByRestoration tells them apart.
 	RemoteSEID uint64
+	// ClearedByRestoration records that the zero above was written deliberately, by a restoration
+	// of a session this node once held -- not that the node has never acknowledged the session.
+	ClearedByRestoration bool
 }
 
 func (pfcpSessionContext *PFCPSessionContext) String() string {
