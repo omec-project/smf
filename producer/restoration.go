@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -187,7 +188,7 @@ func RestoreSessionsOnUPF(nodeID context.NodeID, recovery time.Time) {
 		// restart into an SMF restart that loses every session on every UPF, not just this one.
 		defer func() {
 			if r := recover(); r != nil {
-				logger.PfcpLog.Errorf("UPF[%s] restoration panicked and was abandoned: %v", nodeIP, r)
+				logger.PfcpLog.Errorf("UPF[%s] restoration panicked and was abandoned: %v\n%s", nodeIP, r, debug.Stack())
 			}
 		}()
 		restoreSessions(nodeID, nodeIP, run)
@@ -812,7 +813,7 @@ func resolveUnrestorable(unrestored []*context.SMContext, nodeIP string) (notRel
 func releaseOneSession(smContext *context.SMContext) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("releasing the session panicked: %v", r)
+			err = fmt.Errorf("releasing the session panicked: %v\n%s", r, debug.Stack())
 		}
 	}()
 	return releaseUnrestorableSession(smContext)
