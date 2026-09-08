@@ -284,3 +284,113 @@ func TestHandlePfcpSessionEstablishmentResponseNilTunnel(t *testing.T) {
 		t.Errorf("expected pending PFCP txn for seq %d to be consumed on the nil-Tunnel ignore path, but it was still present", seq)
 	}
 }
+
+// TestHandlePfcpSessionEstablishmentResponseChannelGatedByState covers the SMContextState gate on
+// SBIPFCPCommunicationChan: the normal establishment path waits in SmStatePfcpCreatePending and
+// must receive the signal, while restoration's reissue leaves the context in some other state and
+// must not receive it (an unconditional send would leave a stale value for the next unrelated
+// modification or release that waits on the channel).
+func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		imsi       string
+		state      context.SMContextState
+		wantSignal bool
+	}{
+		{
+			name:       "awaited establishment sends the signal",
+			imsi:       "imsi-100000000000001",
+			state:      context.SmStatePfcpCreatePending,
+			wantSignal: true,
+		},
+		{
+			name:       "unawaited response (e.g. restoration) withholds the signal",
+			imsi:       "imsi-100000000000002",
+			state:      context.SmStateActive,
+			wantSignal: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// AllocateLocalSEID reads factory.SmfConfig.Configuration.EnableDbStore, so the config
+			// must be initialized for the SEID allocation path not to panic when this test runs in
+			// isolation.
+			if factory.SmfConfig.Configuration == nil {
+				factory.SmfConfig = factory.Config{
+					Configuration: &factory.Configuration{
+						KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+						EnableUpfAdapter: false,
+					},
+				}
+			}
+
+			nodeID := context.NewNodeID("1.1.1.1")
+			smContext := context.NewSMContext(tc.imsi, 10)
+			smContext.SMContextState = tc.state
+
+			smContext.Tunnel = &context.UPTunnel{
+				DataPathPool: context.DataPathPool{
+					10: &context.DataPath{
+						IsDefaultPath: true,
+						FirstDPNode: &context.DataPathNode{
+							UPF: &context.UPF{NodeID: *nodeID},
+						},
+					},
+				},
+			}
+
+			datapath := &context.DataPath{
+				FirstDPNode: &context.DataPathNode{
+					UPF: &context.UPF{NodeID: *nodeID},
+				},
+			}
+			smContext.AllocateLocalSEIDForDataPath(datapath)
+
+			var localSEID uint64
+			for _, pfcpCtx := range smContext.PFCPContext {
+				if pfcpCtx.LocalSEID != 0 {
+					localSEID = pfcpCtx.LocalSEID
+				}
+			}
+			if localSEID == 0 {
+				t.Fatal("failed to allocate a local SEID for the test SMContext")
+			}
+
+			seq := uint32(localSEID)
+			pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+			rsp := message.NewSessionEstablishmentResponse(
+				0,
+				0,
+				localSEID,
+				seq,
+				0,
+				ie.NewCause(ie.CauseRequestAccepted),
+				ie.NewNodeID("1.1.1.1", "", ""),
+				ie.NewRecoveryTimeStamp(time.Now()),
+			)
+
+			udpMessage := udp.Message{
+				RemoteAddr: &net.UDPAddr{
+					IP:   net.ParseIP("1.1.1.1"),
+					Port: 8809,
+				},
+				PfcpMessage: rsp,
+			}
+
+			handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+			select {
+			case status := <-smContext.SBIPFCPCommunicationChan:
+				if !tc.wantSignal {
+					t.Errorf("expected no send to SBIPFCPCommunicationChan when SMContextState is %v, got signal %v", tc.state, status)
+				} else if status != context.SessionEstablishSuccess {
+					t.Errorf("expected SessionEstablishSuccess, got %v", status)
+				}
+			default:
+				if tc.wantSignal {
+					t.Error("expected a send to SBIPFCPCommunicationChan when SMContextState is SmStatePfcpCreatePending, got none")
+				}
+			}
+		})
+	}
+}
