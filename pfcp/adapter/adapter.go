@@ -323,12 +323,20 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			logger.PfcpLog.Errorf("pfcp session establishment response cause error: %v", err)
 			return
 		}
+		// Gated on the state, like the modification and release handlers. Restoration issues an
+		// establishment without waiting on this channel, so an unconditional send here would leave a
+		// stale value for whichever unrelated modification or release next waits on it.
+		awaited := smContext.SMContextState == context.SmStatePfcpCreatePending
 		// UPF Accept
 		if causeValue == ie.CauseRequestAccepted {
-			smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess
+			if awaited {
+				smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess
+			}
 			smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 		} else {
-			smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed
+			if awaited {
+				smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed
+			}
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
 			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
 				SetUpfInactive(*rspNodeID)
