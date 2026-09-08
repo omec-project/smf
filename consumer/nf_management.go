@@ -747,10 +747,12 @@ func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.Subscripti
 	if err == nil {
 		return nrfSubData, nil, nil
 	} else if res != nil {
-		if res.Status != err.Error() {
-			logger.ConsumerLog.Errorf("SendCreateSubscription received error response: %v", res.Status)
-			return nrfSubData, nil, err
-		}
+		// Logged for every error response now, not only for the ones the removed guard let
+		// through. Warn rather than Error: with the guard gone, a response whose body decodes is
+		// returned to the caller as problem details and a nil error, so the caller decides whether
+		// that is an error and reports it. Logging it as one here would contradict the nil error
+		// and duplicate the caller's own line.
+		logger.ConsumerLog.Warnf("SendCreateSubscription received error response: %v", res.Status)
 		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
 			return nrfSubData, problem, nil
 		} else if handledErr != nil {
@@ -781,9 +783,9 @@ func SendRemoveSubscription(subscriptionId string) (problemDetails *models.Probl
 	if err == nil {
 		return nil, nil
 	} else if res != nil {
-		if res.Status != err.Error() {
-			return nil, openapi.ReportError("RemoveSubscription received error response: %s", res.Status)
-		}
+		// The status the removed guard reported is still carried: for a response whose body
+		// decoded, it is in the ProblemDetails returned below, and for one named by no arm the
+		// client leaves RawError set to the status, which HandleOpenAPIError passes back as is.
 		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
 			return problem, nil
 		} else if handledErr != nil {
