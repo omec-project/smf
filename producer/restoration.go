@@ -182,6 +182,14 @@ func RestoreSessionsOnUPF(nodeID context.NodeID, recovery time.Time) {
 
 	go func() {
 		defer restorationsInProgress.CompareAndDelete(nodeIP, run)
+		// A panic here must not escape: this repairs one restarted UPF on a background goroutine,
+		// and an unrecovered panic in any goroutine takes down the whole process -- turning one UPF's
+		// restart into an SMF restart that loses every session on every UPF, not just this one.
+		defer func() {
+			if r := recover(); r != nil {
+				logger.PfcpLog.Errorf("UPF[%s] restoration panicked and was abandoned: %v", nodeIP, r)
+			}
+		}()
 		restoreSessions(nodeID, nodeIP, run)
 	}()
 }
