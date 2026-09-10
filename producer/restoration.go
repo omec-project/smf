@@ -416,7 +416,7 @@ func reissue(smContext *context.SMContext, nodeIP string) bool {
 	}
 
 	// Take back the response to the last establishment this restoration issued, in case one slipped
-	// past the guard below and was left unconsumed.
+	// past the state gate in HandlePfcpSessionEstablishmentResponse and was left unconsumed.
 	//
 	// SBIPFCPCommunicationChan holds one value. HandlePfcpSessionEstablishmentResponse now sends into
 	// it only when smContext.SMContextState == SmStatePfcpCreatePending, and reissue never sets that
@@ -427,10 +427,10 @@ func reissue(smContext *context.SMContext, nodeIP string) bool {
 	// session's lock was never released again. Observed on a cluster: 20 sessions, all permanently
 	// locked, 20 goroutines parked in `chan send` inside that handler.
 	//
-	// Kept as a second line of defence rather than removed. Safe to take here regardless of the gate:
-	// the modification and release paths hold SMLock across their receive, so they cannot run while
-	// this does; and the establishment path's own unguarded send is confined to a session that has
-	// never been acknowledged, which the enumeration excludes.
+	// Kept as a second line of defence rather than removed. This is a best-effort, non-blocking drain
+	// of any already-buffered stale value, taken under SMLock so local state changes can't race it.
+	// Sessions still being established (RemoteSEID==0 and not ClearedByRestoration) are excluded from
+	// enumeration, so we should not steal a response that a first-time establishment is awaiting.
 	select {
 	case <-smContext.SBIPFCPCommunicationChan:
 		smContext.SubPfcpLog.Debugf("discarded an unconsumed PFCP response from an earlier restoration")
