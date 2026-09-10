@@ -394,3 +394,57 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 		})
 	}
 }
+
+// TestHandlePfcpSessionModificationResponseNoSMContext covers a Session
+// Modification Response that arrives after its session has been released, so
+// GetSMContextBySEID returns nil. Both the accepted and the rejected branch
+// dereference smContext unconditionally, and Dispatch runs each message on its
+// own goroutine with no recover, so an unguarded dereference here ends the
+// process rather than the request. The establishment and deletion handlers
+// already check; this one must too.
+func TestHandlePfcpSessionModificationResponseNoSMContext(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	// A SEID no session was ever registered under, so the lookup returns nil.
+	const unknownSEID uint64 = 0xDEADBEEF
+
+	cases := []struct {
+		name  string
+		cause uint8
+	}{
+		{"accepted", ie.CauseRequestAccepted},
+		{"rejected", ie.CauseRequestRejected},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rsp := message.NewSessionModificationResponse(
+				0, 0, unknownSEID, 1, 0,
+				ie.NewCause(tc.cause),
+			)
+
+			udpMessage := udp.Message{
+				RemoteAddr: &net.UDPAddr{
+					IP:   net.ParseIP("3.3.3.3"),
+					Port: 8805,
+				},
+				PfcpMessage: rsp,
+			}
+
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("handler panicked on a response for a released session: %v", r)
+				}
+			}()
+
+			handler.HandlePfcpSessionModificationResponse(&udpMessage)
+		})
+	}
+}

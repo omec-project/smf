@@ -587,6 +587,10 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
+	if smContext == nil {
+		logger.PfcpLog.Warnf("PFCP Session Modification Response found SM context nil for SEID[%d], response discarded", SEID)
+		return
+	}
 
 	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
 
