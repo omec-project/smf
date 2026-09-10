@@ -214,7 +214,10 @@ func (smf *SMF) Start() {
 							continue
 						}
 
-						if upfNode.UPF.UPFStatus != smfContext.AssociatedSetUpSuccess {
+						upfNode.UPF.UpfLock.RLock()
+						alreadyAssociated := upfNode.UPF.UPFStatus == smfContext.AssociatedSetUpSuccess
+						upfNode.UPF.UpfLock.RUnlock()
+						if !alreadyAssociated {
 							nodeID := upfNode.NodeID.ResolveNodeIdToIp()
 							if nodeID == nil {
 								logger.AppLog.Warnf("failed to resolve NodeId for UPF %v", upfNode)
@@ -224,14 +227,28 @@ func (smf *SMF) Start() {
 							err = message.SendPfcpAssociationSetupRequest(upfNode.NodeID, upfNode.Port)
 							if err != nil {
 								logger.AppLog.Warnf("failed to send PFCP Association Setup Request to UPF %v: %v", upfNode, err)
-							} else {
-								logger.AppLog.Infof("PFCP Association Setup Request sent to UPF %v", upfNode)
+								continue
 							}
+							logger.AppLog.Infof("PFCP Association Setup Request sent to UPF %v", upfNode)
+
+							// The request has only been sent, not yet acknowledged. Marking the UPF as
+							// AssociatedSettingUp (instead of AssociatedSetUpSuccess) avoids callers like
+							// ensureDataPathUpfAssociated treating the UPF as ready and sending PFCP Session
+							// Establishment Requests that race the in-flight association, which the UPF can
+							// reject with "no association found for NodeID". AssociatedSetUpSuccess is set
+							// only by HandlePfcpAssociationSetupResponse once the UPF actually accepts.
+							// pfcp/upf.ProbeInactiveUpfs retries the request if that response never comes.
 							upfNode.UPF.UpfLock.Lock()
-							upfNode.UPF.UPFStatus = smfContext.AssociatedSetUpSuccess
+							// The response may already have arrived and flipped this to
+							// AssociatedSetUpSuccess; don't downgrade it back to pending.
+							if upfNode.UPF.UPFStatus != smfContext.AssociatedSetUpSuccess {
+								upfNode.UPF.UPFStatus = smfContext.AssociatedSettingUp
+								upfNode.UPF.AssociationSetupSentAt = time.Now()
+							}
+							status := upfNode.UPF.UPFStatus
 							upfNode.UPF.UpfLock.Unlock()
 
-							logger.AppLog.Infof("UPF %v status updated to AssociatedSetUpSuccess", upfNode)
+							logger.AppLog.Infof("UPF %v status updated to %v", upfNode, status)
 						} else {
 							logger.AppLog.Debugf("UPF %v already associated, skipping PFCP request", upfNode)
 						}
