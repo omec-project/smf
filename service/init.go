@@ -215,7 +215,7 @@ func (smf *SMF) Start() {
 						}
 
 						upfNode.UPF.UpfLock.RLock()
-						alreadyAssociated := upfNode.UPF.UPFStatus == smfContext.AssociatedSetUpSuccess
+						alreadyAssociated := upfNode.UPF.UPFStatus == smfContext.AssociatedSetUpSuccess || upfNode.UPF.UPFStatus == smfContext.AssociatedSettingUp
 						upfNode.UPF.UpfLock.RUnlock()
 						if !alreadyAssociated {
 							nodeID := upfNode.NodeID.ResolveNodeIdToIp()

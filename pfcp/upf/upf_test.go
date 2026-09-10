@@ -15,6 +15,9 @@ import (
 
 func configureForNativeDatapath(t *testing.T) {
 	t.Helper()
+	prev := factory.SmfConfig
+	t.Cleanup(func() { factory.SmfConfig = prev })
+
 	enabled := false
 	factory.SmfConfig = factory.Config{
 		Configuration: &factory.Configuration{
@@ -29,6 +32,17 @@ func configureForNativeDatapath(t *testing.T) {
 func startSmfPfcpSocket(t *testing.T) {
 	t.Helper()
 	self := context.SMF_Self()
+	prevCPNodeID := self.CPNodeID
+	prevPFCPPort := self.PFCPPort
+	t.Cleanup(func() {
+		self.CPNodeID = prevCPNodeID
+		self.PFCPPort = prevPFCPPort
+		if server := udp.GetServer(); server != nil && server.Conn != nil {
+			_ = server.Conn.Close()
+		}
+		udp.SetServer(nil)
+	})
+
 	free, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		t.Fatalf("reserving a port for the SMF: %v", err)
@@ -39,7 +53,9 @@ func startSmfPfcpSocket(t *testing.T) {
 	self.CPNodeID = *context.NewNodeID("127.0.0.1")
 	self.PFCPPort = port
 	udp.Run(func(*udp.Message) {})
-	time.Sleep(50 * time.Millisecond) // let the listener bind before anything is sent
+	if err := udp.WaitForServer(); err != nil {
+		t.Fatalf("failed to start PFCP server: %v", err)
+	}
 }
 
 func TestProbeUpfResetsAssociationSetupStuckPastTimeout(t *testing.T) {
