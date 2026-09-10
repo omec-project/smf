@@ -20,6 +20,10 @@ const (
 	maxHeartbeatRetry        = 3  // sec
 	maxHeartbeatInterval     = 10 // sec
 	maxUpfProbeRetryInterval = 10 // sec
+	// associationSetupTimeout bounds how long a UPF may sit in AssociatedSettingUp: neither
+	// this loop nor the heartbeat loop acts on that state, so a lost or delayed Association
+	// Setup Response would otherwise strand the UPF there forever.
+	associationSetupTimeout = 20 * time.Second
 )
 
 func InitPfcpHeartbeatRequest() {
@@ -60,14 +64,31 @@ func ProbeInactiveUpfs() {
 			continue
 		}
 		for _, upf := range upfs.UPFs {
-			upf.UPF.UpfLock.Lock()
-			if upf.UPF.UPFStatus == context.NotAssociated {
-				err := message.SendPfcpAssociationSetupRequest(upf.NodeID, upf.Port)
-				if err != nil {
-					logger.PfcpLog.Errorf("send pfcp association setup request failed: %v ", err)
-				}
-			}
-			upf.UPF.UpfLock.Unlock()
+			probeUpf(upf)
 		}
+	}
+}
+
+// probeUpf resets a UPF stuck in AssociatedSettingUp past associationSetupTimeout, then (re)sends
+// the PFCP Association Setup Request for any UPF that is still not associated. On a successful
+// send it marks the UPF AssociatedSettingUp with a fresh AssociationSetupSentAt, so a retry issued
+// from here is covered by the same timeout as one issued from service.Start, instead of relying on
+// the next probe interval to notice a send that never got a response.
+func probeUpf(upNode *context.UPNode) {
+	upNode.UPF.UpfLock.Lock()
+	defer upNode.UPF.UpfLock.Unlock()
+
+	if upNode.UPF.UPFStatus == context.AssociatedSettingUp &&
+		time.Since(upNode.UPF.AssociationSetupSentAt) > associationSetupTimeout {
+		logger.PfcpLog.Warnf("pfcp association setup response never arrived for UPF[%v]; retrying", upNode.NodeID)
+		upNode.UPF.UPFStatus = context.NotAssociated
+	}
+	if upNode.UPF.UPFStatus == context.NotAssociated {
+		if err := message.SendPfcpAssociationSetupRequest(upNode.NodeID, upNode.Port); err != nil {
+			logger.PfcpLog.Errorf("send pfcp association setup request failed: %v ", err)
+			return
+		}
+		upNode.UPF.UPFStatus = context.AssociatedSettingUp
+		upNode.UPF.AssociationSetupSentAt = time.Now()
 	}
 }

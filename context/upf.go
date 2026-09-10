@@ -80,9 +80,13 @@ type UPF struct {
 	RecoveryTimeStamp RecoveryTimeStamp
 	NodeID            NodeID
 	UPFStatus         UPFStatus
-	uuid              uuid.UUID
-	Port              uint16
-	NHeartBeat        uint8
+	// AssociationSetupSentAt records when UPFStatus last became AssociatedSettingUp, so a
+	// lost or delayed response can be detected and the association retried instead of the
+	// UPF being stuck in that state forever.
+	AssociationSetupSentAt time.Time
+	uuid                   uuid.UUID
+	Port                   uint16
+	NHeartBeat             uint8
 
 	// lock
 	UpfLock sync.RWMutex
