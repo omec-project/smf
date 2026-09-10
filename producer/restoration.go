@@ -415,23 +415,22 @@ func reissue(smContext *context.SMContext, nodeIP string) bool {
 		return false
 	}
 
-	// Take back the response to the last establishment this restoration issued, which nothing
-	// consumed.
+	// Take back the response to the last establishment this restoration issued, in case one slipped
+	// past the guard below and was left unconsumed.
 	//
-	// SBIPFCPCommunicationChan holds one value. In the ordinary flow a request is sent by a
-	// procedure that then waits on this channel, so every response is taken. Restoration sends
-	// establishments and waits on the remote identifier instead, so its responses accumulate -- and
-	// the second restoration of a session finds the channel full. HandlePfcpSessionEstablishmentResponse
-	// sends into it *while holding SMLock*, so the send blocks forever and the session's lock is
-	// never released. Every later sweep then skips that session, and it can never be restored again.
+	// SBIPFCPCommunicationChan holds one value. HandlePfcpSessionEstablishmentResponse now sends into
+	// it only when smContext.SMContextState == SmStatePfcpCreatePending, and reissue never sets that
+	// state, so the response to this establishment should not reach the channel at all. That gate is
+	// what actually closes the bug this drain was originally written to work around: before it
+	// existed, every response was sent unconditionally, so the second restoration of a session found
+	// the channel full, the handler's send -- made *while holding SMLock* -- blocked forever, and the
+	// session's lock was never released again. Observed on a cluster: 20 sessions, all permanently
+	// locked, 20 goroutines parked in `chan send` inside that handler.
 	//
-	// Observed on a cluster: 20 sessions, all permanently locked, 20 goroutines parked in `chan send`
-	// inside that handler, and each restart reporting "every anchored session was locked".
-	//
-	// Safe to take here because no legitimate waiter can be parked on this channel for this session
-	// right now. The modification and release paths hold SMLock across their receive, so they cannot
-	// run while this does; and the establishment path, which waits without the lock, only does so for
-	// a session that has never been acknowledged -- which the enumeration excludes.
+	// Kept as a second line of defence rather than removed. Safe to take here regardless of the gate:
+	// the modification and release paths hold SMLock across their receive, so they cannot run while
+	// this does; and the establishment path's own unguarded send is confined to a session that has
+	// never been acknowledged, which the enumeration excludes.
 	select {
 	case <-smContext.SBIPFCPCommunicationChan:
 		smContext.SubPfcpLog.Debugf("discarded an unconsumed PFCP response from an earlier restoration")
