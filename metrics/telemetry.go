@@ -40,6 +40,9 @@ type SmfStats struct {
 	// metrics endpoint.
 	upfRestoration *prometheus.CounterVec
 	upfUnrestored  *prometheus.GaugeVec
+
+	nasTimer   *prometheus.CounterVec
+	modAbandon *prometheus.CounterVec
 }
 
 var smfStats *SmfStats
@@ -96,6 +99,16 @@ func initSmfStats() *SmfStats {
 			Name: "smf_upf_unrestored_sessions",
 			Help: "Sessions on a UPF that are not carrying traffic after a restart",
 		}, []string{"id", labelUpf}),
+
+		modAbandon: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "smf_pdu_session_modification_abandoned_total",
+			Help: "PDU session modifications the network could not apply, by where it gave up and why",
+		}, []string{"path", "cause"}),
+
+		nasTimer: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "smf_nas_timer_resolution_total",
+			Help: "NAS timer values applied to new sessions, by the layer that decided them",
+		}, []string{"timer", "source", "value"}),
 	}
 }
 
@@ -125,6 +138,12 @@ func (ps *SmfStats) register() error {
 		return err
 	}
 	if err := prometheus.Register(ps.upfUnrestored); err != nil {
+		return err
+	}
+	if err := prometheus.Register(ps.nasTimer); err != nil {
+		return err
+	}
+	if err := prometheus.Register(ps.modAbandon); err != nil {
 		return err
 	}
 	return nil
@@ -205,4 +224,18 @@ func AddUpfRestorationStats(smfID, upf, outcome string, count int) {
 // backlog it no longer has.
 func SetUpfUnrestoredSessions(smfID, upf string, count int) {
 	smfStats.upfUnrestored.WithLabelValues(smfID, upf).Set(float64(count))
+}
+
+// IncrementNasTimerStats records the value applied to a new session and the layer that decided
+// it. The source is the part worth alerting on: a deployment silently running the terrestrial
+// value over a satellite link looks exactly like one whose UEs stopped answering.
+func IncrementNasTimerStats(timer, source, value string) {
+	smfStats.nasTimer.WithLabelValues(timer, source, value).Inc()
+}
+
+// IncrementModificationAbandonedStats records a modification the network gave up on. The
+// subscriber identity is deliberately not a label — it is unbounded cardinality and it
+// identifies a person; the accompanying log carries it for the sessions that need chasing.
+func IncrementModificationAbandonedStats(path, cause string) {
+	smfStats.modAbandon.WithLabelValues(path, cause).Inc()
 }
