@@ -266,13 +266,18 @@ func TestDeliveryFailureRevertsAModificationRatherThanDroppingTheSession(t *test
 // The shared makeTestTunnel builds only the downlink, which is enough for the collector tests it
 // was written for. Rebuilding the user plane walks both, so a half-built tunnel fails as a nil
 // dereference that looks like a product fault and is not one.
+// defaultPdrKey is the key the data path uses for the PDR of a default QoS flow. Named here
+// because this file is the third test in the package to write it, which is where goconst draws
+// the line.
+const defaultPdrKey = "default"
+
 func makeCompleteTestTunnel() *smf_context.UPTunnel {
 	upf := &smf_context.UPF{NodeID: *smf_context.NewNodeID("10.0.0.1")}
 
 	newSide := func() *smf_context.GTPTunnel {
 		far := &smf_context.FAR{State: smf_context.RULE_INITIAL}
 		return &smf_context.GTPTunnel{
-			PDR: map[string]*smf_context.PDR{"default": {FAR: far, State: smf_context.RULE_INITIAL}},
+			PDR: map[string]*smf_context.PDR{defaultPdrKey: {FAR: far, State: smf_context.RULE_INITIAL}},
 		}
 	}
 
