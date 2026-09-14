@@ -9,6 +9,7 @@ import (
 	"time"
 
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/qos"
 	"go.uber.org/zap"
 )
@@ -94,5 +95,76 @@ func TestASupersededTimerExpiryDoesNotAbandonTheCurrentModification(t *testing.T
 	abandonIfCurrent(smContext, current, "t3591_expiry", "ue_did_not_acknowledge")
 	if smContext.NwModificationPending {
 		t.Error("the current procedure's expiry failed to abandon it")
+	}
+}
+
+// The realignment marker belongs to the procedure that raised it. An abandonment that leaves it
+// behind hands it to the next modification, whose completion would then prune flows this one had
+// already given up on and start a corrective procedure for them.
+func TestAbandonModificationClearsTheRealignmentMarker(t *testing.T) {
+	smContext := &smf_context.SMContext{
+		Supi:          testSupi,
+		PDUSessionID:  10,
+		SubPduSessLog: zap.NewNop().Sugar(),
+		SubCtxLog:     zap.NewNop().Sugar(),
+		PDUAddress:    &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.1")},
+	}
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
+	smContext.Realign = &smf_context.PendingRealignment{}
+	smContext.ChangeState(smf_context.SmStatePfcpModify)
+
+	abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+
+	if smContext.Realign != nil {
+		t.Error("the realignment marker outlived the modification it belonged to")
+	}
+}
+
+// A session restored from a record written before T3591Value existed carries zero. NewTimer hands
+// that to time.NewTicker, which panics -- so the first network-initiated modification after a
+// restart would end the process rather than modify a session.
+func TestArmingT3591ResolvesAValueARestoredSessionDoesNotCarry(t *testing.T) {
+	// Saved and restored: this is package-global configuration, and a test in this package that
+	// runs later reads the Kafka flag an earlier one set. Replacing it and walking away made an
+	// unrelated test fail in the full run while passing on its own.
+	previous := factory.SmfConfig
+	t.Cleanup(func() { factory.SmfConfig = previous })
+
+	disabled := false
+	factory.SmfConfig = factory.Config{
+		Configuration: &factory.Configuration{
+			KafkaInfo: factory.KafkaInfo{EnableKafka: &disabled},
+		},
+	}
+
+	smContext := &smf_context.SMContext{
+		Supi:          testSupi,
+		PDUSessionID:  10,
+		SubPduSessLog: zap.NewNop().Sugar(),
+		SubCtxLog:     zap.NewNop().Sugar(),
+		PDUAddress:    &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.1")},
+	}
+
+	if smContext.T3591Value != 0 {
+		t.Fatalf("precondition: a restored session carries no resolved value")
+	}
+
+	smContext.SMLock.Lock()
+	startT3591Locked(smContext, 4)
+	value, timer := smContext.T3591Value, smContext.T3591
+	smContext.SMLock.Unlock()
+
+	t.Cleanup(func() {
+		smContext.SMLock.Lock()
+		smContext.StopT3591()
+		smContext.SMLock.Unlock()
+	})
+
+	if value <= 0 {
+		t.Errorf("T3591Value = %s after arming, want the resolved default", value)
+	}
+
+	if timer == nil {
+		t.Error("no timer was armed for a session that carried no value")
 	}
 }

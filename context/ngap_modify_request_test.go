@@ -214,3 +214,35 @@ func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
 		t.Fatal("build succeeded; a modification whose flows cannot be identified must not be sent")
 	}
 }
+
+// An identifier that cannot be a QoS flow identifier must not become one on the way to the radio.
+//
+// GetQosFlowIdFromQosId narrows to uint8 before any range check can run, so a policy naming 257
+// reaches the request as QFI 1 -- an identifier that is very likely to exist on the session and
+// belongs to a different flow. The radio would then be asked to modify that one.
+func TestModifyRequestSkipsAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2":   {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"257": {QosId: "257", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		t.Fatal("no QoS flow add-or-modify list in the request")
+	}
+
+	for _, item := range list.List {
+		if item.QosFlowIdentifier.Value == 1 {
+			t.Error("QoS id 257 was sent as QFI 1: the narrowing made it a flow this modification does not concern")
+		}
+	}
+
+	if len(list.List) != 1 || list.List[0].QosFlowIdentifier.Value != 2 {
+		t.Errorf("flows in the request = %v, want only QFI 2", list.List)
+	}
+}

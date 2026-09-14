@@ -562,10 +562,14 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 					continue
 				}
 				namedFlows++
-				flowID := qos.GetQosFlowIdFromQosId(qosFlow.GetQosId())
-				if flowID < 1 || flowID > 63 {
-					ctx.SubPduSessLog.Errorf("skipping QoS flow %q: %d is not an assignable QoS flow identifier",
-						qosFlow.GetQosId(), flowID)
+
+				flowID, err := qos.ParseQosFlowId(qosFlow.GetQosId())
+				if err != nil {
+					// Parsed at full width rather than range-checked after narrowing: an
+					// identifier of 257 narrows to 1, which passes any check made afterwards and
+					// would modify whatever flow 1 is on this session.
+					ctx.SubPduSessLog.Errorf("skipping QoS flow %q: %v", qosFlow.GetQosId(), err)
+
 					continue
 				}
 				modifyFlows = append(modifyFlows, ngapType.QosFlowAddOrModifyRequestItem{

@@ -515,27 +515,24 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	}
 
 	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
 	smContext.ChangeState(smfContext.SmStateActive)
 	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
 		smContext.SMContextState.String())
-	smContext.SMLock.Unlock()
 
-	startT3591(smContext)
-	return nil
-}
+	// Armed under the same hold as the state change. Releasing the lock first left a window in
+	// which the UE's acknowledgement could stop the timer and commit the update, after which this
+	// armed a fresh timer -- and set NwModificationPending back to true -- for a procedure that
+	// had already finished. A UE on a short link answers well inside that window.
+	if enabled, maxRetries := effectiveT3591Retries(smContext); enabled {
+		startT3591Locked(smContext, maxRetries)
 
-func startT3591(smContext *smfContext.SMContext) {
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
-
-	enabled, maxRetries := effectiveT3591Retries(smContext)
-	if !enabled {
-		return
+		smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
+			smContext.T3591Value, maxRetries)
 	}
-	startT3591Locked(smContext, maxRetries)
 
-	smContext.SubPduSessLog.Infof("T3591 started at %s with %d retransmissions before abandonment",
-		smContext.T3591Value, maxRetries)
+	return nil
 }
 
 // startT3591Locked arms the retransmission timer for a caller that already holds SMLock. The N1
@@ -556,6 +553,20 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 	//
 	// The window is narrow and it is exactly the satellite case: a UE that acknowledges at the
 	// fifth expiry, after a fade almost long enough to abandon the procedure.
+	// A context restored from a record written before T3591Value existed carries zero, because
+	// only SetCreateData resolves it and the restore decodes what the record holds. NewTimer
+	// would pass that to time.NewTicker, which panics -- ending the process on the first
+	// network-initiated modification after a restart. Resolve it here instead, and keep the
+	// answer so the next persist carries it. ResolveT3591 always answers with a positive
+	// duration, so there is nothing further to guard against here.
+	if smContext.T3591Value <= 0 {
+		smContext.T3591Value, smContext.T3591Source = smfContext.ResolveT3591(
+			factory.SmfConfig.Configuration.T3591, smContext.ExtendedNasSmTimer)
+
+		smContext.SubPduSessLog.Infof("this session carried no T3591 value; resolved %s from %s",
+			smContext.T3591Value, smContext.T3591Source)
+	}
+
 	var timer *smfContext.Timer
 	timer = smfContext.NewTimer(smContext.T3591Value, maxRetries,
 		func(expireTimes int32) {
@@ -610,6 +621,12 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	// session can be attempted.
 	smContext.T3591 = nil
 	smContext.NwModificationPending = false
+
+	// The realignment marker belongs to the procedure being abandoned. Left behind, the next
+	// modification's completion would read it, prune flows this abandonment has already given up
+	// on, and start a corrective procedure for them.
+	smContext.Realign = nil
+
 	smContext.ChangeState(smfContext.SmStateActive)
 }
 
@@ -621,16 +638,24 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 // Resuming afterwards, it would discard whatever modification is pending by then, which after a
 // partial rejection is the corrective one started in the meantime.
 func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
-	// The timer goroutine holds no lock, so this takes it.
+	// The timer goroutine holds no lock, so this takes it -- and keeps it across the check and
+	// the abandonment. Releasing in between put the two on either side of a lock acquisition, so
+	// an acknowledgement arriving in the gap could commit and start the next procedure, and this
+	// would then discard that newer one on the strength of a check that no longer held.
 	smContext.SMLock.Lock()
-	superseded := smContext.T3591 != timer
-	smContext.SMLock.Unlock()
 
-	if superseded {
+	if smContext.T3591 != timer {
+		smContext.SMLock.Unlock()
 		smContext.SubPduSessLog.Infof("a T3591 expiry arrived for a modification that has already finished; ignoring it rather than abandoning the one now in progress")
+
 		return
 	}
-	abandonModification(smContext, path, cause)
+
+	abandonModificationLocked(smContext)
+	smContext.SMLock.Unlock()
+
+	// Reported outside the lock: it logs and counts, and touches no session state.
+	reportAbandonment(smContext, path, cause)
 }
 
 // reportAbandonment logs and counts an abandonment without touching session state, so the two
