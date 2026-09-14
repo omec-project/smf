@@ -35,9 +35,13 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 		for _, flows := range []map[string]*models.QosData{u.QosFlowUpdate.add, u.QosFlowUpdate.mod} {
 			for qosID, flow := range flows {
 				// Read from the same field the modify request was built from, and parse it the
-				// same way. The map key is the policy's own name for the entry; what the radio
-				// was told is derived from QosId, and a flow whose QosId cannot be an identifier
-				// was never in the request, so no refusal can be about it.
+				// same way. QosDecs is specified to be keyed by the qosId of its entry -- the
+				// openapi model says so and the PCF this core ships writes it that way -- so for
+				// a conformant decision the key and the field agree, and this is not a fix to a
+				// divergence. What it does is keep both sides of the exchange reading the same
+				// source, and refuse at full width: GetQosFlowIdFromQosId narrows to uint8, so a
+				// QoS id of 257 matched a refusal of QFI 1. A flow whose QosId cannot be an
+				// identifier was never in the request, so no refusal can be about it.
 				flowID, err := ParseQosFlowId(flow.GetQosId())
 				if err != nil {
 					continue

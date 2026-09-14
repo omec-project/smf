@@ -198,3 +198,24 @@ func TestRemoveFlowsIgnoresAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T)
 		t.Error("QoS id 257 was dropped from the update by a refusal that did not name it")
 	}
 }
+
+// The identifier is read from QosId, not from the map key. The two agree for any conformant
+// policy decision -- QosDecs is keyed by the qosId of its entry -- so this pins the source rather
+// than a divergence: the modify request is built from QosId, and both sides of that exchange have
+// to read the same field for a refusal to name the flow it was about.
+func TestRemoveFlowsReadsTheIdentifierTheRequestWasBuiltFrom(t *testing.T) {
+	u := &PolicyUpdate{QosFlowUpdate: &QosFlowsUpdate{
+		add: map[string]*models.QosData{"policy-name": {QosId: "5"}},
+		mod: map[string]*models.QosData{},
+	}}
+
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{5}))
+
+	if corrective == nil || corrective.QosFlowUpdate.del["policy-name"] == nil {
+		t.Fatal("a refusal of QFI 5 did not prune the flow whose QosId is 5")
+	}
+
+	if _, still := u.QosFlowUpdate.add["policy-name"]; still {
+		t.Error("a refused flow must not be recorded as established")
+	}
+}
