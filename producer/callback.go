@@ -453,9 +453,6 @@ func NfSubscriptionStatusNotifyProcedure(notificationData models.NotificationDat
 	return nil
 }
 
-// startT3591 arms the retransmission timer for a modification command that has just been sent.
-// TS 24.501 subclause 6.3.2.5 item a: the command is resent on each of the first four expiries
-// and the procedure is abandoned on the fifth.
 // ErrPfcpModifyFailed distinguishes a modification that could not be programmed into the user
 // plane from one that could not be delivered to the UE. The caller answers the two differently.
 var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
@@ -565,6 +562,9 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 
 		smContext.SubPduSessLog.Infof("this session carried no T3591 value; resolved %s from %s",
 			smContext.T3591Value, smContext.T3591Source)
+		// Counted here as well as at creation, or a deployment whose sessions resolve their timer
+		// on restore would show no value for that source at all.
+		metrics.IncrementNasTimerStats("T3591", string(smContext.T3591Source), smContext.T3591Value.String())
 	}
 
 	var timer *smfContext.Timer

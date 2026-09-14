@@ -34,7 +34,16 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 	if u.QosFlowUpdate != nil {
 		for _, flows := range []map[string]*models.QosData{u.QosFlowUpdate.add, u.QosFlowUpdate.mod} {
 			for qosID, flow := range flows {
-				if refused[GetQosFlowIdFromQosId(qosID)] {
+				// Read from the same field the modify request was built from, and parse it the
+				// same way. The map key is the policy's own name for the entry; what the radio
+				// was told is derived from QosId, and a flow whose QosId cannot be an identifier
+				// was never in the request, so no refusal can be about it.
+				flowID, err := ParseQosFlowId(flow.GetQosId())
+				if err != nil {
+					continue
+				}
+
+				if refused[flowID] {
 					removedQosIDs[qosID] = true
 					removedFlows[qosID] = flow
 					delete(flows, qosID)

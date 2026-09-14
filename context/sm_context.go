@@ -112,9 +112,11 @@ type SMContext struct {
 	// via a satellite NG-RAN cell apply to this session (TS 24.501 subclause 4.23.4).
 	ExtendedNasSmTimer bool `json:"extendedNasSmTimer,omitempty" yaml:"extendedNasSmTimer" bson:"extendedNasSmTimer,omitempty"`
 
-	// T3591Value and T3591Source are resolved once when the session is created, as subclause
-	// 4.23.4 requires the value to be calculated at the start of a procedure and not
-	// recalculated until it completes, restarts or aborts.
+	// T3591Value and T3591Source are resolved once per session, as subclause 4.23.4 requires the
+	// value to be calculated at the start of a procedure and not recalculated until it completes,
+	// restarts or aborts. Ordinarily that is at creation, in SetCreateData. A session restored
+	// from a record written before this field existed carries zero, and startT3591Locked resolves
+	// it there rather than arming a timer with an interval time.NewTicker refuses.
 	T3591Value time.Duration `json:"t3591Value,omitempty" yaml:"t3591Value" bson:"t3591Value,omitempty"`
 
 	// T3591 is the live retransmission timer for a modification awaiting the UE's answer. It is

@@ -174,3 +174,27 @@ func TestRefusedFlowSetRejectsIdentifiersOutsideTheAssignableRange(t *testing.T)
 		t.Error("QFI 0 was admitted; it is reserved, and it is also what an unparseable QoS identifier becomes")
 	}
 }
+
+// A QoS id that cannot be a flow identifier was never in the modify request, so no refusal can be
+// about it -- and matching it anyway would prune a policy the radio never mentioned.
+//
+// GetQosFlowIdFromQosId narrows to uint8, so 257 arrives as 1. A radio that refused QFI 1 would
+// then have this flow pruned and its PCC rules deleted alongside, and the corrective modification
+// would tell the UE to withdraw a flow it is still running.
+func TestRemoveFlowsIgnoresAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T) {
+	u := updateWithFlows("1", "257")
+
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{1}))
+
+	if corrective == nil || corrective.QosFlowUpdate.del["1"] == nil {
+		t.Fatal("the refused flow must come back as a deletion the UE can be told about")
+	}
+
+	if _, pruned := corrective.QosFlowUpdate.del["257"]; pruned {
+		t.Error("QoS id 257 was pruned for a refusal of QFI 1: the narrowing made them the same flow")
+	}
+
+	if _, kept := u.QosFlowUpdate.add["257"]; !kept {
+		t.Error("QoS id 257 was dropped from the update by a refusal that did not name it")
+	}
+}
