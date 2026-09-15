@@ -173,10 +173,13 @@ type SMContext struct {
 	Pti                     uint8 `json:"pti,omitempty" yaml:"pti" bson:"pti,omitempty"` // ignore
 	EstAcceptCause5gSMValue uint8 `json:"estAcceptCause5gSMValue,omitempty" yaml:"estAcceptCause5gSMValue" bson:"estAcceptCause5gSMValue,omitempty"`
 
-	// activeUpf and activeEnterprise are the upf/enterprise labels the smf_pdu_session_profile
-	// series was published with on entering SmStateActive. Leaving Active must delete that exact
-	// series; re-deriving upf/enterprise at that later point can disagree with what was recorded
-	// on entry (e.g. the tunnel resolves differently) and leave the original series behind.
+	// activeIP, activeUpf and activeEnterprise are the ip/upf/enterprise labels the
+	// smf_pdu_session_profile series was published with on entering SmStateActive. Leaving
+	// Active must delete that exact series; re-deriving these labels at that later point can
+	// disagree with what was recorded on entry (e.g. the tunnel resolves differently, or
+	// PDUAddress.Ip has already been reset by ReleaseUeIpAddr) and leave the original series
+	// behind.
+	activeIP         string `json:"-" yaml:"-" bson:"-"`
 	activeUpf        string `json:"-" yaml:"-" bson:"-"`
 	activeEnterprise string `json:"-" yaml:"-" bson:"-"`
 }
@@ -272,15 +275,17 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 				smContext.SubCtxLog.Debug("context state change, enterprise info not available")
 			}
 
+			smContext.activeIP = smContext.PDUAddress.Ip.String()
 			smContext.activeUpf = upf
 			smContext.activeEnterprise = ent
-			metrics.SetSessProfileStats(smContext.Identifier, smContext.PDUAddress.Ip.String(), nextState.String(),
+			metrics.SetSessProfileStats(smContext.Identifier, smContext.activeIP, nextState.String(),
 				upf, ent, 1)
 		} else {
 			// Delete the exact series recorded on entry rather than setting a fresh one to 0:
-			// re-deriving upf/enterprise now can disagree with what was recorded then and leave
-			// the original "active" series behind forever, showing the session twice.
-			metrics.DeleteSessProfileStats(smContext.Identifier, smContext.PDUAddress.Ip.String(), smContext.SMContextState.String(),
+			// re-deriving the ip/upf/enterprise labels now can disagree with what was recorded
+			// then (e.g. ReleaseUeIpAddr has already reset PDUAddress.Ip to 0.0.0.0 by this point)
+			// and leave the original "active" series behind forever, showing the session twice.
+			metrics.DeleteSessProfileStats(smContext.Identifier, smContext.activeIP, smContext.SMContextState.String(),
 				smContext.activeUpf, smContext.activeEnterprise)
 		}
 	}
