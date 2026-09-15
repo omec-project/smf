@@ -112,9 +112,10 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 		smCtxt.LocalPurged = true
 
 		// Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
+		// RemoveSMContext already transitions to SmStateRelease, which publishes the Kafka
+		// event; publishing again here would duplicate it.
 		smf_context.RemoveSMContext(smCtxt.Ref)
 
-		smCtxt.PublishSmCtxtInfo()
 		// check if PCF session set, send release(Npcf_SMPolicyControl_Delete)
 		// TODO: not done as part of ctxt release
 

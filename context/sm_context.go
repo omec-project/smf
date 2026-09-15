@@ -182,6 +182,12 @@ type SMContext struct {
 	activeIP         string `json:"-" yaml:"-" bson:"-"`
 	activeUpf        string `json:"-" yaml:"-" bson:"-"`
 	activeEnterprise string `json:"-" yaml:"-" bson:"-"`
+
+	// lastUpfName and lastUpfIP are the UPF identity getSmCtxtUpf most recently resolved from
+	// the tunnel. releaseTunnel clears Tunnel before RemoveSMContext publishes the terminal
+	// disconnect event, so without this the final Kafka event would report an empty UPF.
+	lastUpfName string `json:"-" yaml:"-" bson:"-"`
+	lastUpfIP   string `json:"-" yaml:"-" bson:"-"`
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -250,19 +256,25 @@ func (smContext *SMContext) initLogTags() {
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
+	if smContext.SMContextState == nextState {
+		// Not a real transition (e.g. a retry/no-op ChangeState call with the same target
+		// state): skip the metrics/Kafka publish below so callers that re-invoke ChangeState
+		// for logging purposes don't emit duplicate terminal events.
+		return
+	}
+	if smContext.SMContextState == SmStateRelease {
+		// RemoveSMContext already deleted this session from the pool. The FSM handler that
+		// triggered it still returns a "next" state of its own (e.g. SmStateInit) and
+		// HandleEvent applies it unconditionally, so without this guard a released session
+		// would keep mutating state and re-publishing Kafka events (potentially resurrecting
+		// it downstream) after it no longer exists. Release is terminal.
+		return
+	}
+
 	// Update Subscriber profile Metrics
 	if nextState == SmStateActive || smContext.SMContextState == SmStateActive {
 		if nextState == SmStateActive {
-			var upf string
-			if smContext.Tunnel != nil {
-				// Set UPF FQDN name if provided else IP-address
-				if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == NodeIdTypeFqdn {
-					upf = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
-					upf = strings.Split(upf, ".")[0]
-				} else {
-					upf = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
-				}
-			}
+			upf, _ := smContext.getSmCtxtUpf()
 
 			// enterprise name
 			ent := "na"
@@ -843,6 +855,8 @@ func (smContextState SMContextState) String() string {
 		return "SmStatePfcpModify"
 	case SmStatePfcpRelease:
 		return "SmStatePfcpRelease"
+	case SmStateRelease:
+		return "SmStateRelease"
 	case SmStateN1N2TransferPending:
 		return "SmStateN1N2TransferPending"
 
@@ -906,18 +920,43 @@ func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
 
 func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 	var upfName, upfIP string
-	if smContext.SMContextState == SmStateActive {
-		if smContext.Tunnel != nil {
-			// Set UPF FQDN name if provided else IP-address
-			if smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdType == NodeIdTypeFqdn {
-				upfName = string(smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.NodeIdValue)
-				upfName = strings.Split(upfName, ".")[0]
-				upfIP = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID.ResolveNodeIdToIp().String()
-			} else {
-				upfName = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
-				upfIP = smContext.Tunnel.DataPathPool[1].FirstDPNode.UPF.GetUPFIP()
-			}
+	// Keyed on Tunnel/data-path presence rather than SMContextState: the state field already
+	// reflects whichever side of the transition PublishSmCtxtInfo is called on, so gating on
+	// SmStateActive here would drop the UPF the session is leaving on every disconnect event.
+	// The default path is resolved by lookup rather than assuming pool key 1, since a tunnel
+	// can exist with no data path yet (e.g. the no-available-path failure in
+	// PDUSessionSMContextCreate), in which case there's nothing to report.
+	if smContext.Tunnel == nil {
+		// releaseTunnel already cleared the tunnel by the time RemoveSMContext publishes the
+		// terminal disconnect event; fall back to the UPF this last resolved to rather than
+		// reporting none.
+		return smContext.lastUpfName, smContext.lastUpfIP
+	}
+	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil || defaultPath.FirstDPNode == nil || defaultPath.FirstDPNode.UPF == nil {
+		return smContext.lastUpfName, smContext.lastUpfIP
+	}
+	upf := defaultPath.FirstDPNode.UPF
+
+	// Set UPF FQDN name if provided else IP-address
+	if upf.NodeID.NodeIdType == NodeIdTypeFqdn {
+		upfName = string(upf.NodeID.NodeIdValue)
+		upfName = strings.Split(upfName, ".")[0]
+		// Cache-only lookup: this runs under SMLock on every state transition, so a
+		// synchronous DNS resolution here (as ResolveNodeIdToIp would do on a cache miss)
+		// could block release/modify/create request goroutines on a slow/unresponsive resolver.
+		if ip := upf.NodeID.ResolveNodeIdToIpCached(); ip != nil {
+			upfIP = ip.String()
 		}
+	} else {
+		upfName = upf.GetUPFIP()
+		upfIP = upf.GetUPFIP()
+	}
+	if upfIP != "" {
+		// Not updated on a transient FQDN cache miss (upfIP empty): retaining the previous
+		// snapshot is better than overwriting it with nothing, since that snapshot is what
+		// the terminal disconnect event falls back to once the tunnel is cleared.
+		smContext.lastUpfName, smContext.lastUpfIP = upfName, upfIP
 	}
 	return upfName, upfIP
 }
@@ -943,16 +982,27 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 	kafkaSmCtxt.SmfIp = SMF_Self().PodIp
 
 	// Send to stream
-	err := metrics.GetWriter().PublishPduSessEvent(kafkaSmCtxt, op)
+	err := publishPduSessEvent(kafkaSmCtxt, op)
 	if err != nil {
 		smContext.SubCtxLog.Errorf("failed to publish sm ctxt info on kafka stream: %v", err)
 	}
 }
 
+// publishPduSessEvent is a seam over metrics.GetWriter().PublishPduSessEvent so tests can
+// capture published Kafka events without a real broker.
+var publishPduSessEvent = func(ctxt mi.CoreSubscriber, op mi.SubscriberOp) error {
+	return metrics.GetWriter().PublishPduSessEvent(ctxt, op)
+}
+
 func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.SubscriberOp) {
 	switch state {
 	case SmStateInit:
-		return IDLE, mi.SubsOpAdd
+		// Never the terminal transition: teardown paths (a PFCP send failure while
+		// SmStatePfcpCreatePending, the UE-driven release complete, the duplicate-PDU-ID
+		// path) all call ChangeState(SmStateInit) immediately before RemoveSMContext enters
+		// SmStateRelease, which is what actually removes the session and reports Del.
+		// Reporting Del here too would double it; report the in-progress Mod instead.
+		return IDLE, mi.SubsOpMod
 	case SmStateActivePending:
 		return IDLE, mi.SubsOpMod
 	case SmStateActive:
@@ -962,11 +1012,20 @@ func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.Subscri
 	case SmStateModify:
 		return CONNECTED, mi.SubsOpMod
 	case SmStatePfcpCreatePending:
-		return IDLE, mi.SubsOpMod
+		// Only reachable from SmStateInit (a brand-new PDU session waiting on its first
+		// PFCP session establishment), so this is always the subscriber's initial create.
+		return IDLE, mi.SubsOpAdd
 	case SmStatePfcpModify:
 		return CONNECTED, mi.SubsOpMod
 	case SmStatePfcpRelease:
-		return DISCONNECTED, mi.SubsOpDel
+		// Releasing the PFCP session is the start of teardown, not its completion: this can
+		// still roll back to SmStateActive (PFCP release timeout/failure) or continue on to
+		// SmStateInActivePending without the session ever being removed. Reporting a Del here
+		// as well as on the SmStateRelease transition that follows would tell downstream
+		// consumers about a deletion that may not happen, and doubles the one that does.
+		// SmStateRelease - reached only via RemoveSMContext, which also deletes the pool
+		// entry - is the sole terminal transition that reports Del.
+		return IDLE, mi.SubsOpMod
 	case SmStateRelease:
 		return DISCONNECTED, mi.SubsOpDel
 	case SmStateN1N2TransferPending:
