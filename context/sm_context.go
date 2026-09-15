@@ -290,11 +290,13 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 		}
 	}
 
-	smContext.PublishSmCtxtInfo()
-
 	smContext.SubCtxLog.Infof("context state change, current state[%v] next state[%v]",
 		smContext.SMContextState.String(), nextState.String())
 	smContext.SMContextState = nextState
+
+	// Published after the state is updated so the Kafka event reports the state being entered,
+	// not the one being left.
+	smContext.PublishSmCtxtInfo()
 }
 
 // *** add unit test ***//
