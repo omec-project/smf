@@ -182,6 +182,14 @@ func SetSessProfileStats(id, ip, state, upf, enterprise string, count uint64) {
 	smfStats.sessProfile.WithLabelValues(id, ip, state, upf, enterprise).Set(float64(count))
 }
 
+// DeleteSessProfileStats removes the session profile series published when the session went
+// active, using the exact labels it was set with. Setting a fresh 0-valued series instead (with
+// upf/enterprise re-derived at a later point in time) would leave the original active series
+// behind forever, showing the same session twice.
+func DeleteSessProfileStats(id, ip, state, upf, enterprise string) {
+	smfStats.sessProfile.DeleteLabelValues(id, ip, state, upf, enterprise)
+}
+
 // AddUpfRestorationStats records the outcome for sessions handled after a UPF restart. The counts
 // are kept apart on purpose: a restoration that restored some sessions and released the rest must
 // not be reportable as simply having completed.
