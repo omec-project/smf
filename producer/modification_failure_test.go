@@ -11,6 +11,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/transaction"
 	"go.uber.org/zap"
 )
 
@@ -209,8 +210,8 @@ func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
 	// Built the way the PCF's decision builds it: a rule carrying no identity is a deletion.
 	decision := &models.SmPolicyDecision{
 		PccRules: map[string]models.PccRule{
-			defaultPdrKey:   {PccRuleId: defaultPdrKey},
-			withdrawnPdrKey: {},
+			defaultPdrKey: {PccRuleId: defaultPdrKey},
+			"going":       {},
 		},
 	}
 	sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&sm.SmPolicyData, decision)}
@@ -231,5 +232,36 @@ func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
 
 	if removed != 2 {
 		t.Errorf("withdrawn PDRs = %d, want both directions of the deleted rule", removed)
+	}
+}
+
+// Putting the user plane back can fail, and the revert then marks the session for release because
+// it is running parameters the UE was never told about. Answering "reverted" there has the caller
+// move it to Active, which erases exactly the marker that says a human needs to look.
+func TestAFailedRevertIsNotReportedAsASessionPutBack(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	defer func() { sendPfcpSessionModifyReq = original }()
+
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		return errors.New("upf unreachable")
+	}
+
+	sm := modifyingSession()
+	sm.NwModificationPending = true
+
+	txn := &transaction.Transaction{Ctxt: sm}
+
+	reverted, err := HandlePduSessN1N2TransFailInd(txn)
+	if err != nil {
+		t.Fatalf("handling the failure indication: %v", err)
+	}
+
+	if reverted {
+		t.Error("a revert whose user-plane restore failed was reported as a session put back")
+	}
+
+	if sm.SMContextState != smf_context.SmStatePfcpRelease {
+		t.Errorf("state = %s, want %s: the session is running parameters the UE never saw",
+			sm.SMContextState, smf_context.SmStatePfcpRelease)
 	}
 }

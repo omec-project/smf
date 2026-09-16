@@ -916,9 +916,14 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err er
 	smContext.SMLock.Unlock()
 	if modifying {
 		smContext.SubPduSessLog.Warnf("the modification could not be delivered to the UE; reverting it and leaving the session on its previous parameters")
-		revertModification(smContext, "n1n2_transfer_failure_indication")
+
+		// Reported, not assumed. Putting the user plane back can itself fail, and revertModification
+		// then marks the session for release because it is running parameters the UE was never told
+		// about. Answering "reverted" there would have the caller move it to Active and erase that.
+		reverted = revertModification(smContext, "n1n2_transfer_failure_indication")
 		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent, Body: nil}
-		return true, nil
+
+		return reverted, nil
 	}
 
 	var httpResponse *httpwrapper.Response

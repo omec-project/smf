@@ -784,7 +784,9 @@ func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause s
 // The path is always "delivery_failure": that is what reverting means, as distinct from a
 // modification abandoned because the UE did not answer or the radio refused it. Only the cause
 // varies, by how the delivery failed.
-func revertModification(smContext *smfContext.SMContext, cause string) {
+// revertModification reports whether the user plane went back. A false answer means the session is
+// running parameters the UE was never told about and the caller must not describe it as recovered.
+func revertModification(smContext *smfContext.SMContext, cause string) bool {
 	const path = "delivery_failure"
 	abandonModification(smContext, path, cause)
 
@@ -810,8 +812,11 @@ func revertModification(smContext *smfContext.SMContext, cause string) {
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)
 		smContext.SMLock.Unlock()
-		return
+
+		return false
 	}
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
+
+	return true
 }

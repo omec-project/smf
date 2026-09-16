@@ -227,6 +227,10 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	if reverted {
 		return smf_context.SmStateActive, nil
 	}
+
+	// Either this was not a modification, or reverting it failed. The second case has already
+	// marked the session for release, and Init is where this handler has always left the first,
+	// so neither is described as a session put back.
 	return smf_context.SmStateInit, nil
 }
 
