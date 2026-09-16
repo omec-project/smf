@@ -315,12 +315,13 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
 		smContext = value.(*SMContext)
-	} else {
-		if factory.SmfConfig.Configuration.EnableDbStore {
-			smContext := GetSMContextByRefInDB(ref)
-			if smContext != nil {
-				smContextPool.Store(ref, smContext)
-			}
+	} else if factory.SmfConfig.Configuration.EnableDbStore && !IsSmContextDeleteFailed(ref) {
+		// IsSmContextDeleteFailed excludes refs whose by-ref document RemoveSMContextLocked
+		// could not delete: without that check, a pool miss right after a failed delete would
+		// read the still-present, released document back from Mongo and resurrect it here.
+		if dbContext := GetSMContextByRefInDB(ref); dbContext != nil {
+			smContextPool.Store(ref, dbContext)
+			smContext = dbContext
 		}
 	}
 
@@ -461,6 +462,21 @@ func RemoveSMContext(ref string) {
 		return
 	}
 
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	RemoveSMContextLocked(smContext)
+}
+
+// RemoveSMContextLocked does the release transition, DB deletes, and pool/canonicalRef cleanup for
+// smContext. The caller must already hold smContext.SMLock: RemoveSMContext acquires it before
+// calling this; producer's restoration release path (markReleasedAndBuild) already holds it - to
+// keep the release atomic with the N1N2 release-command build that follows - and calls this
+// directly instead of RemoveSMContext to avoid relocking the same, non-reentrant mutex.
+//
+// Holding SMLock here also serializes this against AsyncStoreSmContextInDB, which takes the same
+// lock and checks for SmStateRelease before enqueueing: a write can never be enqueued after the DB
+// deletes below and resurrect the document.
+func RemoveSMContextLocked(smContext *SMContext) {
 	smContext.SubCtxLog.Infof("RemoveSMContext, SM context released ")
 	smContext.ChangeState(SmStateRelease)
 
@@ -471,26 +487,32 @@ func RemoveSMContext(ref string) {
 		}
 	}
 
+	if factory.SmfConfig.Configuration.EnableDbStore {
+		// The SEID loop above only reaches the main by-ref document via a SEID mapping, so a
+		// context released before any PFCP session was ever established (e.g. a create
+		// rollback) still needs this unconditional delete to remove its by-ref document -
+		// otherwise a stale, non-terminal document could be read back and resurrected into the
+		// pool by a later GetSMContext.
+		DeleteSmContextInDBByRef(smContext.Ref)
+	}
+
 	// Release UE IP-Address
 	err := smContext.ReleaseUeIpAddr()
 	if err != nil {
 		smContext.SubCtxLog.Errorf("release UE IP-Address failed, %v", err)
 	}
 
-	smContextPool.Delete(ref)
+	smContextPool.Delete(smContext.Ref)
 
 	// NewSMContext registers the canonical entry under Identifier, not Supi -- and Supi is still
 	// empty here for a context that never ran SetCreateData. Deleting by Supi in that case would
 	// leave the canonical entry behind, resolvable to a ref that no longer exists in the pool.
 	// Use CompareAndDelete so a replacement context (created after this one was superseded via
 	// restoration) is not accidentally unlinked from the canonical map.
-	canonicalRef.CompareAndDelete(canonicalName(smContext.Identifier, smContext.PDUSessionID), ref)
+	canonicalRef.CompareAndDelete(canonicalName(smContext.Identifier, smContext.PDUSessionID), smContext.Ref)
 	// Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
-	if factory.SmfConfig.Configuration.EnableDbStore {
-		DeleteSmContextInDBByRef(smContext.Ref)
-	}
 }
 
 // *** add unit test ***//

@@ -253,10 +253,13 @@ func (SmfTxnFsm) TxnAbort(txn *transaction.Transaction) (transaction.TxnEvent, e
 
 func (SmfTxnFsm) TxnSave(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	if factory.SmfConfig.Configuration.EnableDbStore {
-		// Serialize while locked, write to MongoDB asynchronously.
+		smContext := txn.Ctxt.(*smf_context.SMContext)
+		// Serialize while locked, write to MongoDB asynchronously. AsyncStoreSmContextInDB
+		// itself skips the write under lock if RemoveSMContext has released this context, so
+		// the check and the enqueue can't race with RemoveSMContext's own locked delete.
 		// txn.Status was already sent in TxnSuccess, so the HTTP response has already
 		// been returned; the DB write does not need to be on the critical path.
-		smf_context.AsyncStoreSmContextInDB(txn.Ctxt.(*smf_context.SMContext))
+		smf_context.AsyncStoreSmContextInDB(smContext)
 	}
 	return transaction.TxnEventEnd, nil
 }

@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/omec-project/openapi/v2/Namf_Communication"
@@ -321,9 +322,18 @@ func StoreSmContextInDB(smContext *SMContext) {
 	}
 }
 
+// smContextWriteReq is either an upsert (bsonDoc set, delete false) or a delete
+// (delete true) of the by-ref document. Both request kinds share one struct so
+// they can be ordered on the same per-ref shard queue.
+//
+// done, if non-nil, receives the Mongo call's result (nil on success) after the worker applies
+// this request. A caller that needs the delete to have actually succeeded before it proceeds -
+// not merely been applied - checks the error rather than assuming success once the wait returns.
 type smContextWriteReq struct {
 	bsonDoc bson.M
 	ref     string
+	delete  bool
+	done    chan error
 }
 
 // smContextWriteQueues is a per-worker shard of write queues; a stable hash of
@@ -345,27 +355,50 @@ func startSmContextWriteWorkers() {
 		go func(q chan smContextWriteReq) {
 			for req := range q {
 				filter := bson.M{refFilterKey: req.ref}
-				if _, err := mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, req.bsonDoc); err != nil {
+				var err error
+				if req.delete {
+					err = mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)
+				} else {
+					_, err = mongoapi.CommonDBClient.RestfulAPIPost(SmContextDataColl, filter, req.bsonDoc)
+				}
+				if err != nil {
 					logger.DataRepoLog.Warnln(err)
+				}
+				if req.done != nil {
+					req.done <- err
 				}
 			}
 		}(q)
 	}
 }
 
-// AsyncStoreSmContextInDB serializes the context while locked, then enqueues
-// the write to the per-ref shard worker. Blocks if the shard queue is full to
-// preserve ordering; the HTTP response was already returned in TxnSuccess.
+// enqueueSmContextWrite routes req to the shard queue selected by a stable hash
+// of req.ref, so every write and delete for the same ref is processed in the
+// order it was enqueued.
+func enqueueSmContextWrite(req smContextWriteReq) {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(req.ref))
+	q := smContextWriteQueues[h.Sum32()%uint32(len(smContextWriteQueues))]
+	q <- req
+}
+
+// AsyncStoreSmContextInDB serializes the context and enqueues the write to the per-ref shard
+// worker, both while holding SMLock (blocks if the shard queue is full, to preserve ordering;
+// the HTTP response was already returned in TxnSuccess). RemoveSMContext takes the same lock
+// around its release transition and DB deletes, so the SmStateRelease check and the enqueue
+// below happen atomically with respect to it: a write can never be enqueued after
+// RemoveSMContext's deletes and resurrect the document.
 func AsyncStoreSmContextInDB(smContext *SMContext) {
 	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	if smContext.SMContextState == SmStateRelease {
+		return
+	}
+
 	bsonDoc := ToBsonM(smContext)
 	ref := smContext.Ref
-	smContext.SMLock.Unlock()
-
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(ref))
-	q := smContextWriteQueues[h.Sum32()%uint32(len(smContextWriteQueues))]
-	q <- smContextWriteReq{bsonDoc: bsonDoc, ref: ref}
+	enqueueSmContextWrite(smContextWriteReq{bsonDoc: bsonDoc, ref: ref})
 }
 
 type SeidSmContextRef struct {
@@ -460,7 +493,9 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	}
 }
 
-// DeleteSmContextInDBBySEID Delete SMContext By SEID from DB
+// DeleteSmContextInDBBySEID Delete SMContext By SEID from DB. Callers (RemoveSMContext) must
+// hold the SMContext's SMLock across this call for the same reason as DeleteSmContextInDBByRef,
+// which this calls.
 func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
@@ -484,16 +519,50 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 	}
 }
 
-// DeleteSmContextInDBByRef Delete SMContext By ref from DB
+// smContextDeleteFailed marks refs whose by-ref Mongo document survived every
+// DeleteSmContextInDBByRef retry. GetSMContext consults this before falling back to Mongo on a
+// pool miss, so a ref that RemoveSMContextLocked has already released can never be read back from
+// a stale document and resurrected into the pool. There is no unmark path: once a context reaches
+// SmStateRelease its by-ref document must never be treated as live again, so leaving the entry
+// here permanently is the safe outcome of an unrecovered delete failure, not a leak of live state.
+var smContextDeleteFailed sync.Map
+
+// IsSmContextDeleteFailed reports whether ref's by-ref document delete previously exhausted
+// DeleteSmContextInDBByRef's retries and was never confirmed removed.
+func IsSmContextDeleteFailed(ref string) bool {
+	_, failed := smContextDeleteFailed.Load(ref)
+	return failed
+}
+
+// DeleteSmContextInDBByRef deletes the by-ref SMContext document. Callers (RemoveSMContext) must
+// hold the SMContext's SMLock across this call, the same lock AsyncStoreSmContextInDB takes
+// before enqueueing a write, so a write for this ref can never be enqueued after this delete and
+// resurrect the document.
+//
+// This still routes through the shard queue, so the delete is ordered after any write already
+// queued for ref, but it waits for the worker to actually apply it before returning. It retries a
+// bounded number of times on failure rather than treating the request as complete once merely
+// applied: RemoveSMContextLocked's pool.Delete (which does not go through this queue) runs right
+// after this returns, so if the document were still in Mongo a concurrent GetSMContext for the
+// same ref could miss the pool, read it back, and reinsert the context this call is meant to
+// remove. If every attempt fails, ref is tombstoned in smContextDeleteFailed so that risk stays
+// closed even though the document itself could not be removed.
 func DeleteSmContextInDBByRef(ref string) {
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB w ref")
-	filter := bson.M{refFilterKey: ref}
-	logger.DataRepoLog.Infof("filter: %+v", filter)
-
-	delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SmContextDataColl, filter)
-	if delOneErr != nil {
-		logger.DataRepoLog.Warnln(delOneErr)
+	const maxAttempts = 3
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		done := make(chan error, 1)
+		enqueueSmContextWrite(smContextWriteReq{ref: ref, delete: true, done: done})
+		if err = <-done; err == nil {
+			return
+		}
+		if attempt < maxAttempts {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
+	smContextDeleteFailed.Store(ref, struct{}{})
+	logger.DataRepoLog.Errorf("delete SMContext In DB w ref %v failed after %d attempts, giving up: %v", ref, maxAttempts, err)
 }
 
 func mapToByte(data map[string]interface{}) (ret []byte) {
