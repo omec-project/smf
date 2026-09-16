@@ -522,6 +522,16 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	// which the UE's acknowledgement could stop the timer and commit the update, after which this
 	// armed a fresh timer -- and set NwModificationPending back to true -- for a procedure that
 	// had already finished. A UE on a short link answers well inside that window.
+	// The acknowledgement can arrive before this point: the transfer call above blocks until the
+	// AMF answers, and the UE's completion travels its own path. Its handler clears the flag, so
+	// finding it clear here means the procedure is already over -- and arming a timer for it would
+	// have T3591 retransmit and then abandon a modification the UE has accepted and this SMF has
+	// committed.
+	if !smContext.NwModificationPending {
+		smContext.SubPduSessLog.Infoln("the UE acknowledged the modification before the transfer returned; not arming T3591 for a procedure that is over")
+		return nil
+	}
+
 	if enabled, maxRetries := effectiveT3591Retries(smContext); enabled {
 		startT3591Locked(smContext, maxRetries)
 

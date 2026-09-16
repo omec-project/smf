@@ -61,6 +61,12 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreateFailure] = HandleStatePfcpCreatePendingEventPfcpSessCreateFailure
 	SmfFsmHandler[smf_context.SmStateN1N2TransferPending][SmEventPduSessN1N2Transfer] = HandleStateN1N2TransferPendingEventN1N2Transfer
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
+	// The UE's acknowledgement of a network-requested modification can arrive while the session is
+	// still in PfcpModify: the state changes only after the N1/N2 transfer call returns, and on a
+	// short link the UE can answer before the AMF has answered us. Without this the acknowledgement
+	// met EmptyEventHandler and was dropped, after which T3591 retransmitted a command the UE had
+	// already accepted and eventually abandoned a modification that had succeeded.
+	SmfFsmHandler[smf_context.SmStatePfcpModify][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
