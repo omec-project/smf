@@ -121,6 +121,7 @@ func TestASecondRestartSupersedesTheRestorationInProgress(t *testing.T) {
 	}
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	if !first.isSuperseded() {
 		t.Errorf("the restoration in progress was not superseded by a second restart; it would go on " +
@@ -140,6 +141,7 @@ func TestTheSupersedingRunReplacesTheOneItAbandoned(t *testing.T) {
 	defer restorationsInProgress.Delete(nodeIP)
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	current, ok := restorationsInProgress.Load(nodeIP)
 	if !ok {
@@ -264,6 +266,31 @@ func restoreQuickly(t *testing.T) {
 	t.Helper() // timings are set in init; the call is kept so each test says it depends on them
 }
 
+// waitForBackgroundRestorations blocks until every goroutine RestoreSessionsOnUPF has spawned so
+// far has returned.
+//
+// RestoreSessionsOnUPF hands the actual work to a goroutine and returns immediately, so a test that
+// calls it and moves on can leave that goroutine still running - not because it is slow, but simply
+// because the Go scheduler had not yet given it a timeslice. It then executes concurrently with
+// whatever the next test does, including another test's context.NewUPF() call touching the same
+// package-level UPF registry this goroutine reads via RetrieveUPFNodeByNodeID. That is exactly the
+// "DATA RACE" seen under -race between this file's tests and context.NewUPF/RetrieveUPFNodeByNodeID:
+// not a bug in the production code on either side of it, but two tests' goroutines that were never
+// made to wait for one another.
+func waitForBackgroundRestorations(t *testing.T) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		restorationGoroutines.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a background restoration goroutine did not finish within the test timeout")
+	}
+}
+
 // A restoration works from the set of sessions that existed when the restart was observed. The run
 // that supersedes it must take its own snapshot: a session established between the two restarts
 // belongs to the incarnation now current, and one enumerated by the abandoned run may since have
@@ -287,6 +314,7 @@ func TestTheSupersedingRunTakesItsOwnSnapshot(t *testing.T) {
 	after.PFCPContext[nodeIP].RemoteSEID = 7777
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	if !abandoned.isSuperseded() {
 		t.Fatalf("precondition: the run in progress should have been superseded")
@@ -322,6 +350,22 @@ func TestAReleasedSessionDoesNotStillReadAsActive(t *testing.T) {
 	if smContext.SMContextState != context.SmStateRelease {
 		t.Errorf("state is %v after release, want %v; a session reported as active while carrying "+
 			"nothing is undiagnosable from the control plane", smContext.SMContextState, context.SmStateRelease)
+	}
+}
+
+// A released session must also stop being resolvable, or the SMF can still find and act on a
+// session Kafka consumers were already told (via the terminal Del markReleasedAndBuild's
+// ChangeState(SmStateRelease) publishes) had been deleted.
+func TestAReleasedSessionIsNoLongerResolvable(t *testing.T) {
+	smContext := sessionOn(t, "imsi-208930000000704", 4, restarted)
+	ref := smContext.Ref
+
+	if err := releaseOneSession(smContext); err == nil {
+		t.Logf("release completed without error")
+	}
+
+	if got := context.GetSMContext(ref); got != nil {
+		t.Errorf("the session is still resolvable by ref after being released; the pool/canonicalRef entries were not removed")
 	}
 }
 
@@ -428,6 +472,7 @@ func TestARunRecordsThatItDisplacedAnother(t *testing.T) {
 	defer restorationsInProgress.Delete(nodeIP)
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	current, ok := restorationsInProgress.Load(nodeIP)
 	if !ok {
@@ -451,6 +496,7 @@ func TestAFirstRunRecordsThatItDisplacedNothing(t *testing.T) {
 	defer restorationsInProgress.Delete(nodeIP)
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	current, ok := restorationsInProgress.Load(nodeIP)
 	if !ok {
@@ -506,6 +552,7 @@ func TestTheSameRestartSeenTwiceStartsOneRestoration(t *testing.T) {
 	restorationsInProgress.Store(nodeIP, first)
 
 	RestoreSessionsOnUPF(nodeID, recovery)
+	defer waitForBackgroundRestorations(t)
 
 	current, ok := restorationsInProgress.Load(nodeIP)
 	if !ok {
@@ -531,6 +578,7 @@ func TestADifferentRestartStillSupersedes(t *testing.T) {
 	restorationsInProgress.Store(nodeIP, first)
 
 	RestoreSessionsOnUPF(nodeID, time.Now())
+	defer waitForBackgroundRestorations(t)
 
 	if !first.isSuperseded() {
 		t.Errorf("a genuine second restart did not abandon the run repairing the first; it would " +
