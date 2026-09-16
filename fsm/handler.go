@@ -208,7 +208,8 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
-	if err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn); err != nil {
+	reverted, err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn)
+	if err != nil {
 		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
@@ -218,7 +219,12 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	// Returning Init unconditionally, as this did, moved that working session to Init on the way
 	// out -- HandleEvent applies whatever this returns -- so the rollback was undone one frame
 	// after it was made.
-	if smCtxt.SMContextState == smf_context.SmStateActive {
+	//
+	// The test is the revert itself and not the state it leaves behind. This handler is shared
+	// with the AN-release path, which also ends Active when its PFCP update succeeds, and that
+	// path has always finished in Init: reading Active as "a revert happened" would change it too,
+	// silently, for a case this has nothing to say about.
+	if reverted {
 		return smf_context.SmStateActive, nil
 	}
 	return smf_context.SmStateInit, nil

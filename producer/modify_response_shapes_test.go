@@ -239,8 +239,12 @@ func TestDeliveryFailureRevertsAModificationRatherThanDroppingTheSession(t *test
 	smContext.Tunnel = makeCompleteTestTunnel()
 
 	txn := &transaction.Transaction{Ctxt: smContext}
-	if err := HandlePduSessN1N2TransFailInd(txn); err != nil {
+	reverted, err := HandlePduSessN1N2TransFailInd(txn)
+	if err != nil {
 		t.Fatalf("HandlePduSessN1N2TransFailInd returned an error: %v", err)
+	}
+	if !reverted {
+		t.Fatal("the delivery failure was not reported as a revert, so the FSM would move this working session to Init")
 	}
 
 	// The revert programs the user plane back to the committed parameters.
