@@ -346,34 +346,63 @@ func SendPfcpSessionModificationRequest(
 				}
 			}()
 			logger.PfcpLog.Debugf("send pfcp session modify response [%v]", rsp)
-			if rsp.StatusCode == http.StatusOK {
-				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
-				if err != nil {
-					logger.PfcpLog.Fatalln(err)
-				}
-				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
-				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
-				if err != nil {
-					logger.PfcpLog.Errorf("parse pfcp session modify response failed: %v", err)
-					return err
-				}
-				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
-				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
-				if err != nil {
-					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
-				}
+
+			if err := handleAdapterModificationResponse(rsp, ctx.PFCPContext[nodeIDtoIP].LocalSEID); err != nil {
+				return err
 			}
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
+
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: HandlePfcpSendError}
-		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
-		if err != nil {
+		if err := udp.SendPfcp(pfcpMsg, upaddr, eventData); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session modify msg to upf error [%v]", err.Error())
+
+			// Returned rather than logged. The timeout that would otherwise end the caller's
+			// wait is raised by the transaction this send failed to create, so there is nothing
+			// left to answer with. The bookkeeping entry goes with it -- though only for
+			// tidiness: the modification response handler correlates by SEID and never reads
+			// this map, so the entry the line above makes is unread on the success path too.
+			FetchPfcpTxn(pfcpMsg.Sequence())
+
+			return fmt.Errorf("pfcp session modification request was not sent: %w", err)
 		}
 	}
 	ctx.SubPfcpLog.Infof("sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	return nil
+}
+
+// handleAdapterModificationResponse takes the user plane's answer out of the adapter's reply and
+// dispatches it.
+//
+// Separated from the send so that the refusal below can be exercised: in this mode the user
+// plane's response arrives in the body, so a status other than OK is not a slow answer -- it is
+// the only answer there will be. Returning nil there left the caller waiting on
+// SBIPFCPCommunicationChan for a response nothing would deliver.
+func handleAdapterModificationResponse(rsp *http.Response, localSEID uint64) error {
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upf adapter did not accept the session modification: %s", rsp.Status)
+	}
+
+	pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+	if err != nil {
+		logger.PfcpLog.Fatalln(err)
+	}
+
+	logger.PfcpLog.Debugf("pfcp rsp status ok, %s", string(pfcpMsgBytes))
+
+	pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
+	if err != nil {
+		logger.PfcpLog.Errorf("parse pfcp session modify response failed: %v", err)
+
+		return err
+	}
+
+	eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: HandlePfcpSendError}
+	if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
+		logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+	}
+
 	return nil
 }
 

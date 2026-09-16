@@ -481,3 +481,39 @@ func TestSendPfcpMsgToAdapter(t *testing.T) {
 		t.Errorf("HTTP status code mismatch. got = %d, want = %d", rsp.StatusCode, http.StatusOK)
 	}
 }
+
+// A send that fails before it creates a transaction has nothing left to answer the caller: the
+// timeout that ends SendPfcpSessionModifyReq's wait on SBIPFCPCommunicationChan is raised by that
+// transaction. Reporting the failure is what lets the caller stop waiting; logging it and
+// returning nil left the caller waiting for a response that could not arrive.
+func TestSendPfcpSessionModificationRequestReportsASendThatDidNotHappen(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses before any transaction exists.
+	setTestServer(t, nil)
+
+	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, 8806); err == nil {
+		t.Error("a modification the UDP layer refused was reported as sent; the caller waits for an answer to it")
+	}
+}
