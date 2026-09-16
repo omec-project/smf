@@ -357,7 +357,11 @@ func TestAReleasedSessionDoesNotStillReadAsActive(t *testing.T) {
 // session Kafka consumers were already told (via the terminal Del markReleasedAndBuild's
 // ChangeState(SmStateRelease) publishes) had been deleted.
 func TestAReleasedSessionIsNoLongerResolvable(t *testing.T) {
-	smContext := sessionOn(t, "imsi-208930000000704", 4, restarted)
+	const (
+		supi = "imsi-208930000000704"
+		psi  = int32(4)
+	)
+	smContext := sessionOn(t, supi, psi, restarted)
 	ref := smContext.Ref
 
 	if err := releaseOneSession(smContext); err == nil {
@@ -366,6 +370,9 @@ func TestAReleasedSessionIsNoLongerResolvable(t *testing.T) {
 
 	if got := context.GetSMContext(ref); got != nil {
 		t.Errorf("the session is still resolvable by ref after being released; the pool/canonicalRef entries were not removed")
+	}
+	if got, err := context.ResolveRef(supi, psi); err == nil {
+		t.Errorf("the session is still resolvable by its canonical identifier after being released, got ref %q; the canonicalRef entry was not removed", got)
 	}
 }
 
