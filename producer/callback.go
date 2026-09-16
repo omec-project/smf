@@ -83,6 +83,21 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	return nil
 }
 
+// deletedPccRules names the PCC rules the pending update removes. The tunnels key their PDRs by
+// rule id, so this is what says which of them the user plane should stop carrying.
+func deletedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
+	if len(smContext.SmPolicyUpdates) == 0 {
+		return nil
+	}
+
+	update := smContext.SmPolicyUpdates[0]
+	if update == nil || update.PccRuleUpdate == nil {
+		return nil
+	}
+
+	return update.PccRuleUpdate.GetDeleted()
+}
+
 // BuildPfcpParam constructs the PFCP parameters (PDRs, FARs, QERs,) for a given SMContext.
 // It analyzes the SM Policy updates and the current data paths in the SM context to:
 //  1. Create or modify PDRs (Packet Detection Rules), FARs (Forwarding Action Rules), and QERs (QoS Enforcement Rules).
@@ -161,6 +176,36 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
+			}
+		}
+
+		// A rule the update deletes is withdrawn from the user plane here. The radio is told to
+		// release the flow and the UE is told to stop using it; without this the PDR went on
+		// forwarding it, so the only party still carrying the deleted rule was the one actually
+		// moving the traffic. The release-only branch below is a different case: it fires when a
+		// decision has no valid rules at all, not when one rule among several goes away.
+		//
+		// The PDR and its FAR go; the QERs do not. A QER here is built per session and attached
+		// to every PDR on the path, so removing the ones this PDR points at would take rate
+		// enforcement off the rules that remain. One left unreferenced enforces nothing and goes
+		// with the session.
+		for deletedRule := range deletedPccRules(smContext) {
+			if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[deletedRule]; ok {
+				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
+				if dlPDR.FAR != nil {
+					pfcpParam.removeFAR = append(pfcpParam.removeFAR, dlPDR.FAR)
+				}
+
+				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+			}
+
+			if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[deletedRule]; ok {
+				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
+				if ulPDR.FAR != nil {
+					pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
+				}
+
+				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
 			}
 		}
 

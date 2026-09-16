@@ -8,6 +8,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/qos"
 	"go.uber.org/zap"
@@ -179,5 +180,56 @@ func TestAFailedUserPlaneProgrammingLeavesTheSessionAsItWasFound(t *testing.T) {
 	}
 	if smContext.NwModificationPending {
 		t.Error("the session still looks as though a network modification were running, so every later UE request would be disregarded")
+	}
+}
+
+// A rule the update deletes has to leave the user plane too. The radio is told to release the
+// flow and the UE is told to stop using it; without this the PDR went on forwarding it, so the
+// only party still carrying a withdrawn rule was the one moving the traffic.
+func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
+	const withdrawnPdrKey = "going"
+
+	sm := modifyingSession()
+
+	kept := &smf_context.PDR{PDRID: 1, FAR: &smf_context.FAR{FARID: 1}}
+	withdrawn := &smf_context.PDR{PDRID: 2, FAR: &smf_context.FAR{FARID: 2}}
+
+	upf := &smf_context.UPF{NodeID: *smf_context.NewNodeID("10.0.0.1")}
+	node := &smf_context.DataPathNode{
+		UPF:            upf,
+		DownLinkTunnel: &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{defaultPdrKey: kept, withdrawnPdrKey: withdrawn}},
+		UpLinkTunnel:   &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{defaultPdrKey: kept, withdrawnPdrKey: withdrawn}},
+	}
+	sm.Tunnel = &smf_context.UPTunnel{
+		DataPathPool: smf_context.DataPathPool{
+			1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
+		},
+	}
+
+	// Built the way the PCF's decision builds it: a rule carrying no identity is a deletion.
+	decision := &models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{
+			defaultPdrKey:   {PccRuleId: defaultPdrKey},
+			withdrawnPdrKey: {},
+		},
+	}
+	sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(sm)
+
+	var removed int
+
+	for _, pdr := range param.removePDR {
+		if pdr == withdrawn {
+			removed++
+		}
+
+		if pdr == kept {
+			t.Error("a rule the update keeps was withdrawn from the user plane")
+		}
+	}
+
+	if removed != 2 {
+		t.Errorf("withdrawn PDRs = %d, want both directions of the deleted rule", removed)
 	}
 }
