@@ -7,6 +7,7 @@ package context
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -631,11 +632,27 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	}
 
 	if deleteOnly {
-		ctx.SubPduSessLog.Infof("modification carries only deletions; the radio is asked for nothing, since the flows it refused were never established there")
+		ctx.SubPduSessLog.Infof("modification carries only deletions; the radio is asked to add or modify nothing")
 	} else {
 		ctx.SubPduSessLog.Infof("asking the radio to add or modify %d QoS flow(s)", len(modifyFlows))
 		ie = buildQosFlowAddOrModifyIE(modifyFlows)
 		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+	}
+
+	// Whatever else the transfer carries, the flows the update withdraws are named for release.
+	//
+	// Omitting them was defensible for the corrective modification this branch was written for --
+	// there the refused flows were never established at the radio, so there is nothing to release
+	// -- but the same code runs for an ordinary deletion, where the flow is established and the
+	// UE and the SMF both drop it. The radio then keeps a bearer for a flow nobody is serving, and
+	// nothing says so: the uplink still has somewhere to arrive.
+	//
+	// The default-flow case is untouched. It is handled by the release-only path above, which this
+	// does not reach.
+	if released := releasedQosFlowItems(ctx); len(released) > 0 {
+		ctx.SubPduSessLog.Infof("asking the radio to release %d QoS flow(s)", len(released))
+		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List,
+			buildQosFlowToReleaseIE(released))
 	}
 
 	// ----------------------------------------------------
@@ -813,6 +830,52 @@ func buildQosFlowAddOrModifyIE(flows []ngapType.QosFlowAddOrModifyRequestItem) n
 			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
 				List: flows,
 			},
+		},
+	}
+}
+
+// releasedQosFlowItems names the QoS flows the pending update withdraws, for the radio to release.
+//
+// The cause is a NAS normal release, matching the release-only path above: the flow is going away
+// because the policy no longer has it, not because anything failed.
+func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
+	if len(ctx.SmPolicyUpdates) == 0 {
+		return nil
+	}
+	update := ctx.SmPolicyUpdates[0]
+	if update == nil || update.QosFlowUpdate == nil {
+		return nil
+	}
+
+	var items []ngapType.QosFlowWithCauseItem
+	for qosID := range update.QosFlowUpdate.GetDeleted() {
+		qfi := qos.GetQosFlowIdFromQosId(qosID)
+		if qfi == 0 {
+			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier; the radio is not asked to release it", qosID)
+			continue
+		}
+		items = append(items, ngapType.QosFlowWithCauseItem{
+			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+			Cause: ngapType.Cause{
+				Present: ngapType.CausePresentNas,
+				Nas:     &ngapType.CauseNas{Value: ngapType.CauseNasPresentNormalRelease},
+			},
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].QosFlowIdentifier.Value < items[j].QosFlowIdentifier.Value
+	})
+	return items
+}
+
+// buildQosFlowToReleaseIE wraps the released flows in the IE that carries them.
+func buildQosFlowToReleaseIE(items []ngapType.QosFlowWithCauseItem) ngapType.PDUSessionResourceModifyRequestTransferIEs {
+	return ngapType.PDUSessionResourceModifyRequestTransferIEs{
+		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowToReleaseList},
+		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
+		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+			Present:              ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowToReleaseList,
+			QosFlowToReleaseList: &ngapType.QosFlowListWithCause{List: items},
 		},
 	}
 }

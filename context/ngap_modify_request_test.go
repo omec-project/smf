@@ -246,3 +246,54 @@ func TestModifyRequestSkipsAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T)
 		t.Errorf("flows in the request = %v, want only QFI 2", list.List)
 	}
 }
+
+// decodeReleaseList returns the QoS Flow to Release List the transfer carries, or nil.
+func decodeReleaseList(t *testing.T, encoded []byte) *ngapType.QosFlowListWithCause {
+	t.Helper()
+	var transfer ngapType.PDUSessionResourceModifyRequestTransfer
+	if err := aper.UnmarshalWithParams(encoded, &transfer, "valueExt"); err != nil {
+		t.Fatalf("the transfer this SMF produced does not decode: %v", err)
+	}
+	for _, ie := range transfer.ProtocolIEs.List {
+		if ie.Id.Value == ngapType.ProtocolIEIDQosFlowToReleaseList {
+			return ie.Value.QosFlowToReleaseList
+		}
+	}
+	return nil
+}
+
+// A flow the policy withdraws has to be named for release, or the radio keeps a bearer for a flow
+// the SMF and the UE have both dropped and the uplink still has somewhere to arrive.
+//
+// The corrective modification was the case this branch was written for, and there the refused flows
+// were never established at the radio -- but the same path runs for an ordinary deletion, where
+// they were.
+func TestModifyRequestNamesTheFlowsThePolicyWithdraws(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	corrective := ctx.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{3}))
+	if corrective == nil {
+		t.Fatal("no corrective was produced, so the rest of this test would pass vacuously")
+	}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{corrective}
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("building the transfer failed: %v", err)
+	}
+
+	released := decodeReleaseList(t, encoded)
+	if released == nil || len(released.List) == 0 {
+		t.Fatal("the transfer names no flow for release, so the radio keeps serving the withdrawn one")
+	}
+	if got := released.List[0].QosFlowIdentifier.Value; got != 3 {
+		t.Errorf("released QFI = %d, want 3", got)
+	}
+	if cause := released.List[0].Cause; cause.Present != ngapType.CausePresentNas ||
+		cause.Nas == nil || cause.Nas.Value != ngapType.CauseNasPresentNormalRelease {
+		t.Errorf("release cause = %+v, want a NAS normal release", cause)
+	}
+}
