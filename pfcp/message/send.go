@@ -386,7 +386,12 @@ func handleAdapterModificationResponse(rsp *http.Response, localSEID uint64) err
 
 	pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 	if err != nil {
-		logger.PfcpLog.Fatalln(err)
+		// Returned, not fatal. A body that stops early is a failed request, and the SMF has other
+		// sessions: ending the process over one truncated read takes them all down with it. The
+		// caller answers this the same way it answers a refusal.
+		logger.PfcpLog.Errorf("reading the adapter's session modify response failed: %v", err)
+
+		return fmt.Errorf("reading the adapter's session modify response: %w", err)
 	}
 
 	logger.PfcpLog.Debugf("pfcp rsp status ok, %s", string(pfcpMsgBytes))
