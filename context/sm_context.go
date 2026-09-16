@@ -998,8 +998,12 @@ func (smContext *SMContext) CommitSmPolicyDecisionLocked(status bool) error {
 		// Nothing pending. Reachable whenever a message that commits or discards arrives without
 		// a modification in flight — a retransmitted PDU SESSION MODIFICATION COMPLETE is the
 		// ordinary case — and indexing here would take the SMF down.
-		logger.CtxLog.Warnf("no pending SM policy update to %s",
-			map[bool]string{true: "commit", false: "discard"}[status])
+		outcome := "discard"
+		if status {
+			outcome = "commit"
+		}
+
+		logger.CtxLog.Warnf("no pending SM policy update to %s", outcome)
 		return nil
 	}
 

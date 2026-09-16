@@ -108,9 +108,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 					logger.PfcpLog.Errorf("parse pfcp heartbeat response failed: %v", err)
 					return err
 				}
-				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
-				if err != nil {
+				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
 			}
 		}
@@ -176,9 +177,10 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 					logger.PfcpLog.Errorf("parse pfcp association response failed: %v", err)
 					return err
 				}
-				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil)
-				if err != nil {
+				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
 			}
 		}
@@ -286,9 +288,10 @@ func SendPfcpSessionEstablishmentRequest(
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
-				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
-				if err != nil {
+				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
 			} else {
 				// http status !OK
@@ -405,7 +408,19 @@ func handleAdapterModificationResponse(rsp *http.Response, localSEID uint64) err
 
 	eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: HandlePfcpSendError}
 	if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
+		// Returned, not just logged. Dispatching the response is what eventually puts the verdict
+		// on the session's PFCP channel, so a dispatch that failed leaves nothing to signal it --
+		// and the caller, which waits on that channel, would wait for an answer that cannot come.
+		// Its callers already treat a send that did not happen as a failed modification rather
+		// than waiting, and this is the same thing one step later.
+		//
+		// What that makes an error here mean, for anyone changing HandleAdapterPfcpRsp: no verdict
+		// is coming. A handler that signalled the channel and then failed would break that -- the
+		// caller would report the modification failed while its answer sat in a channel of
+		// capacity one, for the next exchange on that session to read as its own.
 		logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+		return fmt.Errorf("handling the adapter's session modify response: %w", err)
 	}
 
 	return nil
@@ -449,9 +464,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
-				err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData)
-				if err != nil {
+				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
 			}
 		}
