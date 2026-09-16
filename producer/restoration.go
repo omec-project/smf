@@ -841,10 +841,12 @@ func markReleasedAndBuild(smContext *context.SMContext) (*models.N1N2MessageTran
 	}
 	defer smContext.SMLock.Unlock()
 
-	// RemoveSMContext both transitions to SmStateRelease (publishing the terminal Kafka event)
-	// and removes the pool/canonicalRef entries; a bare ChangeState left them resolvable after
-	// Kafka consumers were told the session was gone.
-	context.RemoveSMContext(smContext.Ref)
+	// RemoveSMContextLocked both transitions to SmStateRelease (publishing the terminal Kafka
+	// event) and removes the pool/canonicalRef entries; a bare ChangeState left them resolvable
+	// after Kafka consumers were told the session was gone. The Locked variant is used, not
+	// RemoveSMContext, because this function already holds smContext.SMLock above and the lock
+	// is not reentrant.
+	context.RemoveSMContextLocked(smContext)
 	return buildReleaseCommandForUE(smContext)
 }
 
