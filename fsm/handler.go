@@ -157,6 +157,11 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 		smCtxt.SubFsmLog.Errorf("N1N2 transfer failure error, %v ", err.Error())
 		return smf_context.SmStateN1N2TransferPending, fmt.Errorf("N1N2 Transfer failure error, %v ", err.Error())
 	}
+	// The create never finished establishing on the UPF, so nothing survives this rollback:
+	// remove the context instead of leaving it parked in SmStateInit forever with no terminal
+	// Kafka event. HandleEvent's follow-up ChangeState(SmStateInit) is a no-op once this has
+	// already moved the context to the terminal SmStateRelease.
+	smf_context.RemoveSMContext(smCtxt.Ref)
 	return smf_context.SmStateInit, nil
 }
 
