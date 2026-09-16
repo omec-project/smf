@@ -384,12 +384,33 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	jsonData.SetPduSessionId(smContext.PDUSessionID)
 	n1n2Request.SetJsonData(jsonData)
 
+	// Both payloads describe one modification, so they are built under one hold of the lock. The
+	// callers reach here without it -- ApplyModification releases before the transfer, and the
+	// retransmission runs on the timer's goroutine -- so between the two builds a UE completion
+	// could commit and pop the pending update, or another policy update replace it. The command
+	// would then carry NAS and NGAP describing different policies, or be built from an update
+	// that is no longer there. Neither builder takes the lock itself.
+	smContext.SMLock.Lock()
+
+	smNasBuf, nasErr := smfContext.BuildGSMPDUSessionModificationCommand(smContext)
+
+	var (
+		n2Pdu   []byte
+		ngapErr error
+	)
+
+	if nasErr == nil {
+		n2Pdu, ngapErr = smfContext.BuildPDUSessionResourceModifyRequestTransfer(smContext)
+	}
+
+	smContext.SMLock.Unlock()
+
 	// -------------------------------
 	// Build N1 (NAS) PDU Session Modification Command
 	// -------------------------------
-	if smNasBuf, err1 := smfContext.BuildGSMPDUSessionModificationCommand(smContext); err1 != nil {
-		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", err1.Error())
-		return err1
+	if nasErr != nil {
+		logger.PduSessLog.Errorf("build GSM BuildGSMPDUSessionModificationCommand failed: %s", nasErr.Error())
+		return nasErr
 	} else {
 		tmpFile, err2 := util.CreatePayloadTempFile(smNasBuf)
 		if err2 != nil {
@@ -406,10 +427,9 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// -------------------------------
 	// Build N2 (NGAP) PDUSessionResourceModifyRequestTransfer
 	// -------------------------------
-	n2Pdu, err := smfContext.BuildPDUSessionResourceModifyRequestTransfer(smContext)
-	if err != nil {
-		smContext.SubPduSessLog.Errorf("build PDUSessionResourceModifyRequestTransfer failed: %s", err.Error())
-		return err
+	if ngapErr != nil {
+		smContext.SubPduSessLog.Errorf("build PDUSessionResourceModifyRequestTransfer failed: %s", ngapErr.Error())
+		return ngapErr
 	} else {
 		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
 		if err1 != nil {
@@ -547,6 +567,14 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
+	// Expected from before the transfer rather than after it. The radio's answer travels its own
+	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
+	// expectation set discards it as belonging to no modification -- losing a partial rejection
+	// that had a realignment waiting on it. Cleared on every path that gives the modification up.
+	smContext.SMLock.Lock()
+	smContext.RanAnswerPending = true
+	smContext.SMLock.Unlock()
+
 	if err := sendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
 		// The user plane was programmed before this. Leaving it there would have the session
@@ -562,10 +590,6 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	smContext.ChangeState(smfContext.SmStateActive)
 	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
 		smContext.SMContextState.String())
-
-	// The radio has been asked; its answer is expected from here until it arrives or the
-	// modification is given up.
-	smContext.RanAnswerPending = true
 
 	// Armed under the same hold as the state change. Releasing the lock first left a window in
 	// which the UE's acknowledgement could stop the timer and commit the update, after which this
@@ -645,12 +669,24 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 
 // effectiveT3591Retries reports whether the timer is enabled and how many retransmissions it
 // allows, so a caller holding SMLock can arm it without re-reading configuration.
+//
+// Disabling the timer suppresses retransmission and expiry, and nothing else. It used to clear
+// NwModificationPending as well, which is a different statement: that flag is what tells the rest
+// of the SMF a modification is running. Without it a UE request for the same session stopped
+// being a collision to disregard and became one to refuse, and -- worse -- a delivery-failure
+// indication was read as belonging to the establishment path, which releases the session instead
+// of reverting the modification. Turning off a timer would then have taken down a working data
+// path.
+//
+// So the procedure stays pending until something settles it: the UE's completion or rejection,
+// the radio's refusal, or a failure that reverts it. With the timer off and a UE that never
+// answers, it stays pending -- which is what disabling the timer asks for.
 func effectiveT3591Retries(smContext *smfContext.SMContext) (bool, int) {
 	enabled, maxRetries := smfContext.EffectiveT3591(factory.SmfConfig.Configuration.T3591)
 	if !enabled {
 		smContext.SubPduSessLog.Warnf("T3591 is disabled by configuration; an unacknowledged modification will be neither retransmitted nor abandoned")
-		smContext.NwModificationPending = false
 	}
+
 	return enabled, maxRetries
 }
 

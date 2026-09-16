@@ -855,11 +855,16 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 // session instead of guarding it. That is not hypothetical: it deadlocked every modify-response
 // test on the first draft of this guard.
 func ranAnswerIsExpectedLocked(smContext *context.SMContext) bool {
-	if !smContext.RanAnswerPending {
-		return false
-	}
+	return smContext.RanAnswerPending
+}
+
+// ranAnswerTakenLocked consumes the expectation, once the answer has been read and decoded rather
+// than when it arrived. Clearing on arrival meant a response the SMF could not decode took the
+// expectation with it, and the radio's next attempt -- or the valid answer behind a malformed one
+// -- was then ignored as belonging to no modification, leaving a partial acceptance with nothing
+// to realign it. The whole path runs under SMLock, so no second answer is being decoded meanwhile.
+func ranAnswerTakenLocked(smContext *context.SMContext) {
 	smContext.RanAnswerPending = false
-	return true
 }
 
 func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
@@ -879,6 +884,8 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		smContext.SubPduSessLog.Errorf("decoding the modify response failed: %v", err)
 		return err
 	}
+
+	ranAnswerTakenLocked(smContext)
 
 	switch {
 	case result.WhollyRejected():
