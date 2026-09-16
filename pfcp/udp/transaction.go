@@ -47,10 +47,15 @@ const (
 	SendingResponse
 )
 
-const (
+// Vars, not consts, so tests can shorten them: a transaction goroutine started by SendPfcp is not
+// tied to any test's lifecycle, and at the production values below it can easily outlive the
+// sub-second test that spawned it, later touching memory the runtime has since reused for an
+// unrelated test's stack -- a real race the detector will report between two logically unrelated
+// tests.
+var (
 	NumOfResend                 = 3
-	ResendRequestTimeOutPeriod  = 3
-	ResendResponseTimeOutPeriod = 15
+	ResendRequestTimeOutPeriod  = 3 * time.Second
+	ResendResponseTimeOutPeriod = 15 * time.Second
 )
 
 type Transaction struct {
@@ -93,7 +98,7 @@ func (transaction *Transaction) Start() error {
 
 	if transaction.TxType == SendingRequest {
 		for iter := 0; iter < NumOfResend; iter++ {
-			timer := time.NewTimer(ResendRequestTimeOutPeriod * time.Second)
+			timer := time.NewTimer(ResendRequestTimeOutPeriod)
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {
 				logger.PfcpLog.Warnf("request transaction [%d]: %s", transaction.SequenceNumber, err)
@@ -117,7 +122,7 @@ func (transaction *Transaction) Start() error {
 		return fmt.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
 	} else if transaction.TxType == SendingResponse {
 		// Todo :Implement SendingResponse type of reliable delivery
-		timer := time.NewTimer(ResendResponseTimeOutPeriod * time.Second)
+		timer := time.NewTimer(ResendResponseTimeOutPeriod)
 		for iter := 0; iter < NumOfResend; iter++ {
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {

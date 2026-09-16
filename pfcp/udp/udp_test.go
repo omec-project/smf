@@ -21,6 +21,17 @@ type Server struct {
 	Conn *net.UDPConn
 }
 
+// A transaction goroutine started by SendPfcp is not tied to any test's lifecycle. At the
+// production retry timings it can easily outlive the sub-second test that spawned it and later
+// touch memory the runtime has since reused for an unrelated test's stack -- a real race the
+// detector reports between two logically unrelated tests. Shortening the timings here bounds how
+// long such a leaked goroutine can stay alive.
+func init() {
+	udp.NumOfResend = 1
+	udp.ResendRequestTimeOutPeriod = time.Millisecond
+	udp.ResendResponseTimeOutPeriod = time.Millisecond
+}
+
 func (s *Server) Start() error {
 	conn, err := net.ListenUDP("udp", s.addr)
 	if err != nil {
@@ -62,7 +73,11 @@ func TestRun(t *testing.T) {
 		}
 	}
 
-	go udp.Run(dispatch)
+	// Run itself is non-blocking: it binds the socket and calls SetServer before returning, only the
+	// read loop continues in the background. Calling it via `go` here raced WaitForServer against a
+	// previous test iteration's stale (already-closed) global server, which could report ready before
+	// this call had bound its own socket, dropping the heartbeat sent below.
+	udp.Run(dispatch)
 	if err := udp.WaitForServer(); err != nil {
 		t.Errorf("failed to start PFCP server: %v", err)
 	}
@@ -70,6 +85,7 @@ func TestRun(t *testing.T) {
 		if server := udp.GetServer(); server != nil && server.Conn != nil {
 			_ = server.Conn.Close()
 		}
+		udp.SetServer(nil)
 	}()
 
 	sender := &Server{addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
