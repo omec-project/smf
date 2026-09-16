@@ -89,6 +89,7 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 			del: removedRules,
 		},
 		SmPolicyDecision: u.SmPolicyDecision,
+		Corrective:       true,
 	}
 }
 

@@ -639,13 +639,13 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
 	}
 
-	// Whatever else the transfer carries, the flows the update withdraws are named for release.
+	// Whatever else the transfer carries, the flows an ordinary deletion withdraws are named for
+	// release. Without it the radio keeps a bearer for a flow the SMF and the UE have both
+	// dropped, and nothing says so: the uplink still has somewhere to arrive.
 	//
-	// Omitting them was defensible for the corrective modification this branch was written for --
-	// there the refused flows were never established at the radio, so there is nothing to release
-	// -- but the same code runs for an ordinary deletion, where the flow is established and the
-	// UE and the SMF both drop it. The radio then keeps a bearer for a flow nobody is serving, and
-	// nothing says so: the uplink still has somewhere to arrive.
+	// A corrective modification is the exception, and it is the case this branch was written for.
+	// Its deletions are the flows the radio itself refused, so they were never established there
+	// and there is nothing to release -- asking would name a QFI the radio has no record of.
 	//
 	// The default-flow case is untouched. It is handled by the release-only path above, which this
 	// does not reach.
@@ -843,7 +843,7 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 		return nil
 	}
 	update := ctx.SmPolicyUpdates[0]
-	if update == nil || update.QosFlowUpdate == nil {
+	if update == nil || update.QosFlowUpdate == nil || update.Corrective {
 		return nil
 	}
 

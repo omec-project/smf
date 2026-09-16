@@ -262,23 +262,25 @@ func decodeReleaseList(t *testing.T, encoded []byte) *ngapType.QosFlowListWithCa
 	return nil
 }
 
-// A flow the policy withdraws has to be named for release, or the radio keeps a bearer for a flow
-// the SMF and the UE have both dropped and the uplink still has somewhere to arrive.
-//
-// The corrective modification was the case this branch was written for, and there the refused flows
-// were never established at the radio -- but the same path runs for an ordinary deletion, where
-// they were.
-func TestModifyRequestNamesTheFlowsThePolicyWithdraws(t *testing.T) {
+// A flow an ordinary deletion withdraws has to be named for release, or the radio keeps a bearer
+// for a flow the SMF and the UE have both dropped and the uplink still has somewhere to arrive.
+func TestModifyRequestNamesTheFlowsAnOrdinaryDeletionWithdraws(t *testing.T) {
 	ctx := modifyingContext(t, map[string]*models.QosData{
 		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
 		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
 	})
-
-	corrective := ctx.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{3}))
-	if corrective == nil {
-		t.Fatal("no corrective was produced, so the rest of this test would pass vacuously")
+	// What the PCF sends when it withdraws a rule: flow 3 is established on the session and absent
+	// from the decision, so the delta deletes it. Built through the same delta function production
+	// uses, and it is not the realignment RemoveFlows produces.
+	ctx.SmPolicyData.SmCtxtQosData.QosData["3"] = &models.QosData{QosId: "3", Var5qi: openapi.PtrInt32(2)}
+	// A withdrawn flow arrives as an entry with no QosId, which is how the PCF says "deleted" and
+	// what GetQosFlowDescUpdate reads as a deletion -- the identifier is the key.
+	remaining := map[string]models.QosData{
+		"1": *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {},
 	}
-	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{corrective}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(remaining, ctx.SmPolicyData.SmCtxtQosData.QosData)
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
 	if err != nil {
@@ -295,5 +297,31 @@ func TestModifyRequestNamesTheFlowsThePolicyWithdraws(t *testing.T) {
 	if cause := released.List[0].Cause; cause.Present != ngapType.CausePresentNas ||
 		cause.Nas == nil || cause.Nas.Value != ngapType.CauseNasPresentNormalRelease {
 		t.Errorf("release cause = %+v, want a NAS normal release", cause)
+	}
+}
+
+// The corrective modification is the exception. Its deletions are the flows the radio refused, so
+// they were never established there: asking for their release would name a QFI the radio has no
+// record of, for a realignment whose whole purpose is to stop claiming they exist.
+func TestCorrectiveModificationAsksForNoRelease(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	corrective := ctx.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{3}))
+	if corrective == nil {
+		t.Fatal("no corrective was produced, so the rest of this test would pass vacuously")
+	}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{corrective}
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("building the corrective transfer failed: %v", err)
+	}
+
+	if released := decodeReleaseList(t, encoded); released != nil && len(released.List) > 0 {
+		t.Errorf("the corrective asked the radio to release %d flow(s) it never established",
+			len(released.List))
 	}
 }
