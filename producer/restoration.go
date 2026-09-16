@@ -66,6 +66,12 @@ func init() {
 
 var restorationsInProgress sync.Map // UPF node IP -> *restorationRun
 
+// restorationGoroutines counts the background goroutines RestoreSessionsOnUPF has spawned and
+// not yet returned from. Tests use it to wait for a restoration to actually finish, rather than
+// leaving one running to race a later test's access to shared package state (e.g. the UPF
+// registry) purely because the goroutine had not yet been scheduled.
+var restorationGoroutines sync.WaitGroup
+
 // sessionsLastSeenOn remembers which sessions a completed sweep found anchored on each node.
 //
 // A sweep that cannot take a session's lock cannot read its PFCPContext, so it cannot tell whether
@@ -181,7 +187,9 @@ func RestoreSessionsOnUPF(nodeID context.NodeID, recovery time.Time) {
 		logger.PfcpLog.Warnf("UPF[%s] restarted again during a restoration; the one in progress is abandoned", nodeIP)
 	}
 
+	restorationGoroutines.Add(1)
 	go func() {
+		defer restorationGoroutines.Done()
 		defer restorationsInProgress.CompareAndDelete(nodeIP, run)
 		// A panic here must not escape: this repairs one restarted UPF on a background goroutine,
 		// and an unrecovered panic in any goroutine takes down the whole process -- turning one UPF's
@@ -833,7 +841,10 @@ func markReleasedAndBuild(smContext *context.SMContext) (*models.N1N2MessageTran
 	}
 	defer smContext.SMLock.Unlock()
 
-	smContext.ChangeState(context.SmStateRelease)
+	// RemoveSMContext both transitions to SmStateRelease (publishing the terminal Kafka event)
+	// and removes the pool/canonicalRef entries; a bare ChangeState left them resolvable after
+	// Kafka consumers were told the session was gone.
+	context.RemoveSMContext(smContext.Ref)
 	return buildReleaseCommandForUE(smContext)
 }
 

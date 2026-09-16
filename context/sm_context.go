@@ -479,7 +479,12 @@ func RemoveSMContext(ref string) {
 
 	smContextPool.Delete(ref)
 
-	canonicalRef.Delete(canonicalName(smContext.Supi, smContext.PDUSessionID))
+	// NewSMContext registers the canonical entry under Identifier, not Supi -- and Supi is still
+	// empty here for a context that never ran SetCreateData. Deleting by Supi in that case would
+	// leave the canonical entry behind, resolvable to a ref that no longer exists in the pool.
+	// Use CompareAndDelete so a replacement context (created after this one was superseded via
+	// restoration) is not accidentally unlinked from the canonical map.
+	canonicalRef.CompareAndDelete(canonicalName(smContext.Identifier, smContext.PDUSessionID), ref)
 	// Sess Stats
 	smContextActive := decSMContextActive()
 	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
