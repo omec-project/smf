@@ -206,6 +206,15 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
+
+	// A modification that could not be delivered is reverted rather than released: the producer
+	// has put the session back to Active and it is still serving the parameters the UE holds.
+	// Returning Init unconditionally, as this did, moved that working session to Init on the way
+	// out -- HandleEvent applies whatever this returns -- so the rollback was undone one frame
+	// after it was made.
+	if smCtxt.SMContextState == smf_context.SmStateActive {
+		return smf_context.SmStateActive, nil
+	}
 	return smf_context.SmStateInit, nil
 }
 
