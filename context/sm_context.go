@@ -957,12 +957,14 @@ func (smContext *SMContext) getSmCtxtUpf() (name, ip string) {
 		upfName = upf.GetUPFIP()
 		upfIP = upf.GetUPFIP()
 	}
-	if upfIP != "" {
-		// Not updated on a transient FQDN cache miss (upfIP empty): retaining the previous
-		// snapshot is better than overwriting it with nothing, since that snapshot is what
-		// the terminal disconnect event falls back to once the tunnel is cleared.
-		smContext.lastUpfName, smContext.lastUpfIP = upfName, upfIP
+	if upfIP == "" {
+		// A transient FQDN cache miss with the tunnel still present (e.g. HandlePduSessionContextReplacement
+		// calls RemoveSMContext, which publishes the terminal event, before releaseTunnel runs): fall
+		// back to the last resolved UPF instead of reporting none for this event.
+		return smContext.lastUpfName, smContext.lastUpfIP
 	}
+	// Not updated on a miss (handled above): the snapshot must only ever hold a fully resolved UPF.
+	smContext.lastUpfName, smContext.lastUpfIP = upfName, upfIP
 	return upfName, upfIP
 }
 

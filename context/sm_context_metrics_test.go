@@ -209,14 +209,15 @@ func TestGetSmCtxtUpfSurvivesTunnelClearedByRelease(t *testing.T) {
 }
 
 // TestGetSmCtxtUpfKeepsSnapshotOnTransientCacheMiss is a regression test: a transient FQDN DNS
-// cache miss must not blank out the last-known-good UPF snapshot, since that snapshot is what the
-// terminal disconnect event falls back to once releaseTunnel clears the tunnel. Overwriting it
-// with the empty result of a miss would lose the UPF identity exactly when it's needed most.
+// cache miss - even with the tunnel still present, as happens when RemoveSMContext runs before
+// releaseTunnel - must fall back to the last-known-good UPF snapshot rather than reporting no UPF
+// for that event, and must not blank the snapshot out for whatever call comes after it.
 func TestGetSmCtxtUpfKeepsSnapshotOnTransientCacheMiss(t *testing.T) {
 	const (
-		cachedHost   = "upf-a.example.com"
-		cachedIP     = "10.90.0.4"
-		uncachedHost = "upf-b.example.com"
+		cachedHostName = "upf-a"
+		cachedHost     = cachedHostName + ".example.com"
+		cachedIP       = "10.90.0.4"
+		uncachedHost   = "upf-b.example.com"
 	)
 	InsertDnsHostIp(cachedHost, net.ParseIP(cachedIP))
 
@@ -229,21 +230,22 @@ func TestGetSmCtxtUpfKeepsSnapshotOnTransientCacheMiss(t *testing.T) {
 	}
 	smContext.Tunnel = &UPTunnel{DataPathPool: DataPathPool{1: dataPath}}
 
-	if name, ip := smContext.getSmCtxtUpf(); name != "upf-a" || ip != cachedIP {
+	if name, ip := smContext.getSmCtxtUpf(); name != cachedHostName || ip != cachedIP {
 		t.Fatalf("expected the cached UPF, got name=%q ip=%q", name, ip)
 	}
 
-	// Same tunnel, now pointing at an FQDN that was never resolved into the cache.
+	// Same tunnel, now pointing at an FQDN that was never resolved into the cache: the miss must
+	// fall back to the snapshot immediately, not just once the tunnel is later cleared.
 	dataPath.FirstDPNode.UPF = &UPF{NodeID: *NewNodeID(uncachedHost)}
-	if name, ip := smContext.getSmCtxtUpf(); ip != "" {
-		t.Fatalf("expected an empty IP for an uncached FQDN, got name=%q ip=%q", name, ip)
+	if name, ip := smContext.getSmCtxtUpf(); name != cachedHostName || ip != cachedIP {
+		t.Fatalf("expected the miss to fall back to the cached UPF, got name=%q ip=%q", name, ip)
 	}
 
 	smContext.Tunnel = nil // what releaseTunnel does before RemoveSMContext runs
 
 	name, ip := smContext.getSmCtxtUpf()
-	if name != "upf-a" || ip != cachedIP {
-		t.Errorf("expected the snapshot to still be the last cached UPF (upf-a/%s), got name=%q ip=%q", cachedIP, name, ip)
+	if name != cachedHostName || ip != cachedIP {
+		t.Errorf("expected the snapshot to still be the last cached UPF (%s/%s), got name=%q ip=%q", cachedHostName, cachedIP, name, ip)
 	}
 }
 
