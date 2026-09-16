@@ -837,7 +837,37 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 // about flows that were not established, and it is owed a further modification saying which are
 // actually in force — a distinct procedure, not a retry, because the parameters it carries
 // describe what exists rather than what was attempted.
+// ranAnswerIsExpected reports whether this session is still waiting for the radio's answer to a
+// modification, and clears the wait if it is.
+//
+// The radio's answer is only an answer while the question stands. T3591 can abandon a modification
+// before the response arrives, and the session then sits on the parameters it had -- realigning it
+// from a stale response would start a corrective modification for a change nobody made, and a
+// stale failure would stop the timer and discard the update belonging to whatever modification is
+// running by then.
+//
+// What this cannot separate is a stale answer arriving while a *newer* modification is in flight:
+// the response carries no identity beyond the session, so at this interface it is indistinguishable
+// from the new one's. That one stays open.
+//
+// The caller must hold SMLock, which every N2 update handler already does -- HandlePDUSessionSMContextUpdate
+// takes it for the whole dispatch, and SMLock is not reentrant, so taking it here wedges the
+// session instead of guarding it. That is not hypothetical: it deadlocked every modify-response
+// test on the first draft of this guard.
+func ranAnswerIsExpectedLocked(smContext *context.SMContext) bool {
+	if !smContext.RanAnswerPending {
+		return false
+	}
+	smContext.RanAnswerPending = false
+	return true
+}
+
 func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	if !ranAnswerIsExpectedLocked(smContext) {
+		smContext.SubPduSessLog.Warnln("a modify response arrived for a modification this session is not waiting on; ignoring it")
+		return nil
+	}
+
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("reading the modify response failed: %v", err)
@@ -871,6 +901,11 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 // handleModifyFailure acts on the radio access network refusing a modification outright, which
 // it reports as a failure rather than as a response with an empty accepted list.
 func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	if !ranAnswerIsExpectedLocked(smContext) {
+		smContext.SubPduSessLog.Warnln("a modify failure arrived for a modification this session is not waiting on; ignoring it")
+		return nil
+	}
+
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("reading the modify failure failed: %v", err)

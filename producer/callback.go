@@ -518,6 +518,10 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
 		smContext.SMContextState.String())
 
+	// The radio has been asked; its answer is expected from here until it arrives or the
+	// modification is given up.
+	smContext.RanAnswerPending = true
+
 	// Armed under the same hold as the state change. Releasing the lock first left a window in
 	// which the UE's acknowledgement could stop the timer and commit the update, after which this
 	// armed a fresh timer -- and set NwModificationPending back to true -- for a procedure that
@@ -636,6 +640,12 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	// modification's completion would read it, prune flows this abandonment has already given up
 	// on, and start a corrective procedure for them.
 	smContext.Realign = nil
+
+	// The radio's answer is no longer expected either. It is cleared here and not in StopT3591,
+	// which the UE's own completion also calls: the radio can answer after the UE does, and that
+	// answer is the one the realignment reads. Only giving up on the modification stops it being
+	// an answer to anything.
+	smContext.RanAnswerPending = false
 
 	smContext.ChangeState(smfContext.SmStateActive)
 }

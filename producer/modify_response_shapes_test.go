@@ -66,6 +66,9 @@ func modifyingSmContext(t *testing.T) *smf_context.SMContext {
 	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
 	smContext.T3591Value = 16 * time.Second
 	smContext.NwModificationPending = true
+	// The session has asked the radio and is waiting for its answer, which is the state every
+	// case here delivers one into.
+	smContext.RanAnswerPending = true
 	// A modification in flight carries flows; an empty update is a shape production does not
 	// produce, and RemoveFlows correctly finds nothing to withdraw from it. Built through the real
 	// delta function so the update has the same internals as a live one.
@@ -291,4 +294,26 @@ func makeCompleteTestTunnel() *smf_context.UPTunnel {
 	tunnel := smf_context.NewUPTunnel()
 	tunnel.AddDataPath(dataPath)
 	return tunnel
+}
+
+// A response that answers no modification is ignored rather than acted on. T3591 can abandon a
+// modification before the radio answers, and acting on the answer then realigns a session nobody
+// modified -- or, for a failure, stops the timer and discards the update belonging to whatever
+// modification is running by then.
+func TestModifyResponseArrivingForNoModificationIsIgnored(t *testing.T) {
+	smContext := modifyingSmContext(t)
+	smContext.RanAnswerPending = false
+	smContext.Realign = nil
+
+	deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, []int64{1}, []int64{2}))
+
+	if smContext.Realign != nil {
+		t.Error("a stale partial rejection recorded a realignment for a modification that is over")
+	}
+	if !smContext.NwModificationPending {
+		t.Error("a stale response settled a session that was not waiting for it")
+	}
+	if smContext.T3591 == nil {
+		t.Error("a stale response stopped the timer of whatever procedure is running now")
+	}
 }
