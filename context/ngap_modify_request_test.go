@@ -325,3 +325,40 @@ func TestCorrectiveModificationAsksForNoRelease(t *testing.T) {
 			len(released.List))
 	}
 }
+
+// The release list is built from the names of deleted QoS data, and those go on the wire as flow
+// identifiers. GetQosFlowIdFromQosId narrows to uint8 before anything can range-check it, so a
+// QoS id of 257 arrives as 1 — and the radio is asked to release whatever flow 1 is on this
+// session, which is very likely one it is carrying.
+func TestModifyRequestDoesNotReleaseAFlowAnIdentifierOnlyNarrowsInto(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	qosDecs := map[string]models.QosData{
+		"257": {},
+		"3":   {},
+	}
+	decision := &models.SmPolicyDecision{QosDecs: &qosDecs}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&ctx.SmPolicyData, decision)}
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	transfer := ngapType.PDUSessionResourceModifyRequestTransfer{}
+	if err := aper.UnmarshalWithParams(encoded, &transfer, "valueExt"); err != nil {
+		t.Fatalf("the transfer this SMF produced does not decode: %v", err)
+	}
+
+	for _, ie := range transfer.ProtocolIEs.List {
+		if ie.Id.Value != ngapType.ProtocolIEIDQosFlowToReleaseList || ie.Value.QosFlowToReleaseList == nil {
+			continue
+		}
+
+		for _, item := range ie.Value.QosFlowToReleaseList.List {
+			if item.QosFlowIdentifier.Value == 1 {
+				t.Error("QoS id 257 was asked to be released as QFI 1: the narrowing made it a flow this session may well be carrying")
+			}
+		}
+	}
+}

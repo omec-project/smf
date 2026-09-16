@@ -849,9 +849,15 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 
 	var items []ngapType.QosFlowWithCauseItem
 	for qosID := range update.QosFlowUpdate.GetDeleted() {
-		qfi := qos.GetQosFlowIdFromQosId(qosID)
-		if qfi == 0 {
-			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier; the radio is not asked to release it", qosID)
+		// The key, not the QosId field: a deleted entry carries an empty QosData, so the name it
+		// was stored under is the only identifier there is -- the opposite of the add and modify
+		// paths. Parsed at full width all the same: GetQosFlowIdFromQosId narrows to uint8 before
+		// anything can range-check it, so a QoS id of 257 arrives as 1 and the radio is asked to
+		// release whatever flow 1 is on this session.
+		qfi, err := qos.ParseQosFlowId(qosID)
+		if err != nil {
+			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier (%v); the radio is not asked to release it", qosID, err)
+
 			continue
 		}
 		items = append(items, ngapType.QosFlowWithCauseItem{
