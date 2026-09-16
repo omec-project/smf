@@ -13,12 +13,33 @@ import (
 )
 
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
+	// Read before the send rather than dereferenced through it. A session being torn down while a
+	// modification is on its way has no tunnel, and the callers that revert a modification reach
+	// here precisely when something has gone wrong -- so the path that exists to put a session
+	// back must not be the one that ends the process.
+	if smContext.Tunnel == nil {
+		return fmt.Errorf("pfcp session modification has no tunnel to send through")
+	}
+
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil || defaultPath.FirstDPNode == nil || defaultPath.FirstDPNode.UPF == nil {
+		return fmt.Errorf("pfcp session modification has no user plane on its default path")
+	}
+
 	ANUPF := defaultPath.FirstDPNode
-	err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
-		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port)
-	if err != nil {
+
+	if err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
+		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList,
+		pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port); err != nil {
+		// Returning rather than waiting. Every error that function reports is raised before
+		// anything can answer: the PFCP context is missing, the request could not be built, the
+		// adapter refused it, or the adapter's reply could not be parsed -- and in the adapter
+		// case that reply is the only thing that would have signalled this channel. Waiting then
+		// waits for a response nobody will send, and this goroutine never returns to undo the
+		// modification it was starting.
 		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
+
+		return fmt.Errorf("pfcp session modification request was not sent: %w", err)
 	}
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
