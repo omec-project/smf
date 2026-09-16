@@ -537,6 +537,10 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	smContext.SMLock.Lock()
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
+	// Any update a previous completion retained for a radio answer belongs to a procedure this one
+	// replaces. Its flows are either established or long refused, and correcting them from here
+	// would withdraw them on the strength of an answer to a different modification.
+	smContext.CommittedBeforeRanAnswer = nil
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
 	smContext.NwModificationPending = true
@@ -727,6 +731,10 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	// answer is the one the realignment reads. Only giving up on the modification stops it being
 	// an answer to anything.
 	smContext.RanAnswerPending = false
+
+	// And with no answer expected, nothing will build a correction from the update a completion
+	// retained. Held on to, it would be the update a *later* procedure's answer corrected.
+	smContext.CommittedBeforeRanAnswer = nil
 
 	smContext.ChangeState(smfContext.SmStateActive)
 }

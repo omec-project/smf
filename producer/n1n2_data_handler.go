@@ -309,6 +309,15 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				corrective = smContext.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet(realign.RefusedQFIs))
 			}
 
+			// The radio may not have answered yet: on a short link the UE completes first, and then
+			// there is no realignment marker to read and the update below is committed whole. The
+			// answer that follows would have nothing left to prune, so what it needs is kept for it
+			// here -- this is the same object the commit is about to record, and the correction is
+			// built from it by handleModifyResponse instead of by this branch.
+			if realign == nil && smContext.RanAnswerPending && len(smContext.SmPolicyUpdates) > 0 {
+				smContext.CommittedBeforeRanAnswer = smContext.SmPolicyUpdates[0]
+			}
+
 			if err := smContext.CommitSmPolicyDecisionLocked(true); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
 			}
@@ -887,6 +896,15 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 
 	ranAnswerTakenLocked(smContext)
 
+	// A modification the UE has already completed was committed whole, including whatever this
+	// answer refuses. Nothing downstream will read a realignment marker for it -- the completion
+	// that reads one has been and gone -- so the correction is built and started here instead.
+	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
+		smContext.CommittedBeforeRanAnswer = nil
+		correctCommittedModification(smContext, committed, result)
+		return nil
+	}
+
 	switch {
 	case result.WhollyRejected():
 		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
@@ -925,10 +943,86 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 		return err
 	}
 
+	// Taken here, as on the response path, and not left to the abandonment below to clear as a side
+	// effect of what it does: the correction further down returns instead of abandoning, and would
+	// otherwise leave the expectation standing with nothing in flight to meet it. A stray or
+	// repeated answer would then pass the gate at the top of this function and abandon a session
+	// running no modification at all.
+	ranAnswerTakenLocked(smContext)
+
 	smContext.StopT3591()
+
+	// Same order as handleModifyResponse has to answer, and the same remedy. A modification the UE
+	// has already completed was committed whole, and the abandonment below has nothing to discard:
+	// the pending update it would have dropped was popped by that commit. Refusing the modification
+	// outright therefore left every flow of it in force, on the record, on the UE and in the user
+	// plane. Withdrawing all of them puts the session where the abandonment would have put it.
+	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
+		smContext.CommittedBeforeRanAnswer = nil
+		correctCommittedModification(smContext, committed,
+			context.ModifyResponse{RejectedQFIs: flowsCarriedBy(committed)})
+
+		return nil
+	}
+
 	abandonModificationUnderLock(smContext, "ran_whole_rejection", fmt.Sprintf("ngap_cause_present_%d", cause.Present))
 
 	return nil
+}
+
+// flowsCarriedBy names every flow an update asked for, read the way RemoveFlows reads them so the
+// two agree on which identifier belongs to which entry. A modify failure refuses the modification
+// as a whole rather than flow by flow, so this is what "all of it" means for one.
+func flowsCarriedBy(update *qos.PolicyUpdate) []int64 {
+	if update == nil || update.QosFlowUpdate == nil {
+		return nil
+	}
+
+	var flows []int64
+
+	for _, entries := range []map[string]*models.QosData{
+		update.QosFlowUpdate.GetAdded(),
+		update.QosFlowUpdate.GetModified(),
+	} {
+		for _, entry := range entries {
+			flowID, err := qos.ParseQosFlowId(entry.GetQosId())
+			if err != nil {
+				continue
+			}
+
+			flows = append(flows, int64(flowID))
+		}
+	}
+
+	return flows
+}
+
+// correctCommittedModification answers a radio response that arrived after the UE had already
+// acknowledged the modification, and so after it was committed in full.
+//
+// The ordinary order lets the completion prune the pending update to what the radio established,
+// so the record is right before it is written and only the UE and user plane need correcting. In
+// this order the record is wrong as well: it names flows the radio refused. All three are put back
+// by the same corrective modification -- a deletion is an ordinary modification, and committing
+// its own result is what takes those flows off the record -- so this differs from the pruning path
+// only in where the deletions come from, which is the update the completion committed.
+//
+// A whole rejection is corrected the same way. The pending update is what the abandonment path
+// discards, and by now there is none; withdrawing every flow leaves the session on the parameters
+// it had before the modification, which is where an abandonment would have left it.
+func correctCommittedModification(smContext *context.SMContext, committed *qos.PolicyUpdate, result context.ModifyResponse) {
+	if len(result.RejectedQFIs) == 0 {
+		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)
+		return
+	}
+
+	smContext.SubPduSessLog.Warnf("radio access network refused flows %v for a modification the UE had already completed; withdrawing them from the session, the UE and the user plane",
+		result.RejectedQFIs)
+
+	realignSession(smContext, &context.PendingRealignment{
+		EstablishedQFIs: result.AcceptedQFIs,
+		RefusedQFIs:     result.RejectedQFIs,
+	}, committed.RemoveFlows(qos.RefusedFlowSet(result.RejectedQFIs)))
 }
 
 // realignAfterPartialRejection records that the UE's view of the session is wider than what the
