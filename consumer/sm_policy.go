@@ -84,6 +84,12 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 }
 
 func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
+	// A session released before ever getting a PCF policy client (e.g. caught mid-establishment)
+	// has nothing to tear down.
+	if smContext.SMPolicyClient == nil {
+		return 0, fmt.Errorf("smContext not selected PCF")
+	}
+
 	smPolicyDelData := models.SmPolicyDeleteData{
 		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
 	}

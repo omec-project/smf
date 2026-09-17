@@ -112,9 +112,10 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 		smCtxt.LocalPurged = true
 
 		// Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
-		// RemoveSMContext already transitions to SmStateRelease, which publishes the Kafka
-		// event; publishing again here would duplicate it.
-		smf_context.RemoveSMContext(smCtxt.Ref)
+		// RemoveSMContextLocked already transitions to SmStateRelease, which publishes the Kafka
+		// event; publishing again here would duplicate it. The Locked variant is used, not
+		// RemoveSMContext, because SMLock is already held above and it is not reentrant.
+		smf_context.RemoveSMContextLocked(smCtxt)
 
 		// check if PCF session set, send release(Npcf_SMPolicyControl_Delete)
 		// TODO: not done as part of ctxt release
@@ -535,8 +536,10 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			Status: http.StatusOK,
 			Body:   response,
 		}
-	case smf_context.SmStateInit, smf_context.SmStateInActivePending:
-		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, ctxt in SmStateInit, SmStateInActivePending")
+	case smf_context.SmStateInit, smf_context.SmStateInActivePending, smf_context.SmStateRelease:
+		// SmStateRelease here means the N1 PDUSessionReleaseComplete handler above already
+		// removed the context (RemoveSMContext); the AMF still gets its 200 OK for this request.
+		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, ctxt in SmStateInit, SmStateInActivePending, SmStateRelease")
 		httpResponse = &httpwrapper.Response{
 			Status: http.StatusOK,
 			Body:   response,
@@ -656,7 +659,9 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 		}
 
 		txn.Rsp = httpResponse
-		smf_context.RemoveSMContext(smContext.Ref)
+		// RemoveSMContextLocked, not RemoveSMContext, since SMLock is already held by this
+		// function's deferred unlock above and the lock is not reentrant.
+		smf_context.RemoveSMContextLocked(smContext)
 		return nil
 	}
 
@@ -742,7 +747,9 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	}
 
 	txn.Rsp = httpResponse
-	smf_context.RemoveSMContext(smContext.Ref)
+	// RemoveSMContextLocked, not RemoveSMContext, since SMLock is already held by this
+	// function's deferred unlock above and the lock is not reentrant.
+	smf_context.RemoveSMContextLocked(smContext)
 
 	return nil
 }

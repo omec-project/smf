@@ -91,6 +91,10 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 	}
 	upNodeID := context.NewNodeID("1.1.1.1")
 	upf := context.NewUPF(upNodeID, nil)
+	// Left in the package-level UPF pool, a repeated -count run would accumulate a second entry
+	// under the same NodeID, and which one RetrieveUPFNodeByNodeID's map-ordered Range returns is
+	// then nondeterministic between iterations.
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*upNodeID) })
 	SnssaiInfos := make([]context.SnssaiUPFInfo, 0)
 	snssaiInfo := context.SnssaiUPFInfo{
 		DnnList: []context.DnnUPFInfoItem{
@@ -167,13 +171,28 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		},
 	}
 	smContext.AllocateLocalSEIDForDataPath(datapath)
-	pfcp_message.InsertPfcpTxn(1, nodeID)
+
+	// AllocateLocalSEID draws from a package-level counter shared by every test in the binary, so
+	// the value it hands out here is not reliably 1 once other tests have run before it (as under
+	// go test -count=N, which reruns the whole binary's tests in the same process). Read back
+	// whatever it actually allocated instead of assuming it.
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+	seq := uint32(localSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
 
 	rsp := message.NewSessionEstablishmentResponse(
 		0,
 		0,
-		1,
-		1,
+		localSEID,
+		seq,
 		0,
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),

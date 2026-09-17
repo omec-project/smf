@@ -37,10 +37,17 @@ func configured() {
 	}
 }
 
-func upfHolding(nodeIP string, recovery time.Time) *context.UPF {
-	upf := context.NewUPF(context.NewNodeID(nodeIP), nil)
+// upfHolding registers the UPF in the same package-level pool RetrieveUPFNodeByNodeID searches, so
+// it removes it on cleanup: left behind, a repeated -count run accumulates a second entry under the
+// same NodeID, and which of the two RetrieveUPFNodeByNodeID's map-ordered Range returns is then
+// nondeterministic between iterations.
+func upfHolding(t *testing.T, nodeIP string, recovery time.Time) *context.UPF {
+	t.Helper()
+	nodeID := context.NewNodeID(nodeIP)
+	upf := context.NewUPF(nodeID, nil)
 	upf.UPFStatus = context.AssociatedSetUpSuccess
 	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: recovery}
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*nodeID) })
 	return upf
 }
 
@@ -53,7 +60,7 @@ func TestAssociationSetupRequestReachesTheRestoration(t *testing.T) {
 	configured()
 	seen := restartsObserved(t)
 	nodeIP := "10.40.0.1"
-	upfHolding(nodeIP, time.Now().Add(-time.Hour))
+	upfHolding(t, nodeIP, time.Now().Add(-time.Hour))
 
 	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
@@ -72,7 +79,7 @@ func TestAssociationSetupResponseReachesTheRestoration(t *testing.T) {
 	configured()
 	seen := restartsObserved(t)
 	nodeIP := "10.40.0.2"
-	upfHolding(nodeIP, time.Now().Add(-time.Hour))
+	upfHolding(t, nodeIP, time.Now().Add(-time.Hour))
 	pfcp_message.InsertPfcpTxn(77, context.NewNodeID(nodeIP))
 
 	handler.HandlePfcpAssociationSetupResponse(&udp.Message{
@@ -94,7 +101,7 @@ func TestAnUnchangedRecoveryTimestampDoesNotReachTheRestoration(t *testing.T) {
 	seen := restartsObserved(t)
 	nodeIP := "10.40.0.3"
 	unchanged := time.Now().Add(-time.Hour)
-	upfHolding(nodeIP, unchanged)
+	upfHolding(t, nodeIP, unchanged)
 
 	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
@@ -113,7 +120,9 @@ func TestAFirstAssociationIsNotARestart(t *testing.T) {
 	configured()
 	seen := restartsObserved(t)
 	nodeIP := "10.40.0.4"
-	context.NewUPF(context.NewNodeID(nodeIP), nil) // no recovery timestamp held
+	nodeID := context.NewNodeID(nodeIP)
+	context.NewUPF(nodeID, nil) // no recovery timestamp held
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*nodeID) })
 
 	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
@@ -156,7 +165,7 @@ func TestEveryPathComparesBeforeItOverwritesTheHeldTimestamp(t *testing.T) {
 	} {
 		t.Run(path.name, func(t *testing.T) {
 			seen := restartsObserved(t)
-			upf := upfHolding(path.nodeIP, old)
+			upf := upfHolding(t, path.nodeIP, old)
 			fresh := time.Now()
 
 			path.deliver(path.nodeIP, fresh)
@@ -240,7 +249,7 @@ func TestTheHeartbeatPathLeavesTheHeldTimestampForTheReassociation(t *testing.T)
 	seen := restartsObserved(t)
 	nodeIP := "10.40.0.7"
 	old := time.Now().Add(-time.Hour)
-	upf := upfHolding(nodeIP, old)
+	upf := upfHolding(t, nodeIP, old)
 	fresh := time.Now()
 
 	pfcp_message.InsertPfcpTxn(89, context.NewNodeID(nodeIP))
