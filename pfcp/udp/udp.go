@@ -6,6 +6,7 @@
 package udp
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -34,6 +35,11 @@ type PfcpServer struct {
 	// Consumer Table
 	// Map Consumer IP to its tx table
 	ConsumerTable ConsumerTable
+	// Done is closed once the background read loop started by Run for this server has returned.
+	// Closing Conn ends the loop, but that happens on another goroutine; callers that need the loop
+	// to have actually exited (mainly tests restarting the server between iterations) should wait on
+	// this rather than assuming Conn.Close returning means the loop is gone.
+	Done chan struct{}
 }
 
 var Server *PfcpServer
@@ -88,16 +94,27 @@ func Run(Dispatch func(*Message)) {
 		logger.PfcpLog.Errorf("Failed to listen on %s: %v", addr.String(), err)
 		return
 	}
-	SetServer(&PfcpServer{
+	server := &PfcpServer{
 		Addr: addr,
 		Conn: conn,
-	})
+		Done: make(chan struct{}),
+	}
+	SetServer(server)
 	logger.PfcpLog.Infof("Listen on %s", addr.String())
 
 	go func() {
+		// Bound to this call's own server/conn rather than re-fetching the (mutable) global on every
+		// iteration: otherwise a later Run() call (e.g. a test restarting the server) rebinds the
+		// global and this stale goroutine starts reading the new conn too, racing the new reader for
+		// the same packets. A closed conn also ends the loop instead of spinning forever on it.
+		defer close(server.Done)
 		for {
-			remoteAddr, pfcpMessage, eventData, err := readPfcpMessage()
+			remoteAddr, pfcpMessage, eventData, err := readPfcpMessage(server)
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					logger.PfcpLog.Infof("PFCP connection closed, stopping read loop")
+					return
+				}
 				if err.Error() == "Receive resend PFCP request" {
 					logger.PfcpLog.Infoln(err)
 				} else {
@@ -156,8 +173,7 @@ func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) err
 	return nil
 }
 
-func readPfcpMessage() (*net.UDPAddr, message.Message, interface{}, error) {
-	server := GetServer()
+func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, interface{}, error) {
 	if server == nil {
 		return nil, nil, nil, fmt.Errorf("PFCP server is not initialized")
 	}
@@ -180,7 +196,7 @@ func readPfcpMessage() (*net.UDPAddr, message.Message, interface{}, error) {
 	var eventData interface{}
 	if IsRequest(msg) {
 		// Todo: Implement SendingResponse type of reliable delivery
-		tx, err := findTransaction(msg, addr)
+		tx, err := findTransaction(server, msg, addr)
 		if err != nil {
 			return addr, msg, nil, err
 		} else if tx != nil {
@@ -193,7 +209,7 @@ func readPfcpMessage() (*net.UDPAddr, message.Message, interface{}, error) {
 			return addr, msg, nil, nil
 		}
 	} else if IsResponse(msg) {
-		tx, err := findTransaction(msg, server.Addr)
+		tx, err := findTransaction(server, msg, server.Addr)
 		if err != nil {
 			return addr, msg, nil, err
 		}
@@ -204,11 +220,10 @@ func readPfcpMessage() (*net.UDPAddr, message.Message, interface{}, error) {
 	return addr, msg, eventData, nil
 }
 
-func findTransaction(msg message.Message, addr *net.UDPAddr) (*Transaction, error) {
+func findTransaction(server *PfcpServer, msg message.Message, addr *net.UDPAddr) (*Transaction, error) {
 	var tx *Transaction
 	consumerAddr := addr.String()
 
-	server := GetServer()
 	if server == nil {
 		return nil, fmt.Errorf("PFCP server is not initialized")
 	}

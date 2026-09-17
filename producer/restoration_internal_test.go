@@ -227,25 +227,38 @@ func TestARefusingNodeStopsTheRunRatherThanLoopingOverThePopulation(t *testing.T
 	nodeID := *context.NewNodeID(nodeIP)
 	associatedUpfAt(t, nodeIP)
 
-	// The population is large enough that stopping and not stopping are far apart in time: 200
-	// sessions is 25 waves if the run works through them all, against the 3 it should take. A
-	// smaller population puts the two within noise of each other, and the test then passes whether
-	// or not the run actually stops.
+	// The population is large enough that a run stopping early and one working through all of it
+	// are clearly distinguishable by how many sessions were ever attempted: 200 sessions is 25
+	// waves at maxRestorationsInFlight, against the 2 waves (16 sessions) the run should attempt
+	// before giving up.
 	const population = 200
+	sessions := make([]*context.SMContext, population)
 	for i := range population {
-		sessionOn(t, fmt.Sprintf("imsi-208930000006%03d", i), int32(i+1), nodeIP)
+		sessions[i] = sessionOn(t, fmt.Sprintf("imsi-208930000006%03d", i), int32(i+1), nodeIP)
 	}
 
-	start := time.Now()
 	restoreSessions(nodeID, nodeIP, &restorationRun{}) // nothing answers
-	elapsed := time.Since(start)
 
-	waves := (population + maxRestorationsInFlight - 1) / maxRestorationsInFlight
-	budget := time.Duration(maxConsecutiveFailedWaves+2) * restorationSettleTimeout
-	if elapsed > budget {
-		t.Errorf("the run took %v against a node answering nothing, over a budget of %v; it should stop "+
-			"after %d unanswered wave(s) rather than working through all %d",
-			elapsed, budget, maxConsecutiveFailedWaves, waves)
+	// reissue clears RemoteSEID as the first step of sending an establishment, before anything is
+	// waited on for an answer, so a session with RemoteSEID still set was never attempted. Counting
+	// this directly, rather than bounding the run's wall-clock time, is unaffected by the scheduler
+	// jitter `-race`/`-count` stress adds, which a timing budget cannot reliably tolerate without
+	// also tolerating a regression that works through far more of the population than it should.
+	attempted := 0
+	for _, smContext := range sessions {
+		smContext.SMLock.Lock()
+		if smContext.PFCPContext[nodeIP].RemoteSEID == 0 {
+			attempted++
+		}
+		smContext.SMLock.Unlock()
+	}
+
+	wantMaxAttempted := maxConsecutiveFailedWaves * maxRestorationsInFlight
+	if attempted > wantMaxAttempted {
+		t.Errorf("%d of %d sessions were attempted against a node answering nothing, want at most %d "+
+			"(%d unanswered wave(s) of %d sessions each); the run should stop rather than work "+
+			"through the population", attempted, population, wantMaxAttempted, maxConsecutiveFailedWaves,
+			maxRestorationsInFlight)
 	}
 }
 

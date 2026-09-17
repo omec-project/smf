@@ -16,6 +16,15 @@ import (
 	"github.com/wmnsk/go-pfcp/message"
 )
 
+// A transaction goroutine started by SendPfcp is not tied to any test's lifecycle. At the
+// production retry timings it can easily outlive the sub-second test that spawned it and later
+// touch memory the runtime has since reused for an unrelated test's stack -- a real race the
+// detector reports between two logically unrelated tests. Shortening the timings here bounds how
+// long such a leaked goroutine can stay alive.
+func init() {
+	udp.SetRetryTimingForTest(1, time.Millisecond, time.Millisecond)
+}
+
 // The whole mechanism rests on one thing: a restored session must be sent as a session
 // ESTABLISHMENT, not a modification. A restarted UPF holds no session, so a modification addressed
 // to a session identifier it never issued is either rejected or, worse, applied to unrelated state.

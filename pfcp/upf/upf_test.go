@@ -37,8 +37,16 @@ func startSmfPfcpSocket(t *testing.T) {
 	t.Cleanup(func() {
 		self.CPNodeID = prevCPNodeID
 		self.PFCPPort = prevPFCPPort
-		if server := udp.GetServer(); server != nil && server.Conn != nil {
-			_ = server.Conn.Close()
+		// Closing Conn ends the read loop, but on another goroutine; waiting for Done before
+		// clearing the global keeps that goroutine from lingering into (and racing) the next
+		// test's startSmfPfcpSocket call.
+		if server := udp.GetServer(); server != nil {
+			if server.Conn != nil {
+				_ = server.Conn.Close()
+			}
+			if server.Done != nil {
+				<-server.Done
+			}
 		}
 		udp.SetServer(nil)
 	})
