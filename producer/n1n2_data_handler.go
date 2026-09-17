@@ -243,11 +243,17 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			}
 			// Send Release Notify to AMF
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, send Update SmContext Response")
-			smContext.ChangeState(context.SmStateInit)
-			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			jsonData := response.GetJsonData()
 			jsonData.SetUpCnxState(models.UPCNXSTATE_DEACTIVATED)
 			response.SetJsonData(jsonData)
+			// This is the UE's confirmation that the release procedure it started has completed
+			// (TS 23.502 clause 4.3.4), so the session is torn down here rather than left
+			// registered in SmStateInit forever: RemoveSMContextLocked both removes the pool/
+			// canonicalRef entries and publishes the terminal Kafka event via its own
+			// ChangeState(SmStateRelease). RemoveSMContextLocked, not RemoveSMContext, since
+			// HandlePDUSessionSMContextUpdate already holds smContext.SMLock and it is not
+			// reentrant.
+			context.RemoveSMContextLocked(smContext)
 			smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
 		}
 	} else {
@@ -597,7 +603,9 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			response.SetJsonData(jd)
 
 			smContext.PDUSessionRelease_DUE_TO_DUP_PDU_ID = false
-			context.RemoveSMContext(smContext.Ref)
+			// RemoveSMContextLocked, not RemoveSMContext, since HandlePDUSessionSMContextUpdate
+			// already holds smContext.SMLock and it is not reentrant.
+			context.RemoveSMContextLocked(smContext)
 			problemDetails, err := consumer.SendSMContextStatusNotification(smContext.SmStatusNotifyUri)
 			if problemDetails != nil || err != nil {
 				if problemDetails != nil {

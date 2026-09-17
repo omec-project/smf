@@ -84,6 +84,14 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 }
 
 func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
+	// A session released before ever getting a PCF policy client (e.g. caught mid-establishment)
+	// has nothing to tear down. This is a successful no-op, not an error: callers such as
+	// releaseUnrestorableSession must not report the session as failed to release just because
+	// it never had a PCF association to delete.
+	if smContext.SMPolicyClient == nil {
+		return http.StatusNoContent, nil
+	}
+
 	smPolicyDelData := models.SmPolicyDeleteData{
 		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
 	}
