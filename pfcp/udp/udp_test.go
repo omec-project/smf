@@ -27,9 +27,7 @@ type Server struct {
 // detector reports between two logically unrelated tests. Shortening the timings here bounds how
 // long such a leaked goroutine can stay alive.
 func init() {
-	udp.NumOfResend = 1
-	udp.ResendRequestTimeOutPeriod = time.Millisecond
-	udp.ResendResponseTimeOutPeriod = time.Millisecond
+	udp.SetRetryTimingForTest(1, time.Millisecond, time.Millisecond)
 }
 
 func (s *Server) Start() error {
@@ -82,8 +80,16 @@ func TestRun(t *testing.T) {
 		t.Errorf("failed to start PFCP server: %v", err)
 	}
 	defer func() {
-		if server := udp.GetServer(); server != nil && server.Conn != nil {
-			_ = server.Conn.Close()
+		// Closing Conn ends the read loop, but on another goroutine; waiting for Done before
+		// clearing the global and returning keeps that goroutine from lingering into (and racing)
+		// the next test's Run call.
+		if server := udp.GetServer(); server != nil {
+			if server.Conn != nil {
+				_ = server.Conn.Close()
+			}
+			if server.Done != nil {
+				<-server.Done
+			}
 		}
 		udp.SetServer(nil)
 	}()

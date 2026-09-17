@@ -22,9 +22,7 @@ import (
 // detector reports between two logically unrelated tests. Shortening the timings here bounds how
 // long such a leaked goroutine can stay alive.
 func init() {
-	udp.NumOfResend = 1
-	udp.ResendRequestTimeOutPeriod = time.Millisecond
-	udp.ResendResponseTimeOutPeriod = time.Millisecond
+	udp.SetRetryTimingForTest(1, time.Millisecond, time.Millisecond)
 }
 
 // The whole mechanism rests on one thing: a restored session must be sent as a session

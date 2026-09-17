@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/omec-project/smf/logger"
@@ -47,16 +48,47 @@ const (
 	SendingResponse
 )
 
-// Vars, not consts, so tests can shorten them: a transaction goroutine started by SendPfcp is not
-// tied to any test's lifecycle, and at the production values below it can easily outlive the
-// sub-second test that spawned it, later touching memory the runtime has since reused for an
-// unrelated test's stack -- a real race the detector will report between two logically unrelated
-// tests.
-var (
+// Kept as untyped-int constants, seconds-based, for API/source compatibility: they were exported
+// this way before, and a caller doing e.g. time.Duration(ResendRequestTimeOutPeriod) * time.Second
+// must keep working and NumOfResend must stay usable wherever a constant is required.
+const (
 	NumOfResend                 = 3
-	ResendRequestTimeOutPeriod  = 3 * time.Second
-	ResendResponseTimeOutPeriod = 15 * time.Second
+	ResendRequestTimeOutPeriod  = 3
+	ResendResponseTimeOutPeriod = 15
 )
+
+// numOfResend, resendRequestTimeout and resendResponseTimeout are what Start actually reads. They
+// default to the public constants above but, unlike them, can be overridden at runtime -- see
+// SetRetryTimingForTest. A transaction goroutine started by SendPfcp is not tied to any test's
+// lifecycle, and at the production values above it can easily outlive the sub-second test that
+// spawned it, later touching memory the runtime has since reused for an unrelated test's stack --
+// a real race the detector will report between two logically unrelated tests.
+//
+// They are atomics, rather than plain package vars, so SetRetryTimingForTest can be called
+// concurrently with Start without racing; Start additionally reads them once into local variables
+// at the top of a run, so a single transaction always retries with one consistent timing even if
+// SetRetryTimingForTest is called again while it is in flight.
+var (
+	numOfResend           atomic.Int32
+	resendRequestTimeout  atomic.Int64
+	resendResponseTimeout atomic.Int64
+)
+
+func init() {
+	numOfResend.Store(NumOfResend)
+	resendRequestTimeout.Store(int64(ResendRequestTimeOutPeriod * time.Second))
+	resendResponseTimeout.Store(int64(ResendResponseTimeOutPeriod * time.Second))
+}
+
+// SetRetryTimingForTest overrides the resend count and timeout periods Start uses. It exists so
+// tests can bound how long a leaked transaction goroutine survives without changing the public,
+// seconds-based NumOfResend/ResendRequestTimeOutPeriod/ResendResponseTimeOutPeriod constants that
+// callers may already depend on. Production code must not call this.
+func SetRetryTimingForTest(retries int, requestTimeout, responseTimeout time.Duration) {
+	numOfResend.Store(int32(retries))
+	resendRequestTimeout.Store(int64(requestTimeout))
+	resendResponseTimeout.Store(int64(responseTimeout))
+}
 
 type Transaction struct {
 	EventChannel   chan EventType
@@ -96,9 +128,16 @@ func NewTransaction(pfcpMSG message.Message, binaryMSG []byte, Conn *net.UDPConn
 func (transaction *Transaction) Start() error {
 	logger.PfcpLog.Debugf("start transaction [%d]", transaction.SequenceNumber)
 
+	// Snapshotting once here, rather than reading the atomics on every iteration below, keeps a
+	// single transaction's retries consistent even if SetRetryTimingForTest changes the timing
+	// concurrently (e.g. between test cases).
+	retries := int(numOfResend.Load())
+	requestTimeout := time.Duration(resendRequestTimeout.Load())
+	responseTimeout := time.Duration(resendResponseTimeout.Load())
+
 	if transaction.TxType == SendingRequest {
-		for iter := 0; iter < NumOfResend; iter++ {
-			timer := time.NewTimer(ResendRequestTimeOutPeriod)
+		for iter := 0; iter < retries; iter++ {
+			timer := time.NewTimer(requestTimeout)
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {
 				logger.PfcpLog.Warnf("request transaction [%d]: %s", transaction.SequenceNumber, err)
@@ -122,8 +161,8 @@ func (transaction *Transaction) Start() error {
 		return fmt.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
 	} else if transaction.TxType == SendingResponse {
 		// Todo :Implement SendingResponse type of reliable delivery
-		timer := time.NewTimer(ResendResponseTimeOutPeriod)
-		for iter := 0; iter < NumOfResend; iter++ {
+		timer := time.NewTimer(responseTimeout)
+		for iter := 0; iter < retries; iter++ {
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {
 				logger.PfcpLog.Warnf("response transaction [%d]: sending error", transaction.SequenceNumber)
