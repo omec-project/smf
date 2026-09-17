@@ -6,6 +6,7 @@ package producer
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/omec-project/nas/v2"
 	"github.com/omec-project/nas/v2/nasMessage"
@@ -73,5 +74,51 @@ func TestReleaseCompleteRemovesTheContext(t *testing.T) {
 	}
 	if smContext.SMContextState != smf_context.SmStateRelease {
 		t.Errorf("SMContextState = %v, want SmStateRelease", smContext.SMContextState)
+	}
+}
+
+// TestDuplicatePduSessionIDReleaseIsLockSafe is a regression test: the duplicate-session-ID branch
+// of the N2 PDU Session Resource Release Response runs with smContext.SMLock already held by
+// HandlePDUSessionSMContextUpdate. It used to call the unlocked RemoveSMContext, which re-locks
+// that same, non-reentrant mutex and deadlocks the caller instead of tearing down the context.
+func TestDuplicatePduSessionIDReleaseIsLockSafe(t *testing.T) {
+	const pduSessionID = 12
+
+	smContext := smf_context.NewSMContext("imsi-208930100007779", pduSessionID)
+	smContext.SMContextState = smf_context.SmStateInActivePending
+	smContext.PDUSessionRelease_DUE_TO_DUP_PDU_ID = true
+	ref := smContext.Ref
+
+	jsonData := models.SmContextUpdateData{}
+	jsonData.SetN2SmInfoType(models.N2SMINFOTYPE_PDU_RES_REL_RSP)
+	request := models.UpdateSmContextRequest{}
+	request.SetJsonData(jsonData)
+
+	txn := transaction.NewTransaction(request, nil, svcmsgtypes.UpdateSmContext)
+	txn.Ctxt = smContext
+
+	response := models.NewUpdateSmContext200Response()
+
+	// Simulates HandlePDUSessionSMContextUpdate, which holds SMLock for the duration of the N2
+	// handling this test drives.
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- HandleUpdateN2Msg(txn, response, &pfcpAction{}, &pfcpParam{})
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("HandleUpdateN2Msg returned %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("HandleUpdateN2Msg deadlocked trying to re-lock smContext.SMLock")
+	}
+
+	if got := smf_context.GetSMContext(ref); got != nil {
+		t.Errorf("the context is still resolvable by ref after the duplicate-ID release completed; RemoveSMContext was not called")
 	}
 }

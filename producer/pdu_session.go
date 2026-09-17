@@ -537,8 +537,9 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			Body:   response,
 		}
 	case smf_context.SmStateInit, smf_context.SmStateInActivePending, smf_context.SmStateRelease:
-		// SmStateRelease here means the N1 PDUSessionReleaseComplete handler above already
-		// removed the context (RemoveSMContext); the AMF still gets its 200 OK for this request.
+		// SmStateRelease here means the N1 PDUSessionReleaseComplete handler or the N2
+		// duplicate-session-ID handler above already removed the context
+		// (RemoveSMContextLocked); the AMF still gets its 200 OK for this request.
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, ctxt in SmStateInit, SmStateInActivePending, SmStateRelease")
 		httpResponse = &httpwrapper.Response{
 			Status: http.StatusOK,
@@ -747,9 +748,11 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	}
 
 	txn.Rsp = httpResponse
-	// RemoveSMContextLocked, not RemoveSMContext, since SMLock is already held by this
-	// function's deferred unlock above and the lock is not reentrant.
-	smf_context.RemoveSMContextLocked(smContext)
+	if PFCPResponseStatus == smf_context.SessionReleaseSuccess {
+		// RemoveSMContextLocked, not RemoveSMContext, since SMLock is already held by this
+		// function's deferred unlock above and the lock is not reentrant.
+		smf_context.RemoveSMContextLocked(smContext)
+	}
 
 	return nil
 }

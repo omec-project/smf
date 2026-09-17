@@ -603,7 +603,9 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			response.SetJsonData(jd)
 
 			smContext.PDUSessionRelease_DUE_TO_DUP_PDU_ID = false
-			context.RemoveSMContext(smContext.Ref)
+			// RemoveSMContextLocked, not RemoveSMContext, since HandlePDUSessionSMContextUpdate
+			// already holds smContext.SMLock and it is not reentrant.
+			context.RemoveSMContextLocked(smContext)
 			problemDetails, err := consumer.SendSMContextStatusNotification(smContext.SmStatusNotifyUri)
 			if problemDetails != nil || err != nil {
 				if problemDetails != nil {
