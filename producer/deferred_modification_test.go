@@ -543,11 +543,14 @@ func TestAnAnswerForAnotherSessionLeavesThisOneAlone(t *testing.T) {
 }
 
 // commandHandedToTheAMF stands in for the Command's transfer in tests: it records the Command as
-// handed to the AMF, as the transfer does, and sends nothing.
+// handed to the AMF, as the transfer does, and sends nothing. The radio is taken to have accepted
+// the whole modification at once; a test about the radio's answer marks it pending again and
+// delivers one.
 func commandHandedToTheAMF(sm *smf_context.SMContext) error {
 	sm.SMLock.Lock()
 	defer sm.SMLock.Unlock()
 	sm.NwModificationUnsent = false
+	sm.RanAnswerPending = false
 
 	return nil
 }

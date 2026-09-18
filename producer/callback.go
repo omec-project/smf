@@ -46,6 +46,12 @@ var (
 	// sendModificationTransfer is the transfer the Command goes out on, replaceable so a test can
 	// have it report that it was sent more than once.
 	sendModificationTransfer = consumer.SendN1N2TransferCountingSends
+
+	// applyModification is behind a seam for the same reason as the ones above, and for one more:
+	// the corrective modification after a partial rejection runs asynchronously, as a task in the
+	// session's queue, so without a seam a test cannot tell whether it was issued, and the work
+	// outlives the test and reaches the real user plane.
+	applyModification = ApplyModification
 )
 
 func HandleSMPolicyUpdateNotify(eventData any) error {
@@ -93,7 +99,7 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 	// And it is held behind decisions already held, even with nothing in progress: the oldest of them
 	// is started as a session task, and this notification can be ahead of that task in the session's
 	// queue. Applied now, it would be overtaken, and then overwritten, by the older decision.
-	if smContext.NwModificationPending || time.Now().Before(smContext.NwModificationQuietUntil) ||
+	if modificationInProgressLocked(smContext) || time.Now().Before(smContext.NwModificationQuietUntil) ||
 		len(smContext.DeferredPolicyDecisions) > 0 {
 		smContext.DeferredPolicyDecisions = append(smContext.DeferredPolicyDecisions, request.SmPolicyDecision)
 		smContext.SubPduSessLog.Infof("a modification is in progress or decisions are already held; holding this policy decision behind them (%d held)",
@@ -646,6 +652,10 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 	smContext.NwModificationQuietFor = 0
 	smContext.NwModificationUnsent = true
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
+	// Any update a previous completion retained for a radio answer belongs to a procedure this one
+	// replaces. Its flows are either established or long refused, and correcting them from here
+	// would withdraw them on the strength of an answer to a different modification.
+	smContext.CommittedBeforeRanAnswer = nil
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
 	smContext.NwModificationPending = true
@@ -678,6 +688,14 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
+
+	// Expected from before the transfer rather than after it. The radio's answer travels its own
+	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
+	// expectation set discards it as belonging to no modification -- losing a partial rejection
+	// that had a realignment waiting on it. Cleared on every path that gives the modification up.
+	smContext.SMLock.Lock()
+	smContext.RanAnswerPending = true
+	smContext.SMLock.Unlock()
 
 	if err := sendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
@@ -837,6 +855,21 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	// whole retransmission sequence; stopping it here keeps that from resting on every caller.
 	smContext.StopT3591()
 
+	// The realignment marker belongs to the procedure being abandoned. Left behind, the next
+	// modification's completion would read it, prune flows this abandonment has already given up
+	// on, and start a corrective procedure for them.
+	smContext.Realign = nil
+
+	// The radio's answer is no longer expected either. It is cleared here and not in StopT3591,
+	// which the UE's own completion also calls: the radio can answer after the UE does, and that
+	// answer is the one the realignment reads. Only giving up on the modification stops it being
+	// an answer to anything.
+	smContext.RanAnswerPending = false
+
+	// And with no answer expected, nothing will build a correction from the update a completion
+	// retained. Held on to, it would be the update a *later* procedure's answer corrected.
+	smContext.CommittedBeforeRanAnswer = nil
+
 	smContext.ChangeState(smfContext.SmStateActive)
 }
 
@@ -966,7 +999,7 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 // moved the session to SmStatePfcpModify only for that to put it back to Active -- after which the
 // user plane's answer, delivered only in SmStatePfcpModify, never reached it.
 func startDeferredModificationLocked(smContext *smfContext.SMContext) {
-	if smContext.NwModificationPending {
+	if modificationInProgressLocked(smContext) {
 		return
 	}
 
@@ -1012,7 +1045,7 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 	smContext.SMLock.Lock()
 
 	// Something else started first, and its end starts this one instead.
-	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 ||
+	if modificationInProgressLocked(smContext) || len(smContext.DeferredPolicyDecisions) == 0 ||
 		time.Now().Before(smContext.NwModificationQuietUntil) {
 		smContext.SMLock.Unlock()
 		return
@@ -1052,4 +1085,45 @@ func recordDuplicateCommandLocked(smContext *smfContext.SMContext) {
 	if interval > smContext.NwModificationQuietFor {
 		smContext.NwModificationQuietFor = interval
 	}
+}
+
+// modificationInProgressLocked reports whether a network-requested modification has not yet ended:
+// the UE has not answered, or the radio has not. The radio's answer is part of the procedure, since
+// it can still call for a correction once the UE has completed (TS 23.502 clause 4.3.3.2), and a
+// modification started before it would discard what the completion kept for that answer. The caller
+// holds SMLock.
+func modificationInProgressLocked(smContext *smfContext.SMContext) bool {
+	return smContext.NwModificationPending || smContext.RanAnswerPending
+}
+
+// armRanAnswerGuardLocked bounds the wait for the radio's answer once the UE has completed. Without
+// a bound, one lost answer would hold every later policy decision for the session. When the guard
+// lapses with the radio still silent, the SMF stops waiting -- the answer's correction, if it was
+// owed one, is given up, as it was before decisions waited for it -- and starts what is held. The
+// caller holds SMLock.
+//
+// It runs whether or not T3591 is enabled. Disabling T3591 leaves a modification the UE never
+// answers pending for good, which is what disabling the timer asks for; but the radio's answer is
+// not the UE's, and nothing in that setting asks for a lost one to hold the session's policy.
+func armRanAnswerGuardLocked(smContext *smfContext.SMContext) {
+	gen := smContext.NwModificationGen
+	interval := smContext.T3591Value
+	if interval <= 0 {
+		interval, _ = smfContext.ResolveT3591(factory.SmfConfig.Configuration.T3591, smContext.ExtendedNasSmTimer)
+	}
+
+	time.AfterFunc(interval, func() {
+		smContext.SMLock.Lock()
+		defer smContext.SMLock.Unlock()
+
+		// Answered meanwhile, or a later modification owns the session now.
+		if !smContext.RanAnswerPending || smContext.NwModificationGen != gen {
+			return
+		}
+
+		smContext.SubPduSessLog.Warnf("the radio did not answer the modification within %s of the UE's completion; no longer waiting for it", interval)
+		smContext.RanAnswerPending = false
+		smContext.CommittedBeforeRanAnswer = nil
+		startDeferredModificationLocked(smContext)
+	})
 }
