@@ -510,6 +510,19 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLMBR: util.BitRateTokbps(dlMbr),
 		}
 
+		// The guaranteed rate is programmed here as well as on the policy-update path. Setting it
+		// only there means a configured guarantee reaches the UPF on a policy edit and is silently
+		// dropped when the session is established, so it disappears whenever the UE re-attaches —
+		// which reads as intermittent rather than as unimplemented. Unlike the maximum rate there
+		// is no session-level fallback: a guarantee is a commitment to one flow, and the session
+		// AMBR is a ceiling on all of them.
+		if newQER.GBR = BuildGBR(refQos); newQER.GBR != nil {
+			logger.PduSessLog.Infof("CreatePccRuleQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+				newQER.GBR.ULGBR, newQER.GBR.DLGBR, refQos.GetQosId())
+		} else {
+			logger.PduSessLog.Infof("CreatePccRuleQer: no GBR configured for QoSId [%s]", refQos.GetQosId())
+		}
+
 		flowQER = newQER
 	}
 
@@ -611,22 +624,9 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER,
 				ULGate: GateOpen,
 				DLGate: GateOpen,
 			}
-			var gbrul string
-			var gbrdl string
-			// Set Guaranteed Bit Rate (GBR) if configured
-			if gbrUl, ok := qosData.GetGbrUlOk(); ok && gbrUl != nil && *gbrUl != "" {
-				gbrul = *gbrUl
-			}
-			if gbrDl, ok := qosData.GetGbrDlOk(); ok && gbrDl != nil && *gbrDl != "" {
-				gbrdl = *gbrDl
-			}
-			if gbrul != "" && gbrdl != "" {
-				newQER.GBR = &GBR{
-					ULGBR: util.BitRateTokbps(util.NormalizeBitRate(gbrul)),
-					DLGBR: util.BitRateTokbps(util.NormalizeBitRate(gbrdl)),
-				}
-				logger.PduSessLog.Infof("CreateDedicatedQosQer: GBR set [UL=%d kbps, DL=%d kbps]",
-					newQER.GBR.ULGBR, newQER.GBR.DLGBR)
+			if newQER.GBR = BuildGBR(&qosData); newQER.GBR != nil {
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+					newQER.GBR.ULGBR, newQER.GBR.DLGBR, qosData.GetQosId())
 			} else {
 				logger.PduSessLog.Infof("CreateDedicatedQosQer: no GBR configured for QoSId [%s]", qosData.GetQosId())
 			}
@@ -916,4 +916,38 @@ func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
 	}
 
 	dataPath.Activated = false
+}
+
+// BuildGBR turns the guaranteed rates on a QoS decision into the PFCP GBR IE, or nil when neither
+// direction carries one.
+//
+// A guarantee in one direction only is honoured rather than discarded. Requiring both silently
+// dropped the whole guarantee when an operator configured one, which is a plausible thing to want
+// and the likelier one on a satellite link, where the return path is the scarce direction. TS
+// 29.244 carries both rates in the same IE and zero in a direction means no guaranteed rate there,
+// so the unconfigured direction is left at zero rather than invented.
+//
+// Each direction is converted only when it was configured. BitRateTokbps happens to return zero
+// for an empty string, by way of the error path in its Atoi, but that is incidental rather than
+// intended and is not something to build on.
+func BuildGBR(qosData *models.QosData) *GBR {
+	var gbrul, gbrdl string
+	if v, ok := qosData.GetGbrUlOk(); ok && v != nil {
+		gbrul = *v
+	}
+	if v, ok := qosData.GetGbrDlOk(); ok && v != nil {
+		gbrdl = *v
+	}
+	if gbrul == "" && gbrdl == "" {
+		return nil
+	}
+
+	gbr := &GBR{}
+	if gbrul != "" {
+		gbr.ULGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrul))
+	}
+	if gbrdl != "" {
+		gbr.DLGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrdl))
+	}
+	return gbr
 }
