@@ -355,9 +355,22 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 		if defaultPath == nil {
 			smContext.SubPduSessLog.Warnf("no default path found for SUPI[%s]", createData.Supi)
 		} else if err := ensureDataPathUpfAssociated(defaultPath); err != nil {
+			// Refused for the same reason as the activation below: a session whose user plane was
+			// never associated has nothing to accept with, and carrying on builds an accept for a
+			// path that does not exist. The branch beside this one has always refused here.
 			smContext.SubPduSessLog.Errorf("ensureDataPathUpfAssociated error for SUPI[%s]: %v", createData.Supi, err)
+			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+
+			return fmt.Errorf("DataPathError")
 		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
+			// Refused, not logged and carried on. A session whose user plane could not be built has
+			// nothing to accept with: the establishment accept that follows reads the active
+			// session rule for the Session-AMBR, and the same absence that stopped the build stops
+			// that too -- one step later, as a panic, in a builder that cannot say what went wrong.
 			smContext.SubPduSessLog.Errorf("ActivateTunnelAndPDR error for SUPI[%s]: %v", createData.Supi, err)
+			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+
+			return fmt.Errorf("DataPathError")
 		}
 		smContext.BPManager = smf_context.NewBPManager(createData.GetSupi())
 	} else {

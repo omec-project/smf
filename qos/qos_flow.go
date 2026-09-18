@@ -641,6 +641,24 @@ func GetDefaultQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecisi
 		}
 	}
 
-	logger.QosLog.Fatalln("default Qos Data not received from PCF")
+	// Reported, not fatal. A decision with no default flow is a decision this SMF cannot build a
+	// session from, and the caller says so for that session -- ending the process takes down every
+	// other session with it.
+	logger.QosLog.Errorln("default Qos Data not received from PCF")
+
+	return nil
+}
+
+// GetCommittedDefaultQosData returns the default QoS flow from what the session has committed,
+// for the paths that rebuild the user plane with no policy update in hand: reverting an
+// undelivered modification discards the update first, and the committed state is then the only
+// description of the session there is.
+func GetCommittedDefaultQosData(smCtxtPolData *SmCtxtPolicyData) *models.QosData {
+	for _, qosData := range smCtxtPolData.SmCtxtQosData.QosData {
+		if qosData.GetDefQosFlowIndication() {
+			return qosData
+		}
+	}
+
 	return nil
 }

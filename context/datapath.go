@@ -120,8 +120,15 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 
 	destUPF := node.UPF
 
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
@@ -137,9 +144,9 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 					tcRef = rule.RefTcData[0]
 				}
 				// Add PCC Rule Qos Data QER
-				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil && flowQer != nil {
 					pdr.QER = append(pdr.QER, flowQer)
-				} else {
+				} else if err != nil {
 					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
 				}
 				// Set PDR in Tunnel
@@ -173,15 +180,24 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 	node.DownLinkTunnel.DestEndPoint = node
 
 	destUPF := node.UPF
-	// Iterate through PCC Rules to install PDRs
-	pccRuleUpdate := smContext.SmPolicyUpdates[0].PccRuleUpdate
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
 	if pccRuleUpdate != nil {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 		for name, rule := range addRules {
 			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
 				// Add PCC Rule Qos Data QER
-				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil && flowQer != nil {
 					pdr.QER = append(pdr.QER, flowQer)
+				} else if err != nil {
+					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
 				}
 				// Set PDR in Tunnel
 				node.DownLinkTunnel.PDR[name] = pdr
@@ -408,6 +424,12 @@ func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
 }
 
 func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData string, tcData string) (*QER, error) {
+	// A rule's QER is built from the update that carries the rule, so there is nothing to build
+	// from when none is pending. Reported rather than returned as an empty success: the caller
+	// appends what it gets to the PDR, and a nil there is dereferenced later by the PFCP builders.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		return nil, fmt.Errorf("no pending SM policy update for UE [%s]: the rule's QER cannot be built", smContext.Supi)
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
 	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
@@ -435,11 +457,22 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			DLGate: gateStatus,
 		}
 
-		ulMbr := smContext.SelectedSessionRule().AuthSessAmbr.Uplink
+		// The session rule supplies the fallback rate when the QoS data names none. It can be
+		// absent: a modification that adds a PCC rule without changing session rules leaves
+		// SessRuleUpdate nil, and SelectedSessionRule then falls back to the committed active
+		// rule, which is itself nil on a session that never had one. Dereferencing it takes the
+		// SMF down on the ordinary case of an application function adding a flow mid-session.
+		var ulMbr, dlMbr string
+		if sessRule := smContext.SelectedSessionRule(); sessRule != nil && sessRule.AuthSessAmbr != nil {
+			ulMbr = sessRule.AuthSessAmbr.Uplink
+			dlMbr = sessRule.AuthSessAmbr.Downlink
+		} else {
+			logger.PduSessLog.Warnf("no session-level AMBR for UE [%s]; the flow's own rates are the only bound",
+				smContext.Supi)
+		}
 		if maxbrUl, ok := refQos.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
 			ulMbr = *maxbrUl
 		}
-		dlMbr := smContext.SelectedSessionRule().AuthSessAmbr.Downlink
 		if maxbrDl, ok := refQos.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
 			dlMbr = *maxbrDl
 		}
@@ -456,15 +489,36 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 	return flowQER, nil
 }
 
+// CreateSessRuleQer builds the session-level QER, the one every PDR on the path carries.
+//
+// It returns a QER or an error, never a nil QER with no error: ActivateTunnelAndPDR appends what
+// it returns to every PDR without looking, and the PFCP builders dereference each one, so a nil
+// handed back as success moves the failure somewhere that cannot say what went wrong.
 func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error) {
 	var flowQER *QER
 
+	// The session-level rate is the session rule's, and there is no session-level QER without it.
+	// It can be absent: a modification that adds a PCC rule without changing session rules leaves
+	// SessRuleUpdate nil, and the fallback to the committed active rule is itself nil on a session
+	// that never had one.
 	sessionRule := smContext.SelectedSessionRule()
+	if sessionRule == nil || sessionRule.AuthSessAmbr == nil {
+		return nil, fmt.Errorf("no session-level AMBR for UE [%s]: the session QER cannot be built", smContext.Supi)
+	}
 
-	// Get Default Qos-Data for the session
-	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
+	// The default QoS flow comes from the pending update where there is one and from committed
+	// state otherwise. The user plane is also rebuilt with nothing pending -- reverting an
+	// undelivered modification discards the update first -- and indexing there took the SMF down.
+	var defQosData *models.QosData
+	if len(smContext.SmPolicyUpdates) > 0 {
+		defQosData = qos.GetDefaultQoSDataFromPolicyDecision(smContext.SmPolicyUpdates[0].SmPolicyDecision)
+	} else {
+		defQosData = qos.GetCommittedDefaultQosData(&smContext.SmPolicyData)
+	}
 
-	defQosData := qos.GetDefaultQoSDataFromPolicyDecision(smPolicyDec)
+	if defQosData == nil {
+		return nil, fmt.Errorf("no default QoS flow for UE [%s]: the session QER cannot be built", smContext.Supi)
+	}
 	if newQER, err := dpNode.UPF.AddQER(); err != nil {
 		logger.PduSessLog.Errorln("new QER failed")
 		return nil, err
@@ -494,6 +548,14 @@ func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER,
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: start for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
 	logger.PduSessLog.Infof("CreateDedicatedQosQer: total QoSData entries = %d", len(smPolicyDec.GetQosDecs()))
 

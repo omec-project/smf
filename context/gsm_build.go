@@ -32,7 +32,14 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	m.PDUSessionEstablishmentAccept = nasMessage.NewPDUSessionEstablishmentAccept(0x0)
 	pDUSessionEstablishmentAccept := m.PDUSessionEstablishmentAccept
 
-	sessRule := smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule
+	// Read defensively: every field on the way here can be absent, and the accept is built after
+	// the user plane, so a session that got this far with no session rule is one whose build was
+	// refused and carried on anyway. Dereferencing blindly turns that into a panic in a builder
+	// that cannot say what went wrong.
+	sessRule := smContext.SelectedSessionRule()
+	if sessRule == nil || sessRule.AuthSessAmbr == nil {
+		return nil, fmt.Errorf("no active session rule for UE [%s]: the establishment accept carries no Session-AMBR", smContext.Supi)
+	}
 
 	pDUSessionEstablishmentAccept.SetPDUSessionID(uint8(smContext.PDUSessionID))
 	pDUSessionEstablishmentAccept.SetMessageType(nas.MsgTypePDUSessionEstablishmentAccept)
