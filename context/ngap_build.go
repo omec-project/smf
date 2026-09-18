@@ -7,6 +7,7 @@ package context
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -532,34 +533,126 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 		qfi, priority, arpPreemptCap, arpPreemptVul,
 	)
 
-	// Build QoS AddOrModify IE
-	ie = ngapType.PDUSessionResourceModifyRequestTransferIEs{
-		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList},
-		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
-		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
-			Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
-			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
-				List: []ngapType.QosFlowAddOrModifyRequestItem{{
-					QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+	// Build the QoS AddOrModify list from the flows this modification actually concerns.
+	//
+	// It used to carry exactly one item, whose QFI came from scanning for the session's *default*
+	// flow indication. So a modification that added or changed dedicated flows asked the radio
+	// about none of them: the UE was told about every flow over NAS while the radio was told about
+	// one, which is the divergence the realignment procedure exists to repair after the fact —
+	// manufactured here, in the request. Observed on a cluster: NAS rules built for QFI 2 and
+	// QFI 3, gNB asked about QFI 2 alone.
+	//
+	// The establishment path in this file has always built its list by iterating the policy delta.
+	// This does the same, over both the added and the modified flows, since a modification may do
+	// either. The single default flow remains the fallback for an update that names no flows at
+	// all — a session-level change — which is the only case the old behaviour was right for.
+	//
+	// A flow whose identifier does not parse is dropped rather than narrowed:
+	// GetQosFlowIdFromQosId returns 0 for an identifier it cannot read, and TS 23.501 table
+	// 5.7.1.1 gives the assignable range as 1 to 63. Sending 0 would put a malformed item in the request. Dropping every named flow is not a
+	// quiet fallback to the default flow, though - that would re-create the very divergence this
+	// block exists to prevent - so it fails the build instead.
+	var modifyFlows []ngapType.QosFlowAddOrModifyRequestItem
+	namedFlows := 0
+	if len(ctx.SmPolicyUpdates) > 0 && ctx.SmPolicyUpdates[0].QosFlowUpdate != nil {
+		flowUpdate := ctx.SmPolicyUpdates[0].QosFlowUpdate
+		for _, group := range []map[string]*models.QosData{flowUpdate.GetAdded(), flowUpdate.GetModified()} {
+			for _, qosFlow := range group {
+				if qosFlow == nil {
+					continue
+				}
+				namedFlows++
+
+				flowID, err := qos.ParseQosFlowId(qosFlow.GetQosId())
+				if err != nil {
+					// Parsed at full width rather than range-checked after narrowing: an
+					// identifier of 257 narrows to 1, which passes any check made afterwards and
+					// would modify whatever flow 1 is on this session.
+					ctx.SubPduSessLog.Errorf("skipping QoS flow %q: %v", qosFlow.GetQosId(), err)
+
+					continue
+				}
+				modifyFlows = append(modifyFlows, ngapType.QosFlowAddOrModifyRequestItem{
+					QosFlowIdentifier: ngapType.QosFlowIdentifier{
+						Value: int64(flowID),
+					},
 					QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
 						QosCharacteristics: ngapType.QosCharacteristics{
 							Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
 							NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
-								FiveQI: ngapType.FiveQI{Value: int64(qi)},
+								FiveQI: ngapType.FiveQI{Value: int64(qosFlow.GetVar5qi())},
 							},
 						},
-						AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
-							PriorityLevelARP:        ngapType.PriorityLevelARP{Value: int64(priority)},
-							PreEmptionCapability:    ngapType.PreEmptionCapability{Value: arpPreemptCap},
-							PreEmptionVulnerability: ngapType.PreEmptionVulnerability{Value: arpPreemptVul},
-						},
+						AllocationAndRetentionPriority: buildAllocationAndRetentionPriority(qosFlow, sessRule),
 					},
-				}},
-			},
-		},
+				})
+			}
+		}
 	}
 
-	resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+	// A modification that names only deletions is a different case from one that names nothing.
+	//
+	// After a partial rejection the SMF withdraws the flows the radio refused. Those were never
+	// built at the radio, so there is nothing there to change: the UE needs the NAS withdrawal and
+	// the user plane needs its rules removed, but the radio does not. Falling through to the
+	// default flow below would spend a radio reconfiguration per partial rejection re-asserting a
+	// flow nobody asked about — on a constrained air interface, the same cost the pacing elsewhere
+	// in this work exists to avoid.
+	//
+	// The transfer is still built and sent: its other IEs carry the session-level changes, and
+	// every IE in it is optional, so omitting this one is well formed. A release list would be the
+	// fuller answer and the builder cannot express one yet; that is recorded as a limitation, and
+	// it does not bite here because the refused flows were never established.
+	if namedFlows > 0 && len(modifyFlows) == 0 {
+		ctx.SubPduSessLog.Errorf("modification names %d QoS flow(s), none with a usable identifier", namedFlows)
+		return nil, fmt.Errorf("no usable QoS flow identifier among %d named flow(s)", namedFlows)
+	}
+
+	deleteOnly := len(modifyFlows) == 0 && policyUpdateDeletesFlows(ctx)
+
+	if len(modifyFlows) == 0 && !deleteOnly {
+		ctx.SubPduSessLog.Infof("modification names no QoS flows; asking the radio about the default flow %d", qfi)
+		modifyFlows = []ngapType.QosFlowAddOrModifyRequestItem{{
+			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+			QosFlowLevelQosParameters: &ngapType.QosFlowLevelQosParameters{
+				QosCharacteristics: ngapType.QosCharacteristics{
+					Present: ngapType.QosCharacteristicsPresentNonDynamic5QI,
+					NonDynamic5QI: &ngapType.NonDynamic5QIDescriptor{
+						FiveQI: ngapType.FiveQI{Value: int64(qi)},
+					},
+				},
+				AllocationAndRetentionPriority: ngapType.AllocationAndRetentionPriority{
+					PriorityLevelARP:        ngapType.PriorityLevelARP{Value: int64(priority)},
+					PreEmptionCapability:    ngapType.PreEmptionCapability{Value: arpPreemptCap},
+					PreEmptionVulnerability: ngapType.PreEmptionVulnerability{Value: arpPreemptVul},
+				},
+			},
+		}}
+	}
+
+	if deleteOnly {
+		ctx.SubPduSessLog.Infof("modification carries only deletions; the radio is asked to add or modify nothing")
+	} else {
+		ctx.SubPduSessLog.Infof("asking the radio to add or modify %d QoS flow(s)", len(modifyFlows))
+		ie = buildQosFlowAddOrModifyIE(modifyFlows)
+		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List, ie)
+	}
+
+	// Whatever else the transfer carries, the flows an ordinary deletion withdraws are named for
+	// release. Without it the radio keeps a bearer for a flow the SMF and the UE have both
+	// dropped, and nothing says so: the uplink still has somewhere to arrive.
+	//
+	// A corrective modification is the exception, and it is the case this branch was written for.
+	// Its deletions are the flows the radio itself refused, so they were never established there
+	// and there is nothing to release -- asking would name a QFI the radio has no record of.
+	//
+	// The default-flow case is untouched. It is handled by the release-only path above, which this
+	// does not reach.
+	if released := releasedQosFlowItems(ctx); len(released) > 0 {
+		ctx.SubPduSessLog.Infof("asking the radio to release %d QoS flow(s)", len(released))
+		resourceModifyRequestTransfer.ProtocolIEs.List = append(resourceModifyRequestTransfer.ProtocolIEs.List,
+			buildQosFlowToReleaseIE(released))
+	}
 
 	// ----------------------------------------------------
 	// Step 6: Encode NGAP message
@@ -724,4 +817,81 @@ func BuildHandoverCommandTransfer(ctx *SMContext) ([]byte, error) {
 		return nil, err1
 	}
 	return buf, nil
+}
+
+// buildQosFlowAddOrModifyIE wraps the flows the radio is being asked to add or modify.
+func buildQosFlowAddOrModifyIE(flows []ngapType.QosFlowAddOrModifyRequestItem) ngapType.PDUSessionResourceModifyRequestTransferIEs {
+	return ngapType.PDUSessionResourceModifyRequestTransferIEs{
+		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList},
+		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
+		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+			Present: ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowAddOrModifyRequestList,
+			QosFlowAddOrModifyRequestList: &ngapType.QosFlowAddOrModifyRequestList{
+				List: flows,
+			},
+		},
+	}
+}
+
+// releasedQosFlowItems names the QoS flows the pending update withdraws, for the radio to release.
+//
+// The cause is a NAS normal release, matching the release-only path above: the flow is going away
+// because the policy no longer has it, not because anything failed.
+func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
+	if len(ctx.SmPolicyUpdates) == 0 {
+		return nil
+	}
+	update := ctx.SmPolicyUpdates[0]
+	if update == nil || update.QosFlowUpdate == nil {
+		return nil
+	}
+
+	var items []ngapType.QosFlowWithCauseItem
+	for qosID := range update.QosFlowUpdate.GetDeleted() {
+		// The key, not the QosId field: a deleted entry carries an empty QosData, so the name it
+		// was stored under is the only identifier there is -- the opposite of the add and modify
+		// paths. Parsed at full width all the same: GetQosFlowIdFromQosId narrows to uint8 before
+		// anything can range-check it, so a QoS id of 257 arrives as 1 and the radio is asked to
+		// release whatever flow 1 is on this session.
+		qfi, err := qos.ParseQosFlowId(qosID)
+		if err != nil {
+			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier (%v); the radio is not asked to release it", qosID, err)
+
+			continue
+		}
+		items = append(items, ngapType.QosFlowWithCauseItem{
+			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+			Cause: ngapType.Cause{
+				Present: ngapType.CausePresentNas,
+				Nas:     &ngapType.CauseNas{Value: ngapType.CauseNasPresentNormalRelease},
+			},
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].QosFlowIdentifier.Value < items[j].QosFlowIdentifier.Value
+	})
+	return items
+}
+
+// buildQosFlowToReleaseIE wraps the released flows in the IE that carries them.
+func buildQosFlowToReleaseIE(items []ngapType.QosFlowWithCauseItem) ngapType.PDUSessionResourceModifyRequestTransferIEs {
+	return ngapType.PDUSessionResourceModifyRequestTransferIEs{
+		Id:          ngapType.ProtocolIEID{Value: ngapType.ProtocolIEIDQosFlowToReleaseList},
+		Criticality: ngapType.Criticality{Value: ngapType.CriticalityPresentReject},
+		Value: ngapType.PDUSessionResourceModifyRequestTransferIEsValue{
+			Present:              ngapType.PDUSessionResourceModifyRequestTransferIEsPresentQosFlowToReleaseList,
+			QosFlowToReleaseList: &ngapType.QosFlowListWithCause{List: items},
+		},
+	}
+}
+
+// policyUpdateDeletesFlows reports whether the pending update withdraws QoS flows. It is what
+// separates a corrective modification, which names only deletions, from one that names nothing at
+// all — the two need opposite things from the radio.
+func policyUpdateDeletesFlows(ctx *SMContext) bool {
+	if len(ctx.SmPolicyUpdates) == 0 {
+		return false
+	}
+	update := ctx.SmPolicyUpdates[0]
+	return update != nil && update.QosFlowUpdate != nil && len(update.QosFlowUpdate.GetDeleted()) > 0
 }
