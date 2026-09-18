@@ -236,6 +236,54 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
+		case nas.MsgTypePDUSessionModificationRequest:
+			// TS 23.502 subclause 4.3.3.2 step 3a: the refusal goes back in the UpdateSmContext
+			// response. BuildAndSendQosN1N2TransferMsg is the step 3b helper for a
+			// network-requested modification and must not be used here.
+			pduSessIDModReq := int32(m.PDUSessionModificationRequest.GetPDUSessionID())
+			pti := m.PDUSessionModificationRequest.GetPTI()
+
+			// TS 24.501 subclause 6.3.2.5 item d: a UE request for the session the network is
+			// already modifying is disregarded, not refused. The network's own procedure carries
+			// on as if the request had never arrived — so no reject, no state change, and T3591
+			// keeps running. Refusing here would answer a procedure the UE is entitled to have
+			// ignored, and the UE would apply the back-off #32 asks for on a session that is
+			// about to change anyway.
+			// Read directly: HandlePDUSessionSMContextUpdate holds SMLock across this whole
+			// function, and taking it again would deadlock the session permanently.
+			sessionID, state := smContext.PDUSessionID, smContext.SMContextState
+			collision := smContext.NwModificationPending && pduSessIDModReq == sessionID
+			if collision {
+				// Sub-item i would have the URSP rule enforcement reports IE consumed before
+				// ignoring the rest. github.com/omec-project/nas/v2 does not decode that IE — the
+				// message struct has no field for it — so no report can reach this point and
+				// sub-item ii is the whole of the reachable behaviour.
+				smContext.SubPduSessLog.Infof(
+					"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d) while the network is modifying it; disregarding it per TS 24.501 subclause 6.3.2.5 item d",
+					pduSessIDModReq, pti)
+				break
+			}
+
+			// Decided from the snapshot taken above rather than re-read: the state is written under
+			// SMLock by other goroutines, and choosing the cause from one value while logging
+			// another would make the log unusable for exactly the case worth investigating.
+			// Each arm passes its cause as a literal rather than assigning one variable, so that
+			// the error-key scan in smferrors can enumerate the keys this path uses.
+			switch {
+			case pduSessIDModReq != sessionID:
+				// An identity the SMF does not hold for this context.
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"InvalidPDUSessionIdentity")
+			case state == context.SmStateInit, state == context.SmStateInActivePending:
+				// Established but on the way out, or never established. TS 24.501 subclause
+				// 6.4.2.6 item b: an inactive PDU session identity takes #43, not the refusal.
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"InvalidPDUSessionIdentity")
+			default:
+				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+					"ModificationNotSupported")
+			}
+
 		case nas.MsgTypePDUSessionModificationComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
 			// The modification is complete only now. Committing on the UE's acknowledgement rather
@@ -1038,4 +1086,37 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 		}
 		smContext.SubPduSessLog.Infof("corrective modification sent, withdrawing flows %v", refused)
 	}()
+}
+
+// refuseUeRequestedModification answers a UE-requested PDU session modification with a
+// MODIFICATION REJECT carrying cause, attached to the UpdateSmContext response per TS 23.502
+// subclause 4.3.3.2 step 3a.
+//
+// The cause arrives as a parameter rather than being computed at the builder call, which is what
+// lets the error-key scan in smferrors account for every key that reaches the tables: a key it
+// cannot enumerate would make it report the remaining literals as though the set were complete.
+func refuseUeRequestedModification(smContext *context.SMContext,
+	response *models.UpdateSmContext200Response, pduSessionID int32, pti uint8,
+	state context.SMContextState, cause string,
+) {
+	smContext.SubPduSessLog.Warnf(
+		"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
+		pduSessionID, pti, state.String(), cause)
+
+	buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessionID, pti, cause)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
+
+		return
+	}
+	tmpFile, err := util.CreatePayloadTempFile(buf)
+	if err != nil {
+		smContext.SubPduSessLog.Errorln(err)
+
+		return
+	}
+	response.SetBinaryDataN1SmMessage(tmpFile)
+	jsonData := response.GetJsonData()
+	jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionModificationReject"})
+	response.SetJsonData(jsonData)
 }
