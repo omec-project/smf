@@ -28,28 +28,44 @@ const (
 	ambrAfter  = "100 Mbps"
 )
 
-func TestCommittingAnUpdateWithNoSessionRuleKeepsTheActiveOne(t *testing.T) {
+// An update that does not touch the rule in force keeps it.
+//
+// GetSessionRulesUpdate names an active rule when the decision adds one, and now also when it
+// changes the one in force. It still names none when the decision touches some other rule -- and
+// an update that says nothing about the active rule is not saying there is none. Assigning
+// unconditionally cleared it on every such update: establishment set the active rule, the first
+// one of these wiped it, and everything afterwards that needed the session AMBR from committed
+// state found nothing.
+func TestCommittingAnUpdateThatDoesNotTouchTheActiveRuleKeepsIt(t *testing.T) {
 	established := &models.SessionRule{
 		SessRuleId:   establishedRuleID,
-		AuthSessAmbr: &models.Ambr{Uplink: "50 Mbps", Downlink: "50 Mbps"},
+		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
+	}
+	other := &models.SessionRule{
+		SessRuleId:   testRuleID2,
+		AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
 	}
 
 	polData := &SmCtxtPolicyData{}
-	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{establishedRuleID: established}
+	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{
+		establishedRuleID: established,
+		testRuleID2:       other,
+	}
 	polData.SmCtxtSessionRules.ActiveRule = established
 	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
-	// What a modification produces: the rule is already in the context, so it lands in mod and
-	// no active rule is named.
+	// A decision that changes the other rule and leaves the active one alone.
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: *established},
+		map[string]models.SessionRule{testRuleID2: *other},
 		polData.SmCtxtSessionRules.SessionRules,
+		polData.SmCtxtSessionRules.ActiveRuleName,
 	)
 	if update == nil {
 		t.Fatal("no update produced")
 	}
+
 	if update.ActiveSessRule != nil {
-		t.Fatal("this test is built on a modification naming no active rule; that is no longer true")
+		t.Fatal("an update touching another rule named an active one; this test is about the case where none is named")
 	}
 
 	CommitSessionRulesUpdate(polData, update)
@@ -57,8 +73,9 @@ func TestCommittingAnUpdateWithNoSessionRuleKeepsTheActiveOne(t *testing.T) {
 	if polData.SmCtxtSessionRules.ActiveRule == nil {
 		t.Fatal("the active session rule was cleared by an update that said nothing about it; the session AMBR is now unavailable to every later modification")
 	}
-	if polData.SmCtxtSessionRules.ActiveRuleName != establishedRuleID {
-		t.Errorf("active rule name = %q, want rule-1", polData.SmCtxtSessionRules.ActiveRuleName)
+
+	if got := polData.SmCtxtSessionRules.ActiveRuleName; got != establishedRuleID {
+		t.Errorf("active rule name = %q, want %q", got, establishedRuleID)
 	}
 }
 
@@ -77,6 +94,7 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 			AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "100 Mbps"},
 		}},
 		polData.SmCtxtSessionRules.SessionRules,
+		polData.SmCtxtSessionRules.ActiveRuleName,
 	)
 	if update == nil || update.ActiveSessRule == nil {
 		t.Fatal("a new rule must be named active")
@@ -102,7 +120,8 @@ func TestCommittingADeletionOfTheActiveRuleLeavesNoneActive(t *testing.T) {
 
 	// A rule with no identity is how the decision expresses a deletion.
 	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: {}}, committed.SmCtxtSessionRules.SessionRules))
+		map[string]models.SessionRule{establishedRuleID: {}}, committed.SmCtxtSessionRules.SessionRules,
+		committed.SmCtxtSessionRules.ActiveRuleName))
 
 	if committed.SmCtxtSessionRules.ActiveRule != nil {
 		t.Errorf("the deleted rule is still the active one: %+v", committed.SmCtxtSessionRules.ActiveRule)
@@ -129,7 +148,7 @@ func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
 		map[string]models.SessionRule{establishedRuleID: {
 			SessRuleId:   establishedRuleID,
 			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
-		}}, committed.SmCtxtSessionRules.SessionRules))
+		}}, committed.SmCtxtSessionRules.SessionRules, committed.SmCtxtSessionRules.ActiveRuleName))
 
 	active := committed.SmCtxtSessionRules.ActiveRule
 	if active == nil || active.AuthSessAmbr == nil {
@@ -138,5 +157,39 @@ func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
 
 	if got := active.AuthSessAmbr.Uplink; got != ambrAfter {
 		t.Errorf("the active rule's uplink AMBR = %q, want the changed 100 Mbps: the session enforces the rate it used to have", got)
+	}
+}
+
+// A change to the rule in force has to reach the UE, and the NAS command is built from the pending
+// update: BuildGSMPDUSessionModificationCommand emits the Session-AMBR only when the update carries
+// an active rule. Leaving a changed active rule in the mod map alone had the SMF commit the new
+// rate and never tell the UE about it -- the two then disagree about what the session is allowed,
+// which is the divergence the whole procedure exists to avoid.
+func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
+	established := &models.SessionRule{
+		SessRuleId:   establishedRuleID,
+		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
+	}
+
+	polData := &SmCtxtPolicyData{}
+	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{establishedRuleID: established}
+	polData.SmCtxtSessionRules.ActiveRule = established
+	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
+
+	update := GetSessionRulesUpdate(
+		map[string]models.SessionRule{establishedRuleID: {
+			SessRuleId:   establishedRuleID,
+			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
+		}},
+		polData.SmCtxtSessionRules.SessionRules,
+		polData.SmCtxtSessionRules.ActiveRuleName,
+	)
+
+	if update.ActiveSessRule == nil {
+		t.Fatal("the update does not name the rule it changes, so the command carries no Session-AMBR and the UE is never told the new rate")
+	}
+
+	if update.ActiveSessRule.AuthSessAmbr == nil || update.ActiveSessRule.AuthSessAmbr.Uplink != ambrAfter {
+		t.Errorf("the named rule carries %+v, want the changed %s", update.ActiveSessRule.AuthSessAmbr, ambrAfter)
 	}
 }

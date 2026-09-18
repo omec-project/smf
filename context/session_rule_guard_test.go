@@ -11,6 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// testSupi identifies the session these fixtures are about.
+const testSupi = "imsi-208930000000001"
+
 // SelectedSessionRule may legitimately return nil, and callers have to cope.
 //
 // A modification that adds a PCC rule without touching session rules leaves SessRuleUpdate nil,
@@ -56,7 +59,7 @@ func TestTheSessionQerIsRefusedRatherThanReturnedEmpty(t *testing.T) {
 	// A session with a pending update but no session rule -- an update that changes PCC rules and
 	// nothing else, which is what an application function adding a flow produces.
 	smContext := &SMContext{
-		Supi:      "imsi-208930000000001",
+		Supi:      testSupi,
 		SubCtxLog: zap.NewNop().Sugar(),
 	}
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
@@ -76,12 +79,28 @@ func TestTheSessionQerIsRefusedRatherThanReturnedEmpty(t *testing.T) {
 func TestTheSessionQerIsRefusedWhenNothingIsPendingAndNothingIsCommitted(t *testing.T) {
 	node := &DataPathNode{UPF: &UPF{NodeID: *NewNodeID("10.0.0.1")}}
 	smContext := &SMContext{
-		Supi:      "imsi-208930000000001",
+		Supi:      testSupi,
 		SubCtxLog: zap.NewNop().Sugar(),
 	}
 
 	qer, err := node.CreateSessRuleQer(smContext)
 	if err == nil || qer != nil {
 		t.Errorf("CreateSessRuleQer() = %+v, %v; want a refusal and no QER", qer, err)
+	}
+}
+
+// The establishment accept carries the session AMBR, read from the active session rule. A session
+// that reached this builder without one is a session whose user plane could not be built and whose
+// failure was logged and carried on -- so refusing here is the last place that can say so, rather
+// than dereferencing and dying in a builder that cannot.
+func TestTheEstablishmentAcceptIsRefusedWithoutASessionRule(t *testing.T) {
+	smContext := &SMContext{
+		Supi:      testSupi,
+		SubCtxLog: zap.NewNop().Sugar(),
+	}
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
+
+	if _, err := BuildGSMPDUSessionEstablishmentAccept(smContext); err == nil {
+		t.Error("the accept was built for a session with no active rule, so it carries no Session-AMBR and the builder read one that is not there")
 	}
 }
