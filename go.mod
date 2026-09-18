@@ -14,7 +14,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/segmentio/kafka-go v0.4.51
-	github.com/urfave/cli/v3 v3.11.0
+	github.com/urfave/cli/v3 v3.12.0
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver/v2 v2.9.0
 	go.uber.org/zap v1.28.0
