@@ -22,6 +22,12 @@ const establishedRuleID = "rule-1"
 // Repeated below; goconst asks for a name.
 const testRuleID2 = "rule-2"
 
+// The rates these tests move between; named because goconst counts them across the file.
+const (
+	ambrBefore = "50 Mbps"
+	ambrAfter  = "100 Mbps"
+)
+
 func TestCommittingAnUpdateWithNoSessionRuleKeepsTheActiveOne(t *testing.T) {
 	established := &models.SessionRule{
 		SessRuleId:   establishedRuleID,
@@ -81,5 +87,56 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 	if polData.SmCtxtSessionRules.ActiveRuleName != testRuleID2 {
 		t.Errorf("active rule name = %q, want rule-2: a named rule must take effect",
 			polData.SmCtxtSessionRules.ActiveRuleName)
+	}
+}
+
+// A session rule the decision deletes carries no identity, so it lands in del with no active rule
+// named. Keeping the active rule there leaves the session pointing at a rule the policy has
+// removed -- and the next thing to read the session AMBR reads one that is no longer in force.
+func TestCommittingADeletionOfTheActiveRuleLeavesNoneActive(t *testing.T) {
+	committed := &SmCtxtPolicyData{}
+	committed.Initialize()
+	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = &models.SessionRule{SessRuleId: establishedRuleID}
+	committed.SmCtxtSessionRules.ActiveRule = &models.SessionRule{SessRuleId: establishedRuleID}
+	committed.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
+
+	// A rule with no identity is how the decision expresses a deletion.
+	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
+		map[string]models.SessionRule{establishedRuleID: {}}, committed.SmCtxtSessionRules.SessionRules))
+
+	if committed.SmCtxtSessionRules.ActiveRule != nil {
+		t.Errorf("the deleted rule is still the active one: %+v", committed.SmCtxtSessionRules.ActiveRule)
+	}
+
+	if name := committed.SmCtxtSessionRules.ActiveRuleName; name != "" {
+		t.Errorf("active rule name = %q, want none", name)
+	}
+}
+
+// A rule that changed lands in mod, also with no active rule named. Keeping the old pointer leaves
+// the session enforcing the rate it used to have, and never commits the one the policy now says.
+func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
+	committed := &SmCtxtPolicyData{}
+	committed.Initialize()
+	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = &models.SessionRule{
+		SessRuleId:   establishedRuleID,
+		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
+	}
+	committed.SmCtxtSessionRules.ActiveRule = committed.SmCtxtSessionRules.SessionRules[establishedRuleID]
+	committed.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
+
+	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
+		map[string]models.SessionRule{establishedRuleID: {
+			SessRuleId:   establishedRuleID,
+			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
+		}}, committed.SmCtxtSessionRules.SessionRules))
+
+	active := committed.SmCtxtSessionRules.ActiveRule
+	if active == nil || active.AuthSessAmbr == nil {
+		t.Fatal("the session has no active rule after a change to the one it had")
+	}
+
+	if got := active.AuthSessAmbr.Uplink; got != ambrAfter {
+		t.Errorf("the active rule's uplink AMBR = %q, want the changed 100 Mbps: the session enforces the rate it used to have", got)
 	}
 }

@@ -65,7 +65,9 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 	}
 
 	// Mod rules
-	// TODO
+	for name, rule := range update.mod {
+		smCtxtPolData.SmCtxtSessionRules.SessionRules[name] = rule
+	}
 
 	// Del Rules
 	if len(update.del) > 0 {
@@ -74,30 +76,46 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 		}
 	}
 
-	// Set the active rule, but only when this update actually names one.
+	// The active rule, which this update may name, change, remove, or say nothing about. Those
+	// are four different things and only the first is written on the rule itself.
 	//
 	// GetSessionRulesUpdate sets ActiveSessRule only in its add branch — when the rule is not
 	// already in the context. On a modification the rule exists, takes the mod branch, and
 	// ActiveSessRule is left nil. Assigning unconditionally therefore cleared the active rule on
 	// every modification that carried session rules: establishment set it, the first modification
-	// wiped it, and everything afterwards that needed it from committed state found nothing.
+	// wiped it, and everything afterwards that needed it from committed state found nothing. Two
+	// symptoms traced back to that -- a corrective modification could not be built at all, because
+	// the session AMBR comes from the active rule, and CreateSessRuleQer had no rate to program.
 	//
-	// Two symptoms traced back to this. A corrective modification could not be built at all,
-	// because the session AMBR comes from the active rule. And CreatePccRuleQer dereferenced it,
-	// which took the SMF down when an application function added a flow mid-session.
-	//
-	// An update that says nothing about session rules is not saying there are none.
-	if update.ActiveSessRule != nil {
+	// But nil does not mean "no change" either. A rule the decision deletes carries no identity,
+	// so it lands in del with ActiveSessRule unset; keeping the active rule there would leave the
+	// session pointing at a rule the policy has removed. A rule that changed lands in mod, also
+	// with ActiveSessRule unset; keeping the old pointer there would leave the session enforcing
+	// the rate it used to have.
+	active := smCtxtPolData.SmCtxtSessionRules.ActiveRuleName
+
+	switch {
+	case update.ActiveSessRule != nil:
 		smCtxtPolData.SmCtxtSessionRules.ActiveRule = update.ActiveSessRule
 		smCtxtPolData.SmCtxtSessionRules.ActiveRuleName = update.activeRuleName
-		return
-	}
 
-	if smCtxtPolData.SmCtxtSessionRules.ActiveRule != nil {
-		// Debug, not Info: an update that carries session rules without naming a new active one is
-		// the ordinary modification, so this would be one line per modification in a running
-		// deployment.
-		logger.CtxLog.Debugf("keeping the active session rule %q: this update names none",
-			smCtxtPolData.SmCtxtSessionRules.ActiveRuleName)
+	case active == "":
+		// Nothing was active and this update names nothing.
+
+	case update.del[active] != nil:
+		logger.CtxLog.Infof("the active session rule %q was deleted by this update; the session has none", active)
+
+		smCtxtPolData.SmCtxtSessionRules.ActiveRule = nil
+		smCtxtPolData.SmCtxtSessionRules.ActiveRuleName = ""
+
+	case update.mod[active] != nil:
+		logger.CtxLog.Infof("the active session rule %q changed; the session enforces the new one", active)
+
+		smCtxtPolData.SmCtxtSessionRules.ActiveRule = update.mod[active]
+
+	default:
+		// Debug, not Info: an update that carries session rules without touching the active one is
+		// the ordinary modification, so this would be one line per modification in a deployment.
+		logger.CtxLog.Debugf("keeping the active session rule %q: this update does not touch it", active)
 	}
 }
