@@ -39,6 +39,12 @@ var (
 	// change takes — as the only one with no test.
 	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
 	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
+
+	// applyModification is behind a seam for the same reason as the two above, and for one more:
+	// the corrective modification after a partial rejection runs on its own goroutine, so without
+	// a seam a test cannot tell whether it was issued, and the goroutine outlives the test and
+	// reaches the real user plane.
+	applyModification = ApplyModification
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -531,6 +537,10 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	smContext.SMLock.Lock()
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
+	// Any update a previous completion retained for a radio answer belongs to a procedure this one
+	// replaces. Its flows are either established or long refused, and correcting them from here
+	// would withdraw them on the strength of an answer to a different modification.
+	smContext.CommittedBeforeRanAnswer = nil
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
 	smContext.NwModificationPending = true
@@ -560,6 +570,14 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
+
+	// Expected from before the transfer rather than after it. The radio's answer travels its own
+	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
+	// expectation set discards it as belonging to no modification -- losing a partial rejection
+	// that had a realignment waiting on it. Cleared on every path that gives the modification up.
+	smContext.SMLock.Lock()
+	smContext.RanAnswerPending = true
+	smContext.SMLock.Unlock()
 
 	if err := sendQosN1N2TransferMsg(smContext); err != nil {
 		logger.PduSessLog.Errorf("Failed to build/send N1/N2 QoS transfer message: %v", err)
@@ -702,6 +720,21 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	// session can be attempted.
 	smContext.T3591 = nil
 	smContext.NwModificationPending = false
+
+	// The realignment marker belongs to the procedure being abandoned. Left behind, the next
+	// modification's completion would read it, prune flows this abandonment has already given up
+	// on, and start a corrective procedure for them.
+	smContext.Realign = nil
+
+	// The radio's answer is no longer expected either. It is cleared here and not in StopT3591,
+	// which the UE's own completion also calls: the radio can answer after the UE does, and that
+	// answer is the one the realignment reads. Only giving up on the modification stops it being
+	// an answer to anything.
+	smContext.RanAnswerPending = false
+
+	// And with no answer expected, nothing will build a correction from the update a completion
+	// retained. Held on to, it would be the update a *later* procedure's answer corrected.
+	smContext.CommittedBeforeRanAnswer = nil
 
 	smContext.ChangeState(smfContext.SmStateActive)
 }

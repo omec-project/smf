@@ -101,6 +101,28 @@ func TestASupersededTimerExpiryDoesNotAbandonTheCurrentModification(t *testing.T
 	}
 }
 
+// The realignment marker belongs to the procedure that raised it. An abandonment that leaves it
+// behind hands it to the next modification, whose completion would then prune flows this one had
+// already given up on and start a corrective procedure for them.
+func TestAbandonModificationClearsTheRealignmentMarker(t *testing.T) {
+	smContext := &smf_context.SMContext{
+		Supi:          testSupi,
+		PDUSessionID:  10,
+		SubPduSessLog: zap.NewNop().Sugar(),
+		SubCtxLog:     zap.NewNop().Sugar(),
+		PDUAddress:    &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.1")},
+	}
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
+	smContext.Realign = &smf_context.PendingRealignment{}
+	smContext.ChangeState(smf_context.SmStatePfcpModify)
+
+	abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+
+	if smContext.Realign != nil {
+		t.Error("the realignment marker outlived the modification it belonged to")
+	}
+}
+
 // A session restored from a record written before T3591Value existed carries zero. NewTimer hands
 // that to time.NewTicker, which panics -- so the first network-initiated modification after a
 // restart would end the process rather than modify a session.

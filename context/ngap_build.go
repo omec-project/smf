@@ -892,7 +892,7 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 		return nil
 	}
 	update := ctx.SmPolicyUpdates[0]
-	if update == nil {
+	if update == nil || update.Corrective {
 		return nil
 	}
 
