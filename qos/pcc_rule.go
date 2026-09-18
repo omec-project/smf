@@ -121,3 +121,13 @@ func stringSlicesEqual(a, b []string) bool {
 func (upd *PccRulesUpdate) GetAddPccRuleUpdate() map[string]*models.PccRule {
 	return upd.add
 }
+
+// GetDeleted names the rules this update removes. The data path keys its PDRs by rule id, so this
+// is what says which of them the user plane should stop carrying.
+func (upd *PccRulesUpdate) GetDeleted() map[string]*models.PccRule {
+	if upd == nil {
+		return nil
+	}
+
+	return upd.del
+}

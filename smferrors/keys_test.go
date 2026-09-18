@@ -53,6 +53,14 @@ var causeOnlyKeys = map[string]string{
 	// has no use for the problem details.
 	"InvalidPDUSessionIdentity": "release path only; reports a 5GSM cause without building a " +
 		"PDU session establishment reject, so it needs no ErrorType entry",
+
+	// Raised on the UE-requested modification path: n1n2_data_handler refuses a modification
+	// request inside the UpdateSmContext response, per TS 23.502 subclause 4.3.3.2 step 3a. That
+	// answer is a MODIFICATION REJECT carrying a 5GSM cause, so like the release path it never
+	// builds a PostSmContexts problem-details body and has no use for an ErrorType entry.
+	"ModificationNotSupported": "UE-requested modification path only; answers with a MODIFICATION " +
+		"REJECT carrying a 5GSM cause without building a PDU session establishment reject, so it " +
+		"needs no ErrorType entry",
 }
 
 // TestEveryErrorTypeKeyHasACause holds the two tables' key sets together.

@@ -176,7 +176,16 @@ func BuildGSMPDUSessionEstablishmentReject(smContext *SMContext, cause uint8) ([
 	return m.PlainNasEncode()
 }
 
-/*func BuildGSMPDUSessionModificationReject(smContext *SMContext, cause uint8) ([]byte, error) {
+// BuildGSMPDUSessionModificationRejectWithCause builds a PDU SESSION MODIFICATION REJECT for a
+// modification the network will not perform.
+//
+// 3GPP Reference: TS 24.501 subclause 8.3.11.
+//
+// The PDU session identity and the PTI are taken from the request rather than from the SM context.
+// The identity may not match the context at all — that is one of the reasons for refusing — and
+// the PTI identifies the UE's procedure, so echoing the context's value would leave the UE unable
+// to match the reject to what it asked for.
+func BuildGSMPDUSessionModificationRejectWithCause(pduSessionID int32, pti uint8, cause string) ([]byte, error) {
 	m := nas.NewMessage()
 	m.GsmMessage = nas.NewGsmMessage()
 	m.GsmHeader.SetMessageType(nas.MsgTypePDUSessionModificationReject)
@@ -186,11 +195,16 @@ func BuildGSMPDUSessionEstablishmentReject(smContext *SMContext, cause uint8) ([
 
 	pDUSessionModificationReject.SetMessageType(nas.MsgTypePDUSessionModificationReject)
 	pDUSessionModificationReject.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
-	pDUSessionModificationReject.SetPDUSessionID(uint8(smContext.PDUSessionID))
-	pDUSessionModificationReject.SetCauseValue(cause)
+	pDUSessionModificationReject.SetPDUSessionID(uint8(pduSessionID))
+	pDUSessionModificationReject.SetPTI(pti)
+	pDUSessionModificationReject.SetCauseValue(errors.ErrorCause[cause])
 
+	// No Back-off timer value IE. TS 24.501 subclause 6.4.2.4.3 item a has the UE fall back to its
+	// configured SM Retry Timer, or 12 minutes, when the network sends #32 without one — which is
+	// the behaviour wanted here. Sending the IE would also require the Re-attempt indicator to be
+	// meaningful, and neither is mandatory.
 	return m.PlainNasEncode()
-}*/
+}
 
 func BuildGSMPDUSessionReleaseCommand(smContext *SMContext) ([]byte, error) {
 	m := nas.NewMessage()

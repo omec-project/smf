@@ -83,6 +83,26 @@ type QosFlowsUpdate struct {
 	add, mod, del map[string]*models.QosData
 }
 
+// ParseQosFlowId reads an assignable QoS flow identifier, refusing what cannot be one.
+//
+// GetQosFlowIdFromQosId below narrows to uint8 before anyone can check the value, so a policy
+// identifier of 257 arrives as 1 -- a valid identifier belonging to a different flow. Callers
+// that put the result on the wire have to know the difference between "flow 1" and "not a flow
+// identifier at all", so the parse and the range check happen together, at full width.
+func ParseQosFlowId(qosId string) (uint8, error) {
+	id, err := strconv.Atoi(qosId)
+	if err != nil {
+		return 0, fmt.Errorf("QoS id %q is not a number: %w", qosId, err)
+	}
+
+	// TS 23.501 subclause 5.7.1.1: the identifier is six bits and zero is not assigned.
+	if id < 1 || id > 63 {
+		return 0, fmt.Errorf("%d is not an assignable QoS flow identifier", id)
+	}
+
+	return uint8(id), nil
+}
+
 func GetQosFlowIdFromQosId(qosId string) uint8 {
 	id, err := strconv.Atoi(qosId)
 	if err != nil {

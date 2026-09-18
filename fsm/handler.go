@@ -61,6 +61,12 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStatePfcpCreatePending][SmEventPfcpSessCreateFailure] = HandleStatePfcpCreatePendingEventPfcpSessCreateFailure
 	SmfFsmHandler[smf_context.SmStateN1N2TransferPending][SmEventPduSessN1N2Transfer] = HandleStateN1N2TransferPendingEventN1N2Transfer
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
+	// The UE's acknowledgement of a network-requested modification can arrive while the session is
+	// still in PfcpModify: the state changes only after the N1/N2 transfer call returns, and on a
+	// short link the UE can answer before the AMF has answered us. Without this the acknowledgement
+	// met EmptyEventHandler and was dropped, after which T3591 retransmitted a command the UE had
+	// already accepted and eventually abandoned a modification that had succeeded.
+	SmfFsmHandler[smf_context.SmStatePfcpModify][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
@@ -202,10 +208,29 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
-	if err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn); err != nil {
+	reverted, err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn)
+	if err != nil {
 		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
+
+	// A modification that could not be delivered is reverted rather than released: the producer
+	// has put the session back to Active and it is still serving the parameters the UE holds.
+	// Returning Init unconditionally, as this did, moved that working session to Init on the way
+	// out -- HandleEvent applies whatever this returns -- so the rollback was undone one frame
+	// after it was made.
+	//
+	// The test is the revert itself and not the state it leaves behind. This handler is shared
+	// with the AN-release path, which also ends Active when its PFCP update succeeds, and that
+	// path has always finished in Init: reading Active as "a revert happened" would change it too,
+	// silently, for a case this has nothing to say about.
+	if reverted {
+		return smf_context.SmStateActive, nil
+	}
+
+	// Either this was not a modification, or reverting it failed. The second case has already
+	// marked the session for release, and Init is where this handler has always left the first,
+	// so neither is described as a session put back.
 	return smf_context.SmStateInit, nil
 }
 
