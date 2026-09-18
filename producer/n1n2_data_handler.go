@@ -234,6 +234,34 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
+		case nas.MsgTypePDUSessionModificationComplete:
+			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
+			// The modification is complete only now. Committing on the UE's acknowledgement rather
+			// than when the command was sent is what keeps the SMF's record of the session in step
+			// with what the UE is actually running, so the next modification computes its delta
+			// against the parameters in force.
+			//
+			// Stopping the timer and committing happen together, under one hold of the lock.
+			// Releasing it between the two would let a modification starting on another goroutine
+			// replace the pending update in the gap, and this would commit that one instead.
+			// SMLock is already held by HandlePDUSessionSMContextUpdate for the whole of this
+			// function, so nothing here may take it. Everything below is therefore one atomic
+			// section by construction rather than by locking.
+			smContext.StopT3591()
+
+			if err := smContext.CommitSmPolicyDecisionLocked(true); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
+			}
+
+		case nas.MsgTypePDUSessionModificationCommandReject:
+			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
+			smContext.StopT3591()
+			// The UE will not apply the parameters it was given. This is an abandonment with its
+			// own cause rather than a timeout, and it is reported on the same path as one, so that
+			// a modification the network could not apply is countable however it failed.
+			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
+
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
 			if smContext.SMContextState != context.SmStateInActivePending {
@@ -255,6 +283,15 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// reentrant.
 			context.RemoveSMContextLocked(smContext)
 			smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
+
+		default:
+			// Every unhandled type before this branch existed was decoded, debug-logged and
+			// dropped, and the SMF answered 200 with no N1 or N2 content. The UE then retransmits
+			// until its timer expires and gives up, which looks like a UE fault. Log loudly so the
+			// next missing case is found from a log line rather than from a packet capture.
+			smContext.SubPduSessLog.Errorf(
+				"PDUSessionSMContextUpdate, unhandled N1 SM message type 0x%02x; the SMF will answer with no N1 content and the UE will retransmit until it gives up",
+				m.GsmHeader.GetMessageType())
 		}
 	} else {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage is nil")
