@@ -149,7 +149,7 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
 			if qosRule == nil {
-				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS data", pccRuleName)
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: no QoS data, or no flows to build packet filters from", pccRuleName)
 				continue
 			}
 			qosRules = append(qosRules, *qosRule)
@@ -166,7 +166,7 @@ func BuildQosRules(smPolicyUpdates *PolicyUpdate) QoSRules {
 			refQosData := GetQoSDataFromPolicyDecision(smPolicyDecision, pccRuleVal.RefQosData[0])
 			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
 			if qosRule == nil {
-				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: no QoS data, or no flows to build packet filters from", pccRuleName)
 				continue
 			}
 			qosRules = append(qosRules, *qosRule)
@@ -214,7 +214,7 @@ func BuildQosRulesPDUMod(smPolicyUpdates *PolicyUpdate) QoSRules {
 			// Build a new QoS rule from the PCC rule and reference QoS data
 			qosRule := BuildAddQoSRuleFromPccRule(pccRuleVal, refQosData, OperationCodeCreateNewQoSRule)
 			if qosRule == nil {
-				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: missing QoS data", pccRuleName)
+				logger.QosLog.Warnf("skip QoS rule build for PCC rule [%s]: no QoS data, or no flows to build packet filters from", pccRuleName)
 				continue
 			}
 			// Append the constructed rule to the list
@@ -239,7 +239,7 @@ func BuildQosRulesPDUMod(smPolicyUpdates *PolicyUpdate) QoSRules {
 			// Build a QoS rule for modification (OperationCode can be same as create depending on implementation)
 			qosRule := BuildModifyQosRuleFromPccRule(pccRuleVal, refQosData, OperationCodeModifyExistingQoSRuleAndReplaceAllPacketFilters)
 			if qosRule == nil {
-				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: missing QoS data", pccRuleName)
+				logger.QosLog.Warnf("skip QoS rule modify for PCC rule [%s]: no QoS data, or no flows to build packet filters from", pccRuleName)
 				continue
 			}
 
@@ -288,6 +288,14 @@ func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData
 		return nil
 	}
 
+	// A rule that names no flows carries no packet filters, and a rule that creates or replaces
+	// all of them without one is not a rule the UE can install (TS 24.501 subclause 9.11.4.13).
+	// The user plane refuses the same shape -- BuildCreatePdrFromPccRule has no flow to build a
+	// PDI from -- so building it here would announce to the UE a rule nothing enforces.
+	if len(pccRule.FlowInfos) == 0 {
+		return nil
+	}
+
 	qRule := QosRule{
 		Identifier:    GetQosRuleIdFromPccRuleId(pccRule.GetPccRuleId()),
 		DQR:           btou(qosData.GetDefQosFlowIndication()),
@@ -305,6 +313,14 @@ func BuildAddQoSRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData
 // PCC rule updates and QoS data.
 func BuildModifyQosRuleFromPccRule(pccRule *models.PccRule, qosData *models.QosData, pccRuleOpCode uint8) *QosRule {
 	if pccRule == nil || qosData == nil {
+		return nil
+	}
+
+	// A rule that names no flows carries no packet filters, and a rule that creates or replaces
+	// all of them without one is not a rule the UE can install (TS 24.501 subclause 9.11.4.13).
+	// The user plane refuses the same shape -- BuildCreatePdrFromPccRule has no flow to build a
+	// PDI from -- so building it here would announce to the UE a rule nothing enforces.
+	if len(pccRule.FlowInfos) == 0 {
 		return nil
 	}
 

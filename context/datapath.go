@@ -286,7 +286,11 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 			}
 		}
 	}
-	node.DownLinkTunnel = &GTPTunnel{}
+	// The uplink's own tunnel. Resetting the downlink from here emptied its PDR map before
+	// DeactivateDownLinkTunnel had walked it, so every downlink PDR, FAR and QER stayed allocated
+	// on the user plane for the life of the process -- on ordinary session release as much as on
+	// the rollback below.
+	node.UpLinkTunnel = &GTPTunnel{}
 }
 
 func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
@@ -841,6 +845,8 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 	// Allocate UL/DL PDRs for the Tunnels
 	if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 		logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
+		dataPath.DeactivateTunnelAndPDR(smContext)
+
 		return err
 	}
 
@@ -850,6 +856,13 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 		defQER, err := curDataPathNode.CreateSessRuleQer(smContext)
 		if err != nil {
 			logger.CtxLog.Errorf("failed to create session rule QER: %v", err)
+			// What the tunnels above allocated goes back. The caller refuses the session and never
+			// releases it, and releasing is the only thing that returns PDR, FAR and QER ids to
+			// the user plane's pools -- removing the SM context does not. A cause that repeats,
+			// which a policy supplying no session rule does, would otherwise exhaust them one
+			// refused session at a time.
+			dataPath.DeactivateTunnelAndPDR(smContext)
+
 			return err
 		}
 
