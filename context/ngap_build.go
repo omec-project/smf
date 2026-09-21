@@ -297,11 +297,23 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	if shouldSendReleaseOnly {
 		ctx.SubPduSessLog.Info("PCC rule ID is nil, sending only QosFlowToReleaseList")
 
-		// Determine QFI to release from the existing SM context QoS data (QosId carries the QFI)
+		// Determine QFI to release from the existing SM context QoS data (QosId carries the QFI).
+		//
+		// Parsed at full width: GetQosFlowIdFromQosId narrows to uint8 before anything can
+		// range-check the result, so a default flow whose id is 257 asked the radio to release
+		// flow 1 -- some other session's flow, on this session.
 		var qfi int32
 		for _, qd := range ctx.SmPolicyData.SmCtxtQosData.QosData {
 			if qd != nil && qd.GetDefQosFlowIndication() {
-				qfi = int32(qos.GetQosFlowIdFromQosId(qd.GetQosId()))
+				defaultID, err := qos.ParseQosFlowId(qd.GetQosId())
+				if err != nil {
+					ctx.SubPduSessLog.Errorf("default QoS data %q carries no usable flow identifier: %v", qd.GetQosId(), err)
+
+					break
+				}
+
+				qfi = int32(defaultID)
+
 				break
 			}
 		}
@@ -310,7 +322,13 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 			return nil, fmt.Errorf("default QFI not found")
 		}
 
-		// Build QoS Flow Release List
+		// Build QoS Flow Release List.
+		//
+		// The flows the decision withdraws go in it as well. This branch is taken for a decision
+		// whose PCC rules are empty or unusable, which says nothing about its QoS data: a decision
+		// that also deletes a dedicated flow had that deletion dropped here, and its bearer stayed
+		// up at the radio with nothing behind it -- the fault this list was added to fix, reached
+		// through the one path that returns before reaching it.
 		qosFlowToReleaseList := ngapType.QosFlowListWithCause{}
 		qosFlowToReleaseList.List = append(qosFlowToReleaseList.List, ngapType.QosFlowWithCauseItem{
 			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
@@ -319,6 +337,14 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 				Nas:     &ngapType.CauseNas{Value: ngapType.CauseNasPresentNormalRelease},
 			},
 		})
+
+		for _, released := range releasedQosFlowItems(ctx) {
+			if released.QosFlowIdentifier.Value == int64(qfi) {
+				continue
+			}
+
+			qosFlowToReleaseList.List = append(qosFlowToReleaseList.List, released)
+		}
 
 		// Add IE to NGAP transfer message
 		ie := ngapType.PDUSessionResourceModifyRequestTransferIEs{
@@ -372,7 +398,16 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// Prefer deriving QFI from existing SM context QoS data (QosId carries the QFI)
 	for _, qd := range ctx.SmPolicyData.SmCtxtQosData.QosData {
 		if qd != nil && qd.GetDefQosFlowIndication() {
-			qfi = int32(qos.GetQosFlowIdFromQosId(qd.GetQosId()))
+			defaultID, parseErr := qos.ParseQosFlowId(qd.GetQosId())
+			if parseErr != nil {
+				// Same reason as everywhere else in this builder: narrowing first makes 257 into
+				// flow 1, and the fallback below would ask the radio about it.
+				ctx.SubPduSessLog.Errorf("default QoS data %q carries no usable flow identifier: %v", qd.GetQosId(), parseErr)
+
+				break
+			}
+
+			qfi = int32(defaultID)
 			break
 		}
 	}

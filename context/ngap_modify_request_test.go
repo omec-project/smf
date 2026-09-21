@@ -333,3 +333,46 @@ func TestModifyRequestReleasesAFlowNamedByAReferenceRatherThanItsIdentifier(t *t
 		t.Errorf("released flow %d, want 7 -- the identifier of the flow, not the name it is filed under", got)
 	}
 }
+
+// A decision whose PCC rules are empty or unusable takes the release-only path, and that path
+// returns before the release list is built from the policy's deletions. So a decision that also
+// withdrew a dedicated flow had the withdrawal dropped: its bearer stayed up at the radio with no
+// rule behind it, which is the fault the release list exists to fix, reached through the one path
+// that never reached it.
+func TestReleaseOnlyAlsoReleasesTheFlowsTheDecisionWithdraws(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	// A flow this session holds, withdrawn by the decision under the name it was committed under.
+	ctx.SmPolicyData.SmCtxtQosData.QosData["QosData7"] = &models.QosData{QosId: "7"}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(
+		map[string]models.QosData{"QosData7": {}},
+		ctx.SmPolicyData.SmCtxtQosData.QosData,
+	)
+
+	// And a PCC rule with no identity, which is what puts this decision on the release-only path.
+	decision := &models.SmPolicyDecision{PccRules: map[string]models.PccRule{"": {}}}
+	ctx.SmPolicyUpdates[0].SmPolicyDecision = decision
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeReleaseList(t, encoded)
+	if list == nil {
+		t.Fatal("no release list in the request")
+	}
+
+	seen := map[int64]bool{}
+	for _, item := range list.List {
+		seen[item.QosFlowIdentifier.Value] = true
+	}
+
+	if !seen[7] {
+		t.Errorf("QFI 7 is not released; its bearer stays up at the radio with no rule behind it (released: %v)", seen)
+	}
+
+	if !seen[1] {
+		t.Errorf("the default flow is no longer released on this path (released: %v)", seen)
+	}
+}
