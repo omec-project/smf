@@ -151,6 +151,11 @@ func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
 				}
 				// Set PDR in Tunnel
 				node.UpLinkTunnel.PDR[name] = pdr
+			} else {
+				// A rule that cannot be described is dropped from the uplink, and silently before:
+				// the traffic it was to match is then handled by whatever rule remains, with
+				// nothing said about it anywhere.
+				logger.PduSessLog.Warnf("skip PCC rule %s on the uplink: %v", name, err)
 			}
 		}
 	} else {
@@ -193,14 +198,32 @@ func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
 		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
 		for name, rule := range addRules {
 			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+				// The references are optional, exactly as on the uplink path above: a PCC rule
+				// that names neither is a rule with no QoS data of its own, not a reason to index
+				// past the end of an empty slice and take the SMF down.
+				qosRef := ""
+				if len(rule.RefQosData) > 0 {
+					qosRef = rule.RefQosData[0]
+				}
+
+				tcRef := ""
+				if len(rule.RefTcData) > 0 {
+					tcRef = rule.RefTcData[0]
+				}
+
 				// Add PCC Rule Qos Data QER
-				if flowQer, err = node.CreatePccRuleQer(smContext, rule.RefQosData[0], rule.RefTcData[0]); err == nil && flowQer != nil {
+				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil && flowQer != nil {
 					pdr.QER = append(pdr.QER, flowQer)
 				} else if err != nil {
 					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
 				}
 				// Set PDR in Tunnel
 				node.DownLinkTunnel.PDR[name] = pdr
+			} else {
+				// A rule that cannot be described is dropped from the downlink, and silently before:
+				// the traffic it was to match is then handled by whatever rule remains, with
+				// nothing said about it anywhere.
+				logger.PduSessLog.Warnf("skip PCC rule %s on the downlink: %v", name, err)
 			}
 		}
 	} else {

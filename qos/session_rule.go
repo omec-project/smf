@@ -5,6 +5,8 @@
 package qos
 
 import (
+	"reflect"
+
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 )
@@ -56,14 +58,31 @@ func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessR
 			change.mod[name] = &rule
 
 			// A change to the rule in force is a change the UE has to be told about, and the
-			// builder reads it from here.
-			if name == activeRuleName {
+			// builder reads it from here -- but only a change. Every rule the decision repeats
+			// lands in mod, unchanged ones included, because this function does not compare them;
+			// naming the active rule for one of those would put a Session-AMBR in the command for
+			// a policy notification that altered nothing, and have the rest of the SMF treat an
+			// unrelated update as an active-rule change.
+			if name == activeRuleName && sessionRuleChanged(&rule, ctxtSessRules[name]) {
 				change.activeRuleName = name
 				change.ActiveSessRule = &rule
 			}
 		}
 	}
 	return &change
+}
+
+// sessionRuleChanged reports whether the decision's rule differs from the one the session has.
+//
+// Compared whole rather than field by field: what the UE is told about a session rule is built
+// from the rule, so any difference in it is a difference the UE has to hear about, and a list of
+// fields here would go stale the first time the model grew one.
+func sessionRuleChanged(decided, committed *models.SessionRule) bool {
+	if committed == nil {
+		return true
+	}
+
+	return !reflect.DeepEqual(*decided, *committed)
 }
 
 func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRulesUpdate) {

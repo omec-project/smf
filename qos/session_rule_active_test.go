@@ -193,3 +193,38 @@ func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
 		t.Errorf("the named rule carries %+v, want the changed %s", update.ActiveSessRule.AuthSessAmbr, ambrAfter)
 	}
 }
+
+// A policy notification that repeats the session rule unchanged is not an active-rule change.
+//
+// Every rule the decision repeats lands in mod, unchanged ones included, because the update does
+// not compare them. Naming the active rule for one of those puts a Session-AMBR in the UE's
+// modification command for a notification that altered nothing, and has the rest of the SMF treat
+// an unrelated update as a change to the rule in force.
+func TestRepeatingTheActiveRuleUnchangedNamesNothing(t *testing.T) {
+	established := &models.SessionRule{
+		SessRuleId:   establishedRuleID,
+		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
+	}
+
+	polData := &SmCtxtPolicyData{}
+	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{establishedRuleID: established}
+	polData.SmCtxtSessionRules.ActiveRule = established
+	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
+
+	// The same rule again, as a notification about something else would carry it -- with its own
+	// Ambr, because a decision is freshly decoded and never shares the committed rule's pointers.
+	// Comparing the structs directly would find the two pointers different and call that a change;
+	// what this pins is that the comparison reaches the rates.
+	repeated := *established
+	repeated.AuthSessAmbr = &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore}
+
+	update := GetSessionRulesUpdate(
+		map[string]models.SessionRule{establishedRuleID: repeated},
+		polData.SmCtxtSessionRules.SessionRules,
+		polData.SmCtxtSessionRules.ActiveRuleName,
+	)
+
+	if update.ActiveSessRule != nil {
+		t.Error("an unchanged rule was named as an active-rule change; the UE is sent a Session-AMBR for a policy update that altered nothing")
+	}
+}

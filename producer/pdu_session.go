@@ -363,7 +363,8 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 
 			return fmt.Errorf("DataPathError")
 		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
-			// Refused, not logged and carried on. A session whose user plane could not be built has
+			// The failure is reported and the session refused, rather than reported and carried on
+			// as it was before. A session whose user plane could not be built has
 			// nothing to accept with: the establishment accept that follows reads the active
 			// session rule for the Session-AMBR, and the same absence that stopped the build stops
 			// that too -- one step later, as a panic, in a builder that cannot say what went wrong.

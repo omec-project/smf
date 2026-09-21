@@ -455,6 +455,15 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	var pdr *PDR
 	var err error
 
+	// Flow information is optional in TS 29.512 table 5.6.2.6-1: a PCC rule may identify an
+	// application instead of a flow, and the PCF sends one with no flowInfos at all. Reading the
+	// first entry regardless took the SMF down while the tunnel was being built for such a rule.
+	// Refused before a PDR is allocated, so a rule this cannot describe costs no PDR ID and no
+	// FAR from the pools.
+	if len(rule.FlowInfos) == 0 {
+		return nil, fmt.Errorf("PCC rule %s carries no flow information", rule.PccRuleId)
+	}
+
 	// create empty PDR
 	if pdr, err = upf.AddPDR(); err != nil {
 		return nil, err
