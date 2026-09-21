@@ -52,7 +52,9 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	// Build PFCP params while locked (if it reads shared state)
 	pfcpParam := BuildPfcpParam(smContext)
 
-	// Change state before sending PFCP
+	// Change state before sending PFCP, keeping what it was: a modification that never reaches the
+	// user plane has to put it back.
+	stateBeforeModify := smContext.SMContextState
 	smContext.ChangeState(smfContext.SmStatePfcpModify)
 
 	smContext.SMLock.Unlock()
@@ -61,6 +63,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMLock.Lock()
 
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
+		RestoreStateIfNothingWasSent(smContext, stateBeforeModify, err)
 
 		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
