@@ -121,3 +121,14 @@ func stringSlicesEqual(a, b []string) bool {
 func (upd *PccRulesUpdate) GetAddPccRuleUpdate() map[string]*models.PccRule {
 	return upd.add
 }
+
+// GetDelPccRuleUpdate returns the rules the decision withdraws. The NAS flow descriptions fall
+// back to these when a decision carries no QoS-flow update, and the NGAP release list has to see
+// the same set or the UE and the radio are told different things.
+func (upd *PccRulesUpdate) GetDelPccRuleUpdate() map[string]*models.PccRule {
+	if upd == nil {
+		return nil
+	}
+
+	return upd.del
+}

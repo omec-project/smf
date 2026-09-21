@@ -376,3 +376,37 @@ func TestReleaseOnlyAlsoReleasesTheFlowsTheDecisionWithdraws(t *testing.T) {
 		t.Errorf("the default flow is no longer released on this path (released: %v)", seen)
 	}
 }
+
+// A decision that withdraws PCC rules and carries no QoS-flow update at all reaches the UE through
+// the NAS descriptions, which fall back to the rule ids. The release list has to fall back with
+// them: otherwise the UE is told to drop the flow while the radio keeps the bearer, which is the
+// disagreement this list exists to end, in the one shape that skipped it.
+func TestAPccOnlyDeletionIsAlsoReleasedAtTheRadio(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	// No QoS-flow update at all, and one PCC rule withdrawn under the id of the flow it carried.
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = nil
+	ctx.SmPolicyUpdates[0].PccRuleUpdate = qos.GetPccRulesUpdate(
+		map[string]models.PccRule{"5": {}},
+		map[string]*models.PccRule{"5": {PccRuleId: "5"}},
+	)
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeReleaseList(t, encoded)
+	if list == nil {
+		t.Fatal("no release list in the request; the radio keeps a bearer the UE has been told to drop")
+	}
+
+	seen := map[int64]bool{}
+	for _, item := range list.List {
+		seen[item.QosFlowIdentifier.Value] = true
+	}
+
+	if !seen[5] {
+		t.Errorf("QFI 5 is not released (released: %v)", seen)
+	}
+}

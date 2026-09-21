@@ -879,11 +879,47 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 		return nil
 	}
 	update := ctx.SmPolicyUpdates[0]
-	if update == nil || update.QosFlowUpdate == nil {
+	if update == nil {
 		return nil
 	}
 
 	var items []ngapType.QosFlowWithCauseItem
+
+	release := func(name, identifier string) {
+		qfi, err := qos.ParseQosFlowId(identifier)
+		if err != nil {
+			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier (%v); the radio is not asked to release it", name, err)
+
+			return
+		}
+
+		items = append(items, ngapType.QosFlowWithCauseItem{
+			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
+			Cause: ngapType.Cause{
+				Present: ngapType.CausePresentNas,
+				Nas:     &ngapType.CauseNas{Value: ngapType.CauseNasPresentNormalRelease},
+			},
+		})
+	}
+
+	if update.QosFlowUpdate == nil {
+		// The NAS descriptions fall back to the PCC rule deletions when a decision carries no
+		// QoS-flow update at all, taking each rule id for the flow it names. This side falls back
+		// with them: told to drop the flow and not told to release the bearer, the UE and the
+		// radio disagree exactly as they did before this list existed. Whether a PCC rule id is a
+		// flow identifier in the first place is a question that predates both halves; what
+		// matters here is that they answer it the same way.
+		for pccRuleID := range update.PccRuleUpdate.GetDelPccRuleUpdate() {
+			release(pccRuleID, pccRuleID)
+		}
+
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].QosFlowIdentifier.Value < items[j].QosFlowIdentifier.Value
+		})
+
+		return items
+	}
+
 	for qosID := range update.QosFlowUpdate.GetDeleted() {
 		// The committed entry, not the map key. A deletion arrives as an empty QosData, so the
 		// entry itself no longer carries its identifier -- but the session's committed state still
@@ -909,19 +945,7 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 			identifier = committed.GetQosId()
 		}
 
-		qfi, err := qos.ParseQosFlowId(identifier)
-		if err != nil {
-			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier (%v); the radio is not asked to release it", qosID, err)
-
-			continue
-		}
-		items = append(items, ngapType.QosFlowWithCauseItem{
-			QosFlowIdentifier: ngapType.QosFlowIdentifier{Value: int64(qfi)},
-			Cause: ngapType.Cause{
-				Present: ngapType.CausePresentNas,
-				Nas:     &ngapType.CauseNas{Value: ngapType.CauseNasPresentNormalRelease},
-			},
-		})
+		release(qosID, identifier)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].QosFlowIdentifier.Value < items[j].QosFlowIdentifier.Value
@@ -949,5 +973,13 @@ func policyUpdateDeletesFlows(ctx *SMContext) bool {
 		return false
 	}
 	update := ctx.SmPolicyUpdates[0]
-	return update != nil && update.QosFlowUpdate != nil && len(update.QosFlowUpdate.GetDeleted()) > 0
+	if update == nil {
+		return false
+	}
+
+	if update.QosFlowUpdate == nil {
+		return len(update.PccRuleUpdate.GetDelPccRuleUpdate()) > 0
+	}
+
+	return len(update.QosFlowUpdate.GetDeleted()) > 0
 }
