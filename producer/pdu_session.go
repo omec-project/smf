@@ -455,6 +455,13 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
+	// The state this request found the session in. Every transition below happens inside this
+	// call -- the N1, N2 and handover handlers move the session to SmStatePfcpModify before the
+	// switch that dispatches on the state runs -- so a state read from inside that switch is the
+	// one the modification has already moved to, and putting the session "back" into it does
+	// nothing at all.
+	stateOnEntry := smContext.SMContextState
+
 	pfcpAction := &pfcpAction{}
 	var response models.UpdateSmContext200Response
 	response.SetJsonData(*models.NewSmContextUpdatedData())
@@ -528,6 +535,7 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			if err = SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 				// Modify failure
 				smContext.SubCtxLog.Errorf("pfcp session modify error: %v ", err.Error())
+				RestoreStateIfNothingWasSent(smContext, stateOnEntry, err)
 
 				// Back to active: the error answer below carries a PDU Session Release Command,
 				// and the UE's Release Complete arrives as an update, which only SmStateActive
