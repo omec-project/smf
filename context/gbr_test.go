@@ -167,3 +167,25 @@ func TestCreatePccRuleQerLeavesAnUnconfiguredGuaranteeUnset(t *testing.T) {
 		t.Errorf("GBR = %+v, want it unset when the policy configures no guarantee", qer.GBR)
 	}
 }
+
+// Rates come from policy, and a policy can carry one with no unit. The conversion reads the unit
+// from the second field, so "10" indexed past the end of the split and took the process down --
+// on any rate the SMF converts, not only a guaranteed one.
+func TestARateWithNoUnitDoesNotEndTheProcess(t *testing.T) {
+	for _, rate := range []string{"10", "", "Mbps", "not-a-rate"} {
+		if got := util.BitRateTokbps(util.NormalizeBitRate(rate)); got != 0 {
+			t.Errorf("BitRateTokbps(%q) = %d, want 0: a rate that cannot be read is not a rate", rate, got)
+		}
+	}
+}
+
+// And a rate that can be read still is.
+func TestAReadableRateStillConverts(t *testing.T) {
+	if got, want := util.BitRateTokbps(util.NormalizeBitRate("10 Mbps")), uint64(10000); got != want {
+		t.Errorf("BitRateTokbps(10 Mbps) = %d, want %d", got, want)
+	}
+
+	if got, want := util.BitRateTokbps(util.NormalizeBitRate("10Mbps")), uint64(10000); got != want {
+		t.Errorf("BitRateTokbps(10Mbps) = %d, want %d: the concatenated form is what NormalizeBitRate exists for", got, want)
+	}
+}

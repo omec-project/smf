@@ -17,6 +17,15 @@ func BitRateTokbps(bitrate string) uint64 {
 
 	var digit int
 
+	// A rate is a number and a unit. Without the unit there is nothing to scale by, and the unit
+	// is read from s[1] a few lines down -- so a value like "10", which a policy can carry and
+	// NormalizeBitRate passes through unchanged when it recognises no unit, indexed past the end
+	// and took the process with it. Unreadable rates already answer 0; one with no unit is one of
+	// those.
+	if len(s) < 2 {
+		return 0
+	}
+
 	if n, err := strconv.Atoi(s[0]); err != nil {
 		return 0
 	} else {
