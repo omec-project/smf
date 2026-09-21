@@ -65,15 +65,22 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	if err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
 		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList,
 		pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port); err != nil {
-		// Returning rather than waiting. Every error that function reports is raised before
-		// anything can answer: the PFCP context is missing, the request could not be built, the
-		// adapter refused it, or the adapter's reply could not be parsed -- and in the adapter
-		// case that reply is the only thing that would have signalled this channel. Waiting then
-		// waits for a response nobody will send, and this goroutine never returns to undo the
-		// modification it was starting.
+		// Returning rather than waiting, whatever failed: the answer that ends the wait is put on
+		// the channel by dispatching the user plane's response, and every failure here is a
+		// failure to dispatch one. Waiting would wait for a response nobody will send.
+		//
+		// What differs is what the caller may conclude from it. Only the failures raised before
+		// anything went on the wire say the session is untouched. A reply that arrived and could
+		// not be read, or a POST the adapter refused after it may already have forwarded the
+		// request, say nothing about what the user plane did -- and putting such a session back
+		// as though nothing had happened would be asserting it.
 		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
 
-		return fmt.Errorf("%w: %w", ErrModificationNotSent, err)
+		if errors.Is(err, pfcp_message.ErrRequestNotSent) {
+			return fmt.Errorf("%w: %w", ErrModificationNotSent, err)
+		}
+
+		return fmt.Errorf("pfcp session modification failed: %w", err)
 	}
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan

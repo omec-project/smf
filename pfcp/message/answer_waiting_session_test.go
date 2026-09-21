@@ -4,6 +4,7 @@
 package message
 
 import (
+	"errors"
 	"testing"
 
 	smf_context "github.com/omec-project/smf/context"
@@ -129,5 +130,22 @@ func TestAMissingPfcpContextStillAnswersTheRelease(t *testing.T) {
 		}
 	default:
 		t.Error("nothing was put on the channel, so the release waits for an answer that cannot come")
+	}
+}
+
+// The producer decides whether a failed modification leaves the session untouched by asking
+// whether the request was sent, so the exits that never reach the wire have to say so. This is
+// the earliest of them: a user plane the session has no PFCP context for.
+func TestAModificationWithNoPfcpContextReportsThatNothingWentOut(t *testing.T) {
+	smContext := smf_context.NewSMContext("imsi-208930000000043", 3)
+
+	err := SendPfcpSessionModificationRequest(*smf_context.NewNodeID("10.0.0.9"), smContext,
+		nil, nil, nil, nil, nil, nil, nil, 8805)
+	if err == nil {
+		t.Fatal("a modification with no PFCP context for that user plane reported success")
+	}
+
+	if !errors.Is(err, ErrRequestNotSent) {
+		t.Errorf("error %q does not report that nothing went out, so the caller cannot tell whether the session is untouched", err)
 	}
 }

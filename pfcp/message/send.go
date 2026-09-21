@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -98,7 +99,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 				if err != nil {
-					logger.PfcpLog.Fatalln(err)
+					// Returned, not fatal. A reply that stops early is one request's failure, and
+					// ending the process takes every other session with it -- including, on the
+					// session paths, the deferred answer that would have released this one.
+					return fmt.Errorf("reading the adapter's reply: %w", err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
@@ -168,7 +172,10 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 				if err != nil {
-					logger.PfcpLog.Fatalln(err)
+					// Returned, not fatal. A reply that stops early is one request's failure, and
+					// ending the process takes every other session with it -- including, on the
+					// session paths, the deferred answer that would have released this one.
+					return fmt.Errorf("reading the adapter's reply: %w", err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
@@ -288,7 +295,10 @@ func SendPfcpSessionEstablishmentRequest(
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 				if err != nil {
-					logger.PfcpLog.Fatalln(err)
+					// Returned, not fatal. A reply that stops early is one request's failure, and
+					// ending the process takes every other session with it -- including, on the
+					// session paths, the deferred answer that would have released this one.
+					return fmt.Errorf("reading the adapter's reply: %w", err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
@@ -346,11 +356,11 @@ func SendPfcpSessionModificationRequest(
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
 	if !ok {
-		return fmt.Errorf("PFCP Context not found for NodeID[%s]", upNodeIDStr)
+		return fmt.Errorf("%w: PFCP Context not found for NodeID[%s]", ErrRequestNotSent, upNodeIDStr)
 	}
 	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList, removePDR, removeFAR, removeQER)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
 	}
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
 	upaddr := &net.UDPAddr{
@@ -388,7 +398,7 @@ func SendPfcpSessionModificationRequest(
 			// this map, so the entry the line above makes is unread on the success path too.
 			FetchPfcpTxn(pfcpMsg.Sequence())
 
-			return fmt.Errorf("pfcp session modification request was not sent: %w", err)
+			return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
 		}
 	}
 	ctx.SubPfcpLog.Infof("sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -483,7 +493,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 			if rsp.StatusCode == http.StatusOK {
 				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
 				if err != nil {
-					logger.PfcpLog.Fatalln(err)
+					// Returned, not fatal. A reply that stops early is one request's failure, and
+					// ending the process takes every other session with it -- including, on the
+					// session paths, the deferred answer that would have released this one.
+					return fmt.Errorf("reading the adapter's reply: %w", err)
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
@@ -600,6 +613,12 @@ func awaitingEstablishment(smContext *smf_context.SMContext) bool {
 func awaitingRelease(smContext *smf_context.SMContext) bool {
 	return smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged
 }
+
+// ErrRequestNotSent marks a request that never left the SMF, which is what lets a caller say its
+// session is untouched. A send that failed before anything went on the wire qualifies; one that
+// failed after the user plane answered does not, and neither does a POST the adapter refused --
+// an HTTP call that reports failure may still have been delivered and acted on.
+var ErrRequestNotSent = errors.New("the PFCP request was not sent")
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {
 	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
