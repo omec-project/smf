@@ -230,7 +230,17 @@ func SendPfcpSessionEstablishmentRequest(
 	barList []*smf_context.BAR,
 	qerList []*smf_context.QER,
 	upfPort uint16,
-) error {
+) (err error) {
+	// The request either goes out -- in which case a response handler answers the session -- or it
+	// does not, and nothing else will. The caller waits on the session's PFCP channel whatever this
+	// returns, so every failing exit answers it here. Registered before the first of them, which is
+	// the guard below: a deferred call does not run for a return that precedes it.
+	defer func() {
+		if err != nil {
+			answerTheWaitingSession(ctx, awaitingEstablishment, smf_context.SessionEstablishFailed)
+		}
+	}()
+
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
 	if !ok {
@@ -289,13 +299,23 @@ func SendPfcpSessionEstablishmentRequest(
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
+					// Dispatching is what puts the verdict on the session's PFCP channel, so a
+					// dispatch that failed is a request with no answer coming. Reported through
+					// the same handler a refused send uses; the session is answered by the exit
+					// above.
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+					HandlePfcpSendError(pfcpMsg, err)
 
 					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
 			} else {
-				// http status !OK
-				HandlePfcpSendError(pfcpMsg, fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode))
+				// The adapter refused the request, so it never reached the user plane. Reported as
+				// a failure rather than returning nil: this said the establishment had been sent,
+				// and the session then waited for a response to a request that does not exist.
+				sendErr := fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode)
+				HandlePfcpSendError(pfcpMsg, sendErr)
+
+				return sendErr
 			}
 		}
 	} else {
@@ -426,7 +446,16 @@ func handleAdapterModificationResponse(rsp *http.Response, localSEID uint64) err
 	return nil
 }
 
-func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_context.SMContext, upfPort uint16) error {
+func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_context.SMContext, upfPort uint16) (err error) {
+	// As on the establishment path: a failing exit is a request no response handler will answer,
+	// and the release waits on the session's PFCP channel whatever this returns. Registered before
+	// the guard below, which is one of those exits.
+	defer func() {
+		if err != nil {
+			answerTheWaitingSession(ctx, awaitingRelease, smf_context.SessionReleaseSuccess)
+		}
+	}()
+
 	seqNum := getSeqNumber()
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
@@ -465,10 +494,23 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 				}
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
 				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
+					// Dispatching is what puts the verdict on the session's PFCP channel, so a
+					// dispatch that failed is a request with no answer coming. Reported through
+					// the same handler a refused send uses; the session is answered by the exit
+					// above.
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+					HandlePfcpSendError(pfcpMsg, err)
 
 					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
+			} else {
+				// The adapter refused the request. There was no branch here at all, so a refusal
+				// fell through to the success return: the release reported that the deletion had
+				// been sent and then waited for a response to a request that does not exist.
+				sendErr := fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode)
+				HandlePfcpSendError(pfcpMsg, sendErr)
+
+				return sendErr
 			}
 		}
 	} else {
@@ -502,6 +544,61 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 	}
 	logger.PfcpLog.Infof("sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", sequenceNumber, addr.IP.String())
 	return nil
+}
+
+// answerTheWaitingSession puts a verdict on the session's PFCP channel when the request was not
+// dispatched and no response will be.
+//
+// The exchange that sent the request waits on that channel whatever the send function returned, so
+// an error alone leaves the goroutine holding the session parked. Reporting the failure to the UE
+// does not release it either.
+//
+// awaited says whether anything is listening, and it is not optional. Every other write of this
+// channel is gated the same way, because restoration issues an establishment without ever waiting
+// on it: an ungated write leaves a verdict behind for whichever unrelated modification or release
+// reads the channel next, which is the fault this would cause rather than fix.
+//
+// The write is non-blocking. The channel holds one verdict, and a session nothing is reading must
+// not wedge the goroutine that sends.
+func answerTheWaitingSession(smContext *smf_context.SMContext, awaited func(*smf_context.SMContext) bool, verdict smf_context.PFCPSessionResponseStatus) {
+	// Logged through the package logger rather than the session's own: a context this function is
+	// handed may be one that never reached NewSMContext, and a nil sub-logger here would turn a
+	// failed send into a panic.
+	if !awaited(smContext) {
+		logger.PfcpLog.Infof("no exchange on session [%s] is waiting on the PFCP channel; not queueing %v",
+			smContext.Supi, verdict)
+
+		return
+	}
+
+	select {
+	case smContext.SBIPFCPCommunicationChan <- verdict:
+	default:
+		logger.PfcpLog.Warnf("session [%s] already has a verdict waiting to be read; not queueing %v",
+			smContext.Supi, verdict)
+	}
+}
+
+// awaitingEstablishment and awaitingRelease are the states in which an exchange is waiting on a
+// session's PFCP channel, and they are the gates the response handlers use: create-pending for an
+// establishment, release-and-not-purged for a deletion. The second can resume the waiter while
+// deletions to other user planes are still in flight -- the rejected-deletion branch of the
+// response handler answers on the same terms, and a waiter resumed early beats one never resumed.
+func awaitingEstablishment(smContext *smf_context.SMContext) bool {
+	// A session adding a second anchor is not one waiting for its first establishment. The uplink
+	// classifier issues that establishment from inside the response handler that has just answered
+	// the create exchange, and the goroutine it answered may not have changed the state yet -- so
+	// the state alone would call this a waiting session and leave a verdict behind for the next
+	// exchange to read as its own.
+	if smContext.BPManager != nil && smContext.BPManager.BPStatus == smf_context.AddingPSA {
+		return false
+	}
+
+	return smContext.SMContextState == smf_context.SmStatePfcpCreatePending
+}
+
+func awaitingRelease(smContext *smf_context.SMContext) bool {
+	return smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged
 }
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {
