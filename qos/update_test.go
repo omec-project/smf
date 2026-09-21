@@ -26,7 +26,7 @@ func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 	}
 	ctxtRules := map[string]*models.SessionRule{}
 
-	update := GetSessionRulesUpdate(pcfRules, ctxtRules)
+	update := GetSessionRulesUpdate(pcfRules, ctxtRules, "")
 	if update == nil {
 		t.Fatal("expected non-nil update")
 		return
@@ -55,7 +55,7 @@ func TestGetSessionRulesUpdateDeletePointersRemainDistinct(t *testing.T) {
 		testKeyDelB: {},
 	}
 
-	update := GetSessionRulesUpdate(pcfRules, map[string]*models.SessionRule{})
+	update := GetSessionRulesUpdate(pcfRules, map[string]*models.SessionRule{}, "")
 	if update.del[testKeyDelA] == update.del[testKeyDelB] {
 		t.Fatal("expected distinct delete pointers")
 	}

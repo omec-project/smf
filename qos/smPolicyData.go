@@ -78,7 +78,8 @@ func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *mode
 	update.PccRuleUpdate = GetPccRulesUpdate(smPolicyDecision.GetPccRules(), smCtxtPolData.SmCtxtPccRules.PccRules)
 
 	// Session Rules update
-	update.SessRuleUpdate = GetSessionRulesUpdate(smPolicyDecision.GetSessRules(), smCtxtPolData.SmCtxtSessionRules.SessionRules)
+	update.SessRuleUpdate = GetSessionRulesUpdate(smPolicyDecision.GetSessRules(),
+		smCtxtPolData.SmCtxtSessionRules.SessionRules, smCtxtPolData.SmCtxtSessionRules.ActiveRuleName)
 
 	// Traffic Control Data update
 	update.TCUpdate = GetTrafficControlUpdate(smPolicyDecision.GetTraffContDecs(), smCtxtPolData.SmCtxtTCData.TrafficControlData)
