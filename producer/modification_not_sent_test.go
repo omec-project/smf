@@ -13,6 +13,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// The user plane these fixtures wait on; named because goconst counts it across the package.
+const testPendingUpf = "10.0.0.1"
+
 // waitingSession is a session in the middle of a modification.
 //
 // It deliberately does not touch factory.SmfConfig: TestMain loads the real one for this package,
@@ -81,7 +84,7 @@ func TestANotSentModificationSaysSoToItsCaller(t *testing.T) {
 // abandon path in this package already carries; the restore goes through it.
 func TestAModificationThatWasNeverSentClearsWhatItWouldHaveWaitedFor(t *testing.T) {
 	smContext := waitingSession(t)
-	smContext.PendingUPF = smf_context.PendingUPF{"10.0.0.1": true}
+	smContext.PendingUPF = smf_context.PendingUPF{testPendingUpf: true}
 
 	RestoreStateIfNothingWasSent(smContext, smf_context.SmStateActive,
 		fmt.Errorf("%w: it has no tunnel to send through", ErrModificationNotSent))
@@ -105,5 +108,29 @@ func TestRestoringToTheCurrentStateChangesNothing(t *testing.T) {
 	if smContext.SMContextState != smf_context.SmStatePfcpModify {
 		t.Errorf("state = %s; this test exists to record that passing the current state is not a restore",
 			smContext.SMContextState)
+	}
+}
+
+// A modification the user plane may already have applied is not one the session can be put back
+// from. The adapter's reply arriving and failing to parse, or a POST it refused after possibly
+// forwarding the request, both say nothing about what the user plane did -- so the sentinel that
+// means "provably untouched" must not be attached to them, or the restore asserts something the
+// SMF does not know.
+func TestAFailureAfterTheRequestMayHaveGoneOutIsNotTreatedAsUnsent(t *testing.T) {
+	answered := fmt.Errorf("pfcp session modification failed: %w",
+		fmt.Errorf("reading the adapter's reply: unexpected EOF"))
+
+	smContext := waitingSession(t)
+	smContext.PendingUPF = smf_context.PendingUPF{testPendingUpf: true}
+
+	RestoreStateIfNothingWasSent(smContext, smf_context.SmStateActive, answered)
+
+	if smContext.SMContextState != smf_context.SmStatePfcpModify {
+		t.Errorf("state = %s, want it untouched: what the user plane applied is not known here",
+			smContext.SMContextState)
+	}
+
+	if len(smContext.PendingUPF) != 1 {
+		t.Error("the pending user plane was cleared for a request that may have been applied; its answer would then find nothing waiting")
 	}
 }
