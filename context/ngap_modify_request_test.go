@@ -295,3 +295,41 @@ func TestModifyRequestDoesNotReleaseAFlowAnIdentifierOnlyNarrowsInto(t *testing.
 		}
 	}
 }
+
+// A deletion is named by whatever the decision keys it under, and that key is not the flow
+// identifier: this core's policy writes names like "QosData2" for a flow whose QosId is "2".
+// Reading the key therefore skipped every ordinary deletion and left the bearer up at the radio,
+// which is the opposite of what the release list exists for. The identifier comes from the
+// session's committed description of the flow, which survives the deletion that empties the entry.
+func TestModifyRequestReleasesAFlowNamedByAReferenceRatherThanItsIdentifier(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	const (
+		reference = "QosData7"
+		flowID    = "7"
+	)
+
+	// What the session has in force: the flow, under the name the policy uses for it.
+	ctx.SmPolicyData.SmCtxtQosData.QosData[reference] = &models.QosData{
+		QosId:  flowID,
+		Var5qi: openapi.PtrInt32(9),
+	}
+
+	// And the decision that withdraws it. A deletion is an entry the policy sends empty under the
+	// name the flow is filed under -- not an entry it leaves out -- so the name is all the
+	// decision carries and the identifier has to come from what the session has committed.
+	decision := map[string]models.QosData{
+		"1":       *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+		reference: {},
+	}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(decision, ctx.SmPolicyData.SmCtxtQosData.QosData)
+
+	released := releasedQosFlowItems(ctx)
+	if len(released) != 1 {
+		t.Fatalf("released %d flows, want the one the decision withdrew: a deletion named by reference is skipped and its bearer stays up", len(released))
+	}
+
+	if got := released[0].QosFlowIdentifier.Value; got != 7 {
+		t.Errorf("released flow %d, want 7 -- the identifier of the flow, not the name it is filed under", got)
+	}
+}

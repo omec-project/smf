@@ -642,9 +642,11 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	// release. Without it the radio keeps a bearer for a flow the SMF and the UE have both
 	// dropped, and nothing says so: the uplink still has somewhere to arrive.
 	//
-	// A corrective modification is the exception, and it is the case this branch was written for.
-	// Its deletions are the flows the radio itself refused, so they were never established there
-	// and there is nothing to release -- asking would name a QFI the radio has no record of.
+	// Every deletion this SMF can produce today is an ordinary one, so every deletion is released.
+	// There is one shape that must not be -- a modification correcting a partial rejection, whose
+	// deletions are the flows the radio itself refused and therefore never established -- but
+	// nothing here builds one yet, and the exclusion belongs with the change that does rather than
+	// as an unreachable branch written in advance of it.
 	//
 	// The default-flow case is untouched. It is handled by the release-only path above, which this
 	// does not reach.
@@ -848,12 +850,31 @@ func releasedQosFlowItems(ctx *SMContext) []ngapType.QosFlowWithCauseItem {
 
 	var items []ngapType.QosFlowWithCauseItem
 	for qosID := range update.QosFlowUpdate.GetDeleted() {
-		// The key, not the QosId field: a deleted entry carries an empty QosData, so the name it
-		// was stored under is the only identifier there is -- the opposite of the add and modify
-		// paths. Parsed at full width all the same: GetQosFlowIdFromQosId narrows to uint8 before
-		// anything can range-check it, so a QoS id of 257 arrives as 1 and the radio is asked to
-		// release whatever flow 1 is on this session.
-		qfi, err := qos.ParseQosFlowId(qosID)
+		// The committed entry, not the map key. A deletion arrives as an empty QosData, so the
+		// entry itself no longer carries its identifier -- but the session's committed state still
+		// does, under the same name, and that is where the flow being withdrawn is described.
+		//
+		// The key is not that identifier. TS 29.512 keys qosDecs by the QoS data id, and a
+		// conformant decision agrees with itself, but this core's own policy names them things
+		// like "QosData2" for a flow whose QosId is "2" -- so reading the key skipped every
+		// ordinary deletion and left the bearer up at the radio. The key is the fallback, for a
+		// decision that deletes something this session never committed.
+		//
+		// What the fallback risks, said plainly: a key that parses but names nothing this session
+		// holds asks the radio to release whatever flow that number is on, which for a decision
+		// mixing the two conventions would be a live bearer the policy never withdrew. It is kept
+		// because the conformant case is exactly the one it serves, and because names of this
+		// core's own shape do not parse at all -- they reach the warning below, not a wrong flow.
+		//
+		// Parsed at full width either way: GetQosFlowIdFromQosId narrows to uint8 before anything
+		// can range-check it, so a QoS id of 257 arrives as 1 and the radio is asked to release
+		// whatever flow 1 is on this session.
+		identifier := qosID
+		if committed, held := ctx.SmPolicyData.SmCtxtQosData.QosData[qosID]; held && committed.GetQosId() != "" {
+			identifier = committed.GetQosId()
+		}
+
+		qfi, err := qos.ParseQosFlowId(identifier)
 		if err != nil {
 			ctx.SubPduSessLog.Warnf("deleted QoS data %q carries no usable flow identifier (%v); the radio is not asked to release it", qosID, err)
 
