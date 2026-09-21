@@ -17,12 +17,14 @@ func BitRateTokbps(bitrate string) uint64 {
 
 	var digit int
 
-	// A rate is a number and a unit. Without the unit there is nothing to scale by, and the unit
-	// is read from s[1] a few lines down -- so a value like "10", which a policy can carry and
-	// NormalizeBitRate passes through unchanged when it recognises no unit, indexed past the end
-	// and took the process with it. Unreadable rates already answer 0; one with no unit is one of
-	// those.
-	if len(s) < 2 {
+	// A rate is a number and a unit, so exactly two fields. Without the unit there is nothing to
+	// scale by, and the unit is read from s[1] a few lines down -- so a value like "10", which a
+	// policy can carry and NormalizeBitRate passes through unchanged when it recognises no unit,
+	// indexed past the end and took the process with it.
+	//
+	// More than two is refused for the same reason rather than read as far as the unit: "100 Mbps
+	// junk" is not a rate this can be sure of, and every other unreadable rate already answers 0.
+	if len(s) != 2 {
 		return 0
 	}
 

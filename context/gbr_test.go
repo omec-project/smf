@@ -14,6 +14,9 @@ import (
 	"github.com/omec-project/util/idgenerator"
 )
 
+// The downlink rate these tests configure; named because goconst counts it across the file.
+const testGbrDownlink = "2 Mbps"
+
 // A guarantee configured in one direction only must be honoured.
 //
 // The branch used to require both directions and dropped the whole guarantee when an operator
@@ -28,10 +31,15 @@ func TestAOneDirectionalGuaranteeIsHonoured(t *testing.T) {
 		wantNil        bool
 		wantUL, wantDL uint64
 	}{
-		{"both directions", "1 Mbps", "2 Mbps", false, 1000, 2000},
+		{"both directions", "1 Mbps", testGbrDownlink, false, 1000, 2000},
 		{"uplink only", "1 Mbps", "", false, 1000, 0},
-		{"downlink only", "", "2 Mbps", false, 0, 2000},
+		{"downlink only", "", testGbrDownlink, false, 0, 2000},
 		{"neither", "", "", true, 0, 0},
+		// A value that is only whitespace is not a configured rate. Untrimmed it is not the empty
+		// string either, so it built a GBR IE carrying zero in both directions -- telling the user
+		// plane the flow has a guaranteed rate of nothing rather than none at all.
+		{"whitespace only", " ", "  ", true, 0, 0},
+		{"whitespace in one direction", " ", testGbrDownlink, false, 0, 2000},
 	}
 
 	for _, tc := range tests {
@@ -172,7 +180,7 @@ func TestCreatePccRuleQerLeavesAnUnconfiguredGuaranteeUnset(t *testing.T) {
 // from the second field, so "10" indexed past the end of the split and took the process down --
 // on any rate the SMF converts, not only a guaranteed one.
 func TestARateWithNoUnitDoesNotEndTheProcess(t *testing.T) {
-	for _, rate := range []string{"10", "", "Mbps", "not-a-rate"} {
+	for _, rate := range []string{"10", "", "Mbps", "not-a-rate", "10 Mbps junk"} {
 		if got := util.BitRateTokbps(util.NormalizeBitRate(rate)); got != 0 {
 			t.Errorf("BitRateTokbps(%q) = %d, want 0: a rate that cannot be read is not a rate", rate, got)
 		}

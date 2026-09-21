@@ -9,6 +9,7 @@ package context
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/openapi/v2/models"
@@ -930,13 +931,17 @@ func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
 // Each direction is converted only when it was configured. BitRateTokbps happens to return zero
 // for an empty string, by way of the error path in its Atoi, but that is incidental rather than
 // intended and is not something to build on.
+//
+// Trimmed as it is read, so a value that is only whitespace counts as unconfigured. Left untrimmed
+// it is not the empty string, so it produced a GBR IE carrying zero in both directions -- which
+// tells the user plane there is a guaranteed rate of nothing, rather than that there is none.
 func BuildGBR(qosData *models.QosData) *GBR {
 	var gbrul, gbrdl string
-	if v, ok := qosData.GetGbrUlOk(); ok && v != nil {
-		gbrul = *v
+	if qosData.HasGbrUl() {
+		gbrul = strings.TrimSpace(qosData.GetGbrUl())
 	}
-	if v, ok := qosData.GetGbrDlOk(); ok && v != nil {
-		gbrdl = *v
+	if qosData.HasGbrDl() {
+		gbrdl = strings.TrimSpace(qosData.GetGbrDl())
 	}
 	if gbrul == "" && gbrdl == "" {
 		return nil
