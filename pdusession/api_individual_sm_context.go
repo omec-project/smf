@@ -34,7 +34,6 @@ import (
 	"github.com/omec-project/smf/transaction"
 	smfutil "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
-	mi "github.com/omec-project/util/metricinfo"
 )
 
 var (
@@ -73,11 +72,6 @@ func HTTPReleaseSmContext(c *gin.Context) {
 	logger.PduSessLog.Infoln("handle Post /sm-contexts/:smContextRef/release")
 	var err error
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.ReleaseSmContext), "In", "", "")
-	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_release_req)
-	if err != nil {
-		logger.PduSessLog.Errorf("error: %v", err)
-		return
-	}
 
 	request := models.NewReleaseSmContextRequest()
 	request.SetJsonData(*models.NewSmContextReleaseData())
@@ -151,11 +145,6 @@ func HTTPUpdateSmContext(c *gin.Context) {
 	logger.PduSessLog.Infoln("handle Post /sm-contexts/:smContextRef/modify")
 	var err error
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.UpdateSmContext), "In", "", "")
-	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_modify_req)
-	if err != nil {
-		logger.PduSessLog.Errorf("error: %v", err)
-		return
-	}
 
 	request := models.NewUpdateSmContextRequest()
 	request.SetJsonData(*models.NewSmContextUpdateData())

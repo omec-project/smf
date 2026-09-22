@@ -34,7 +34,6 @@ import (
 	"github.com/omec-project/smf/transaction"
 	smfutil "github.com/omec-project/smf/util"
 	"github.com/omec-project/util/httpwrapper"
-	mi "github.com/omec-project/util/metricinfo"
 )
 
 // Post /sm-contexts
@@ -43,11 +42,6 @@ func HTTPPostSmContexts(c *gin.Context) {
 	logger.PduSessLog.Infoln("handle Post /sm-contexts")
 	var err error
 	stats.IncrementN11MsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.CreateSmContext), "In", "", "")
-	err = stats.PublishMsgEvent(mi.Smf_msg_type_pdu_sess_create_req)
-	if err != nil {
-		logger.PduSessLog.Errorf("error: %v", err)
-		return
-	}
 
 	request := models.NewPostSmContextsRequest()
 	request.SetJsonData(models.SmContextCreateData{})

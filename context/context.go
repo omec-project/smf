@@ -23,13 +23,11 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/util/drsm"
 )
 
 func init() {
 	smfContext.NfInstanceID = uuid.New().String()
-	metrics.SetNfInstanceId(smfContext.NfInstanceID)
 }
 
 const (
