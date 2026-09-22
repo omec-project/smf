@@ -187,6 +187,18 @@ func TestARateWithNoUnitDoesNotEndTheProcess(t *testing.T) {
 	}
 }
 
+// A rate is not made unreadable by how it is spaced. Two call sites pass the configured session
+// AMBR to the converter without normalising it first, so a trailing space in an operator's
+// configuration reaches it as written -- and a rate refused there is a maximum bit rate of zero
+// programmed into the user plane, which admits no traffic at all rather than the rate configured.
+func TestSpacingDoesNotMakeARateUnreadable(t *testing.T) {
+	for _, rate := range []string{"10 Mbps", "10 Mbps ", " 10 Mbps", "10  Mbps", "10\tMbps"} {
+		if got, want := util.BitRateTokbps(rate), uint64(10000); got != want {
+			t.Errorf("BitRateTokbps(%q) = %d, want %d: the rate is the same however it is spaced", rate, got, want)
+		}
+	}
+}
+
 // And a rate that can be read still is.
 func TestAReadableRateStillConverts(t *testing.T) {
 	if got, want := util.BitRateTokbps(util.NormalizeBitRate("10 Mbps")), uint64(10000); got != want {

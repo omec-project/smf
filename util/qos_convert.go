@@ -12,7 +12,12 @@ import (
 const bpsUnit = "bps"
 
 func BitRateTokbps(bitrate string) uint64 {
-	s := strings.Split(bitrate, " ")
+	// Fields rather than Split, so the count is of what the string says and not of how it is
+	// spaced. Splitting on a single space made "100 Mbps " three of them, and two call sites pass
+	// the configured session AMBR here without normalising it first -- so a trailing space in an
+	// operator's configuration became a maximum bit rate of zero, programmed into the user plane
+	// as a QER that admits nothing.
+	s := strings.Fields(bitrate)
 	var kbps uint64
 
 	var digit int
