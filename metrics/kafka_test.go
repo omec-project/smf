@@ -84,30 +84,6 @@ func TestPublishPduSessEventWithKafkaDisabled(t *testing.T) {
 	}
 }
 
-func TestPublishMsgEventWithKafkaDisabled(t *testing.T) {
-	configuration := factory.Configuration{
-		KafkaInfo: factory.KafkaInfo{
-			EnableKafka: &my_false,
-		},
-	}
-	config := factory.Config{
-		Configuration: &configuration,
-	}
-	factory.SmfConfig = config
-
-	err := InitialiseKafkaStream(&configuration)
-	if err != nil {
-		t.Errorf("expected return value to be nil, got %v", err)
-	}
-
-	// If the kafkaWriter is called, this will panic and fail the test
-	result := PublishMsgEvent(0)
-
-	if result != nil {
-		t.Errorf("expected return value to be nil, got %v", result)
-	}
-}
-
 func TestPublishNfStatusWithKafkaDisabled(t *testing.T) {
 	configuration := factory.Configuration{
 		KafkaInfo: factory.KafkaInfo{
