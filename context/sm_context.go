@@ -565,7 +565,7 @@ func (smContext *SMContext) RebuildCommunicationClient() {
 	// Clear any existing client first so stale data does not linger if the
 	// (re-discovered) AMF profile has no namf-comm service.
 	smContext.CommunicationClient = nil
-	for _, service := range smContext.AMFProfile.GetNfServices() {
+	for _, service := range util.NFProfileDiscoveryServices(&smContext.AMFProfile) {
 		if service.GetServiceName() == models.SERVICENAME_NAMF_COMM {
 			communicationConf := Namf_Communication.NewConfiguration()
 			serverConfig := &communicationConf.Servers[0]
@@ -583,7 +583,7 @@ func (smContext *SMContext) RebuildCommunicationClient() {
 // from the stored SelectedPCFProfile after recovering an SMContext from MongoDB.
 func (smContext *SMContext) RebuildSMPolicyClient() {
 	smContext.SMPolicyClient = nil
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+	for _, service := range util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile) {
 		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
 			cfg := Npcf_SMPolicyControl.NewConfiguration()
 			serverConfig := &cfg.Servers[0]
@@ -664,7 +664,7 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
+	for _, service := range util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile) {
 		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
 			cfg := Npcf_SMPolicyControl.NewConfiguration()
 			serverConfig := &cfg.Servers[0]
