@@ -435,16 +435,14 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 		}
 		smfSelf.UDMProfile = result.NfInstances[0]
 
-		for _, service := range util.NFProfileDiscoveryServices(&smfSelf.UDMProfile) {
-			if service.GetServiceName() == models.SERVICENAME_NUDM_SDM {
-				SDMConf := Nudm_SDM.NewConfiguration()
-				serverConfig := &SDMConf.Servers[0]
-				if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-					apiRootVar.DefaultValue = service.GetApiPrefix()
-					serverConfig.Variables["apiRoot"] = apiRootVar
-				}
-				smfSelf.SubscriberDataManagementClient = Nudm_SDM.NewAPIClient(SDMConf)
+		if service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smfSelf.UDMProfile), models.SERVICENAME_NUDM_SDM); ok {
+			SDMConf := Nudm_SDM.NewConfiguration()
+			serverConfig := &SDMConf.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
 			}
+			smfSelf.SubscriberDataManagementClient = Nudm_SDM.NewAPIClient(SDMConf)
 		}
 
 		if smfSelf.SubscriberDataManagementClient == nil {

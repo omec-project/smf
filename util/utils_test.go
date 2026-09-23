@@ -125,29 +125,19 @@ func TestNFProfileServicesFallsBackToDeprecatedSlice(t *testing.T) {
 func TestNFProfileServicesFallbackKeyDoesNotCollideWithServiceInstanceId(t *testing.T) {
 	profile := models.NewNFProfileWithDefaults()
 	profile.SetNfServices([]models.NFService{
-		{ServiceName: models.SERVICENAME_NAMF_COMM},                        // no ServiceInstanceId: index 0
-		{ServiceInstanceId: "1", ServiceName: models.SERVICENAME_NUDM_SDM}, // real id collides with index of a later entry
-		{ServiceName: models.SERVICENAME_NSMF_PDUSESSION},                  // no ServiceInstanceId: index 2, would collide via "1_"->"1" retry path if mishandled
+		{ServiceName: models.SERVICENAME_NAMF_COMM},                        // no ServiceInstanceId, index 0: candidate key "0" collides with the real id below
+		{ServiceInstanceId: "0", ServiceName: models.SERVICENAME_NUDM_SDM}, // real id "0" takes priority over the index-based fallback
 	})
 
 	got := NFProfileServices(profile)
-	if len(got) != 3 {
-		t.Fatalf("expected all three entries to be preserved, got %+v", got)
+	if len(got) != 2 {
+		t.Fatalf("expected both entries to be preserved, got %+v", got)
 	}
-	if svc, ok := got["1"]; !ok || svc.GetServiceName() != models.SERVICENAME_NUDM_SDM {
-		t.Fatalf("expected real ServiceInstanceId %q to take priority, got %+v", "1", got)
+	if svc, ok := got["0"]; !ok || svc.GetServiceName() != models.SERVICENAME_NUDM_SDM {
+		t.Fatalf("expected real ServiceInstanceId %q to take priority, got %+v", "0", got)
 	}
-	if svc, ok := got["0"]; !ok || svc.GetServiceName() != models.SERVICENAME_NAMF_COMM {
-		t.Fatalf("expected index-0 entry to be preserved, got %+v", got)
-	}
-	found := false
-	for _, svc := range got {
-		if svc.GetServiceName() == models.SERVICENAME_NSMF_PDUSESSION {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected index-2 entry to be preserved under a collision-free key, got %+v", got)
+	if svc, ok := got["0_"]; !ok || svc.GetServiceName() != models.SERVICENAME_NAMF_COMM {
+		t.Fatalf("expected index-0 entry to fall back to a collision-free suffixed key, got %+v", got)
 	}
 }
 
@@ -177,5 +167,26 @@ func TestSetNFProfileServicesPopulatesBothFields(t *testing.T) {
 	slice := profile.GetNfServices()
 	if len(slice) != 1 || slice[0].GetServiceInstanceId() != svcA {
 		t.Fatalf("expected deprecated NfServices slice to also be populated, got %+v", slice)
+	}
+}
+
+func TestFindServiceByNamePicksLexicographicallySmallestKeyOnDuplicateNames(t *testing.T) {
+	services := map[string]models.NFService{
+		"svc-z": {ServiceInstanceId: "svc-z", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString("z")},
+		"svc-a": {ServiceInstanceId: "svc-a", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString("a")},
+		"svc-m": {ServiceInstanceId: "svc-m", ServiceName: models.SERVICENAME_NUDM_SDM, ApiPrefix: openapi.PtrString("m")},
+	}
+
+	// Run several times: map iteration order is randomized per-process, so a
+	// non-deterministic implementation would be expected to disagree across runs.
+	for i := 0; i < 10; i++ {
+		svc, ok := FindServiceByName(services, models.SERVICENAME_NAMF_COMM)
+		if !ok || svc.GetApiPrefix() != "a" {
+			t.Fatalf("expected deterministic selection of svc-a, got %+v (ok=%v)", svc, ok)
+		}
+	}
+
+	if _, ok := FindServiceByName(services, models.SERVICENAME_NPCF_SMPOLICYCONTROL); ok {
+		t.Fatalf("expected no match for a service name absent from the map")
 	}
 }

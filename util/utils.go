@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strconv"
 
 	"github.com/omec-project/openapi/v2"
@@ -60,6 +61,23 @@ func nfServicesSliceToMap(services []models.NFService) map[string]models.NFServi
 		merged[key] = services[i]
 	}
 	return merged
+}
+
+// FindServiceByName returns the service named name from services. When more than one entry
+// shares that name, the one with the lexicographically smallest key is returned so the result
+// does not depend on Go's randomized map iteration order.
+func FindServiceByName(services map[string]models.NFService, name models.ServiceName) (models.NFService, bool) {
+	keys := make([]string, 0, len(services))
+	for key := range services {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if svc := services[key]; svc.GetServiceName() == name {
+			return svc, true
+		}
+	}
+	return models.NFService{}, false
 }
 
 // SetNFProfileServices writes services to both NfServiceList and the deprecated NfServices
