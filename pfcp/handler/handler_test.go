@@ -414,6 +414,81 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 	}
 }
 
+// A data path through several user planes establishes a session on each, and every answer lands
+// on the session's channel, which holds one verdict and is read once. Written with a blocking send,
+// the second answer parked its dispatch goroutine until the first was read and then left itself
+// behind as a stale verdict for the next exchange. It has to come back, and leave one verdict.
+func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.2")
+	smContext := context.NewSMContext("imsi-100000000000003", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+			},
+		},
+	}
+
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{
+		FirstDPNode: &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+	})
+
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+
+	// The first user plane's verdict, already waiting to be read.
+	smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess
+
+	seq := uint32(localSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	rsp := message.NewSessionEstablishmentResponse(0, 0, localSEID, seq, 0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.2", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+			RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.2"), Port: 8809},
+			PfcpMessage: rsp,
+		})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the second establishment answer is still blocked on the session's channel")
+	}
+
+	if len(smContext.SBIPFCPCommunicationChan) != 1 {
+		t.Errorf("channel holds %d verdicts, want the one the create procedure will read", len(smContext.SBIPFCPCommunicationChan))
+	}
+}
+
 // TestHandlePfcpSessionModificationResponseNoSMContext covers a Session
 // Modification Response that arrives after its session has been released, so
 // GetSMContextBySEID returns nil. Both the accepted and the rejected branch

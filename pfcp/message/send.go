@@ -78,7 +78,7 @@ func InsertPfcpTxn(seqNo uint32, upNodeID *smf_context.NodeID) {
 	PfcpTxns[seqNo] = upNodeID
 }
 
-func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
+func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err error) {
 	msg := BuildPfcpHeartbeatRequest(getSeqNumber(), udp.GetServerStartTime())
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
@@ -86,6 +86,17 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 	}
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		adapter.InsertPfcpTxn(msg.Sequence(), &upNodeID)
+
+		// The entry is consumed by the response handler, so a heartbeat that fails before one is
+		// dispatched takes it back here. The native branch does the same with FetchPfcpTxn; this
+		// one left an entry behind on every failing exit, one per heartbeat period for as long as
+		// the adapter kept refusing.
+		defer func() {
+			if err != nil {
+				adapter.FetchPfcpTxn(msg.Sequence())
+			}
+		}()
+
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, msg, addr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp heartbeat msg to upf-adapter error [%v] ", err.Error())
 			return err
@@ -96,27 +107,17 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 					logger.PfcpLog.Errorf("close response body failed: %v", err)
 				}
 			}()
-			if rsp.StatusCode == http.StatusOK {
-				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
-				if err != nil {
-					// Returned, not fatal. A reply that stops early is one request's failure, and
-					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
-				}
-				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
+			pfcpRspMsg, err := adapterReply(rsp, "heartbeat")
+			if err != nil {
+				logger.PfcpLog.Errorf("pfcp heartbeat not answered: %v", err)
 
-				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
-				if err != nil {
-					logger.PfcpLog.Errorf("parse pfcp heartbeat response failed: %v", err)
-					return err
-				}
-				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
-					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				return err
+			}
 
-					return fmt.Errorf("handling the adapter's response: %w", err)
-				}
+			if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
+				logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+				return fmt.Errorf("handling the adapter's response: %w", err)
 			}
 		}
 	} else {
@@ -129,6 +130,38 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
 	logger.PfcpLog.Debugf("sent pfcp heartbeat request seq[%d] to NodeID[%s]", msg.Sequence(),
 		upNodeID.ResolveNodeIdToIp().String())
 	return nil
+}
+
+// adapterReply takes the user plane's answer out of the adapter's reply to a node-level request.
+//
+// Separated from the sends for the same reason handleAdapterModificationResponse is: the refusal
+// is otherwise reachable only through a live adapter. A status other than OK means the adapter did
+// not deliver the request, so nothing reached the user plane and no answer is coming -- which is a
+// failure to report, not a message to dispatch. Both the heartbeat and the association setup fell
+// through to their success return on one. And the heartbeat caller counts only failures it is told
+// about toward declaring a user plane lost, so a refusal reported as success was also one the
+// liveness check never saw.
+//
+// A reply that stops early is returned, not fatal: it is one request's failure, and ending the
+// process takes every other session with it.
+func adapterReply(rsp *http.Response, what string) (message.Message, error) {
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upf adapter refused the %s: %s", what, rsp.Status)
+	}
+
+	pfcpMsgBytes, err := io.ReadAll(rsp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading the adapter's %s reply: %w", what, err)
+	}
+
+	logger.PfcpLog.Debugf("pfcp rsp status ok, %s", string(pfcpMsgBytes))
+
+	pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing the adapter's %s reply: %w", what, err)
+	}
+
+	return pfcpRspMsg, nil
 }
 
 func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16) error {
@@ -169,26 +202,20 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 				}
 			}()
 			logger.PfcpLog.Debugf("send pfcp association response [%v]", rsp)
-			if rsp.StatusCode == http.StatusOK {
-				pfcpMsgBytes, err := io.ReadAll(rsp.Body)
-				if err != nil {
-					// Returned, not fatal. A reply that stops early is one request's failure, and
-					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
-				}
-				pfcpMsgString := string(pfcpMsgBytes)
-				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
-				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
-				if err != nil {
-					logger.PfcpLog.Errorf("parse pfcp association response failed: %v", err)
-					return err
-				}
-				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
-					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+			// A refusal used to be reported as a sent request, so the caller marked the user plane
+			// as setting up and waited the full association timeout for a response that could not
+			// come. As an error it stays NotAssociated and is retried on the next probe.
+			pfcpRspMsg, err := adapterReply(rsp, "association setup")
+			if err != nil {
+				logger.PfcpLog.Errorf("pfcp association setup not answered: %v", err)
 
-					return fmt.Errorf("handling the adapter's response: %w", err)
-				}
+				return err
+			}
+
+			if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
+				logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+
+				return fmt.Errorf("handling the adapter's response: %w", err)
 			}
 		}
 	} else {
@@ -281,6 +308,15 @@ func SendPfcpSessionEstablishmentRequest(
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		adapter.InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
+
+		// Consumed by the response handler; taken back here when no response is dispatched, as
+		// on the heartbeat path. A handler that fetched it and then failed leaves nothing to take.
+		defer func() {
+			if err != nil {
+				adapter.FetchPfcpTxn(pfcpMsg.Sequence())
+			}
+		}()
+
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session establish msg to upf-adapter error [%v]", err.Error())
 			HandlePfcpSendError(pfcpMsg, err)
@@ -358,8 +394,17 @@ func SendPfcpSessionModificationRequest(
 	if !ok {
 		return fmt.Errorf("%w: PFCP Context not found for NodeID[%s]", ErrRequestNotSent, upNodeIDStr)
 	}
+
+	// The builder marks every rule it is handed as applied while it builds, so a request that then
+	// fails to leave the SMF is put back through this. Without it, "not sent" was true of the wire
+	// and false of the session: the rules read as applied, the user plane had never received them,
+	// and the next modification -- which sends only rules not yet applied -- skipped them for good.
+	restoreRuleStates := snapshotRuleStates(pdrList, farList, qerList)
+
 	pfcpMsg, err := BuildPfcpSessionModificationRequest(seqNum, pfcpContext.LocalSEID, pfcpContext.RemoteSEID, smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp(), pdrList, farList, qerList, removePDR, removeFAR, removeQER)
 	if err != nil {
+		restoreRuleStates()
+
 		return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
 	}
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
@@ -397,6 +442,7 @@ func SendPfcpSessionModificationRequest(
 			// tidiness: the modification response handler correlates by SEID and never reads
 			// this map, so the entry the line above makes is unread on the success path too.
 			FetchPfcpTxn(pfcpMsg.Sequence())
+			restoreRuleStates()
 
 			return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
 		}
@@ -612,6 +658,52 @@ func awaitingEstablishment(smContext *smf_context.SMContext) bool {
 
 func awaitingRelease(smContext *smf_context.SMContext) bool {
 	return smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged
+}
+
+// snapshotRuleStates records the states of the rules a request is about to be built from, and
+// returns what puts them back. Only for a request that provably never left the SMF: once one has,
+// what the user plane holds is not known, and restoring the SMF's view would be guessing.
+func snapshotRuleStates(pdrs []*smf_context.PDR, fars []*smf_context.FAR, qers []*smf_context.QER) func() {
+	pdrStates := make([]smf_context.RuleState, len(pdrs))
+	for i, pdr := range pdrs {
+		if pdr != nil {
+			pdrStates[i] = pdr.State
+		}
+	}
+
+	farStates := make([]smf_context.RuleState, len(fars))
+	for i, far := range fars {
+		if far != nil {
+			farStates[i] = far.State
+		}
+	}
+
+	qerStates := make([]smf_context.RuleState, len(qers))
+	for i, qer := range qers {
+		if qer != nil {
+			qerStates[i] = qer.State
+		}
+	}
+
+	return func() {
+		for i, pdr := range pdrs {
+			if pdr != nil {
+				pdr.State = pdrStates[i]
+			}
+		}
+
+		for i, far := range fars {
+			if far != nil {
+				far.State = farStates[i]
+			}
+		}
+
+		for i, qer := range qers {
+			if qer != nil {
+				qer.State = qerStates[i]
+			}
+		}
+	}
 }
 
 // ErrRequestNotSent marks a request that never left the SMF, which is what lets a caller say its

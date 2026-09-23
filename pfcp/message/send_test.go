@@ -6,6 +6,7 @@ package message_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -515,5 +516,55 @@ func TestSendPfcpSessionModificationRequestReportsASendThatDidNotHappen(t *testi
 	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
 		nil, nil, nil, nil, nil, nil, nil, 8806); err == nil {
 		t.Error("a modification the UDP layer refused was reported as sent; the caller waits for an answer to it")
+	}
+}
+
+// A modification that never left the SMF has to leave its rules as it found them. The builder
+// marks every rule it is handed as applied while it builds, so a send that then failed left the
+// session believing the user plane held rules it had never received -- a removal recorded as done,
+// an update recorded as applied -- and the next modification, which sends only rules not yet
+// applied, skipped them for good.
+//
+// Removal and update states are used because they build without a full rule behind them, and
+// because they are the cases where the damage is quietest: nothing is missing from the SMF's view.
+func TestAModificationThatNeverWentOutLeavesItsRulesAsTheyWere(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID, LocalSEID: 11, RemoteSEID: 12},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses after the request has been built.
+	setTestServer(t, nil)
+
+	pdr := &context.PDR{PDRID: 1, State: context.RULE_REMOVE}
+	far := &context.FAR{FARID: 1, State: context.RULE_REMOVE}
+	qer := &context.QER{QERID: 1, State: context.RULE_UPDATE}
+
+	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		[]*context.PDR{pdr}, []*context.FAR{far}, nil, []*context.QER{qer}, nil, nil, nil, 8806)
+	if !errors.Is(err, message.ErrRequestNotSent) {
+		t.Fatalf("error = %v, want one saying nothing went out", err)
+	}
+
+	if pdr.State != context.RULE_REMOVE || far.State != context.RULE_REMOVE || qer.State != context.RULE_UPDATE {
+		t.Errorf("rule states after a request that never went out: PDR %v, FAR %v, QER %v; want them as they were",
+			pdr.State, far.State, qer.State)
 	}
 }

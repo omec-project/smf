@@ -51,11 +51,16 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 	// modification is on its way has no tunnel, and the callers that revert a modification reach
 	// here precisely when something has gone wrong -- so the path that exists to put a session
 	// back must not be the one that ends the process.
-	if smContext.Tunnel == nil {
+	//
+	// Read once. The policy-update caller drops SMLock before calling this, and release clears the
+	// tunnel under that lock, so a check followed by a second read of the field can find it gone
+	// between the two -- the guard would narrow the window, not close it.
+	tunnel := smContext.Tunnel
+	if tunnel == nil {
 		return fmt.Errorf("%w: it has no tunnel to send through", ErrModificationNotSent)
 	}
 
-	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	defaultPath := tunnel.DataPathPool.GetDefaultPath()
 	if defaultPath == nil || defaultPath.FirstDPNode == nil || defaultPath.FirstDPNode.UPF == nil {
 		return fmt.Errorf("%w: it has no user plane on its default path", ErrModificationNotSent)
 	}

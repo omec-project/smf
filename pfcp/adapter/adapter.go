@@ -330,12 +330,34 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		// UPF Accept
 		if causeValue == ie.CauseRequestAccepted {
 			if awaited {
-				smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess
+				// Not a blocking send. A data path through several user planes establishes one
+				// session on each, and every response lands here while the channel holds one
+				// verdict and is read once. In adapter mode the response is dispatched inline, on the
+				// goroutine that reads the channel afterwards -- so a second blocking write parked it
+				// on its own channel, and two user planes that both accepted wedged the session.
+				// The first verdict stands and later ones are dropped; which one should stand when
+				// the user planes disagree is a separate question, and this does not answer it.
+				select {
+				case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess:
+				default:
+					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishSuccess)
+				}
 			}
 			smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 		} else {
 			if awaited {
-				smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed
+				// Not a blocking send. A data path through several user planes establishes one
+				// session on each, and every response lands here while the channel holds one
+				// verdict and is read once. In adapter mode the response is dispatched inline, on the
+				// goroutine that reads the channel afterwards -- so a second blocking write parked it
+				// on its own channel, and two user planes that both accepted wedged the session.
+				// The first verdict stands and later ones are dropped; which one should stand when
+				// the user planes disagree is a separate question, and this does not answer it.
+				select {
+				case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed:
+				default:
+					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishFailed)
+				}
 			}
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
 			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
