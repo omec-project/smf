@@ -18,33 +18,46 @@ import (
 // NFProfileServices reads profile's NF services from NfServiceList, falling back to the
 // deprecated NfServices slice only when the list is unset.
 func NFProfileServices(profile *models.NFProfile) map[string]models.NFService {
-	if list := profile.GetNfServiceList(); len(list) > 0 {
-		return list
+	if profile.HasNfServiceList() {
+		return profile.GetNfServiceList()
 	}
 	return nfServicesSliceToMap(profile.GetNfServices())
 }
 
 // NFProfileDiscoveryServices is NFProfileServices for a discovered (peer) NF profile.
 func NFProfileDiscoveryServices(profile *models.NFProfileDiscovery) map[string]models.NFService {
-	if list := profile.GetNfServiceList(); len(list) > 0 {
-		return list
+	if profile.HasNfServiceList() {
+		return profile.GetNfServiceList()
 	}
 	return nfServicesSliceToMap(profile.GetNfServices())
 }
 
 // nfServicesSliceToMap keys the deprecated NfServices slice by ServiceInstanceId, falling back
-// to the index when it is empty, matching how NfServiceList itself is keyed.
+// to the index when it is empty, matching how NfServiceList itself is keyed. Entries with a
+// ServiceInstanceId are merged first so an index-based fallback key never overwrites them; any
+// remaining collision is resolved by appending a suffix so no entry is silently dropped.
 func nfServicesSliceToMap(services []models.NFService) map[string]models.NFService {
 	if len(services) == 0 {
 		return nil
 	}
 	merged := make(map[string]models.NFService, len(services))
+	var missingID []int
 	for i, svc := range services {
-		key := svc.GetServiceInstanceId()
-		if key == "" {
-			key = strconv.Itoa(i)
+		if key := svc.GetServiceInstanceId(); key != "" {
+			merged[key] = svc
+		} else {
+			missingID = append(missingID, i)
 		}
-		merged[key] = svc
+	}
+	for _, i := range missingID {
+		key := strconv.Itoa(i)
+		for {
+			if _, exists := merged[key]; !exists {
+				break
+			}
+			key += "_"
+		}
+		merged[key] = services[i]
 	}
 	return merged
 }

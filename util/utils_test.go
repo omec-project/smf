@@ -122,6 +122,35 @@ func TestNFProfileServicesFallsBackToDeprecatedSlice(t *testing.T) {
 	}
 }
 
+func TestNFProfileServicesFallbackKeyDoesNotCollideWithServiceInstanceId(t *testing.T) {
+	profile := models.NewNFProfileWithDefaults()
+	profile.SetNfServices([]models.NFService{
+		{ServiceName: models.SERVICENAME_NAMF_COMM},                        // no ServiceInstanceId: index 0
+		{ServiceInstanceId: "1", ServiceName: models.SERVICENAME_NUDM_SDM}, // real id collides with index of a later entry
+		{ServiceName: models.SERVICENAME_NSMF_PDUSESSION},                  // no ServiceInstanceId: index 2, would collide via "1_"->"1" retry path if mishandled
+	})
+
+	got := NFProfileServices(profile)
+	if len(got) != 3 {
+		t.Fatalf("expected all three entries to be preserved, got %+v", got)
+	}
+	if svc, ok := got["1"]; !ok || svc.GetServiceName() != models.SERVICENAME_NUDM_SDM {
+		t.Fatalf("expected real ServiceInstanceId %q to take priority, got %+v", "1", got)
+	}
+	if svc, ok := got["0"]; !ok || svc.GetServiceName() != models.SERVICENAME_NAMF_COMM {
+		t.Fatalf("expected index-0 entry to be preserved, got %+v", got)
+	}
+	found := false
+	for _, svc := range got {
+		if svc.GetServiceName() == models.SERVICENAME_NSMF_PDUSESSION {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected index-2 entry to be preserved under a collision-free key, got %+v", got)
+	}
+}
+
 func TestNFProfileDiscoveryServicesFallsBackToDeprecatedSlice(t *testing.T) {
 	profile := models.NewNFProfileDiscoveryWithDefaults()
 	profile.SetNfServices([]models.NFService{
