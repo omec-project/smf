@@ -1041,7 +1041,12 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
 		}
 
-		smContext.ChangeState(smf_context.SmStatePfcpModify)
+		// The release state, not the modification state: this branch releases the session, and the
+		// deletion answers it waits on below are delivered only to a session in SmStatePfcpRelease.
+		// In SmStatePfcpModify every one of them was withheld, so the release waited for good, holding
+		// the lock of whoever reached it. The branch was unreachable while a modification timeout
+		// could not find its session; now that it can, the release it starts has to be answerable.
+		smContext.ChangeState(smf_context.SmStatePfcpRelease)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
 		tmpFile, err := util.CreatePayloadTempFile(n1buf)
