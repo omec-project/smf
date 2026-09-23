@@ -57,17 +57,18 @@ func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	if advertisedHost == "" {
 		return
 	}
-	services := nfProfile.GetNfServices()
-	for index := range services {
-		svc := &services[index]
-		svc.SetApiPrefix(fmt.Sprintf("%s://%s:%d", svc.GetScheme(), advertisedHost, smfContext.SMF_Self().SBIPort))
+	sbiPort := smfContext.SMF_Self().SBIPort
+	services := util.NFProfileServices(nfProfile)
+	for key, svc := range services {
+		svc.SetApiPrefix(fmt.Sprintf("%s://%s:%d", svc.GetScheme(), advertisedHost, sbiPort))
 		versions := svc.GetVersions()
 		for versionIndex := range versions {
-			versions[versionIndex].SetApiFullVersion(fmt.Sprintf("%s://%s:%d/%s/v1", svc.GetScheme(), advertisedHost, smfContext.SMF_Self().SBIPort, svc.GetServiceName()))
+			versions[versionIndex].SetApiFullVersion(fmt.Sprintf("%s://%s:%d/%s/v1", svc.GetScheme(), advertisedHost, sbiPort, svc.GetServiceName()))
 		}
 		svc.SetVersions(versions)
+		services[key] = svc
 	}
-	nfProfile.SetNfServices(services)
+	util.SetNFProfileServices(nfProfile, services)
 }
 
 func newNrfNFManagementClient(nrfURI string) *Nnrf_NFManagement.APIClient {
@@ -117,9 +118,9 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 			advertisedRegisterIPv4 = strings.ToLower(factory.SmfConfig.Configuration.SmfName)
 		}
 	}
-	nfServices := make([]models.NFService, 0, len(serviceNames))
+	nfServiceList := make(map[string]models.NFService, len(serviceNames))
 	for _, serviceName := range serviceNames {
-		nfServices = append(nfServices, models.NFService{
+		svc := models.NFService{
 			ServiceInstanceId: smfCtx.NfInstanceID + "-" + serviceName,
 			ServiceName:       models.ServiceName(serviceName),
 			Scheme:            smfCtx.URIScheme,
@@ -130,7 +131,8 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 				ApiFullVersion:  fmt.Sprintf("%s://%s:%d/nsmf-pdusession/v1", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort),
 			}},
 			AllowedPlmns: plmnList,
-		})
+		}
+		nfServiceList[svc.ServiceInstanceId] = svc
 	}
 
 	nfProf := models.NewNFProfileWithDefaults()
@@ -138,7 +140,7 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 	nfProf.SetNfType(models.NFTYPE_SMF)
 	nfProf.SetNfStatus(models.NFSTATUS_REGISTERED)
 	nfProf.SetIpv4Addresses([]string{advertisedRegisterIPv4})
-	nfProf.SetNfServices(nfServices)
+	util.SetNFProfileServices(nfProf, nfServiceList)
 	nfProf.SetSmfInfo(smfInfo)
 	nfProf.SetSNssais(snssais)
 	nfProf.SetPlmnList(plmnList)
@@ -342,12 +344,13 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 	result, httpResp, localErr := client.NFInstancesStoreAPI.SearchNFInstancesExecute(apiSearchNFInstancesRequest)
 
 	svcMsgType := getSvcMsgType(targetNfType)
+	smfSelf := smfContext.SMF_Self()
 
-	metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "Out", "", "")
+	metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "Out", "", "")
 
 	if localErr == nil {
 		if result == nil {
-			metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", "Failure", "NilResult")
+			metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", "Failure", "NilResult")
 			return nil, openapi.ReportError("SearchNFInstances returned nil result")
 		}
 		if result.NfInstances == nil {
@@ -356,11 +359,11 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 			}
 
 			logger.ConsumerLog.Warnln("NfInstances is nil")
-			metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
+			metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "NilInstance")
 			return result, openapi.ReportError("NfInstances is nil")
 		}
 
-		metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "")
+		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), "")
 	} else if httpResp != nil {
 		defer func() {
 			if resCloseErr := httpResp.Body.Close(); resCloseErr != nil {
@@ -370,19 +373,17 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 
 		logger.ConsumerLog.Warnln("handler returned wrong status code", httpResp.Status)
 		if httpResp.Status != localErr.Error() {
-			metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
+			metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), httpResp.Status)
 		} else {
-			metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
+			metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", http.StatusText(httpResp.StatusCode), localErr.Error())
 		}
 	} else {
-		metrics.IncrementSvcNrfMsgStats(smfContext.SMF_Self().NfInstanceID, string(svcMsgType), "In", "Failure", "NoResponse")
+		metrics.IncrementSvcNrfMsgStats(smfSelf.NfInstanceID, string(svcMsgType), "In", "Failure", "NoResponse")
 	}
 
 	if result == nil {
 		return nil, localErr
 	}
-
-	smfSelf := smfContext.SMF_Self()
 
 	for _, nfProfile := range result.NfInstances {
 		if _, ok := smfSelf.NfStatusSubscriptions.Load(nfProfile.GetNfInstanceId()); !ok {
@@ -413,39 +414,38 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 	var result *models.SearchResult
 	var localErr error
 	ctx := context.Background()
+	smfSelf := smfContext.SMF_Self()
 
-	if smfContext.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
+	if smfSelf.EnableNrfCaching {
+		result, localErr = nrfCache.SearchNFInstances(ctx, smfSelf.NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
 		if localErr != nil {
 			logger.ConsumerLog.Warnf("UDM discovery via NRF cache failed: %v, retrying direct NRF query", localErr)
-			result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
+			result, localErr = SendNrfForNfInstance(ctx, smfSelf.NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
 		} else if result == nil || len(result.NfInstances) == 0 {
 			logger.ConsumerLog.Warnln("UDM discovery via NRF cache returned no instances, retrying direct NRF query")
-			result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
+			result, localErr = SendNrfForNfInstance(ctx, smfSelf.NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
 		}
 	} else {
-		result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smfSelf.NrfUri, models.NFTYPE_UDM, models.NFTYPE_SMF, localVarOptionals)
 	}
 
 	if localErr == nil {
 		if result == nil || len(result.NfInstances) == 0 {
 			return nil, openapi.ReportError("UDM discovery returned no NF instances")
 		}
-		smfContext.SMF_Self().UDMProfile = result.NfInstances[0]
+		smfSelf.UDMProfile = result.NfInstances[0]
 
-		for _, service := range smfContext.SMF_Self().UDMProfile.GetNfServices() {
-			if service.GetServiceName() == models.SERVICENAME_NUDM_SDM {
-				SDMConf := Nudm_SDM.NewConfiguration()
-				serverConfig := &SDMConf.Servers[0]
-				if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-					apiRootVar.DefaultValue = service.GetApiPrefix()
-					serverConfig.Variables["apiRoot"] = apiRootVar
-				}
-				smfContext.SMF_Self().SubscriberDataManagementClient = Nudm_SDM.NewAPIClient(SDMConf)
+		if service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smfSelf.UDMProfile), models.SERVICENAME_NUDM_SDM); ok {
+			SDMConf := Nudm_SDM.NewConfiguration()
+			serverConfig := &SDMConf.Servers[0]
+			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+				apiRootVar.DefaultValue = service.GetApiPrefix()
+				serverConfig.Variables["apiRoot"] = apiRootVar
 			}
+			smfSelf.SubscriberDataManagementClient = Nudm_SDM.NewAPIClient(SDMConf)
 		}
 
-		if smfContext.SMF_Self().SubscriberDataManagementClient == nil {
+		if smfSelf.SubscriberDataManagementClient == nil {
 			logger.ConsumerLog.Warnln("sdm client failed")
 		}
 	} else {
@@ -468,10 +468,11 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 	var result *models.SearchResult
 	var localErr error
 	ctx := context.Background()
-	if smfContext.SMF_Self().EnableNrfCaching {
-		result, localErr = nrfCache.SearchNFInstances(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_AMF, models.NFTYPE_SMF, localVarOptionals)
+	smfSelf := smfContext.SMF_Self()
+	if smfSelf.EnableNrfCaching {
+		result, localErr = nrfCache.SearchNFInstances(ctx, smfSelf.NrfUri, models.NFTYPE_AMF, models.NFTYPE_SMF, localVarOptionals)
 	} else {
-		result, localErr = SendNrfForNfInstance(ctx, smfContext.SMF_Self().NrfUri, models.NFTYPE_AMF, models.NFTYPE_SMF, localVarOptionals)
+		result, localErr = SendNrfForNfInstance(ctx, smfSelf.NrfUri, models.NFTYPE_AMF, models.NFTYPE_SMF, localVarOptionals)
 	}
 
 	if localErr == nil {

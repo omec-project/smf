@@ -13,14 +13,15 @@ import (
 
 func amfProfileWithNamfComm(apiPrefix string) models.NFProfileDiscovery {
 	commService := models.NFService{
-		ServiceName: models.SERVICENAME_NAMF_COMM,
-		ApiPrefix:   openapi.PtrString(apiPrefix),
+		ServiceInstanceId: "namf-comm",
+		ServiceName:       models.SERVICENAME_NAMF_COMM,
+		ApiPrefix:         openapi.PtrString(apiPrefix),
 	}
 	return models.NFProfileDiscovery{
-		NfInstanceId: "amf-instance-1",
-		NfType:       models.NFTYPE_AMF,
-		NfStatus:     models.NFSTATUS_REGISTERED,
-		NfServices:   []models.NFService{commService},
+		NfInstanceId:  "amf-instance-1",
+		NfType:        models.NFTYPE_AMF,
+		NfStatus:      models.NFSTATUS_REGISTERED,
+		NfServiceList: &map[string]models.NFService{commService.ServiceInstanceId: commService},
 	}
 }
 
@@ -51,12 +52,12 @@ func TestRebuildCommunicationClient_WithNamfComm_BuildsClientAndSetsApiRoot(t *t
 
 func TestRebuildCommunicationClient_NoServices_LeavesClientNil(t *testing.T) {
 	smCtx := &SMContext{}
-	// AMFProfile.NfServices is nil here.
+	// AMFProfile.NfServiceList is nil here.
 
 	smCtx.RebuildCommunicationClient()
 
 	if smCtx.CommunicationClient != nil {
-		t.Errorf("expected CommunicationClient to remain nil when NfServices is nil")
+		t.Errorf("expected CommunicationClient to remain nil when NfServiceList is nil")
 	}
 }
 
@@ -67,8 +68,8 @@ func TestRebuildCommunicationClient_NoNamfComm_LeavesClientNil(t *testing.T) {
 		NfInstanceId: "amf-instance-2",
 		NfType:       models.NFTYPE_AMF,
 		NfStatus:     models.NFSTATUS_REGISTERED,
-		NfServices: []models.NFService{
-			{ServiceName: models.SERVICENAME_NAMF_EVTS, ApiPrefix: openapi.PtrString(apiPrefix)},
+		NfServiceList: &map[string]models.NFService{
+			"namf-evts": {ServiceInstanceId: "namf-evts", ServiceName: models.SERVICENAME_NAMF_EVTS, ApiPrefix: openapi.PtrString(apiPrefix)},
 		},
 	}
 

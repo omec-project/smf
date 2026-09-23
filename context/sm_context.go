@@ -565,36 +565,34 @@ func (smContext *SMContext) RebuildCommunicationClient() {
 	// Clear any existing client first so stale data does not linger if the
 	// (re-discovered) AMF profile has no namf-comm service.
 	smContext.CommunicationClient = nil
-	for _, service := range smContext.AMFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NAMF_COMM {
-			communicationConf := Namf_Communication.NewConfiguration()
-			serverConfig := &communicationConf.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
-			return
-		}
+	service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.AMFProfile), models.SERVICENAME_NAMF_COMM)
+	if !ok {
+		return
 	}
+	communicationConf := Namf_Communication.NewConfiguration()
+	serverConfig := &communicationConf.Servers[0]
+	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = service.GetApiPrefix()
+		serverConfig.Variables["apiRoot"] = apiRootVar
+	}
+	smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
 }
 
 // RebuildSMPolicyClient reconstructs the Npcf_SMPolicyControl API client
 // from the stored SelectedPCFProfile after recovering an SMContext from MongoDB.
 func (smContext *SMContext) RebuildSMPolicyClient() {
 	smContext.SMPolicyClient = nil
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
-			cfg := Npcf_SMPolicyControl.NewConfiguration()
-			serverConfig := &cfg.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
-			return
-		}
+	service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile), models.SERVICENAME_NPCF_SMPOLICYCONTROL)
+	if !ok {
+		return
 	}
+	cfg := Npcf_SMPolicyControl.NewConfiguration()
+	serverConfig := &cfg.Servers[0]
+	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = service.GetApiPrefix()
+		serverConfig.Variables["apiRoot"] = apiRootVar
+	}
+	smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
 }
 
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
@@ -664,16 +662,14 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
-			cfg := Npcf_SMPolicyControl.NewConfiguration()
-			serverConfig := &cfg.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
+	if service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile), models.SERVICENAME_NPCF_SMPOLICYCONTROL); ok {
+		cfg := Npcf_SMPolicyControl.NewConfiguration()
+		serverConfig := &cfg.Servers[0]
+		if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+			apiRootVar.DefaultValue = service.GetApiPrefix()
+			serverConfig.Variables["apiRoot"] = apiRootVar
 		}
+		smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
 	}
 
 	return nil
