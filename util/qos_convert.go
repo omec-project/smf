@@ -12,10 +12,25 @@ import (
 const bpsUnit = "bps"
 
 func BitRateTokbps(bitrate string) uint64 {
+	// Split on a single space and read the first two tokens, deliberately: that is how the radio's
+	// side of the same rate is parsed. The session AMBR reaches this function raw and reaches
+	// ngapConvert.UEAmbrToInt64 raw as well, for the PDU session AMBR the gNB is sent, and that
+	// parser splits the same way and reads the same two tokens. Parsing differently here -- being
+	// stricter about what follows the unit, or more tolerant of how the two are spaced -- makes the
+	// user plane enforce one rate while the gNB is told another, for exactly the spellings where
+	// the two parsers part. Making both stricter, or both tolerant, belongs where the rate first
+	// arrives, so that every consumer reads the same canonical string.
 	s := strings.Split(bitrate, " ")
 	var kbps uint64
 
 	var digit int
+
+	// Without a unit there is nothing to scale by, and the unit is read from s[1] a few lines down
+	// -- so a value like "10", which a policy can carry and NormalizeBitRate passes through
+	// unchanged when it recognises no unit, indexed past the end and took the process with it.
+	if len(s) < 2 {
+		return 0
+	}
 
 	if n, err := strconv.Atoi(s[0]); err != nil {
 		return 0

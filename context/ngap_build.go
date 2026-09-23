@@ -67,6 +67,19 @@ func buildAllocationAndRetentionPriority(qosFlow *models.QosData, sessRule *mode
 	}
 }
 
+// sessionAmbrToBps converts a session AMBR for the gNB. ngapConvert.UEAmbrToInt64 reads the unit
+// from the second token without looking, so a rate with no unit -- "10", which a policy can carry
+// -- indexed past the end and took the SMF down while the transfer was being built: the same
+// defect the user plane's converter had, on the other path the same string travels. Anything else
+// goes through unchanged, so the gNB is told exactly what it was told before.
+func sessionAmbrToBps(ambr string) int64 {
+	if len(strings.Split(ambr, " ")) < 2 {
+		return 0
+	}
+
+	return ngapConvert.UEAmbrToInt64(ambr)
+}
+
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {
 	ANUPF := ctx.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 	UpNode := ANUPF.UPF
@@ -89,10 +102,10 @@ func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error)
 		Present: ngapType.PDUSessionResourceSetupRequestTransferIEsPresentPDUSessionAggregateMaximumBitRate,
 		PDUSessionAggregateMaximumBitRate: &ngapType.PDUSessionAggregateMaximumBitRate{
 			PDUSessionAggregateMaximumBitRateDL: ngapType.BitRate{
-				Value: ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Downlink),
+				Value: sessionAmbrToBps(sessRule.AuthSessAmbr.Downlink),
 			},
 			PDUSessionAggregateMaximumBitRateUL: ngapType.BitRate{
-				Value: ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Uplink),
+				Value: sessionAmbrToBps(sessRule.AuthSessAmbr.Uplink),
 			},
 		},
 	}
@@ -387,8 +400,8 @@ func BuildPDUSessionResourceModifyRequestTransfer(ctx *SMContext) ([]byte, error
 	}
 
 	// Extract AMBR values
-	gbdownlink := ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Downlink)
-	gbuplink := ngapConvert.UEAmbrToInt64(sessRule.AuthSessAmbr.Uplink)
+	gbdownlink := sessionAmbrToBps(sessRule.AuthSessAmbr.Downlink)
+	gbuplink := sessionAmbrToBps(sessRule.AuthSessAmbr.Uplink)
 
 	// Default QoS params
 	var qfi int32
