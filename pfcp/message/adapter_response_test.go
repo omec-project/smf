@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/wmnsk/go-pfcp/ie"
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
@@ -53,5 +54,57 @@ func TestAnAdapterAnswerThatCannotBeParsedIsReported(t *testing.T) {
 
 	if err := handleAdapterModificationResponse(recorder.Result(), 1); err == nil {
 		t.Error("a reply that is not a PFCP message was reported as a delivered modification")
+	}
+}
+
+// A heartbeat the adapter refused is a heartbeat that failed. It fell through to the success
+// return, and the heartbeat loop counts only failures it is told about toward declaring a user
+// plane lost -- so a refusing adapter kept its user plane associated for good.
+//
+// The body is a heartbeat response that parses, for the same reason as the test above: with an
+// empty one the status check can go and this still passes, on the parse failure instead.
+func TestAnAdapterThatRefusesAHeartbeatIsReported(t *testing.T) {
+	answer := pfcp_message.NewHeartbeatResponse(1, ie.NewRecoveryTimeStamp(time.Now()))
+
+	body := make([]byte, answer.MarshalLen())
+	if err := answer.MarshalTo(body); err != nil {
+		t.Fatalf("marshalling the answer: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	recorder.WriteHeader(http.StatusBadGateway)
+
+	if _, err := recorder.Write(body); err != nil {
+		t.Fatalf("writing the body: %v", err)
+	}
+
+	if _, err := adapterReply(recorder.Result(), "heartbeat"); err == nil {
+		t.Error("a heartbeat the adapter refused was read as answered")
+	}
+}
+
+// And an answer that did come back is still read.
+func TestAHeartbeatTheAdapterDeliveredIsRead(t *testing.T) {
+	answer := pfcp_message.NewHeartbeatResponse(1, ie.NewRecoveryTimeStamp(time.Now()))
+
+	body := make([]byte, answer.MarshalLen())
+	if err := answer.MarshalTo(body); err != nil {
+		t.Fatalf("marshalling the answer: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	recorder.WriteHeader(http.StatusOK)
+
+	if _, err := recorder.Write(body); err != nil {
+		t.Fatalf("writing the body: %v", err)
+	}
+
+	msg, err := adapterReply(recorder.Result(), "heartbeat")
+	if err != nil {
+		t.Fatalf("a delivered heartbeat answer was refused: %v", err)
+	}
+
+	if msg.MessageType() != pfcp_message.MsgTypeHeartbeatResponse {
+		t.Errorf("read a %s, want a heartbeat response", msg.MessageTypeName())
 	}
 }

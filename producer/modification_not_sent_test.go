@@ -9,7 +9,9 @@ import (
 	"net"
 	"testing"
 
+	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/transaction"
 	"go.uber.org/zap"
 )
 
@@ -132,5 +134,38 @@ func TestAFailureAfterTheRequestMayHaveGoneOutIsNotTreatedAsUnsent(t *testing.T)
 
 	if len(smContext.PendingUPF) != 1 {
 		t.Error("the pending user plane was cleared for a request that may have been applied; its answer would then find nothing waiting")
+	}
+}
+
+// A policy notification for a session whose tunnel is gone is refused, and refused without leaving
+// the session locked. BuildPfcpParam reads through the tunnel without looking, so the notification
+// took the SMF down in the builder while it held SMLock; the unlock there is not deferred, and the
+// transaction lifecycle's recover catches the panic without releasing the lock, so every later
+// operation on the session waited on it for good. A guard in the send was never reached: the
+// builder had already dereferenced nil.
+func TestAPolicyUpdateForASessionWithNoTunnelIsRefusedAndLeavesItUnlocked(t *testing.T) {
+	smContext := &smf_context.SMContext{
+		Supi:           "imsi-208930000000045",
+		PDUSessionID:   6,
+		SMContextState: smf_context.SmStateActive,
+		SubCtxLog:      zap.NewNop().Sugar(),
+		SubPduSessLog:  zap.NewNop().Sugar(),
+		PDUAddress:     &smf_context.UeIpAddr{Ip: net.ParseIP("10.1.0.9")},
+	}
+
+	txn := &transaction.Transaction{Req: models.SmPolicyNotification{}, Ctxt: smContext}
+
+	if err := HandleSMPolicyUpdateNotify(txn); err == nil {
+		t.Error("a policy update for a session with no tunnel was accepted")
+	}
+
+	if !smContext.SMLock.TryLock() {
+		t.Fatal("SMLock is still held after the refusal; every later operation on this session would wait on it for good")
+	}
+
+	smContext.SMLock.Unlock()
+
+	if got := smContext.SMContextState; got != smf_context.SmStateActive {
+		t.Errorf("state = %s, want it untouched: nothing was attempted", got)
 	}
 }
