@@ -12,24 +12,23 @@ import (
 const bpsUnit = "bps"
 
 func BitRateTokbps(bitrate string) uint64 {
-	// Fields rather than Split, so the count is of what the string says and not of how it is
-	// spaced. Splitting on a single space made "100 Mbps " three of them, and two call sites pass
-	// the configured session AMBR here without normalising it first -- so a trailing space in an
-	// operator's configuration became a maximum bit rate of zero, programmed into the user plane
-	// as a QER that admits nothing.
-	s := strings.Fields(bitrate)
+	// Split on a single space and read the first two tokens, deliberately: that is how the radio's
+	// side of the same rate is parsed. The session AMBR reaches this function raw and reaches
+	// ngapConvert.UEAmbrToInt64 raw as well, for the PDU session AMBR the gNB is sent, and that
+	// parser splits the same way and reads the same two tokens. Parsing differently here -- being
+	// stricter about what follows the unit, or more tolerant of how the two are spaced -- makes the
+	// user plane enforce one rate while the gNB is told another, for exactly the spellings where
+	// the two parsers part. Making both stricter, or both tolerant, belongs where the rate first
+	// arrives, so that every consumer reads the same canonical string.
+	s := strings.Split(bitrate, " ")
 	var kbps uint64
 
 	var digit int
 
-	// A rate is a number and a unit, so exactly two fields. Without the unit there is nothing to
-	// scale by, and the unit is read from s[1] a few lines down -- so a value like "10", which a
-	// policy can carry and NormalizeBitRate passes through unchanged when it recognises no unit,
-	// indexed past the end and took the process with it.
-	//
-	// More than two is refused for the same reason rather than read as far as the unit: "100 Mbps
-	// junk" is not a rate this can be sure of, and every other unreadable rate already answers 0.
-	if len(s) != 2 {
+	// Without a unit there is nothing to scale by, and the unit is read from s[1] a few lines down
+	// -- so a value like "10", which a policy can carry and NormalizeBitRate passes through
+	// unchanged when it recognises no unit, indexed past the end and took the process with it.
+	if len(s) < 2 {
 		return 0
 	}
 

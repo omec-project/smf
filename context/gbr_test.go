@@ -5,6 +5,7 @@ package context
 
 import (
 	"math"
+	"net"
 	"testing"
 
 	"github.com/omec-project/openapi/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
 	"github.com/omec-project/util/idgenerator"
+	"go.uber.org/zap"
 )
 
 // The downlink rate these tests configure; named because goconst counts it across the file.
@@ -180,22 +182,101 @@ func TestCreatePccRuleQerLeavesAnUnconfiguredGuaranteeUnset(t *testing.T) {
 // from the second field, so "10" indexed past the end of the split and took the process down --
 // on any rate the SMF converts, not only a guaranteed one.
 func TestARateWithNoUnitDoesNotEndTheProcess(t *testing.T) {
-	for _, rate := range []string{"10", "", "Mbps", "not-a-rate", "10 Mbps junk"} {
+	for _, rate := range []string{"10", "", "Mbps", "not-a-rate"} {
 		if got := util.BitRateTokbps(util.NormalizeBitRate(rate)); got != 0 {
 			t.Errorf("BitRateTokbps(%q) = %d, want 0: a rate that cannot be read is not a rate", rate, got)
 		}
 	}
 }
 
-// A rate is not made unreadable by how it is spaced. Two call sites pass the configured session
-// AMBR to the converter without normalising it first, so a trailing space in an operator's
-// configuration reaches it as written -- and a rate refused there is a maximum bit rate of zero
-// programmed into the user plane, which admits no traffic at all rather than the rate configured.
-func TestSpacingDoesNotMakeARateUnreadable(t *testing.T) {
-	for _, rate := range []string{"10 Mbps", "10 Mbps ", " 10 Mbps", "10  Mbps", "10\tMbps"} {
-		if got, want := util.BitRateTokbps(rate), uint64(10000); got != want {
-			t.Errorf("BitRateTokbps(%q) = %d, want %d: the rate is the same however it is spaced", rate, got, want)
+// The user plane is told the rate the radio is told. The session AMBR reaches the user plane's
+// converter and the gNB's -- ngapConvert.UEAmbrToInt64, through sessionAmbrToBps -- as the same
+// raw string, so wherever the two parse it differently the user plane enforces one rate while the
+// gNB is sent another. Tightening or loosening one parser alone did exactly that for some
+// spellings; this pins the two together.
+//
+// Two spellings still differ, and differed before: "100  Mbps" and "100 mbps", where the gNB's
+// parser takes an empty or unrecognised unit to be bits per second and this one reads no rate.
+// Settling those means both parsers reading one canonical string, which belongs where the rate
+// first arrives.
+func TestTheUserPlaneIsToldTheRateTheRadioIsTold(t *testing.T) {
+	for _, rate := range []string{
+		"100 Mbps", "100 Mbps ", "100 Mbps junk", "100Mbps", " 100 Mbps", "100\tMbps", "2 Gbps", "10", "",
+	} {
+		if upf, gnb := int64(util.BitRateTokbps(rate))*1000, sessionAmbrToBps(rate); upf != gnb {
+			t.Errorf("%q: the user plane enforces %d bps and the gNB is told %d", rate, upf, gnb)
 		}
+	}
+}
+
+// A session AMBR with no unit has to reach every end without taking the SMF down. The user plane's
+// converter was guarded against "10"; the gNB's and the UE's were not, and the same string reaches
+// all three, so the process still went down -- one step later, building the transfer for the radio
+// or the NAS message for the UE.
+func TestAUnitlessSessionAmbrTakesNoPathDown(t *testing.T) {
+	node := NewDataPathNode()
+	node.UPF = &UPF{}
+
+	smContext := &SMContext{
+		Supi: testSupi,
+		Tunnel: &UPTunnel{DataPathPool: DataPathPool{
+			1: &DataPath{IsDefaultPath: true, FirstDPNode: node},
+		}},
+	}
+	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
+		AuthSessAmbr: &models.Ambr{Uplink: "10", Downlink: "10"},
+	}
+
+	// The transfer is refused later for want of an N3 interface in this fixture; what is under
+	// test is that it gets past the AMBR at all.
+	if _, err := BuildPDUSessionResourceSetupRequestTransfer(smContext); err != nil {
+		t.Logf("setup transfer refused after the AMBR, as the fixture has no N3 interface: %v", err)
+	}
+
+	// And the modification transfer, which reads the same AMBR for the radio.
+	defQos := &models.QosData{QosId: "1"}
+	defQos.SetDefQosFlowIndication(true)
+	smContext.SmPolicyData.SmCtxtQosData.QosData = map[string]*models.QosData{"1": defQos}
+	smContext.SubPduSessLog = zap.NewNop().Sugar()
+
+	if _, err := BuildPDUSessionResourceModifyRequestTransfer(smContext); err != nil {
+		t.Logf("modification transfer refused: %v", err)
+	}
+
+	// The UE's establishment accept, which carries the Session-AMBR as a mandatory IE. By the time a
+	// session is accepted it has an address, which the accept reads after the AMBR.
+	smContext.SubGsmLog = zap.NewNop().Sugar()
+	smContext.PDUAddress = &UeIpAddr{Ip: net.ParseIP("10.1.0.12")}
+	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.ProtocolConfigurationOptions = &ProtocolConfigurationOptions{}
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
+
+	if _, err := BuildGSMPDUSessionEstablishmentAccept(smContext); err != nil {
+		t.Logf("establishment accept refused: %v", err)
+	}
+
+	// And the modification command, when the update names the rule.
+	smContext.SmPolicyUpdates[0].SessRuleUpdate = &qos.SessRulesUpdate{
+		ActiveSessRule: smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule,
+	}
+
+	if _, err := BuildGSMPDUSessionModificationCommand(smContext); err != nil {
+		t.Logf("modification command refused: %v", err)
+	}
+}
+
+// And the UE is told a rate of zero for a direction with no unit, which is what the user plane and
+// the gNB are given for the same string, and what the NAS converter already encodes for a rate it
+// cannot read.
+func TestAUnitlessDirectionIsEncodedForTheUeAsZero(t *testing.T) {
+	encoded := sessionAmbrForNas(&models.Ambr{Uplink: "10", Downlink: "20 Mbps"})
+
+	if got := encoded.GetSessionAMBRForUplink(); got != [2]byte{} {
+		t.Errorf("uplink encoded as %v, want zero: the user plane and the gNB are given zero for a rate with no unit", got)
+	}
+
+	if got := encoded.GetSessionAMBRForDownlink(); got != [2]byte{0, 20} {
+		t.Errorf("downlink encoded as %v, want 20: a direction with a unit is unaffected", got)
 	}
 }
 
