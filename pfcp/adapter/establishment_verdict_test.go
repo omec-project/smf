@@ -65,7 +65,9 @@ func TestASecondEstablishmentAnswerDoesNotWedgeTheSession(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		HandlePfcpSessionEstablishmentResponse(&udp.Message{PfcpMessage: rsp})
+		if err := HandlePfcpSessionEstablishmentResponse(&udp.Message{PfcpMessage: rsp}); err != nil {
+			t.Errorf("a usable second answer was reported as unusable: %v", err)
+		}
 	}()
 
 	select {
