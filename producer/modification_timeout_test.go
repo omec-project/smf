@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
+	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/httpwrapper"
 	"go.uber.org/zap"
@@ -188,5 +190,17 @@ func TestAUeUpdateTheUserPlaneDidNotApplyLeavesTheSessionActive(t *testing.T) {
 				t.Errorf("pending user planes = %v after the modification ended; the next one would wait for an answer to this", smContext.PendingUPF)
 			}
 		})
+	}
+}
+
+// The modification this package sends and then waits for is sent as awaited. The tests above
+// replace the send, so this is what pins the real one: sent as unawaited, its native timeout
+// answers nothing, and the wait these fixes end would be back.
+func TestTheWaitedForModificationIsSentAsAwaited(t *testing.T) {
+	got := reflect.ValueOf(sendModificationRequest).Pointer()
+	want := reflect.ValueOf(pfcp_message.SendAwaitedPfcpSessionModificationRequest).Pointer()
+
+	if got != want {
+		t.Error("SendPfcpSessionModifyReq sends through something other than SendAwaitedPfcpSessionModificationRequest")
 	}
 }

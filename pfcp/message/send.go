@@ -307,6 +307,8 @@ func SendPfcpSessionEstablishmentRequest(
 	return nil
 }
 
+// SendPfcpSessionModificationRequest sends a modification nothing waits on: an unanswered one is
+// logged against its session, and no verdict is queued for it.
 func SendPfcpSessionModificationRequest(
 	upNodeID smf_context.NodeID,
 	ctx *smf_context.SMContext,
@@ -318,6 +320,47 @@ func SendPfcpSessionModificationRequest(
 	removeFAR []*smf_context.FAR,
 	removeQER []*smf_context.QER,
 	upfPort uint16,
+) error {
+	return sendPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList,
+		removePDR, removeFAR, removeQER, upfPort, false)
+}
+
+// SendAwaitedPfcpSessionModificationRequest sends a modification whose caller then waits on the
+// session's PFCP channel, and on the native datapath binds the timeout that answers that wait.
+//
+// Which sends are awaited is the caller's to say, because the session's state cannot say it.
+// Restoration reissues rules to every user plane of a session without waiting, and it can do so
+// while a policy update holds the session in SmStatePfcpModify waiting for its own answer; a
+// handler that took that state to mean "this request is awaited" answered the policy update with
+// the timeout of restoration's request.
+func SendAwaitedPfcpSessionModificationRequest(
+	upNodeID smf_context.NodeID,
+	ctx *smf_context.SMContext,
+	pdrList []*smf_context.PDR,
+	farList []*smf_context.FAR,
+	barList []*smf_context.BAR,
+	qerList []*smf_context.QER,
+	removePDR []*smf_context.PDR,
+	removeFAR []*smf_context.FAR,
+	removeQER []*smf_context.QER,
+	upfPort uint16,
+) error {
+	return sendPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList,
+		removePDR, removeFAR, removeQER, upfPort, true)
+}
+
+// The request carries no BARs, so the barList the exported senders accept goes no further.
+func sendPfcpSessionModificationRequest(
+	upNodeID smf_context.NodeID,
+	ctx *smf_context.SMContext,
+	pdrList []*smf_context.PDR,
+	farList []*smf_context.FAR,
+	qerList []*smf_context.QER,
+	removePDR []*smf_context.PDR,
+	removeFAR []*smf_context.FAR,
+	removeQER []*smf_context.QER,
+	upfPort uint16,
+	awaited bool,
 ) error {
 	seqNum := getSeqNumber()
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
@@ -367,7 +410,7 @@ func SendPfcpSessionModificationRequest(
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: sessionSendErrorHandler(ctx.PFCPContext[nodeIDtoIP].LocalSEID)}
+		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: sessionSendErrorHandler(ctx.PFCPContext[nodeIDtoIP].LocalSEID, awaited)}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
 			logger.PfcpLog.Errorf("send pfcp session modify msg to upf error [%v]", err.Error())
@@ -423,7 +466,7 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: sessionSendErrorHandler(pfcpContext.LocalSEID)}
+		eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: sessionSendErrorHandler(pfcpContext.LocalSEID, true)}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
 			return err
@@ -469,20 +512,22 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 // restoration, which reissues establishments for sessions already running -- and for a create the
 // procedure's own failure path already does both, so the handler would do them twice. Which of
 // those an establishment failure should do is a question for a change of its own.
-func sessionSendErrorHandler(localSEID uint64) func(message.Message, error) {
+// sessionSendErrorHandler binds a failed request to its session. awaited says whether the request's
+// sender waits on the session's channel for its verdict; a deletion always is.
+func sessionSendErrorHandler(localSEID uint64, awaited bool) func(message.Message, error) {
 	return func(msg message.Message, err error) {
-		handlePfcpSendError(msg, err, localSEID, true)
+		handlePfcpSendError(msg, err, localSEID, true, awaited)
 	}
 }
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {
-	handlePfcpSendError(msg, pfcpErr, 0, false)
+	handlePfcpSendError(msg, pfcpErr, 0, false, true)
 }
 
 // handlePfcpSendError reports a failed send. When sessionKnown, localSEID names the session the
 // request belonged to; otherwise the handlers find it from the message, as before. A flag rather
 // than a zero sentinel, because zero is a SEID the DRSM allocator can hand out.
-func handlePfcpSendError(msg message.Message, pfcpErr error, localSEID uint64, sessionKnown bool) {
+func handlePfcpSendError(msg message.Message, pfcpErr error, localSEID uint64, sessionKnown, awaited bool) {
 	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
 		msg.MessageTypeName(), pfcpErr.Error())
 	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
@@ -495,7 +540,7 @@ func handlePfcpSendError(msg message.Message, pfcpErr error, localSEID uint64, s
 	case message.MsgTypeSessionEstablishmentRequest:
 		handleSendPfcpSessEstReqError(msg, pfcpErr)
 	case message.MsgTypeSessionModificationRequest:
-		handleSendPfcpSessModReqError(msg, pfcpErr, localSEID, sessionKnown)
+		handleSendPfcpSessModReqError(msg, pfcpErr, localSEID, sessionKnown, awaited)
 	case message.MsgTypeSessionDeletionRequest:
 		handleSendPfcpSessRelReqError(msg, pfcpErr, localSEID, sessionKnown)
 	default:
@@ -630,7 +675,7 @@ func handleSendPfcpSessRelReqError(msg message.Message, pfcpErr error, localSEID
 		smf_context.SessionReleaseSuccess)
 }
 
-func handleSendPfcpSessModReqError(msg message.Message, pfcpErr error, localSEID uint64, sessionKnown bool) {
+func handleSendPfcpSessModReqError(msg message.Message, pfcpErr error, localSEID uint64, sessionKnown, awaited bool) {
 	// Lets decode the PDU request
 	if _, ok := msg.(*message.SessionModificationRequest); !ok {
 		logger.PfcpLog.Errorln("unable to decode PFCP Session Modification Request")
@@ -645,7 +690,9 @@ func handleSendPfcpSessModReqError(msg message.Message, pfcpErr error, localSEID
 
 	smContext.SubPfcpLog.Errorf("PFCP Session Modification send failure, %v", pfcpErr.Error())
 
-	answerFailedRequest(smContext, smContext.SMContextState == smf_context.SmStatePfcpModify,
+	// Only for a request its sender waits on, and only while the session still waits: the state
+	// alone is shared by every modification in flight on the session, awaited or not.
+	answerFailedRequest(smContext, awaited && smContext.SMContextState == smf_context.SmStatePfcpModify,
 		smf_context.SessionUpdateTimeout)
 }
 

@@ -541,7 +541,7 @@ func awaitVerdict(smContext *context.SMContext) (context.PFCPSessionResponseStat
 func TestAModificationTheUserPlaneNeverAnswersAnswersItsWaiter(t *testing.T) {
 	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpModify)
 
-	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+	if err := message.SendAwaitedPfcpSessionModificationRequest(upNodeID, smContext,
 		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
 		t.Fatalf("the request was not sent: %v", err)
 	}
@@ -581,12 +581,29 @@ func TestADeletionTheUserPlaneNeverAnswersAnswersItsWaiter(t *testing.T) {
 func TestATimeoutNobodyIsWaitingForLeavesNothingBehind(t *testing.T) {
 	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStateActive)
 
-	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+	if err := message.SendAwaitedPfcpSessionModificationRequest(upNodeID, smContext,
 		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
 		t.Fatalf("the request was not sent: %v", err)
 	}
 
 	if verdict, arrived := awaitVerdict(smContext); arrived {
 		t.Errorf("%v was left on the channel of a session nothing was waiting on", verdict)
+	}
+}
+
+// Nor is a modification its sender does not wait on answered, even while the session waits on
+// another one. Restoration reissues rules to every user plane of a session without waiting, and a
+// policy update can be holding the session in SmStatePfcpModify at the time: taking that state to
+// mean "this request is awaited" handed the policy update the timeout of restoration's request.
+func TestAnUnawaitedModificationDoesNotAnswerAnotherExchange(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpModify)
+
+	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	if verdict, arrived := awaitVerdict(smContext); arrived {
+		t.Errorf("%v from a request nobody awaited was handed to the exchange waiting on the session", verdict)
 	}
 }

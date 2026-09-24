@@ -14,7 +14,7 @@ import (
 
 // sendModificationRequest is the send SendPfcpSessionModifyReq makes, replaceable so a test can have
 // the request go out and then hand the caller the user plane's answer.
-var sendModificationRequest = pfcp_message.SendPfcpSessionModificationRequest
+var sendModificationRequest = pfcp_message.SendAwaitedPfcpSessionModificationRequest
 
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
