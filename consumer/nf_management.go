@@ -94,14 +94,14 @@ func newNrfNFDiscoveryClient(nrfURI string) *Nnrf_NFDiscovery.APIClient {
 	return Nnrf_NFDiscovery.NewAPIClient(cfg)
 }
 
-func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.SessionManagement) (*models.NFProfile, error) {
+func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.SessionManagement) (profile models.NFProfile, err error) {
 	if len(sessionCfgs) == 0 {
-		return models.NewNFProfileWithDefaults(), openapi.ReportError("session management config is empty")
+		return profile, openapi.ReportError("session management config is empty")
 	}
 	if smfCtx == nil {
-		return models.NewNFProfileWithDefaults(), openapi.ReportError("SMF context is nil")
+		return profile, openapi.ReportError("SMF context is nil")
 	}
-
+	profile = *models.NewNFProfileWithDefaults()
 	snssais := buildSNssais(sessionCfgs)
 	plmnList := buildPlmnList(sessionCfgs)
 	smfInfo := buildSmfInfo(sessionCfgs)
@@ -135,18 +135,17 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 		nfServiceList[svc.ServiceInstanceId] = svc
 	}
 
-	nfProf := models.NewNFProfileWithDefaults()
-	nfProf.SetNfInstanceId(smfCtx.NfInstanceID)
-	nfProf.SetNfType(models.NFTYPE_SMF)
-	nfProf.SetNfStatus(models.NFSTATUS_REGISTERED)
-	nfProf.SetIpv4Addresses([]string{advertisedRegisterIPv4})
-	util.SetNFProfileServices(nfProf, nfServiceList)
-	nfProf.SetSmfInfo(smfInfo)
-	nfProf.SetSNssais(snssais)
-	nfProf.SetPlmnList(plmnList)
-	nfProf.SetAllowedPlmns(plmnList)
+	profile.SetNfInstanceId(smfCtx.NfInstanceID)
+	profile.SetNfType(models.NFTYPE_SMF)
+	profile.SetNfStatus(models.NFSTATUS_REGISTERED)
+	profile.SetIpv4Addresses([]string{advertisedRegisterIPv4})
+	util.SetNFProfileServices(&profile, nfServiceList)
+	profile.SetSmfInfo(smfInfo)
+	profile.SetSNssais(snssais)
+	profile.SetPlmnList(plmnList)
+	profile.SetAllowedPlmns(plmnList)
 	logger.ConsumerLog.Debugln("NF Profile is created using session management config")
-	return nfProf, nil
+	return profile, nil
 }
 
 func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
@@ -208,13 +207,13 @@ var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionM
 	if err != nil {
 		return models.NewNFProfileWithDefaults(), "", err
 	}
-	normalizeAdvertisedSmfHost(nfProfile)
+	normalizeAdvertisedSmfHost(&nfProfile)
 	logger.ConsumerLog.Debugf("sending registration request with NFProfile %+v", nfProfile)
 	client := newNrfNFManagementClient(self.NrfUri)
 	metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "Out", "", "")
 
 	apiRegisterNFInstanceRequest := client.NFInstanceIDDocumentAPI.RegisterNFInstance(context.TODO(), nfProfile.GetNfInstanceId())
-	apiRegisterNFInstanceRequest = apiRegisterNFInstanceRequest.NFProfile(*nfProfile)
+	apiRegisterNFInstanceRequest = apiRegisterNFInstanceRequest.NFProfile(nfProfile)
 	receivedNfProfile, res, err := client.NFInstanceIDDocumentAPI.RegisterNFInstanceExecute(apiRegisterNFInstanceRequest)
 	if err != nil {
 		metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", "Failure", err.Error())
@@ -242,18 +241,16 @@ var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionM
 		if receivedNfProfile == nil {
 			receivedNfProfile = models.NewNFProfileWithDefaults()
 		}
-		return receivedNfProfile, "", openapi.ReportError("unexpected status code returned by the NRF %d", res.StatusCode)
+		return receivedNfProfile, "", openapi.ReportError("NRF returned unexpected status code %d", res.StatusCode)
 	}
 }
 
 var SendDeregisterNFInstance = func() error {
 	logger.ConsumerLog.Infoln("send Deregister NFInstance")
 
-	smfSelf := smfContext.SMF_Self()
-	nfId := smfSelf.NfInstanceID
-
-	client := newNrfNFManagementClient(smfSelf.NrfUri)
-
+	self := smfContext.SMF_Self()
+	nfId := self.NfInstanceID
+	client := newNrfNFManagementClient(self.NrfUri)
 	metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "Out", "", "")
 	apiDeregisterNFInstanceRequest := client.NFInstanceIDDocumentAPI.DeregisterNFInstance(context.Background(), nfId)
 	res, err := client.NFInstanceIDDocumentAPI.DeregisterNFInstanceExecute(apiDeregisterNFInstanceRequest)
@@ -291,11 +288,11 @@ var SendDeregisterNFInstance = func() error {
 var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile *models.NFProfile, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send update NFInstance")
 
-	smfSelf := smfContext.SMF_Self()
-	client := newNrfNFManagementClient(smfSelf.NrfUri)
+	self := smfContext.SMF_Self()
+	client := newNrfNFManagementClient(self.NrfUri)
 
 	var res *http.Response
-	apiUpdateNFInstanceRequest := client.NFInstanceIDDocumentAPI.UpdateNFInstance(context.Background(), smfSelf.NfInstanceID)
+	apiUpdateNFInstanceRequest := client.NFInstanceIDDocumentAPI.UpdateNFInstance(context.Background(), self.NfInstanceID)
 	apiUpdateNFInstanceRequest = apiUpdateNFInstanceRequest.PatchItem(patchItem)
 	receivedNfProfile, res, err = client.NFInstanceIDDocumentAPI.UpdateNFInstanceExecute(apiUpdateNFInstanceRequest)
 	if err != nil {
