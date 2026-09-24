@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -103,8 +102,8 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 		} else {
 			logger.PfcpLog.Debugf("send pfcp heartbeat response [%v] ", rsp)
 			defer func() {
-				if err = rsp.Body.Close(); err != nil {
-					logger.PfcpLog.Errorf("close response body failed: %v", err)
+				if closeErr := rsp.Body.Close(); closeErr != nil {
+					logger.PfcpLog.Errorf("close response body failed: %v", closeErr)
 				}
 			}()
 			pfcpRspMsg, err := adapterReply(rsp, "heartbeat")
@@ -369,6 +368,9 @@ func SendPfcpSessionEstablishmentRequest(
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// The entry is consumed by the response, and a request that never went out has none.
+			FetchPfcpTxn(pfcpMsg.Sequence())
+
 			return err
 		}
 	}
@@ -392,7 +394,7 @@ func SendPfcpSessionModificationRequest(
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
 	if !ok {
-		return fmt.Errorf("%w: PFCP Context not found for NodeID[%s]", ErrRequestNotSent, upNodeIDStr)
+		return fmt.Errorf("PFCP Context not found for NodeID[%s]", upNodeIDStr)
 	}
 
 	// The builder marks every rule it is handed as applied while it builds, so a request that then
@@ -405,7 +407,7 @@ func SendPfcpSessionModificationRequest(
 	if err != nil {
 		restoreRuleStates()
 
-		return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
+		return err
 	}
 	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
 	upaddr := &net.UDPAddr{
@@ -444,7 +446,7 @@ func SendPfcpSessionModificationRequest(
 			FetchPfcpTxn(pfcpMsg.Sequence())
 			restoreRuleStates()
 
-			return fmt.Errorf("%w: %w", ErrRequestNotSent, err)
+			return err
 		}
 	}
 	ctx.SubPfcpLog.Infof("sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -577,6 +579,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 		eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// Taken back as on the modification path. No response handler reads this entry, for a
+			// deletion that was answered either, so this only stops a failing send adding to it.
+			FetchPfcpTxn(pfcpMsg.Sequence())
+
 			return err
 		}
 	}
@@ -705,12 +711,6 @@ func snapshotRuleStates(pdrs []*smf_context.PDR, fars []*smf_context.FAR, qers [
 		}
 	}
 }
-
-// ErrRequestNotSent marks a request that never left the SMF, which is what lets a caller say its
-// session is untouched. A send that failed before anything went on the wire qualifies; one that
-// failed after the user plane answered does not, and neither does a POST the adapter refused --
-// an HTTP call that reports failure may still have been delivered and acted on.
-var ErrRequestNotSent = errors.New("the PFCP request was not sent")
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {
 	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",

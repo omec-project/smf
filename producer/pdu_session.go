@@ -443,13 +443,6 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
-	// The state this request found the session in. Every transition below happens inside this
-	// call -- the N1, N2 and handover handlers move the session to SmStatePfcpModify before the
-	// switch that dispatches on the state runs -- so a state read from inside that switch is the
-	// one the modification has already moved to, and putting the session "back" into it does
-	// nothing at all.
-	stateOnEntry := smContext.SMContextState
-
 	pfcpAction := &pfcpAction{}
 	var response models.UpdateSmContext200Response
 	response.SetJsonData(*models.NewSmContextUpdatedData())
@@ -523,7 +516,12 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 			if err = SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 				// Modify failure
 				smContext.SubCtxLog.Errorf("pfcp session modify error: %v ", err.Error())
-				RestoreStateIfNothingWasSent(smContext, stateOnEntry, err)
+
+				// Back to active: the error answer below carries a PDU Session Release Command,
+				// and the UE's Release Complete arrives as an update, which only SmStateActive
+				// handles. Left in SmStatePfcpModify, the session could not complete the release
+				// this asks for, nor anything else.
+				abandonPendingModify(smContext, smf_context.SmStateActive)
 
 				// Form Modify err rsp
 				httpResponse = makePduCtxtModifyErrRsp(smContext, err.Error())
@@ -992,7 +990,8 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	return nil
 }
 
-// abandonPendingModify undoes the bookkeeping for a modification that was never sent.
+// abandonPendingModify undoes the bookkeeping for a modification that failed, whatever the
+// reason: never sent, refused by the user plane, or unanswered.
 //
 // Both halves matter and they have to stay together, which is why they are one function.
 // Leaving the state at PfcpModify strands the session for every later operation that expects
