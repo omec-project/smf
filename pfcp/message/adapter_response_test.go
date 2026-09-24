@@ -57,6 +57,29 @@ func TestAnAdapterAnswerThatCannotBeParsedIsReported(t *testing.T) {
 	}
 }
 
+// And an answer that parses but that the handler cannot use -- here, a modification response with
+// no Cause -- is reported too. The handler used to drop it in silence, dispatch returned nil, and
+// the caller then waited on SBIPFCPCommunicationChan for a verdict nothing would write.
+func TestAnAdapterAnswerTheHandlerCannotUseIsReported(t *testing.T) {
+	answer := pfcp_message.NewSessionModificationResponse(0, 0, 1, 1, 0)
+
+	body := make([]byte, answer.MarshalLen())
+	if err := answer.MarshalTo(body); err != nil {
+		t.Fatalf("marshalling the answer: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	recorder.WriteHeader(http.StatusOK)
+
+	if _, err := recorder.Write(body); err != nil {
+		t.Fatalf("writing the body: %v", err)
+	}
+
+	if err := handleAdapterModificationResponse(recorder.Result(), 1); err == nil {
+		t.Error("a modification response with no Cause was reported as delivered")
+	}
+}
+
 // A heartbeat the adapter refused is a heartbeat that failed. It fell through to the success
 // return, and the heartbeat loop counts only failures it is told about toward declaring a user
 // plane lost -- so a refusing adapter kept its user plane associated for good.

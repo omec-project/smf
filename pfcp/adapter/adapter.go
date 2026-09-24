@@ -4,6 +4,7 @@
 package adapter
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -53,17 +54,22 @@ func HandleAdapterPfcpRsp(pfcpMsg message.Message, evtData *udp.PfcpEventData) e
 	case message.MsgTypeHeartbeatResponse:
 		msg := udp.Message{PfcpMessage: pfcpMsg}
 		HandlePfcpHeartbeatResponse(&msg)
+	// The session handlers report a reply they could not use rather than dropping it. Here the reply
+	// is the only answer there will be -- the request was one HTTP call, with no transaction left to
+	// time out -- so a reply dropped in silence left the session waiting on its channel for good.
+	// What stays silent is what should: a reply for a session in no state that awaits it, and one
+	// that is one of several the session is still collecting.
 	case message.MsgTypeSessionEstablishmentResponse:
 		msg := udp.Message{PfcpMessage: pfcpMsg, EventData: *evtData}
-		HandlePfcpSessionEstablishmentResponse(&msg)
+		return HandlePfcpSessionEstablishmentResponse(&msg)
 	case message.MsgTypeSessionModificationResponse:
 		msg := udp.Message{PfcpMessage: pfcpMsg, EventData: *evtData}
-		HandlePfcpSessionModificationResponse(&msg)
+		return HandlePfcpSessionModificationResponse(&msg)
 	case message.MsgTypeSessionDeletionResponse:
 		msg := udp.Message{PfcpMessage: pfcpMsg, EventData: *evtData}
-		HandlePfcpSessionDeletionResponse(&msg)
+		return HandlePfcpSessionDeletionResponse(&msg)
 	default:
-		logger.PfcpLog.Errorf("upf adapter invalid msg type: %v", pfcpMsg)
+		return fmt.Errorf("upf adapter returned an unexpected message type: %v", pfcpMsg.MessageTypeName())
 	}
 	return nil
 }
@@ -208,27 +214,24 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 }
 
-func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
+func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 	rsp, ok := msg.PfcpMessage.(*message.SessionEstablishmentResponse)
 	if !ok {
-		logger.PfcpLog.Errorln("invalid PFCP Session Establishment Response")
-		return
+		return errors.New("invalid PFCP Session Establishment Response")
 	}
 	logger.PfcpLog.Infoln("in HandlePfcpSessionEstablishmentResponse")
 
 	SEID := rsp.SEID()
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnln("PFCP Session Establish Response found invalid event data, response discarded")
-			return
+			return errors.New("PFCP Session Establish Response found invalid event data, response discarded")
 		} else {
 			SEID = eventData.LSEID
 		}
 	}
 	smContext := context.GetSMContextBySEID(SEID)
 	if smContext == nil {
-		logger.PfcpLog.Warnln("PFCP Session Establish Response found SM context nil, response discarded")
-		return
+		return errors.New("PFCP Session Establish Response found SM context nil, response discarded")
 	}
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
@@ -239,8 +242,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	seq := rsp.Sequence()
 	nodeID := FetchPfcpTxn(seq)
 	if nodeID == nil {
-		logger.PfcpLog.Errorf("no pending pfcp session establishment response for sequence no: %v", seq)
-		return
+		return fmt.Errorf("no pending pfcp session establishment response for sequence no: %v", seq)
 	}
 
 	if rsp.UPFSEID != nil {
@@ -248,8 +250,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
 		rspUPFseid, err := rsp.UPFSEID.FSEID()
 		if err != nil {
-			logger.PfcpLog.Errorf("pfcp session establishment response UPFSEID error: %v", err)
-			return
+			return fmt.Errorf("pfcp session establishment response UPFSEID error: %v", err)
 		}
 		pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
@@ -258,8 +259,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	// Get N3 interface UPF
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	if defaultPath == nil {
-		logger.PfcpLog.Errorln("failed to get default path")
-		return
+		return errors.New("failed to get default path")
 	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
@@ -281,15 +281,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		// Store F-TEID created by UPF
 		fteid, err := FindFTEID(rsp.CreatedPDR)
 		if err != nil {
-			logger.PfcpLog.Errorf("failed to parse TEID IE: %+v", err)
-			return
+			return fmt.Errorf("failed to parse TEID IE: %+v", err)
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
-			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
-			return
+			return fmt.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
 		}
 		upf.N3Interfaces = make([]context.UPFInterfaceInfo, 0)
 		n3Interface := context.UPFInterfaceInfo{}
@@ -298,30 +296,25 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	if rsp.NodeID == nil {
-		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing NodeID")
-		return
+		return errors.New("PFCP Session Establishment Response missing NodeID")
 	}
 	rspNodeIDStr, err := rsp.NodeID.NodeID()
 	if err != nil {
-		logger.PfcpLog.Errorf("failed to parse NodeID IE: %+v", err)
-		return
+		return fmt.Errorf("failed to parse NodeID IE: %+v", err)
 	}
 	rspNodeID := context.NewNodeID(rspNodeIDStr)
 
 	if ANUPF.UPF == nil {
-		logger.PfcpLog.Errorln("failed to get UPF from default path")
-		return
+		return errors.New("failed to get UPF from default path")
 	}
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
 		if rsp.Cause == nil {
-			logger.PfcpLog.Errorln("pfcp session establishment response has no cause")
-			return
+			return errors.New("pfcp session establishment response has no cause")
 		}
 		causeValue, err := rsp.Cause.Cause()
 		if err != nil {
-			logger.PfcpLog.Errorf("pfcp session establishment response cause error: %v", err)
-			return
+			return fmt.Errorf("pfcp session establishment response cause error: %v", err)
 		}
 		// Gated on the state, like the modification and release handlers. Restoration issues an
 		// establishment without waiting on this channel, so an unconditional send here would leave a
@@ -365,25 +358,23 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			}
 		}
 	}
+	return nil
 }
 
-func HandlePfcpSessionModificationResponse(msg *udp.Message) {
+func HandlePfcpSessionModificationResponse(msg *udp.Message) error {
 	pfcpRsp, ok := msg.PfcpMessage.(*message.SessionModificationResponse)
 	if !ok {
-		logger.PfcpLog.Errorln("invalid PFCP Session Modification Response")
-		return
+		return errors.New("invalid PFCP Session Modification Response")
 	}
 	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
 
 	cause := pfcpRsp.Cause
 	if cause == nil {
-		logger.PfcpLog.Warnln("PFCP Session Modification Response found invalid cause, response discarded")
-		return
+		return errors.New("PFCP Session Modification Response found invalid cause, response discarded")
 	}
 	causeValue, err := cause.Cause()
 	if err != nil {
-		logger.PfcpLog.Errorf("PFCP Session Modification Response cause error: %v", err)
-		return
+		return fmt.Errorf("PFCP Session Modification Response cause error: %v", err)
 	}
 
 	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse pfcpRsp.Cause.CauseValue = [%v], accepted?? %v", causeValue, causeValue == ie.CauseRequestAccepted)
@@ -393,8 +384,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnln("PFCP Session Modification Response found invalid event data, response discarded")
-			return
+			return errors.New("PFCP Session Modification Response found invalid event data, response discarded")
 		} else {
 			SEID = eventData.LSEID
 		}
@@ -403,8 +393,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 	smContext := context.GetSMContextBySEID(SEID)
 	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
 	if smContext == nil {
-		logger.PfcpLog.Warnf("PFCP Session Modification Response found SM context nil for SEID %d, response discarded", SEID)
-		return
+		return fmt.Errorf("PFCP Session Modification Response found SM context nil for SEID %d, response discarded", SEID)
 	}
 
 	if causeValue == ie.CauseRequestAccepted {
@@ -432,21 +421,20 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 	for _, ctx := range smContext.PFCPContext {
 		smContext.SubCtxLog.Debugln(ctx.String())
 	}
+	return nil
 }
 
-func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
+func HandlePfcpSessionDeletionResponse(msg *udp.Message) error {
 	pfcpRsp, ok := msg.PfcpMessage.(*message.SessionDeletionResponse)
 	if !ok {
-		logger.PfcpLog.Errorln("invalid PFCP Session Deletion Response")
-		return
+		return errors.New("invalid PFCP Session Deletion Response")
 	}
 	logger.PfcpLog.Infoln("handle PFCP Session Deletion Response")
 	SEID := pfcpRsp.SEID()
 
 	if SEID == 0 {
 		if eventData, ok := msg.EventData.(udp.PfcpEventData); !ok {
-			logger.PfcpLog.Warnln("PFCP Session Deletion Response found invalid event data, response discarded")
-			return
+			return errors.New("PFCP Session Deletion Response found invalid event data, response discarded")
 		} else {
 			SEID = eventData.LSEID
 		}
@@ -454,20 +442,17 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 	smContext := context.GetSMContextBySEID(SEID)
 
 	if smContext == nil {
-		logger.PfcpLog.Warnln("PFCP Session Deletion Response found SM context nil, response discarded")
-		return
+		return errors.New("PFCP Session Deletion Response found SM context nil, response discarded")
 	}
 
 	cause := pfcpRsp.Cause
 	if cause == nil {
-		logger.PfcpLog.Warnln("PFCP Session Deletion Response found invalid cause, response discarded")
-		return
+		return errors.New("PFCP Session Deletion Response found invalid cause, response discarded")
 	}
 
 	causeValue, err := cause.Cause()
 	if err != nil {
-		logger.PfcpLog.Errorf("PFCP Session Deletion Response cause error: %v", err)
-		return
+		return fmt.Errorf("PFCP Session Deletion Response cause error: %v", err)
 	}
 
 	if causeValue == ie.CauseRequestAccepted {
@@ -488,6 +473,7 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)
 	}
+	return nil
 }
 
 func SetUpfInactive(nodeID context.NodeID) {

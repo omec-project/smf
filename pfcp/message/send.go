@@ -316,9 +316,14 @@ func SendPfcpSessionEstablishmentRequest(
 			}
 		}()
 
+		// Failures on this branch are reported through reportSendFailure, not HandlePfcpSendError.
+		// Its session handling finds the session by the request's header SEID, and an establishment
+		// carries zero there -- a local SEID the allocator can hand out, so it could reject and
+		// remove a different, live session. The deferred answer above tells this session, and the
+		// procedure's own failure path sends the reject and removes the context.
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session establish msg to upf-adapter error [%v]", err.Error())
-			HandlePfcpSendError(pfcpMsg, err)
+			reportSendFailure(pfcpMsg, err)
 			return err
 		} else {
 			defer func() {
@@ -345,11 +350,10 @@ func SendPfcpSessionEstablishmentRequest(
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
 					// Dispatching is what puts the verdict on the session's PFCP channel, so a
-					// dispatch that failed is a request with no answer coming. Reported through
-					// the same handler a refused send uses; the session is answered by the exit
-					// above.
+					// dispatch that failed is a request with no answer coming. Returned, and the
+					// session answered by the deferred call above.
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
-					HandlePfcpSendError(pfcpMsg, err)
+					reportSendFailure(pfcpMsg, err)
 
 					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
@@ -358,7 +362,7 @@ func SendPfcpSessionEstablishmentRequest(
 				// a failure rather than returning nil: this said the establishment had been sent,
 				// and the session then waited for a response to a request that does not exist.
 				sendErr := fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode)
-				HandlePfcpSendError(pfcpMsg, sendErr)
+				reportSendFailure(pfcpMsg, sendErr)
 
 				return sendErr
 			}
@@ -528,6 +532,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 	}
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
+		// As on the establishment path, failures here are reported without HandlePfcpSendError:
+		// a deletion's header carries the user plane's SEID, and the handler looks it up among the
+		// SMF's own, so it could answer another session's release. The deferred answer above
+		// answers this one.
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session delete msg to upf-adapter error [%v]", err.Error())
 			return err
@@ -556,11 +564,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
 				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
 					// Dispatching is what puts the verdict on the session's PFCP channel, so a
-					// dispatch that failed is a request with no answer coming. Reported through
-					// the same handler a refused send uses; the session is answered by the exit
-					// above.
+					// dispatch that failed is a request with no answer coming. Returned, and the
+					// session answered by the deferred call above.
 					logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
-					HandlePfcpSendError(pfcpMsg, err)
+					reportSendFailure(pfcpMsg, err)
 
 					return fmt.Errorf("handling the adapter's response: %w", err)
 				}
@@ -569,7 +576,7 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 				// fell through to the success return: the release reported that the deletion had
 				// been sent and then waited for a response to a request that does not exist.
 				sendErr := fmt.Errorf("send error to upf-adapter [%v]", rsp.StatusCode)
-				HandlePfcpSendError(pfcpMsg, sendErr)
+				reportSendFailure(pfcpMsg, sendErr)
 
 				return sendErr
 			}
@@ -712,7 +719,10 @@ func snapshotRuleStates(pdrs []*smf_context.PDR, fars []*smf_context.FAR, qers [
 	}
 }
 
-func HandlePfcpSendError(msg message.Message, pfcpErr error) {
+// reportSendFailure is the part of a send failure that concerns no session: the log, the N4
+// failure count and the DNS refresh. The adapter paths, which answer their own session, report
+// through this alone.
+func reportSendFailure(msg message.Message, pfcpErr error) {
 	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
 		msg.MessageTypeName(), pfcpErr.Error())
 	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
@@ -720,6 +730,10 @@ func HandlePfcpSendError(msg message.Message, pfcpErr error) {
 
 	// Refresh SMF DNS Cache incase of any send failure(includes timeout)
 	smf_context.RefreshDnsHostIpCache()
+}
+
+func HandlePfcpSendError(msg message.Message, pfcpErr error) {
+	reportSendFailure(msg, pfcpErr)
 
 	switch msg.MessageType() {
 	case message.MsgTypeSessionEstablishmentRequest:
