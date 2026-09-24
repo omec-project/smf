@@ -70,9 +70,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	// Build PFCP params while locked (if it reads shared state)
 	pfcpParam := BuildPfcpParam(smContext)
 
-	// Change state before sending PFCP, keeping what it was: a modification that never reaches the
-	// user plane has to put it back.
-	stateBeforeModify := smContext.SMContextState
+	// Change state before sending PFCP
 	smContext.ChangeState(smfContext.SmStatePfcpModify)
 
 	smContext.SMLock.Unlock()
@@ -81,7 +79,6 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMLock.Lock()
 
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
-		RestoreStateIfNothingWasSent(smContext, stateBeforeModify, err)
 
 		// Back to active, whatever the failure. SmStatePfcpModify has no FSM handlers, and this
 		// path does not change the state again, so a session left in it answered every later
