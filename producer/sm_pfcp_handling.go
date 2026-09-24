@@ -12,13 +12,40 @@ import (
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 )
 
+// sendModificationRequest is the send SendPfcpSessionModifyReq makes, replaceable so a test can have
+// the request go out and then hand the caller the user plane's answer.
+var sendModificationRequest = pfcp_message.SendPfcpSessionModificationRequest
+
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
-	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+	// Read before the send rather than dereferenced through it. A session being torn down while a
+	// modification is on its way has no tunnel, and the callers that revert a modification reach
+	// here precisely when something has gone wrong -- so the path that exists to put a session
+	// back must not be the one that ends the process.
+	//
+	// Read once. The policy-update caller drops SMLock before calling this, and release clears the
+	// tunnel under that lock, so a check followed by a second read of the field can find it gone
+	// between the two -- the guard would narrow the window, not close it.
+	tunnel := smContext.Tunnel
+	if tunnel == nil {
+		return fmt.Errorf("pfcp session modification not sent: it has no tunnel to send through")
+	}
+
+	defaultPath := tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil || defaultPath.FirstDPNode == nil || defaultPath.FirstDPNode.UPF == nil {
+		return fmt.Errorf("pfcp session modification not sent: it has no user plane on its default path")
+	}
+
 	ANUPF := defaultPath.FirstDPNode
-	err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
-		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port)
-	if err != nil {
+
+	if err := sendModificationRequest(ANUPF.UPF.NodeID, smContext,
+		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList,
+		pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port); err != nil {
+		// Returning rather than waiting, whatever failed: the answer that ends the wait is put on
+		// the channel by dispatching the user plane's response, and every failure here is a
+		// failure to dispatch one. Waiting would wait for a response nobody will send.
 		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
+
+		return fmt.Errorf("pfcp session modification failed: %w", err)
 	}
 
 	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan

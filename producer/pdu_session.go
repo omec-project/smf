@@ -517,6 +517,12 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				// Modify failure
 				smContext.SubCtxLog.Errorf("pfcp session modify error: %v ", err.Error())
 
+				// Back to active: the error answer below carries a PDU Session Release Command,
+				// and the UE's Release Complete arrives as an update, which only SmStateActive
+				// handles. Left in SmStatePfcpModify, the session could not complete the release
+				// this asks for, nor anything else.
+				abandonPendingModify(smContext, smf_context.SmStateActive)
+
 				// Form Modify err rsp
 				httpResponse = makePduCtxtModifyErrRsp(smContext, err.Error())
 
@@ -984,7 +990,8 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	return nil
 }
 
-// abandonPendingModify undoes the bookkeeping for a modification that was never sent.
+// abandonPendingModify undoes the bookkeeping for a modification that failed, whatever the
+// reason: never sent, refused by the user plane, or unanswered.
 //
 // Both halves matter and they have to stay together, which is why they are one function.
 // Leaving the state at PfcpModify strands the session for every later operation that expects
