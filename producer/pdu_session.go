@@ -517,6 +517,12 @@ func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
 				// Modify failure
 				smContext.SubCtxLog.Errorf("pfcp session modify error: %v ", err.Error())
 
+				// Back to active: the error answer below carries a PDU Session Release Command,
+				// and the UE's Release Complete arrives as an update, which only SmStateActive
+				// handles. Left in SmStatePfcpModify, the session could not complete the release
+				// this asks for, nor anything else.
+				abandonPendingModify(smContext, smf_context.SmStateActive)
+
 				// Form Modify err rsp
 				httpResponse = makePduCtxtModifyErrRsp(smContext, err.Error())
 
@@ -954,7 +960,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		smContext.ChangeState(smf_context.SmStatePfcpModify)
 
 		// Sending PFCP modification with flag set to DROP the packets.
-		err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.Port)
+		err := pfcp_message.SendAwaitedPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.Port)
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("pfcp Session Modification Request failed: %v", err)
 
@@ -984,7 +990,8 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 	return nil
 }
 
-// abandonPendingModify undoes the bookkeeping for a modification that was never sent.
+// abandonPendingModify undoes the bookkeeping for a modification that failed, whatever the
+// reason: never sent, refused by the user plane, or unanswered.
 //
 // Both halves matter and they have to stay together, which is why they are one function.
 // Leaving the state at PfcpModify strands the session for every later operation that expects
@@ -1041,7 +1048,12 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
 		}
 
-		smContext.ChangeState(smf_context.SmStatePfcpModify)
+		// The release state, not the modification state: this branch releases the session, and the
+		// deletion answers it waits on below are delivered only to a session in SmStatePfcpRelease.
+		// In SmStatePfcpModify every one of them was withheld, so the release waited for good, holding
+		// the lock of whoever reached it. The branch was unreachable while a modification timeout
+		// could not find its session; now that it can, the release it starts has to be answerable.
+		smContext.ChangeState(smf_context.SmStatePfcpRelease)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
 		tmpFile, err := util.CreatePayloadTempFile(n1buf)

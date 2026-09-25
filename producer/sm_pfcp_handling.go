@@ -12,10 +12,14 @@ import (
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 )
 
+// sendModificationRequest is the send SendPfcpSessionModifyReq makes, replaceable so a test can have
+// the request go out and then hand the caller the user plane's answer.
+var sendModificationRequest = pfcp_message.SendAwaitedPfcpSessionModificationRequest
+
 func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpParam) error {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	ANUPF := defaultPath.FirstDPNode
-	err := pfcp_message.SendPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext,
+	err := sendModificationRequest(ANUPF.UPF.NodeID, smContext,
 		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList, pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port)
 	if err != nil {
 		smContext.SubCtxLog.Errorf("pfcp session modification failure: %+v", err)
