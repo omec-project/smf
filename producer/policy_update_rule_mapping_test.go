@@ -5,6 +5,7 @@ package producer
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/omec-project/openapi/v2"
@@ -568,5 +569,182 @@ func TestRevertingARepointingPutsTheRuleBackOnItsOwnQosData(t *testing.T) {
 		if !committedRates {
 			t.Errorf("%s: the rule is not back on its own QoS data's rates", dir)
 		}
+	}
+}
+
+// deleteDedicatedRule is the decision withdrawing the dedicated rule and its QoS data.
+func (s *twoRuleSession) deleteDedicatedRule() *models.SmPolicyDecision {
+	return roundTrip(&models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: {}},
+		QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: {}},
+	})
+}
+
+// withPfcpContext gives the fixture the PFCP session context the tunnels record their PDRs in,
+// holding the PDRs it was established with.
+func (s *twoRuleSession) withPfcpContext() {
+	pdrs := map[uint16]*smf_context.PDR{}
+	for _, pdr := range []*smf_context.PDR{s.allowUL, s.allowDL, s.cirUL, s.cirDL} {
+		pdrs[pdr.PDRID] = pdr
+	}
+	s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{"10.0.0.7": {PDRs: pdrs}}
+}
+
+// A rule the user plane has accepted withdrawing is no longer the session's. Left in the tunnels,
+// it was re-installed by restoration when the UPF restarted -- a rule the policy had deleted, back
+// in force -- and its PDR identifier, from a pool of 65535 shared by the whole UPF, was lost when a
+// rule was later added under the same name. Its own flow QERs go from the user plane with it.
+func TestAWithdrawnRuleLeavesTheSession(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	t.Cleanup(func() { s.sm.StopT3591() })
+
+	// Every PDR identifier the UPF has left is taken, so the only ones that can be handed out
+	// afterwards are the ones the withdrawal gives back.
+	upf := s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF
+	for {
+		if _, err := upf.AddPDR(); err != nil {
+			break
+		}
+	}
+
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.deleteDedicatedRule())); err != nil {
+		t.Fatalf("ApplyModification: %v", err)
+	}
+
+	for dir := range 2 {
+		if _, err := upf.AddPDR(); err != nil {
+			t.Errorf("PDR identifier %d of the withdrawn rule's two was not returned to the pool: %v", dir+1, err)
+		}
+	}
+
+	removed := map[uint32]bool{}
+	for _, qer := range sent.removeQER {
+		removed[qer.QERID] = true
+	}
+	if !removed[s.cirULQER.QERID] || !removed[s.cirDLQER.QERID] {
+		t.Error("the withdrawn rule's own flow QERs were left installed")
+	}
+	if removed[s.sessQER.QERID] {
+		t.Error("the session QER was removed with the rule, taking the AMBR off the rules that remain")
+	}
+
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	if _, ok := node.UpLinkTunnel.PDR[cirRuleID]; ok {
+		t.Error("the withdrawn rule's uplink PDR is still in the session's tunnel, where restoration re-installs it")
+	}
+	if _, ok := node.DownLinkTunnel.PDR[cirRuleID]; ok {
+		t.Error("the withdrawn rule's downlink PDR is still in the session's tunnel")
+	}
+	pdrs := s.sm.PFCPContext["10.0.0.7"].PDRs
+	if pdrs[s.cirUL.PDRID] != nil || pdrs[s.cirDL.PDRID] != nil {
+		t.Error("the withdrawn rule's PDRs are still in the session's PFCP context")
+	}
+	if pdrs[s.allowUL.PDRID] == nil || node.UpLinkTunnel.PDR[allowRuleID] == nil {
+		t.Error("a rule the modification kept was dropped from the session")
+	}
+}
+
+// And a withdrawal that is then abandoned brings the rule back: on its own PDRs, at its committed
+// rates, with the session QER.
+func TestRevertingAWithdrawalReinstatesTheRule(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	s.cirRule.FlowInfos = []models.FlowInformation{{
+		FlowDescription: openapi.PtrString("permit out ip from 192.168.250.1/32 to assigned"),
+		PackFiltId:      openapi.PtrString("5"),
+	}}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+
+	// Delivery fails, so ApplyModification reverts what it has just programmed.
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.deleteDedicatedRule())); err == nil {
+		t.Fatal("the undeliverable modification was reported as delivered")
+	}
+
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	for dir, tunnel := range map[string]*smf_context.GTPTunnel{"UL": node.UpLinkTunnel, "DL": node.DownLinkTunnel} {
+		pdr := tunnel.PDR[cirRuleID]
+		if pdr == nil || !sent.touches(pdr) || pdr.State != smf_context.RULE_INITIAL {
+			t.Errorf("%s: the withdrawn rule was not re-created", dir)
+			continue
+		}
+		var keptSession, committedRates bool
+		for _, qer := range pdr.QER {
+			switch {
+			case qer.QERID == s.sessQER.QERID:
+				keptSession = true
+			case qer.MBR != nil && qer.MBR.ULMBR == 3000 && qer.MBR.DLMBR == 6000 && queued(sent.qerList, qer):
+				committedRates = true
+			}
+		}
+		if !keptSession || !committedRates {
+			t.Errorf("%s: session QER kept %v, flow QER at the committed rates %v", dir, keptSession, committedRates)
+		}
+	}
+}
+
+// Reverting an addition withdraws the added rule, and once the user plane has accepted that, the
+// rule leaves the session exactly as a withdrawal by policy does.
+func TestRevertingAnAdditionRemovesTheRuleFromTheSession(t *testing.T) {
+	const appRuleID, appQosID = "app", "2"
+
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+
+	decision := roundTrip(&models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{
+			allowRuleID: s.allowRule, cirRuleID: s.cirRule,
+			appRuleID: {
+				PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
+				FlowInfos: []models.FlowInformation{{
+					FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
+					PackFiltId:      openapi.PtrString("7"),
+				}},
+			},
+		},
+		QosDecs: &map[string]models.QosData{
+			allowQosID: s.allowQos, cirQosID: s.cirQosSent,
+			appQosID: {
+				QosId:   appQosID,
+				MaxbrUl: *openapi.NewNullableString(openapi.PtrString("2 Mbps")),
+				MaxbrDl: *openapi.NewNullableString(openapi.PtrString("4 Mbps")),
+			},
+		},
+	})
+
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)); err == nil {
+		t.Fatal("the undeliverable modification was reported as delivered")
+	}
+
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	if node.UpLinkTunnel.PDR[appRuleID] != nil || node.DownLinkTunnel.PDR[appRuleID] != nil {
+		t.Error("the reverted rule is still in the session's tunnels, where restoration would re-install it")
+	}
+	if node.UpLinkTunnel.PDR[cirRuleID] != s.cirUL || node.DownLinkTunnel.PDR[allowRuleID] != s.allowDL {
+		t.Error("the revert dropped rules the modification never touched")
 	}
 }

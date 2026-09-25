@@ -180,24 +180,28 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// moving the traffic. The release-only branch below is a different case: it fires when a
 		// decision has no valid rules at all, not when one rule among several goes away.
 		//
-		// The PDR and its FAR go; the QERs do not. A QER here is built per session and attached
-		// to every PDR on the path, so removing the ones this PDR points at would take rate
-		// enforcement off the rules that remain. One left unreferenced enforces nothing and goes
-		// with the session.
+		// The PDR, its FAR and the rule's own flow QER go; the session QER does not. It is
+		// attached to every PDR on the path, so removing it would take the session AMBR off the
+		// rules that remain -- but a rule's flow QER is built for that rule and direction alone,
+		// and left behind it stayed installed with nothing referring to it.
 		for deletedRule := range deletedPccRules(smContext) {
-			if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[deletedRule]; ok {
-				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
-				if dlPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, dlPDR.FAR)
+			for _, tunnel := range []*smfContext.GTPTunnel{ANUPF.DownLinkTunnel, ANUPF.UpLinkTunnel} {
+				pdr, ok := tunnel.PDR[deletedRule]
+				if !ok {
+					continue
 				}
 
-				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-			}
-
-			if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[deletedRule]; ok {
-				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-				if ulPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
+				pfcpParam.removePDR = append(pfcpParam.removePDR, pdr)
+				if pdr.FAR != nil {
+					pfcpParam.removeFAR = append(pfcpParam.removeFAR, pdr.FAR)
+				}
+				for _, qer := range pdr.QER {
+					if qer == nil {
+						continue
+					}
+					if _, session := sessQERs[qer.QERID]; !session {
+						pfcpParam.removeQER = append(pfcpParam.removeQER, qer)
+					}
 				}
 
 				smContext.PendingUPF[ANUPF.GetNodeIP()] = true
@@ -674,6 +678,10 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
+	smContext.SMLock.Lock()
+	forgetRemovedRules(smContext, pfcpParam)
+	smContext.SMLock.Unlock()
+
 	// Expected from before the transfer rather than after it. The radio's answer travels its own
 	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
 	// expectation set discards it as belonging to no modification -- losing a partial rejection
@@ -994,7 +1002,73 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		return false
 	}
 
+	smContext.SMLock.Lock()
+	forgetRemovedRules(smContext, pfcpParam)
+	smContext.SMLock.Unlock()
+
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 
 	return true
+}
+
+// forgetRemovedRules drops the PDRs the user plane has just accepted removing from the session's
+// tunnels and PFCP context, and returns their PDR and FAR identifiers to the pool. The caller holds
+// SMLock, and calls this only once the removal has been accepted: until then the rules are still
+// installed, and a failed removal has to find them where they were.
+//
+// Left in the tunnels, a withdrawn rule was still the session's as far as everything reading them
+// was concerned. Restoration re-installs a restarted UPF from exactly those maps, so a rule the
+// policy had deleted came back with it; and a rule later added under the same name overwrote the
+// entry without freeing it, losing a PDR identifier from a pool of 65535 shared by every session on
+// the UPF.
+//
+// QER identifiers are not returned. They come from a pool of 2^32 per UPF, are scoped to the PFCP
+// session on the wire, and one per rate change is what a superseded flow QER costs; freeing them
+// safely would mean proving no PDR still names one, for a pool that does not run out.
+func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
+	if len(pfcpParam.removePDR) == 0 || smContext.Tunnel == nil {
+		return
+	}
+
+	removed := make(map[*smfContext.PDR]bool, len(pfcpParam.removePDR))
+	for _, pdr := range pfcpParam.removePDR {
+		removed[pdr] = true
+	}
+	removedFAR := make(map[*smfContext.FAR]bool, len(pfcpParam.removeFAR))
+	for _, far := range pfcpParam.removeFAR {
+		removedFAR[far] = true
+	}
+
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+		node := dataPath.FirstDPNode
+		if node == nil || node.UPF == nil {
+			continue
+		}
+
+		nodeIP := node.UPF.NodeID.ResolveNodeIdToIp().String()
+		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+			if tunnel == nil {
+				continue
+			}
+
+			for name, pdr := range tunnel.PDR {
+				if !removed[pdr] {
+					continue
+				}
+
+				delete(tunnel.PDR, name)
+				if pfcpCtx := smContext.PFCPContext[nodeIP]; pfcpCtx != nil {
+					delete(pfcpCtx.PDRs, pdr.PDRID)
+				}
+				if err := node.UPF.RemovePDR(pdr); err != nil {
+					smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
+				}
+				if pdr.FAR != nil && removedFAR[pdr.FAR] {
+					if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
+						smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+					}
+				}
+			}
+		}
+	}
 }
