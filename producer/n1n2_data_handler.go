@@ -16,6 +16,8 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/metrics"
+	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/smf/util"
@@ -234,6 +236,57 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
+		case nas.MsgTypePDUSessionModificationComplete:
+			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
+			// The modification is complete only now. Committing on the UE's acknowledgement rather
+			// than when the command was sent is what keeps the SMF's record of the session in step
+			// with what the UE is actually running, so the next modification computes its delta
+			// against the parameters in force.
+			//
+			// Stopping the timer and taking the realignment marker happen together, under one hold
+			// of the lock. Where the radio access network established only part of this
+			// modification, what it established is what the session has, so the pending update is
+			// pruned to that before it becomes the record — committing the whole of it would record
+			// flows that do not exist. Releasing the lock between the two would let a modification
+			// starting on another goroutine replace the pending update in the gap, and this would
+			// then prune and commit that one instead.
+			// SMLock is already held by HandlePDUSessionSMContextUpdate for the whole of this
+			// function, so nothing here may take it. Everything below is therefore one atomic
+			// section by construction rather than by locking.
+			smContext.StopT3591()
+			realign := smContext.Realign
+			smContext.Realign = nil
+			var corrective *qos.PolicyUpdate
+			if realign != nil && len(smContext.SmPolicyUpdates) > 0 {
+				corrective = smContext.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet(realign.RefusedQFIs))
+			}
+
+			// The radio may not have answered yet: on a short link the UE completes first, and then
+			// there is no realignment marker to read and the update below is committed whole. The
+			// answer that follows would have nothing left to prune, so what it needs is kept for it
+			// here -- this is the same object the commit is about to record, and the correction is
+			// built from it by handleModifyResponse instead of by this branch.
+			if realign == nil && smContext.RanAnswerPending && len(smContext.SmPolicyUpdates) > 0 {
+				smContext.CommittedBeforeRanAnswer = smContext.SmPolicyUpdates[0]
+			}
+
+			if err := smContext.CommitSmPolicyDecisionLocked(true); err != nil {
+				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
+			}
+
+			if realign != nil {
+				realignSession(smContext, realign, corrective)
+			}
+
+		case nas.MsgTypePDUSessionModificationCommandReject:
+			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
+			smContext.StopT3591()
+			// The UE will not apply the parameters it was given. This is an abandonment with its
+			// own cause rather than a timeout, and it is reported on the same path as one, so that
+			// a modification the network could not apply is countable however it failed.
+			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
+
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
 			if smContext.SMContextState != context.SmStateInActivePending {
@@ -255,6 +308,15 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// reentrant.
 			context.RemoveSMContextLocked(smContext)
 			smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
+
+		default:
+			// Every unhandled type before this branch existed was decoded, debug-logged and
+			// dropped, and the SMF answered 200 with no N1 or N2 content. The UE then retransmits
+			// until its timer expires and gives up, which looks like a UE fault. Log loudly so the
+			// next missing case is found from a log line rather than from a packet capture.
+			smContext.SubPduSessLog.Errorf(
+				"PDUSessionSMContextUpdate, unhandled N1 SM message type 0x%02x; the SMF will answer with no N1 content and the UE will retransmit until it gives up",
+				m.GsmHeader.GetMessageType())
 		}
 	} else {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, Binary Data N1 SmMessage is nil")
@@ -515,6 +577,12 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	tunnel := smContext.Tunnel
 
 	switch smContextUpdateData.GetN2SmInfoType() {
+	case models.N2SMINFOTYPE_PDU_RES_MOD_RSP:
+		return handleModifyResponse(smContext, body)
+
+	case models.N2SMINFOTYPE_PDU_RES_MOD_FAIL:
+		return handleModifyFailure(smContext, body)
+
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_RSP:
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
@@ -729,4 +797,245 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	}
 
 	return nil
+}
+
+// handleModifyResponse acts on what the radio access network made of a modification.
+//
+// A whole refusal means the UE never received the authorized parameters, so the modification is
+// abandoned and the user plane is not left carrying it. A partial refusal means the UE was told
+// about flows that were not established, and it is owed a further modification saying which are
+// actually in force — a distinct procedure, not a retry, because the parameters it carries
+// describe what exists rather than what was attempted.
+// ranAnswerIsExpected reports whether this session is still waiting for the radio's answer to a
+// modification, and clears the wait if it is.
+//
+// The radio's answer is only an answer while the question stands. T3591 can abandon a modification
+// before the response arrives, and the session then sits on the parameters it had -- realigning it
+// from a stale response would start a corrective modification for a change nobody made, and a
+// stale failure would stop the timer and discard the update belonging to whatever modification is
+// running by then.
+//
+// What this cannot separate is a stale answer arriving while a *newer* modification is in flight:
+// the response carries no identity beyond the session, so at this interface it is indistinguishable
+// from the new one's. That one stays open.
+//
+// The caller must hold SMLock, which every N2 update handler already does -- HandlePDUSessionSMContextUpdate
+// takes it for the whole dispatch, and SMLock is not reentrant, so taking it here wedges the
+// session instead of guarding it. That is not hypothetical: it deadlocked every modify-response
+// test on the first draft of this guard.
+func ranAnswerIsExpectedLocked(smContext *context.SMContext) bool {
+	return smContext.RanAnswerPending
+}
+
+// ranAnswerTakenLocked consumes the expectation, once the answer has been read and decoded rather
+// than when it arrived. Clearing on arrival meant a response the SMF could not decode took the
+// expectation with it, and the radio's next attempt -- or the valid answer behind a malformed one
+// -- was then ignored as belonging to no modification, leaving a partial acceptance with nothing
+// to realign it. The whole path runs under SMLock, so no second answer is being decoded meanwhile.
+func ranAnswerTakenLocked(smContext *context.SMContext) {
+	smContext.RanAnswerPending = false
+}
+
+func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	if !ranAnswerIsExpectedLocked(smContext) {
+		smContext.SubPduSessLog.Warnln("a modify response arrived for a modification this session is not waiting on; ignoring it")
+		return nil
+	}
+
+	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("reading the modify response failed: %v", err)
+		return err
+	}
+
+	result, err := context.HandlePDUSessionResourceModifyResponseTransfer(fileBytes, smContext)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("decoding the modify response failed: %v", err)
+		return err
+	}
+
+	ranAnswerTakenLocked(smContext)
+
+	// A modification the UE has already completed was committed whole, including whatever this
+	// answer refuses. Nothing downstream will read a realignment marker for it -- the completion
+	// that reads one has been and gone -- so the correction is built and started here instead.
+	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
+		smContext.CommittedBeforeRanAnswer = nil
+		correctCommittedModification(smContext, committed, result)
+		return nil
+	}
+
+	switch {
+	case result.WhollyRejected():
+		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
+		smContext.StopT3591()
+		abandonModificationUnderLock(smContext, "ran_whole_rejection", "no_flow_established")
+
+	case result.PartiallyRejected():
+		smContext.SubPduSessLog.Warnf("radio access network established flows %v and refused %v; realigning the UE",
+			result.AcceptedQFIs, result.RejectedQFIs)
+		realignAfterPartialRejection(smContext, result)
+
+	default:
+		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)
+	}
+
+	return nil
+}
+
+// handleModifyFailure acts on the radio access network refusing a modification outright, which
+// it reports as a failure rather than as a response with an empty accepted list.
+func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
+	if !ranAnswerIsExpectedLocked(smContext) {
+		smContext.SubPduSessLog.Warnln("a modify failure arrived for a modification this session is not waiting on; ignoring it")
+		return nil
+	}
+
+	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("reading the modify failure failed: %v", err)
+		return err
+	}
+
+	cause, err := context.HandlePDUSessionResourceModifyUnsuccessfulTransfer(fileBytes, smContext)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("decoding the modify failure failed: %v", err)
+		return err
+	}
+
+	// Taken here, as on the response path, and not left to the abandonment below to clear as a side
+	// effect of what it does: the correction further down returns instead of abandoning, and would
+	// otherwise leave the expectation standing with nothing in flight to meet it. A stray or
+	// repeated answer would then pass the gate at the top of this function and abandon a session
+	// running no modification at all.
+	ranAnswerTakenLocked(smContext)
+
+	smContext.StopT3591()
+
+	// Same order as handleModifyResponse has to answer, and the same remedy. A modification the UE
+	// has already completed was committed whole, and the abandonment below has nothing to discard:
+	// the pending update it would have dropped was popped by that commit. Refusing the modification
+	// outright therefore left every flow of it in force, on the record, on the UE and in the user
+	// plane. Withdrawing all of them puts the session where the abandonment would have put it.
+	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
+		smContext.CommittedBeforeRanAnswer = nil
+		correctCommittedModification(smContext, committed,
+			context.ModifyResponse{RejectedQFIs: flowsCarriedBy(committed)})
+
+		return nil
+	}
+
+	abandonModificationUnderLock(smContext, "ran_whole_rejection", fmt.Sprintf("ngap_cause_present_%d", cause.Present))
+
+	return nil
+}
+
+// flowsCarriedBy names every flow an update asked for, read the way RemoveFlows reads them so the
+// two agree on which identifier belongs to which entry. A modify failure refuses the modification
+// as a whole rather than flow by flow, so this is what "all of it" means for one.
+func flowsCarriedBy(update *qos.PolicyUpdate) []int64 {
+	if update == nil || update.QosFlowUpdate == nil {
+		return nil
+	}
+
+	var flows []int64
+
+	for _, entries := range []map[string]*models.QosData{
+		update.QosFlowUpdate.GetAdded(),
+		update.QosFlowUpdate.GetModified(),
+	} {
+		for _, entry := range entries {
+			flowID, err := qos.ParseQosFlowId(entry.GetQosId())
+			if err != nil {
+				continue
+			}
+
+			flows = append(flows, int64(flowID))
+		}
+	}
+
+	return flows
+}
+
+// correctCommittedModification answers a radio response that arrived after the UE had already
+// acknowledged the modification, and so after it was committed in full.
+//
+// The ordinary order lets the completion prune the pending update to what the radio established,
+// so the record is right before it is written and only the UE and user plane need correcting. In
+// this order the record is wrong as well: it names flows the radio refused. All three are put back
+// by the same corrective modification -- a deletion is an ordinary modification, and committing
+// its own result is what takes those flows off the record -- so this differs from the pruning path
+// only in where the deletions come from, which is the update the completion committed.
+//
+// A whole rejection is corrected the same way. The pending update is what the abandonment path
+// discards, and by now there is none; withdrawing every flow leaves the session on the parameters
+// it had before the modification, which is where an abandonment would have left it.
+func correctCommittedModification(smContext *context.SMContext, committed *qos.PolicyUpdate, result context.ModifyResponse) {
+	if len(result.RejectedQFIs) == 0 {
+		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)
+		return
+	}
+
+	smContext.SubPduSessLog.Warnf("radio access network refused flows %v for a modification the UE had already completed; withdrawing them from the session, the UE and the user plane",
+		result.RejectedQFIs)
+
+	realignSession(smContext, &context.PendingRealignment{
+		EstablishedQFIs: result.AcceptedQFIs,
+		RefusedQFIs:     result.RejectedQFIs,
+	}, committed.RemoveFlows(qos.RefusedFlowSet(result.RejectedQFIs)))
+}
+
+// realignAfterPartialRejection records that the UE's view of the session is wider than what the
+// radio access network established. The corrective modification runs once the UE has
+// acknowledged the first one, per TS 23.502 clause 4.3.3.2, which places it after step 11.
+func realignAfterPartialRejection(smContext *context.SMContext, result context.ModifyResponse) {
+	smContext.Realign = &context.PendingRealignment{
+		EstablishedQFIs: result.AcceptedQFIs,
+		RefusedQFIs:     result.RejectedQFIs,
+	}
+}
+
+// realignSession brings the session into agreement with what the radio access network actually
+// established, after a modification it accepted only part of.
+//
+// The record is already correct by this point: the pending update was pruned to the established
+// flows before it was committed. What is left wrong is the UE, which acknowledged a wider set of
+// parameters than the session has, and the user plane, which was programmed before the radio
+// answered and still carries rules for flows that were never built. A downlink packet matching
+// one of those is classified onto a QoS flow with no radio bearer and dropped, rather than
+// falling back — so both halves matter.
+//
+// Both are corrected by one ordinary modification carrying the deletions. TS 23.502 clause
+// 4.3.3.2 calls for a further procedure rather than a retry of the one that was partly accepted,
+// and a deletion *is* such a procedure — so it goes through ApplyModification like any other
+// instead of this function rebuilding the user plane and sending N1N2 itself. It did both by hand
+// before, and got both wrong: the rebuild ran after the pruned update had been committed and so
+// programmed nothing, and the user-plane call blocked forever on a response the triggering
+// transaction had already taken.
+//
+// It runs on its own goroutine, and acquiring SMLock is what sequences it: the transaction that
+// brought the acknowledgement holds the lock for its whole life, so the correction cannot start
+// until that has finished and the user plane's response channel is free.
+func realignSession(smContext *context.SMContext, realign *context.PendingRealignment, corrective *qos.PolicyUpdate) {
+	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
+		realign.EstablishedQFIs, realign.RefusedQFIs)
+
+	if corrective == nil {
+		// Nothing to delete: the refused flows were not in the update being committed, so the
+		// record and the UE already agree. Worth saying, because the alternative reading is that
+		// the correction was skipped.
+		smContext.SubPduSessLog.Infof("no flows to withdraw; the UE's view already matches the session")
+		return
+	}
+
+	refused := realign.RefusedQFIs
+	go func() {
+		if err := applyModification(smContext, corrective); err != nil {
+			smContext.SubPduSessLog.Errorf("withdrawing the refused flows %v failed: %v; the UE still believes they exist and downlink traffic matching them will be dropped",
+				refused, err)
+			metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
+			return
+		}
+		smContext.SubPduSessLog.Infof("corrective modification sent, withdrawing flows %v", refused)
+	}()
 }
