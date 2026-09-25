@@ -333,10 +333,12 @@ func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
 	return smContext.SmPolicyUpdates[0].PccRuleUpdate.GetAddPccRuleUpdate()
 }
 
-// requalifiedPccRules names the established rules whose QoS data the pending update changes, with
-// the QoS data each refers to. A rule on the default QoS flow is included: establishment builds
-// its flow QER from its QoS data like any other rule's, so a change to that data has to reach it
-// too.
+// requalifiedPccRules names the established rules whose QoS data the pending update changes, or
+// which it changes themselves, with the QoS data each refers to. The second matters when a rule is
+// re-pointed at QoS data that already exists: nothing about the QoS data changes, only which of it
+// the rule uses -- and undoing a re-pointing is exactly that case. A rule on the default QoS flow is
+// included: establishment builds its flow QER from its QoS data like any other rule's, so a change
+// to that data has to reach it too.
 func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil {
 		return nil
@@ -356,6 +358,9 @@ func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 		_, ok := changed[qosRef]
 		if !ok {
 			_, ok = update.QosFlowUpdate.GetAdded()[qosRef]
+		}
+		if !ok {
+			_, ok = update.PccRuleUpdate.GetModPccRuleUpdate()[name]
 		}
 		if !ok {
 			continue
@@ -900,7 +905,7 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			}
 		},
 		func() {
-			abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
+			abandonIfCurrent(smContext, timer)
 		})
 	smContext.T3591 = timer
 	// StopT3591 above cleared it; the procedure is still running.
@@ -974,7 +979,10 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 // likely to be holding it is the acknowledgement that just arrived and superseded this procedure.
 // Resuming afterwards, it would discard whatever modification is pending by then, which after a
 // partial rejection is the corrective one started in the meantime.
-func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
+func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer) {
+	// T3591 is the only timer whose expiry abandons a modification, and it expires for one reason.
+	const path, cause = "t3591_expiry", "ue_did_not_acknowledge"
+
 	// The timer goroutine holds no lock, so this takes it -- and keeps it across the check and
 	// the abandonment. Releasing in between put the two on either side of a lock acquisition, so
 	// an acknowledgement arriving in the gap could commit and start the next procedure, and this
@@ -988,12 +996,16 @@ func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, 
 		return
 	}
 
+	abandoned := pendingUpdateLocked(smContext)
 	abandonModificationLocked(smContext)
-	startDeferredModificationLocked(smContext)
 	smContext.SMLock.Unlock()
 
 	// Reported outside the lock: it logs and counts, and touches no session state.
 	reportAbandonment(smContext, path, cause)
+
+	// The user plane was programmed before the command was first sent, and a UE that never
+	// answered never took the new parameters up. This is the timer's goroutine, holding no lock.
+	restoreUserPlane(smContext, abandoned)
 }
 
 // reportAbandonment logs and counts an abandonment without touching session state, so the two
@@ -1004,19 +1016,42 @@ func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
 	metrics.IncrementModificationAbandonedStats(path, cause)
 }
 
-// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock.
+// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock, for a
+// modification whose user plane had been programmed: the UE refusing the command, and the radio
+// refusing all of it. The revert runs on its own goroutine, because it waits on the user plane and
+// the caller holds the session lock across its whole handler.
 func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
 	reportAbandonment(smContext, path, cause)
+	abandoned := pendingUpdateLocked(smContext)
 	abandonModificationLocked(smContext)
+	restoreUserPlaneAsync(smContext, abandoned)
+}
+
+// restoreUserPlaneAsync is behind a seam for the reason applyModification is: the restore runs on
+// its own goroutine and reaches the user plane, so a test needs to see that it was issued without
+// it outliving the test.
+var restoreUserPlaneAsync = func(smContext *smfContext.SMContext, abandoned *qos.PolicyUpdate) {
+	go restoreUserPlane(smContext, abandoned)
+}
+
+// empty reports whether the parameters change nothing on the user plane.
+func (p *pfcpParam) empty() bool {
+	return len(p.pdrList) == 0 && len(p.farList) == 0 && len(p.barList) == 0 && len(p.qerList) == 0 &&
+		len(p.removePDR) == 0 && len(p.removeFAR) == 0 && len(p.removeQER) == 0
+}
+
+// pendingUpdateLocked is the modification in flight, or nil. The caller holds SMLock, and takes it
+// in the same hold as the abandonment that discards it, so what is reverted is what was discarded.
+func pendingUpdateLocked(smContext *smfContext.SMContext) *qos.PolicyUpdate {
+	if len(smContext.SmPolicyUpdates) == 0 {
+		return nil
+	}
+
+	return smContext.SmPolicyUpdates[0]
 }
 
 // revertModification gives up on a modification that could not be delivered and puts the user
 // plane back to the parameters the UE still believes are in force.
-//
-// The discard comes first and does the heavy lifting: the pending policy update was never
-// committed, so once it is dropped the session's policy state already describes the
-// pre-modification session, and rebuilding the PFCP parameters from it yields exactly the rules
-// that were in force. Nothing is snapshotted and nothing is copied.
 //
 // The path is always "delivery_failure": that is what reverting means, as distinct from a
 // modification abandoned because the UE did not answer or the radio refused it. The one delivery
@@ -1039,13 +1074,54 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 
 		return true
 	}
+	abandoned := pendingUpdateLocked(smContext)
 	abandonModificationLocked(smContext)
 	smContext.SMLock.Unlock()
 	reportAbandonment(smContext, path, cause)
 
+	return restoreUserPlane(smContext, abandoned)
+}
+
+// restoreUserPlane puts the user plane back to the committed policy after abandoned has been
+// discarded, and reports whether it went back. The caller must not hold SMLock: this waits on the
+// user plane's answer.
+//
+// The revert is built from the abandoned update rather than by rebuilding from the committed
+// policy. The PFCP builder programs what an update changes, so with the abandoned update discarded
+// and nothing pending it programs nothing -- which is what this did before, while logging that the
+// user plane had been put back. The update abandoned installed is still installed; RevertOf is the
+// one that takes it out again.
+func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpdate) bool {
+	// A policy decision held behind the abandoned modification starts once this has finished, on
+	// every exit, and not when the abandonment settled the session: the revert is a PFCP exchange on
+	// the session's one response channel, and a modification started before it had its answer
+	// would program the user plane alongside it. Every abandonment ends here.
+	defer func() {
+		smContext.SMLock.Lock()
+		startDeferredModificationLocked(smContext)
+		smContext.SMLock.Unlock()
+	}()
+
+	if abandoned == nil {
+		smContext.SubPduSessLog.Infof("no modification was pending; the user plane has nothing to put back")
+		return true
+	}
+
 	smContext.SMLock.Lock()
+	revert := qos.RevertOf(&smContext.SmPolicyData, abandoned)
+	// Programmed through the builder as the pending update, and not left pending: it is not a
+	// modification of the session, and nothing may commit it or tell the UE about it. Whatever was
+	// pending by now -- a modification started since the abandonment -- is put back as it was.
+	pending := smContext.SmPolicyUpdates
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{revert}
 	pfcpParam := BuildPfcpParam(smContext)
+	smContext.SmPolicyUpdates = pending
 	smContext.SMLock.Unlock()
+
+	if pfcpParam.empty() {
+		smContext.SubPduSessLog.Infof("the abandoned modification changed nothing the user plane carries; nothing to put back")
+		return true
+	}
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 		// The session is now genuinely divergent: the user plane still enforces the modification
@@ -1064,20 +1140,12 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)
-		startDeferredModificationLocked(smContext)
 		smContext.SMLock.Unlock()
 
 		return false
 	}
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
-
-	// Only now, and not when the abandonment above settled the session: the revert is a PFCP
-	// exchange on the session's one response channel, and a held decision started before it had
-	// its answer would program the user plane alongside it.
-	smContext.SMLock.Lock()
-	startDeferredModificationLocked(smContext)
-	smContext.SMLock.Unlock()
 
 	return true
 }

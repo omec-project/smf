@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -294,33 +293,64 @@ func TestAHeldDecisionStartsWhenTheProcedureEnds(t *testing.T) {
 // A modification whose delivery failed is reverted with a PFCP exchange of its own, and the held
 // decision starts only once that exchange has its answer. The session has one response channel
 // and nothing correlates on it, so two exchanges in flight at once can each take the other's
-// answer.
+// answer. The modification here changed rates on the user plane, so its revert has something to
+// send.
 func TestAHeldDecisionWaitsForTheRevertBeforeIt(t *testing.T) {
-	s := newDeferralSession(t)
-	s.startAndHold(t)
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
 
+	sent := make(chan struct{}, 4)
 	var inFlight, overlapped atomic.Int32
-	var mu sync.Mutex
 	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
 		if inFlight.Add(1) > 1 {
 			overlapped.Store(1)
 		}
-		mu.Lock()
 		time.Sleep(100 * time.Millisecond)
-		mu.Unlock()
 		inFlight.Add(-1)
-		s.pfcp <- struct{}{}
+		sent <- struct{}{}
 		return nil
 	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
 
-	revertModification(s.sm, s.sm.NwModificationGen)
+	s := programmedRateChange(t)
+	s.sm.SMLock.Lock()
+	s.sm.DeferredPolicyDecisions = append(s.sm.DeferredPolicyDecisions, &models.SmPolicyDecision{})
+	s.sm.SMLock.Unlock()
+	t.Cleanup(func() {
+		s.sm.SMLock.Lock()
+		s.sm.StopT3591()
+		s.sm.SMLock.Unlock()
+	})
 
-	s.waitForSend(t, "the revert")
-	s.waitForSend(t, "the held decision, after the revert")
-	s.waitUntilArmed(t, 2)
+	if !revertModification(s.sm, s.sm.NwModificationGen) {
+		t.Fatal("the revert reported failure")
+	}
+
+	for _, what := range []string{"the revert", "the held decision, after the revert"} {
+		select {
+		case <-sent:
+		case <-time.After(queuedWorkTimeout):
+			t.Fatalf("%s: no PFCP modification was sent", what)
+		}
+	}
 
 	if overlapped.Load() != 0 {
 		t.Error("the held decision's modification was sent while the revert was still waiting for its answer")
+	}
+
+	// The held decision runs to the end before the test does, so nothing of it outlives the stubs.
+	deadline := time.Now().Add(queuedWorkTimeout)
+	for {
+		s.sm.SMLock.Lock()
+		armed := s.sm.T3591 != nil
+		s.sm.SMLock.Unlock()
+		if armed {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the held decision never armed its T3591")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

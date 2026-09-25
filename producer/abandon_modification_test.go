@@ -81,7 +81,7 @@ func TestASupersededTimerExpiryDoesNotAbandonTheCurrentModification(t *testing.T
 	smContext.NwModificationPending = true
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
 
-	abandonIfCurrent(smContext, superseded, "t3591_expiry", "ue_did_not_acknowledge")
+	abandonIfCurrent(smContext, superseded)
 
 	if smContext.T3591 != current {
 		t.Error("the superseded expiry cleared the current procedure's timer")
@@ -95,7 +95,7 @@ func TestASupersededTimerExpiryDoesNotAbandonTheCurrentModification(t *testing.T
 
 	// And the same call for the timer that *is* current does abandon, so this is not passing by
 	// refusing to abandon anything.
-	abandonIfCurrent(smContext, current, "t3591_expiry", "ue_did_not_acknowledge")
+	abandonIfCurrent(smContext, current)
 	if smContext.NwModificationPending {
 		t.Error("the current procedure's expiry failed to abandon it")
 	}
