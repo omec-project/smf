@@ -637,27 +637,32 @@ func CommitQosFlowDescUpdate(smCtxtPolData *SmCtxtPolicyData, update *QosFlowsUp
 }
 
 // Compare if any change in QoS Data
+//
+// By value. The optional fields are pointers, and a decision arrives decoded from JSON, so nothing
+// in it shares a pointer with what the session committed: compared with != every entry read as
+// modified on every notification, the unchanged ones included. The user plane then reprogrammed
+// every dedicated flow, and the radio was told each of them had changed, whenever any one did.
 func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 	if qf1 == nil || qf2 == nil {
 		return true
 	}
 
 	if qf1.QosId != qf2.QosId ||
-		qf1.Var5qi != qf2.Var5qi ||
-		qf1.MaxbrUl != qf2.MaxbrUl ||
-		qf1.MaxbrDl != qf2.MaxbrDl ||
-		qf1.GbrUl != qf2.GbrUl ||
-		qf1.GbrDl != qf2.GbrDl ||
-		qf1.Qnc != qf2.Qnc ||
-		qf1.PriorityLevel != qf2.PriorityLevel ||
-		qf1.AverWindow != qf2.AverWindow ||
-		qf1.MaxDataBurstVol != qf2.MaxDataBurstVol ||
-		qf1.ReflectiveQos != qf2.ReflectiveQos ||
-		qf1.SharingKeyDl != qf2.SharingKeyDl ||
-		qf1.SharingKeyUl != qf2.SharingKeyUl ||
-		qf1.MaxPacketLossRateDl != qf2.MaxPacketLossRateDl ||
-		qf1.MaxPacketLossRateUl != qf2.MaxPacketLossRateUl ||
-		qf1.DefQosFlowIndication != qf2.DefQosFlowIndication {
+		!sameValue(qf1.Var5qi, qf2.Var5qi) ||
+		!sameNullable(qf1.MaxbrUl, qf2.MaxbrUl) ||
+		!sameNullable(qf1.MaxbrDl, qf2.MaxbrDl) ||
+		!sameNullable(qf1.GbrUl, qf2.GbrUl) ||
+		!sameNullable(qf1.GbrDl, qf2.GbrDl) ||
+		!sameValue(qf1.Qnc, qf2.Qnc) ||
+		!sameNullable(qf1.PriorityLevel, qf2.PriorityLevel) ||
+		!sameNullable(qf1.AverWindow, qf2.AverWindow) ||
+		!sameNullable(qf1.MaxDataBurstVol, qf2.MaxDataBurstVol) ||
+		!sameValue(qf1.ReflectiveQos, qf2.ReflectiveQos) ||
+		!sameValue(qf1.SharingKeyDl, qf2.SharingKeyDl) ||
+		!sameValue(qf1.SharingKeyUl, qf2.SharingKeyUl) ||
+		!sameNullable(qf1.MaxPacketLossRateDl, qf2.MaxPacketLossRateDl) ||
+		!sameNullable(qf1.MaxPacketLossRateUl, qf2.MaxPacketLossRateUl) ||
+		!sameValue(qf1.DefQosFlowIndication, qf2.DefQosFlowIndication) {
 		return true
 	}
 
@@ -666,7 +671,7 @@ func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 		return true
 	}
 	if qf1.Arp != nil && qf2.Arp != nil {
-		if qf1.Arp.PriorityLevel != qf2.Arp.PriorityLevel ||
+		if !sameNullable(qf1.Arp.PriorityLevel, qf2.Arp.PriorityLevel) ||
 			qf1.Arp.PreemptCap != qf2.Arp.PreemptCap ||
 			qf1.Arp.PreemptVuln != qf2.Arp.PreemptVuln {
 			return true
@@ -674,6 +679,22 @@ func GetQosDataChanges(qf1, qf2 *models.QosData) bool {
 	}
 
 	return false
+}
+
+// sameValue reports whether two optional fields hold the same value, or are both absent.
+func sameValue[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
+// sameNullable is sameValue for the generated nullable wrappers. Unset and set-to-null are the
+// same here: both mean no value, and a field left unset marshals as null, so one written by this
+// process and read back from the wire would otherwise differ from itself.
+func sameNullable[T comparable, N interface{ Get() *T }](a, b N) bool {
+	return sameValue(a.Get(), b.Get())
 }
 
 func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refQosData string) *models.QosData {
