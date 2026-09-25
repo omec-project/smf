@@ -625,8 +625,11 @@ func CommitQosFlowDescUpdate(smCtxtPolData *SmCtxtPolicyData, update *QosFlowsUp
 		maps.Copy(smCtxtPolData.SmCtxtQosData.QosData, update.add)
 	}
 
-	// Mod flows
-	// TODO
+	// Modified flows replace what was committed. Left out, the record kept the rates the session
+	// was established with after the UE had accepted new ones, so every later decision read the
+	// flow as modified again, and anything restoring "the parameters in force" from the record
+	// restored the old ones.
+	maps.Copy(smCtxtPolData.SmCtxtQosData.QosData, update.mod)
 
 	// Del flows
 	if len(update.del) > 0 {
