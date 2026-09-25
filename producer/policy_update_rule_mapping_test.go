@@ -748,3 +748,31 @@ func TestRevertingAnAdditionRemovesTheRuleFromTheSession(t *testing.T) {
 		t.Error("the revert dropped rules the modification never touched")
 	}
 }
+
+// The UPF's answer to a modification reaches the waiting sender only while the session is in
+// PfcpModify: HandlePfcpSessionModificationResponse drops it in any other state. The abandonment
+// that precedes a revert settles the session in Active, so a revert sent from there waited for an
+// answer that was never delivered -- on a rig, accepted by the UPF and never logged as done.
+func TestARevertIsSentWhileTheSessionAwaitsTheAnswer(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var stateAtSend smf_context.SMContextState
+	sendPfcpSessionModifyReq = func(sm *smf_context.SMContext, _ *pfcpParam) error {
+		stateAtSend = sm.SMContextState
+		return nil
+	}
+
+	s := programmedRateChange(t)
+	timer := &smf_context.Timer{}
+	s.sm.T3591 = timer
+
+	abandonIfCurrent(s.sm, timer)
+
+	if stateAtSend != smf_context.SmStatePfcpModify {
+		t.Errorf("the revert was sent in state %s; the answer is delivered only in %s",
+			stateAtSend, smf_context.SmStatePfcpModify)
+	}
+	if s.sm.SMContextState != smf_context.SmStateActive {
+		t.Errorf("after the revert the session is in %s, want it settled in %s", s.sm.SMContextState, smf_context.SmStateActive)
+	}
+}
