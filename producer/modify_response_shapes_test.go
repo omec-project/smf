@@ -158,9 +158,20 @@ func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 	})
 
 	t.Run("no flow established: the modification is abandoned", func(t *testing.T) {
+		// The user plane is put back on its own goroutine, so it is captured rather than run.
+		original := restoreUserPlaneAsync
+		t.Cleanup(func() { restoreUserPlaneAsync = original })
+		var restored *qos.PolicyUpdate
+		restoreUserPlaneAsync = func(_ *smf_context.SMContext, u *qos.PolicyUpdate) { restored = u }
+
 		smContext := modifyingSmContext(t)
+		pending := smContext.SmPolicyUpdates[0]
 
 		deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, nil, []int64{1, 2}))
+
+		if restored != pending {
+			t.Error("the user plane was not put back from the modification the radio refused")
+		}
 
 		if smContext.T3591 != nil {
 			t.Error("T3591 is still armed for a modification that will never be acknowledged")

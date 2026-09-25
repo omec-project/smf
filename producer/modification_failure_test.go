@@ -43,7 +43,7 @@ func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
 		return nil
 	}
 
-	sm := modifyingSession()
+	sm := programmedRateChange(t).sm
 	revertModification(sm, "n1n2_transfer_failed")
 
 	if !reverted {
@@ -67,7 +67,7 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 		return errors.New("upf unreachable")
 	}
 
-	sm := modifyingSession()
+	sm := programmedRateChange(t).sm
 	revertModification(sm, "n1n2_transfer_failed")
 
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
@@ -249,8 +249,7 @@ func TestAFailedRevertIsNotReportedAsASessionPutBack(t *testing.T) {
 		return errors.New("upf unreachable")
 	}
 
-	sm := modifyingSession()
-	sm.NwModificationPending = true
+	sm := programmedRateChange(t).sm
 
 	txn := &transaction.Transaction{Ctxt: sm}
 

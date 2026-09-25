@@ -414,3 +414,159 @@ func TestARuleRepointedAtNewQosDataIsRequalified(t *testing.T) {
 		}
 	}
 }
+
+// programmedRateChange is the two-rule session with the dedicated rule's rate change pending and
+// already programmed into the user plane, as ApplyModification leaves it before the UE is told.
+func programmedRateChange(t *testing.T) *twoRuleSession {
+	t.Helper()
+
+	s := newTwoRuleSession(t, false)
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())}
+	BuildPfcpParam(s.sm)
+	s.sm.NwModificationPending = true
+
+	return s
+}
+
+// Putting the user plane back means the rule the abandoned modification changed goes back to its
+// committed rates. The revert used to rebuild with the update discarded and nothing pending, which
+// programs nothing, and then log that the user plane had been put back.
+func TestARevertPutsTheChangedRuleBackOnItsCommittedRates(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+
+	s := programmedRateChange(t)
+	installed := map[uint32]bool{}
+	for _, pdr := range []*smf_context.PDR{s.cirUL, s.cirDL} {
+		for _, qer := range pdr.QER {
+			if qer.QERID != s.sessQER.QERID {
+				installed[qer.QERID] = true
+			}
+		}
+	}
+
+	if !revertModification(s.sm, "n1n2_transfer_failed") {
+		t.Fatal("the revert reported failure")
+	}
+	if sent == nil {
+		t.Fatal("nothing was sent to the user plane")
+	}
+	if len(s.sm.SmPolicyUpdates) != 0 {
+		t.Error("the revert was left pending, where a later commit would record it")
+	}
+
+	for _, pdr := range sent.pdrList {
+		if pdr == s.allowUL || pdr == s.allowDL {
+			t.Error("the revert reprogrammed the catch-all, which the modification never touched")
+		}
+	}
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		var keptSession, committedRates bool
+		for _, qer := range pdr.QER {
+			switch {
+			case qer.QERID == s.sessQER.QERID:
+				keptSession = true
+			case qer.MBR != nil && qer.MBR.ULMBR == 3000 && qer.MBR.DLMBR == 6000 &&
+				qer.GBR != nil && qer.GBR.ULGBR == 1000 && qer.GBR.DLGBR == 2000 && queued(sent.qerList, qer):
+				committedRates = true
+			}
+		}
+		if !keptSession || !committedRates {
+			t.Errorf("%s: session QER kept %v, flow QER back on the committed rates %v", dir, keptSession, committedRates)
+		}
+	}
+
+	removed := map[uint32]bool{}
+	for _, qer := range sent.removeQER {
+		removed[qer.QERID] = true
+	}
+	for id := range installed {
+		if !removed[id] {
+			t.Errorf("QER %d, installed by the abandoned modification, was left on the user plane", id)
+		}
+	}
+}
+
+// A UE that never answers never took the new parameters up, so abandoning on T3591's last expiry
+// has to put the user plane back as well. It used to only discard the update.
+func TestAbandoningOnT3591ExpiryPutsTheUserPlaneBack(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+
+	s := programmedRateChange(t)
+	timer := &smf_context.Timer{}
+	s.sm.T3591 = timer
+
+	abandonIfCurrent(s.sm, timer)
+
+	if sent == nil || !sent.touches(s.cirUL) || !sent.touches(s.cirDL) {
+		t.Error("the user plane was not put back after the UE never acknowledged")
+	}
+}
+
+// touches reports whether the parameters program pdr.
+func (p *pfcpParam) touches(pdr *smf_context.PDR) bool {
+	for _, sent := range p.pdrList {
+		if sent == pdr {
+			return true
+		}
+	}
+	return false
+}
+
+// Undoing a re-pointing changes no QoS data at all: the rule goes back to data that is still
+// there, unchanged. Only the rule itself differs, so a builder that looked only at changed QoS
+// data left the rule on the abandoned one's QER.
+func TestRevertingARepointingPutsTheRuleBackOnItsOwnQosData(t *testing.T) {
+	const newQosID = "3"
+
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+
+	s := newTwoRuleSession(t, false)
+	decision := s.rateChange()
+	(*decision.QosDecs)[cirQosID] = s.cirQosSent
+	(*decision.QosDecs)[newQosID] = models.QosData{
+		QosId: newQosID, Var5qi: openapi.PtrInt32(3),
+		MaxbrUl: *openapi.NewNullableString(openapi.PtrString("7 Mbps")),
+		MaxbrDl: *openapi.NewNullableString(openapi.PtrString("9 Mbps")),
+	}
+	repointed := s.cirRule
+	repointed.RefQosData = []string{newQosID}
+	decision.PccRules[cirRuleID] = repointed
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
+	BuildPfcpParam(s.sm)
+	s.sm.NwModificationPending = true
+
+	revertModification(s.sm, "n1n2_transfer_failed")
+
+	if sent == nil {
+		t.Fatal("nothing was sent to the user plane")
+	}
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		var committedRates bool
+		for _, qer := range pdr.QER {
+			if qer.MBR != nil && qer.MBR.ULMBR == 3000 && qer.MBR.DLMBR == 6000 && queued(sent.qerList, qer) {
+				committedRates = true
+			}
+		}
+		if !committedRates {
+			t.Errorf("%s: the rule is not back on its own QoS data's rates", dir)
+		}
+	}
+}
