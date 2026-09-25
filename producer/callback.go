@@ -61,7 +61,9 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 
 	logger.PduSessLog.Infoln("In HandleSMPolicyUpdateNotify")
 
-	smContext.SMLock.Lock()
+	// After any revert still owed, as in ApplyModification: this applies a modification in the same
+	// hold of the lock that checks none is pending.
+	lockAfterRevert(smContext)
 
 	// A session being released has no tunnel by the time a notification for it can arrive. Refused
 	// here, under the lock release takes to clear it, as the cheaper of two refusals: without this,
@@ -761,7 +763,7 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 // set PfcpModify, program nothing, and have the failure path set the session back to Active. The
 // procedure the caller reserved is released with it, since nothing will run it now.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
-	smContext.SMLock.Lock()
+	lockAfterRevert(smContext)
 	if state := smContext.SMContextState; smContext.Tunnel == nil ||
 		(state != smfContext.SmStateActive && state != smfContext.SmStatePfcpModify) {
 		smContext.NwModificationPending = false
@@ -1039,8 +1041,7 @@ func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer) 
 		return
 	}
 
-	abandoned := pendingUpdateLocked(smContext)
-	abandonModificationLocked(smContext)
+	abandoned := abandonForRevertLocked(smContext)
 	smContext.SMLock.Unlock()
 
 	// Reported outside the lock: it logs and counts, and touches no session state.
@@ -1066,9 +1067,7 @@ func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
 // the caller holds the session lock across its whole handler.
 func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
 	reportAbandonment(smContext, path, cause)
-	abandoned := pendingUpdateLocked(smContext)
-	abandonModificationLocked(smContext)
-	restoreUserPlaneAsync(smContext, abandoned)
+	restoreUserPlaneAsync(smContext, abandonForRevertLocked(smContext))
 }
 
 // restoreUserPlaneAsync is behind a seam for the reason applyModification is: the restore runs on
@@ -1082,6 +1081,41 @@ var restoreUserPlaneAsync = func(smContext *smfContext.SMContext, abandoned *qos
 func (p *pfcpParam) empty() bool {
 	return len(p.pdrList) == 0 && len(p.farList) == 0 && len(p.barList) == 0 && len(p.qerList) == 0 &&
 		len(p.removePDR) == 0 && len(p.removeFAR) == 0 && len(p.removeQER) == 0
+}
+
+// lockAfterRevert takes SMLock once no revert is owed on the session, and returns holding it.
+//
+// A revert is part of the procedure it undoes: it is computed from the committed rules and the
+// update that was abandoned, and programs the committed rules back. A modification built before it
+// had finished would be programmed first and then undone -- the revert restores the committed
+// rules over whatever the new one had just set -- and the two would wait on the session's one
+// response channel at once. The revert runs on its own goroutine from T3591's expiry and from the
+// NAS and NGAP handlers, outside the transaction queue that orders everything else, so this is
+// where the order is kept.
+func lockAfterRevert(smContext *smfContext.SMContext) {
+	for {
+		smContext.SMLock.Lock()
+		owed := smContext.RevertInFlight
+		if owed == nil {
+			return
+		}
+		smContext.SMLock.Unlock()
+		<-owed
+	}
+}
+
+// abandonForRevertLocked abandons the modification in flight and returns what it discarded, so the
+// caller can put the user plane back from exactly that update; the caller holds SMLock. When there
+// is something to put back, the revert is recorded as owed in the same hold, so nothing can start
+// in between: the caller must hand the update to restoreUserPlane, which settles it.
+func abandonForRevertLocked(smContext *smfContext.SMContext) *qos.PolicyUpdate {
+	abandoned := pendingUpdateLocked(smContext)
+	abandonModificationLocked(smContext)
+	if abandoned != nil && smContext.RevertInFlight == nil {
+		smContext.RevertInFlight = make(chan struct{})
+	}
+
+	return abandoned
 }
 
 // pendingUpdateLocked is the modification in flight, or nil. The caller holds SMLock, and takes it
@@ -1118,8 +1152,7 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 
 		return true
 	}
-	abandoned := pendingUpdateLocked(smContext)
-	abandonModificationLocked(smContext)
+	abandoned := abandonForRevertLocked(smContext)
 	smContext.SMLock.Unlock()
 	reportAbandonment(smContext, path, cause)
 
@@ -1150,6 +1183,16 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		smContext.SubPduSessLog.Infof("no modification was pending; the user plane has nothing to put back")
 		return true
 	}
+
+	// Settled however this ends, so a modification waiting in lockAfterRevert is never stranded.
+	defer func() {
+		smContext.SMLock.Lock()
+		if owed := smContext.RevertInFlight; owed != nil {
+			close(owed)
+			smContext.RevertInFlight = nil
+		}
+		smContext.SMLock.Unlock()
+	}()
 
 	smContext.SMLock.Lock()
 	revert := qos.RevertOf(&smContext.SmPolicyData, abandoned)
@@ -1262,7 +1305,8 @@ func SetSessionTaskQueue(queue func(*smfContext.SMContext, func())) {
 // update is computed now, against what the session has committed by now, because a decision is a
 // change to the policy in force and not a description of all of it (TS 29.512 subclause 4.2.6.1).
 func runDeferredModification(smContext *smfContext.SMContext) {
-	smContext.SMLock.Lock()
+	// After any revert still owed: built before it, this modification would be undone by it.
+	lockAfterRevert(smContext)
 
 	// Something else started first, and its end starts this one instead.
 	if modificationInProgressLocked(smContext) || len(smContext.DeferredPolicyDecisions) == 0 ||
