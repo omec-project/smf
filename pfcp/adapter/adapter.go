@@ -88,6 +88,11 @@ func FindFTEID(createdPDRIEs []*ie.IE) (*ie.FTEIDFields, error) {
 	return nil, fmt.Errorf("FTEID not found in CreatedPDR")
 }
 
+// HandlePfcpAssociationSetupResponse runs synchronously inside the association send and takes no
+// lock of its own: every caller holds the UPF's UpfLock across that send (see HandleAdapterPfcpRsp).
+// That is what makes the associated status and the new recovery timestamp visible together, which
+// the acknowledging-incarnation record restoration reads depends on. Taking the lock here instead
+// deadlocks probeUpf, which already holds it.
 func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	rsp, ok := msg.PfcpMessage.(*message.AssociationSetupResponse)
 	if !ok {
