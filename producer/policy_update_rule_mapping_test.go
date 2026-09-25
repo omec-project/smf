@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
@@ -774,5 +775,77 @@ func TestARevertIsSentWhileTheSessionAwaitsTheAnswer(t *testing.T) {
 	}
 	if s.sm.SMContextState != smf_context.SmStateActive {
 		t.Errorf("after the revert the session is in %s, want it settled in %s", s.sm.SMContextState, smf_context.SmStateActive)
+	}
+}
+
+// A revert is part of the procedure it undoes. It runs on T3591's goroutine, outside the queue that
+// orders a session's transactions, so a policy notification for the same rule could be built and
+// sent while the revert was still waiting on the user plane -- and the revert, restoring the
+// committed rules, would then undo it, with both waiting on the session's one response channel.
+// The new modification has to wait for the revert, and then program its own rates.
+func TestAModificationWaitsForTheRevertBeforeIt(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+	revertSent, releaseRevert, nextSent := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
+	var sends int
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		sends++
+		if sends == 1 {
+			close(revertSent)
+			<-releaseRevert
+			return nil
+		}
+		nextSent <- struct{}{}
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	s := programmedRateChange(t)
+	t.Cleanup(func() { s.sm.StopT3591() })
+	timer := &smf_context.Timer{}
+	s.sm.T3591 = timer
+
+	reverted := make(chan struct{})
+	go func() {
+		abandonIfCurrent(s.sm, timer)
+		close(reverted)
+	}()
+	<-revertSent
+
+	// The PCF edits the same rule again while the revert is still out.
+	s.sm.SMLock.Lock()
+	again := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())
+	s.sm.SMLock.Unlock()
+	applied := make(chan error, 1)
+	go func() { applied <- ApplyModification(s.sm, again) }()
+
+	select {
+	case <-nextSent:
+		t.Fatal("the new modification reached the user plane while the revert before it was still out")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	close(releaseRevert)
+	<-reverted
+	select {
+	case <-nextSent:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the new modification never reached the user plane after the revert finished")
+	}
+	if err := <-applied; err != nil {
+		t.Fatalf("ApplyModification: %v", err)
+	}
+
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		var newRates bool
+		for _, qer := range pdr.QER {
+			if qer.MBR != nil && qer.MBR.ULMBR == 5000 && qer.MBR.DLMBR == 8000 {
+				newRates = true
+			}
+		}
+		if !newRates {
+			t.Errorf("%s: after the revert and the new modification, the rule is not on the new rates", dir)
+		}
 	}
 }
