@@ -218,7 +218,7 @@ func RestoreSessionsOnUPF(nodeID context.NodeID, recovery time.Time) {
 func enumerateWithRetry(nodeID context.NodeID, nodeIP string, run *restorationRun) (anchoredSessions []*context.SMContext, unexaminableAtTheEnd []string, stillEstablishing int) {
 	deadline := time.Now().Add(enumerationWindow)
 	for attempt := 0; ; attempt++ {
-		anchored, unexaminable, establishing := context.SessionsAnchoredOn(nodeID)
+		anchored, unexaminable, establishing := context.SessionsAnchoredOn(nodeID, run.recovery)
 		if len(anchored) > 0 || len(unexaminable) == 0 || !time.Now().Before(deadline) || run.isSuperseded() {
 			if len(unexaminable) > 0 && len(anchored) == 0 {
 				// Reported as a fault only when nothing explains it. A run that displaced another
