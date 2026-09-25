@@ -313,6 +313,20 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubQosLog = logger.QosLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 }
 
+// WaitForOwedRevert blocks while a revert is owed on the session, and returns holding nothing. The
+// caller must hold neither SMLock nor the transaction bus lock: the revert takes SMLock to build.
+func (smContext *SMContext) WaitForOwedRevert() {
+	for {
+		smContext.SMLock.Lock()
+		owed := smContext.RevertInFlight
+		smContext.SMLock.Unlock()
+		if owed == nil {
+			return
+		}
+		<-owed
+	}
+}
+
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	if smContext.SMContextState == nextState {
 		// Not a real transition (e.g. a retry/no-op ChangeState call with the same target

@@ -126,6 +126,15 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 		return transaction.TxnEventFailure, fmt.Errorf("TxnProcess, invalid SM Ctxt")
 	}
 
+	// A revert runs outside this queue -- from T3591's expiry and from the NAS and NGAP handlers --
+	// and waits on the session's one PFCP response channel like every exchange a transaction makes,
+	// which carries no correlation: two exchanges in flight at once can each take the other's answer.
+	// So nothing queued for the session starts until an owed revert has finished. Waited on here,
+	// before the handler takes SMLock, because the revert needs SMLock to build and this holds
+	// nothing; a transaction already running when the revert became owed holds SMLock, so the
+	// revert's build waits for it instead.
+	smContext.WaitForOwedRevert()
+
 	var event SmEvent
 
 	if factory.SmfConfig.Configuration.EnableDbStore {
