@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nas/v2/nasConvert"
@@ -106,9 +107,69 @@ type SMContext struct {
 	SelectedPCFProfile models.NFProfileDiscovery `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
 	AnType             models.AccessType         `json:"anType" yaml:"anType" bson:"anType"`
 	RatType            models.RatType            `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
-	PresenceInLadn     models.PresenceState      `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
-	HoState            models.HoState            `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
-	DnnConfiguration   models.DnnConfiguration   `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
+
+	// ExtendedNasSmTimer is the AMF's indication that the extended NAS timer values for access
+	// via a satellite NG-RAN cell apply to this session (TS 24.501 subclause 4.23.4).
+	ExtendedNasSmTimer bool `json:"extendedNasSmTimer,omitempty" yaml:"extendedNasSmTimer" bson:"extendedNasSmTimer,omitempty"`
+
+	// T3591Value and T3591Source are resolved once per session, as subclause 4.23.4 requires the
+	// value to be calculated at the start of a procedure and not recalculated until it completes,
+	// restarts or aborts. Ordinarily that is at creation, in SetCreateData. A session restored
+	// from a record written before this field existed carries zero, and startT3591Locked resolves
+	// it there rather than arming a timer with an interval time.NewTicker refuses.
+	T3591Value time.Duration `json:"t3591Value,omitempty" yaml:"t3591Value" bson:"t3591Value,omitempty"`
+
+	// T3591 is the live retransmission timer for a modification awaiting the UE's answer. It is
+	// a goroutine handle, so it is neither serialised nor restored with the session.
+	// NwModificationPending is true from the moment the network commits to modifying this session
+	// until the procedure ends, however it ends. It is what makes a colliding UE request
+	// recognisable, per TS 24.501 subclause 6.3.2.5 item d.
+	//
+	// T3591 alone will not do. It is armed only once the Command has gone out, and the procedure
+	// starts a PFCP round trip earlier — a UE request arriving in that window is just as much a
+	// collision as one arriving later, and would otherwise be refused instead of disregarded.
+	//
+	// Read and written under SMLock.
+	// Not persisted, for the same reason T3591 and Realign are not: it describes a procedure that
+	// is in flight right now. Restoring it from the database would leave a session with a
+	// modification permanently pending — no timer, no procedure, and every UE modification request
+	// for that session disregarded from then on.
+	NwModificationPending bool `json:"-" yaml:"-" bson:"-"`
+
+	// RevertInFlight is open from the moment a modification whose user plane was programmed is
+	// abandoned until the revert that puts the user plane back has finished, and nil otherwise.
+	// Every transaction for the session waits for it before processing, and ApplyModification --
+	// which the realignment reaches from outside the queue -- waits for it too: the revert shares the
+	// session's uncorrelated PFCP response channel, and a modification built before it would be
+	// undone by it. It is only ever set from inside the session's queue (T3591's expiry is queued
+	// as a session task), so a transaction past its wait cannot see it set behind it. Not
+	// persisted, as the fields above are not.
+	RevertInFlight chan struct{} `json:"-" yaml:"-" bson:"-"`
+
+	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
+	// response or failure is acted on, or until the modification is abandoned. It is what tells a
+	// stale answer from the one this session is waiting for; NwModificationPending cannot, because
+	// it tracks the UE's half and the UE can answer before the radio does.
+	RanAnswerPending bool `json:"-" yaml:"-" bson:"-"`
+
+	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
+
+	// Realign is set when the radio access network established only part of a modification. It is
+	// acted on once the UE acknowledges that modification, not before.
+	Realign *PendingRealignment `json:"-" yaml:"-" bson:"-"`
+
+	// CommittedBeforeRanAnswer holds the update a UE completion committed while the radio's answer
+	// was still outstanding. The two answers can arrive in either order, and the realignment is
+	// normally built by the completion, by pruning the still-pending update to what the radio
+	// established. When the UE is first there is no longer a pending update to prune -- it has been
+	// committed whole, refused flows and all -- so the answer that follows has to build the
+	// correction itself, and this is what it builds it from. Cleared as soon as that answer is
+	// acted on, when the modification is abandoned, and when the next one replaces it.
+	CommittedBeforeRanAnswer *qos.PolicyUpdate       `json:"-" yaml:"-" bson:"-"`
+	T3591Source              NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`
+	PresenceInLadn           models.PresenceState    `json:"presenceInLadn,omitempty" yaml:"presenceInLadn" bson:"presenceInLadn,omitempty"` // ignore
+	HoState                  models.HoState          `json:"hoState,omitempty" yaml:"hoState" bson:"hoState,omitempty"`
+	DnnConfiguration         models.DnnConfiguration `json:"dnnConfiguration,omitempty" yaml:"dnnConfiguration" bson:"dnnConfiguration,omitempty"` // ?
 
 	Snssai         *models.Snssai       `json:"snssai" yaml:"snssai" bson:"snssai"`
 	HplmnSnssai    *models.Snssai       `json:"hplmnSnssai,omitempty" yaml:"hplmnSnssai" bson:"hplmnSnssai,omitempty"`
@@ -253,6 +314,20 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubConsumerLog = logger.ConsumerLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 	smContext.SubFsmLog = logger.FsmLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 	smContext.SubQosLog = logger.QosLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
+}
+
+// WaitForOwedRevert blocks while a revert is owed on the session, and returns holding nothing. The
+// caller must hold neither SMLock nor the transaction bus lock: the revert takes SMLock to build.
+func (smContext *SMContext) WaitForOwedRevert() {
+	for {
+		smContext.SMLock.Lock()
+		owed := smContext.RevertInFlight
+		smContext.SMLock.Unlock()
+		if owed == nil {
+			return
+		}
+		<-owed
+	}
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
@@ -550,6 +625,12 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.ServingNetwork = createData.GetServingNetwork()
 	smContext.AnType = createData.GetAnType()
 	smContext.RatType = createData.GetRatType()
+	smContext.ExtendedNasSmTimer = createData.GetExtendedNasSmTimerInd()
+	smContext.T3591Value, smContext.T3591Source = ResolveT3591(
+		factory.SmfConfig.Configuration.T3591, smContext.ExtendedNasSmTimer)
+	smContext.SubCtxLog.Infof("T3591 for this session is %s, decided by %s",
+		smContext.T3591Value, smContext.T3591Source)
+	metrics.IncrementNasTimerStats("T3591", string(smContext.T3591Source), smContext.T3591Value.String())
 	smContext.PresenceInLadn = createData.GetPresenceInLadn()
 	smContext.UeLocation = createData.UeLocation
 	smContext.UeTimeZone = createData.GetUeTimeZone()
@@ -919,10 +1000,32 @@ func (smContext *SMContext) GeneratePDUSessionEstablishmentReject(cause string) 
 	return httpResponse
 }
 
+// CommitSmPolicyDecision applies or discards the pending policy update, taking SMLock itself.
+//
+// Callers that already hold SMLock must use CommitSmPolicyDecisionLocked instead. SMLock is a
+// plain mutex and is not reentrant, so calling this from under it deadlocks the session — and
+// because the update path holds the lock with a defer, the session stays wedged and its HTTP
+// handler never returns.
 func (smContext *SMContext) CommitSmPolicyDecision(status bool) error {
-	// Lock SM context
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
+	return smContext.CommitSmPolicyDecisionLocked(status)
+}
+
+// CommitSmPolicyDecisionLocked is CommitSmPolicyDecision for a caller that already holds SMLock.
+func (smContext *SMContext) CommitSmPolicyDecisionLocked(status bool) error {
+	if len(smContext.SmPolicyUpdates) == 0 {
+		// Nothing pending. Reachable whenever a message that commits or discards arrives without
+		// a modification in flight — a retransmitted PDU SESSION MODIFICATION COMPLETE is the
+		// ordinary case — and indexing here would take the SMF down.
+		outcome := "discard"
+		if status {
+			outcome = "commit"
+		}
+
+		logger.CtxLog.Warnf("no pending SM policy update to %s", outcome)
+		return nil
+	}
 
 	if status {
 		err := qos.CommitSmPolicyDecision(&smContext.SmPolicyData, smContext.SmPolicyUpdates[0])
@@ -1058,4 +1161,27 @@ func mapPduSessStateToMetricStateAndOp(state SMContextState) (string, mi.Subscri
 	default:
 		return "unknown", mi.SubsOpDel
 	}
+}
+
+// StopT3591 stops the modification retransmission timer if one is running.
+//
+// The caller must hold SMLock. NwModificationPending and T3591 are session state like any other
+// here, and every current call site is already under it: the N1 and N2 update handlers run under
+// the lock HandlePDUSessionSMContextUpdate takes, and startT3591Locked is documented as requiring
+// it. There is deliberately no unlocked variant - SMLock is not reentrant, so one taken here would
+// wedge the session for its callers.
+//
+// It is idempotent, and safe to call when no modification is in flight, because both happen: an
+// acknowledgement can arrive after the timer has already abandoned the procedure, and a UE can
+// retransmit that acknowledgement.
+func (smContext *SMContext) StopT3591() {
+	// Cleared before the nil check, not after: the network's procedure is pending from the moment
+	// it commits, which is a PFCP round trip before T3591 is armed. A terminus reached inside that
+	// window still has to settle the session.
+	smContext.NwModificationPending = false
+	if smContext.T3591 == nil {
+		return
+	}
+	smContext.T3591.Stop()
+	smContext.T3591 = nil
 }

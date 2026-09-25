@@ -46,4 +46,8 @@ const (
 	PfcpSessCreate  SmfMsgType = "PfcpSessCreate"
 	PfcpSessModify  SmfMsgType = "PfcpSessModify"
 	PfcpSessRelease SmfMsgType = "PfcpSessRelease"
+
+	// SessionTask is work the SMF starts itself and runs in a session's transaction queue, so it
+	// is ordered against everything else done to that session.
+	SessionTask SmfMsgType = "SessionTask"
 )

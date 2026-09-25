@@ -67,6 +67,8 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		// Pre-loaded- No action
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
+	case svcmsgtypes.SessionTask:
+		// Pre-loaded- No action
 	default:
 		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v]",
 			transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), txn.MsgType)
@@ -124,6 +126,22 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 	if smContext == nil {
 		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
 		return transaction.TxnEventFailure, fmt.Errorf("TxnProcess, invalid SM Ctxt")
+	}
+
+	// A revert runs outside this queue -- from T3591's expiry and from the NAS and NGAP handlers --
+	// and waits on the session's one PFCP response channel like every exchange a transaction makes,
+	// which carries no correlation: two exchanges in flight at once can each take the other's answer.
+	// So nothing queued for the session starts until an owed revert has finished. Waited on here,
+	// before the handler takes SMLock, because the revert needs SMLock to build and this holds
+	// nothing; a transaction already running when the revert became owed holds SMLock, so the
+	// revert's build waits for it instead.
+	smContext.WaitForOwedRevert()
+
+	// Work the SMF queued for the session itself: it runs here, in the session's slot, and needs no
+	// state machine -- what it does is decided by the session as it finds it.
+	if txn.MsgType == svcmsgtypes.SessionTask {
+		txn.Req.(func())()
+		return transaction.TxnEventSuccess, nil
 	}
 
 	var event SmEvent
