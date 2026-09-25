@@ -1092,9 +1092,9 @@ func realignAfterPartialRejection(smContext *context.SMContext, result context.M
 // programmed nothing, and the user-plane call blocked forever on a response the triggering
 // transaction had already taken.
 //
-// It runs on its own goroutine, and acquiring SMLock is what sequences it: the transaction that
-// brought the acknowledgement holds the lock for its whole life, so the correction cannot start
-// until that has finished and the user plane's response channel is free.
+// It runs as a task in the session's transaction queue: the transaction that brought the
+// acknowledgement is the session's active one for its whole life, so the correction cannot start
+// until that has ended and the user plane's response channel is free.
 func realignSession(smContext *context.SMContext, realign *context.PendingRealignment, corrective *qos.PolicyUpdate) {
 	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
 		realign.EstablishedQFIs, realign.RefusedQFIs)
@@ -1130,9 +1130,11 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 
 	refused := realign.RefusedQFIs
 	start := func() {
-		// Queued in the session's transaction slot, for the reason a held decision is: the caller is
-		// the UE's completion, whose state machine sets Active after this returns, and a correction
-		// already in SmStatePfcpModify by then would never see the user plane's answer.
+		// Queued in the session's transaction slot, for two reasons. The caller is the UE's
+		// completion, whose state machine sets Active after this returns, and a correction already in
+		// SmStatePfcpModify by then would never see the user plane's answer. And a correction that
+		// cannot be delivered is reverted, which has to happen inside the queue for the reason
+		// abandonIfCurrent's expiry is queued.
 		queueSessionTask(smContext, correct(smContext, corrective, refused))
 	}
 	if wait > 0 {
