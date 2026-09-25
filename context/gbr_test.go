@@ -95,9 +95,9 @@ func withSessionAmbr(smContext *SMContext) {
 
 // The establishment path has to program the guarantee too, and this is the test that says so.
 //
-// CreateDedicatedQosQer, on the policy-update path, has always set the QER's GBR.
-// CreatePccRuleQer, which the establishment datapath uses, set only the MBR — so a configured
-// guarantee reached the UPF on a policy edit and was dropped when the session was established.
+// The policy-update path always set the QER's GBR. CreatePccRuleQer, which the establishment
+// datapath uses, set only the MBR — so a configured guarantee reached the UPF on a policy edit
+// and was dropped when the session was established.
 // The failure mode is the awkward one: the guarantee works, then disappears the next time the UE
 // attaches, which reads as intermittent rather than as unimplemented.
 func TestCreatePccRuleQerProgramsTheGuaranteedRate(t *testing.T) {

@@ -141,7 +141,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			shouldSendReleaseOnly = true
 		}
 	}
-	logger.PduSessLog.Infof("[BuildPfcpParam] Using PCC RuleId=%s, releaseOnly=%v", ruleid, shouldSendReleaseOnly)
+	logger.PduSessLog.Infof("[BuildPfcpParam] releaseOnly=%v", shouldSendReleaseOnly)
 
 	// Iterate over all active data paths in the SM context
 	if smContext.Tunnel == nil {
@@ -161,19 +161,14 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		}
 
 		ANUPF := dataPath.FirstDPNode
-		var dedQERs []*smfContext.QER
-		var err error
 		logger.PduSessLog.Infof("Processing DataPath with UPF Node: %s", ANUPF.GetNodeIP())
 
-		// Only create/activate QERs and tunnels if not release-only
-		if !shouldSendReleaseOnly {
-			dedQERs, err = ANUPF.CreateDedicatedQosQer(smContext)
-			if err != nil {
-				logger.PduSessLog.Warnf("[BuildPfcpParam] CreateSessRuleQer failed: %v", err)
-			} else {
-				logger.PduSessLog.Infof("[BuildPfcpParam] Created %d dedicated QER(s)", len(dedQERs))
-			}
+		// Read before the tunnels are extended below: a PDR built there for an added rule does not
+		// carry the session QER yet, so it would empty the intersection this is.
+		sessQERs := sessionQERs(ANUPF)
 
+		// Only activate tunnels if not release-only
+		if !shouldSendReleaseOnly {
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
 			}
@@ -209,137 +204,240 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			}
 		}
 
-		// ----------------------
-		// Handle Downlink PDRs
-		// ----------------------
-		if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[ruleid]; ok {
-			logger.PduSessLog.Infof("[BuildPfcpParam] Checking DL PDR: Name=%s, ID=%d", ruleid, dlPDR.PDRID)
-
-			// Release-only scenario: mark PDR, FAR, QER for removal
-			if shouldSendReleaseOnly {
-				logger.PduSessLog.Infof("[BuildPfcpParam] Marking DL PDR[%s] for removal", ruleid)
-				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
-				if dlPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, dlPDR.FAR)
-				}
-				if dlPDR.QER != nil {
-					pfcpParam.removeQER = append(pfcpParam.removeQER, dlPDR.QER...)
-				}
-
-				// Mark UL PDR, FAR, QER for removal
-				if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
-					logger.PduSessLog.Infof("[BuildPfcpParam] Marking UL PDR[%s] for removal", ruleid)
-					pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-					if ulPDR.FAR != nil {
-						pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
-					}
-					if ulPDR.QER != nil {
-						pfcpParam.removeQER = append(pfcpParam.removeQER, ulPDR.QER...)
-					}
-				}
-				continue
-			}
-
-			// Attach dedicated QERs to DL PDR
-			if len(dedQERs) > 0 {
-				dlPDR.QER = dedQERs
-			}
-			if dlPDR.Precedence == 0 {
-				dlPDR.Precedence = 1
-			}
-
-			// Set PDI fields for core interface
-			dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
-			dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-
-			// Configure FAR for downlink traffic
-			if dlPDR.FAR == nil {
-				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
-			}
-			dlFAR := dlPDR.FAR
-			if dlFAR != nil {
-				dlFAR.ApplyAction = smfContext.ApplyAction{
-					Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
-				}
-			}
-
-			// Append to PFCP param lists
-			pfcpParam.pdrList = append(pfcpParam.pdrList, dlPDR)
-			if dlFAR != nil {
-				pfcpParam.farList = append(pfcpParam.farList, dlFAR)
-			} else {
-				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
-			}
-			if len(dedQERs) > 0 {
-				pfcpParam.qerList = append(pfcpParam.qerList, dedQERs...)
-			} else {
-				logger.PduSessLog.Errorf("dedicated QER is nil")
-			}
-
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+		if shouldSendReleaseOnly {
+			releaseRule(pfcpParam, ANUPF, ruleid)
+			continue
 		}
 
-		// ----------------------
-		// Handle Uplink PDRs
-		// ----------------------
-		if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
-			if shouldSendReleaseOnly {
-				// Mark UL PDR, FAR, QER for removal
-				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-				if ulPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
-				}
-				if ulPDR.QER != nil {
-					pfcpParam.removeQER = append(pfcpParam.removeQER, ulPDR.QER...)
-				}
-				continue
-			}
-
-			// Attach dedicated QERs to UL PDR
-			if len(dedQERs) > 0 {
-				ulPDR.QER = dedQERs
-			}
-			if ulPDR.Precedence == 0 {
-				ulPDR.Precedence = 1
-			}
-
-			// Set PDI and outer header removal for access interface
-			ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
-			ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
-			ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-			ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
-				OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
-			}
-
-			// Configure FAR for UL traffic
-			if ulPDR.FAR == nil {
-				logger.PduSessLog.Errorf("ulPDR.FAR is nil")
-			}
-			ulFAR := ulPDR.FAR
-			if ulFAR != nil {
-				ulFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
-				ulFAR.ForwardingParameters = &smfContext.ForwardingParameters{
-					DestinationInterface: smfContext.DestinationInterface{
-						InterfaceValue: smfContext.DestinationInterfaceCore,
-					},
-					NetworkInstance: []byte(smContext.Dnn),
-				}
-			}
-
-			// Append to PFCP param lists
-			pfcpParam.pdrList = append(pfcpParam.pdrList, ulPDR)
-			if ulFAR != nil {
-				pfcpParam.farList = append(pfcpParam.farList, ulFAR)
-			} else {
-				logger.PduSessLog.Errorf("ulFAR is nil")
-			}
-
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-			logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", ruleid, ulPDR)
+		// Each rule is programmed on its own PDRs. This used to take the first valid rule in map
+		// order and hang every dedicated QER in the decision on that one rule's PDRs, replacing
+		// what they carried. With a single PCC rule that is always the right rule, which is why
+		// nothing caught it; with a catch-all beside a dedicated flow it is a coin flip, and on
+		// the losing side the catch-all's traffic is metered at the dedicated flow's rates with
+		// its own flow QER and the session AMBR gone from it.
+		for name := range addedPccRules(smContext) {
+			programAddedRule(smContext, pfcpParam, ANUPF, name, sessQERs)
+		}
+		for name, qosRef := range requalifiedPccRules(smContext) {
+			requalifyRule(smContext, pfcpParam, ANUPF, name, qosRef, sessQERs)
 		}
 	}
 
 	return pfcpParam
+}
+
+// sessionQERs returns, by ID, the QERs carried by every PDR on the node, which is the session QER:
+// it is built once per node and attached to all of them, while a rule's flow QER is built per
+// direction and so is on one PDR only.
+//
+// Matched by ID, not by pointer. A session restored from the database has its tunnels decoded PDR
+// by PDR, so each PDR holds its own copy of the session QER, and a pointer intersection comes out
+// empty -- which would have every QER treated as the rule's own, and the session AMBR dropped.
+func sessionQERs(node *smfContext.DataPathNode) map[uint32]*smfContext.QER {
+	var shared map[uint32]*smfContext.QER
+
+	for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+		if tunnel == nil {
+			continue
+		}
+
+		for _, pdr := range tunnel.PDR {
+			carried := make(map[uint32]*smfContext.QER, len(pdr.QER))
+			for _, qer := range pdr.QER {
+				if qer == nil {
+					continue
+				}
+				if _, ok := shared[qer.QERID]; shared == nil || ok {
+					carried[qer.QERID] = qer
+				}
+			}
+
+			shared = carried
+		}
+	}
+
+	return shared
+}
+
+// addedPccRules names the rules the pending update adds. Their PDRs are built by
+// ActivateUlDlTunnel, under the same names.
+func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
+	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil ||
+		smContext.SmPolicyUpdates[0].PccRuleUpdate == nil {
+		return nil
+	}
+
+	return smContext.SmPolicyUpdates[0].PccRuleUpdate.GetAddPccRuleUpdate()
+}
+
+// requalifiedPccRules names the established rules whose QoS data the pending update changes, with
+// the QoS data each refers to. A rule on the default QoS flow is included: establishment builds
+// its flow QER from its QoS data like any other rule's, so a change to that data has to reach it
+// too.
+func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
+	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil {
+		return nil
+	}
+
+	update := smContext.SmPolicyUpdates[0]
+	added := addedPccRules(smContext)
+	changed := update.QosFlowUpdate.GetModified()
+	requalified := make(map[string]string)
+
+	for name, rule := range update.SmPolicyDecision.GetPccRules() {
+		if name == "" || rule.GetPccRuleId() == "" || added[name] != nil || len(rule.RefQosData) == 0 {
+			continue
+		}
+
+		qosRef := rule.RefQosData[0]
+		_, ok := changed[qosRef]
+		if !ok {
+			_, ok = update.QosFlowUpdate.GetAdded()[qosRef]
+		}
+		if !ok {
+			continue
+		}
+
+		requalified[name] = qosRef
+	}
+
+	return requalified
+}
+
+// releaseRule withdraws a rule's PDRs, FARs and QERs, for a decision that carries no valid rule.
+func releaseRule(pfcpParam *pfcpParam, node *smfContext.DataPathNode, ruleid string) {
+	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
+		pdr, ok := tunnel.PDR[ruleid]
+		if !ok {
+			continue
+		}
+
+		logger.PduSessLog.Infof("[BuildPfcpParam] Marking PDR[%s] ID=%d for removal", ruleid, pdr.PDRID)
+		pfcpParam.removePDR = append(pfcpParam.removePDR, pdr)
+		if pdr.FAR != nil {
+			pfcpParam.removeFAR = append(pfcpParam.removeFAR, pdr.FAR)
+		}
+		if pdr.QER != nil {
+			pfcpParam.removeQER = append(pfcpParam.removeQER, pdr.QER...)
+		}
+	}
+}
+
+// programAddedRule completes the PDRs ActivateUlDlTunnel built for a rule the update adds, and
+// queues them for creation. They carry the rule's own flow QER from that build; the session QER is
+// added here, since the tunnel build does not attach it.
+func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
+	name string, sessQERs map[uint32]*smfContext.QER,
+) {
+	var session []*smfContext.QER
+	for _, qer := range sessQERs {
+		session = append(session, qer)
+	}
+
+	if dlPDR, ok := node.DownLinkTunnel.PDR[name]; ok {
+		pfcpParam.qerList = append(pfcpParam.qerList, dlPDR.QER...)
+		dlPDR.QER = append(dlPDR.QER, session...)
+		if dlPDR.Precedence == 0 {
+			dlPDR.Precedence = 1
+		}
+
+		// Set PDI fields for core interface
+		dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
+		dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+
+		// Configure FAR for downlink traffic
+		if dlFAR := dlPDR.FAR; dlFAR != nil {
+			dlFAR.ApplyAction = smfContext.ApplyAction{
+				Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
+			}
+			pfcpParam.farList = append(pfcpParam.farList, dlFAR)
+		} else {
+			logger.PduSessLog.Errorf("dlPDR.FAR is nil")
+		}
+
+		pfcpParam.pdrList = append(pfcpParam.pdrList, dlPDR)
+		smContext.PendingUPF[node.GetNodeIP()] = true
+	}
+
+	if ulPDR, ok := node.UpLinkTunnel.PDR[name]; ok {
+		pfcpParam.qerList = append(pfcpParam.qerList, ulPDR.QER...)
+		ulPDR.QER = append(ulPDR.QER, session...)
+		if ulPDR.Precedence == 0 {
+			ulPDR.Precedence = 1
+		}
+
+		// Set PDI and outer header removal for access interface
+		ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
+		ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
+		ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
+			OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
+		}
+
+		// Configure FAR for UL traffic
+		if ulFAR := ulPDR.FAR; ulFAR != nil {
+			ulFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
+			ulFAR.ForwardingParameters = &smfContext.ForwardingParameters{
+				DestinationInterface: smfContext.DestinationInterface{
+					InterfaceValue: smfContext.DestinationInterfaceCore,
+				},
+				NetworkInstance: []byte(smContext.Dnn),
+			}
+			pfcpParam.farList = append(pfcpParam.farList, ulFAR)
+		} else {
+			logger.PduSessLog.Errorf("ulFAR is nil")
+		}
+
+		pfcpParam.pdrList = append(pfcpParam.pdrList, ulPDR)
+		smContext.PendingUPF[node.GetNodeIP()] = true
+		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ulPDR)
+	}
+}
+
+// requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
+// way the establishment path builds one, and sends them as updates. The superseded flow QER is
+// removed; the session QER stays. Nothing else about the PDRs changes: their filters and FARs are
+// already programmed, and a downlink FAR rewritten here would stop forwarding an active flow.
+func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
+	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
+) {
+	tcRef := ""
+	if rule, ok := smContext.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules()[name]; ok && len(rule.RefTcData) > 0 {
+		tcRef = rule.RefTcData[0]
+	}
+
+	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
+		pdr, ok := tunnel.PDR[name]
+		if !ok {
+			continue
+		}
+
+		flowQER, err := node.CreatePccRuleQer(smContext, qosRef, tcRef)
+		if err != nil {
+			// Left as it is rather than stripped: the old rates still bound the flow.
+			logger.PduSessLog.Errorf("PCC rule %s keeps its previous rates: %v", name, err)
+			continue
+		}
+
+		qers := []*smfContext.QER{flowQER}
+		for _, qer := range pdr.QER {
+			if qer == nil {
+				continue
+			}
+			if _, session := sessQERs[qer.QERID]; session {
+				qers = append(qers, qer)
+			} else {
+				pfcpParam.removeQER = append(pfcpParam.removeQER, qer)
+			}
+		}
+
+		pdr.QER = qers
+		pdr.State = smfContext.RULE_UPDATE
+		pfcpParam.pdrList = append(pfcpParam.pdrList, pdr)
+		pfcpParam.qerList = append(pfcpParam.qerList, flowQER)
+		smContext.PendingUPF[node.GetNodeIP()] = true
+		logger.PduSessLog.Infof("[BuildPfcpParam] PCC rule %s PDR %d now carries QER %d", name, pdr.PDRID, flowQER.QERID)
+	}
 }
 
 // 3GPP Reference: TS 23.502 §4.3.3.4 – "PDU Session Modification" procedure
