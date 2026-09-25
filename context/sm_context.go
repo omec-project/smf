@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nas/v2/nasConvert"
@@ -339,6 +340,12 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // just restarted and must not be re-installed, and sessions released after it must not be
 // resurrected — so callers work from the list as taken and re-check liveness before acting on any
 // entry.
+//
+// recovery is the node's recovery timestamp after the restart being repaired, and it covers the
+// sessions the snapshot alone does not: those the restarted node acknowledged *before* the
+// snapshot was taken. A UE that re-attaches while the restart is still being detected has its new
+// session established on the restarted node, and without this it would be re-established over
+// itself. Zero excludes nothing on this ground.
 // The second return names the sessions that could not be examined, rather than counting them.
 //
 // A session whose lock could not be taken cannot have its PFCPContext read, so there is no way to
@@ -350,12 +357,12 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // They are excluded from restoration deliberately -- reissuing over an establishment in flight
 // overwrites it -- but a caller that sees no anchored sessions must not conclude the node is empty
 // when this is non-zero.
-func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
+func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
 	nodeIP := nodeID.ResolveNodeIdToIp().String()
 
 	anchored := make([]*SMContext, 0)
 	unexaminable := make([]string, 0)
-	scanned, superseded, establishing := 0, 0, 0
+	scanned, superseded, establishing, recreated := 0, 0, 0, 0
 	otherKeys := make(map[string]int)
 	smContextPool.Range(func(_, value any) bool {
 		smContext, ok := value.(*SMContext)
@@ -390,6 +397,13 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 		// before the UPF had chosen one, and the subscriber came up on an address outside the pool
 		// with no downlink -- a worse outcome than the stall this change exists to fix.
 		neverAcknowledged := onThisNode && pfcpContext.RemoteSEID == 0 && !pfcpContext.ClearedByRestoration
+		// A session the restarted incarnation itself acknowledged is not one it lost: the UE
+		// re-attached while the restart was being detected, and its new session is already on the
+		// node. Restoring it re-establishes a live session, the node answers with a second SEID,
+		// and the first is left behind on it. See AcknowledgedAtRecovery for why the timestamp,
+		// not the time, is what identifies the incarnation.
+		acknowledgedByRestarted := onThisNode && !neverAcknowledged && !recovery.IsZero() &&
+			pfcpContext.AcknowledgedAtRecovery.Unix() == recovery.Unix()
 		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
 		if !onThisNode {
 			for key := range smContext.PFCPContext {
@@ -405,6 +419,10 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 			establishing++
 			return true
 		}
+		if acknowledgedByRestarted {
+			recreated++
+			return true
+		}
 		if !isCurrent(identifier, pduSessionID, ref) {
 			superseded++
 			return true
@@ -417,8 +435,9 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 	// case that matters most -- finding nothing at all -- and that silence cost a diagnosis round:
 	// "no sessions anchored" with no way to tell an empty pool from a mis-keyed lookup.
 	logger.CtxLog.Infof("sessions anchored on %s: %d of %d scanned (%d could not be examined and may be "+
-		"on any node, %d superseded by a later session for the same subscriber, %d still being established)",
-		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing)
+		"on any node, %d superseded by a later session for the same subscriber, %d still being established, "+
+		"%d already established on the restarted node)",
+		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing, recreated)
 	if len(anchored) == 0 && len(otherKeys) > 0 {
 		// Separates an empty pool from a lookup that did not match: if sessions are anchored under
 		// some other key, the node identity resolved differently here than when they were created.

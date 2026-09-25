@@ -7,6 +7,7 @@ package context
 
 import (
 	"fmt"
+	"time"
 )
 
 type PFCPSessionResponseStatus int
@@ -34,6 +35,12 @@ type PFCPSessionContext struct {
 	// ClearedByRestoration records that the zero above was written deliberately, by a restoration
 	// of a session this node once held -- not that the node has never acknowledged the session.
 	ClearedByRestoration bool
+	// AcknowledgedAtRecovery is the node's recovery timestamp as this element held it when the
+	// node acknowledged the session, which identifies the incarnation that holds it. A node
+	// refuses an establishment until it is associated, and association is where the held
+	// timestamp is replaced, so a session a restarted node accepted carries the new one. Zero when
+	// unknown -- a session restored from the database -- which restoration treats as lost.
+	AcknowledgedAtRecovery time.Time
 }
 
 func (pfcpSessionContext *PFCPSessionContext) String() string {

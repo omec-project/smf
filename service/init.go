@@ -224,8 +224,14 @@ func (smf *SMF) Start() {
 								continue
 							}
 
+							// Sent under UpfLock, as probeUpf sends it: with the UPF adapter the response is
+							// handled synchronously inside the send, and its handler relies on the caller's
+							// lock to make the association status and the new recovery timestamp visible
+							// together (HandleAdapterPfcpRsp).
+							upfNode.UPF.UpfLock.Lock()
 							err = message.SendPfcpAssociationSetupRequest(upfNode.NodeID, upfNode.Port)
 							if err != nil {
+								upfNode.UPF.UpfLock.Unlock()
 								logger.AppLog.Warnf("failed to send PFCP Association Setup Request to UPF %v: %v", upfNode, err)
 								continue
 							}
@@ -238,7 +244,6 @@ func (smf *SMF) Start() {
 							// reject with "no association found for NodeID". AssociatedSetUpSuccess is set
 							// only by HandlePfcpAssociationSetupResponse once the UPF actually accepts.
 							// pfcp/upf.ProbeInactiveUpfs retries the request if that response never comes.
-							upfNode.UPF.UpfLock.Lock()
 							// The response may already have arrived and flipped this to
 							// AssociatedSetUpSuccess; don't downgrade it back to pending.
 							if upfNode.UPF.UPFStatus != smfContext.AssociatedSetUpSuccess {
