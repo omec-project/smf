@@ -849,3 +849,45 @@ func TestAModificationWaitsForTheRevertBeforeIt(t *testing.T) {
 		}
 	}
 }
+
+// A decision that only disables a flow changes the rule's traffic control data and nothing else.
+// The gate comes from there, so the rule has to be requalified with its QER closed; the builder used
+// to look at QoS data and the rule itself only, so the flow went on forwarding.
+func TestDisablingAFlowClosesItsGateOnTheUserPlane(t *testing.T) {
+	const tcID = "tc-cir"
+	enabled, disabled := models.FLOWSTATUS_ENABLED, models.FLOWSTATUS_DISABLED
+
+	s := newTwoRuleSession(t, false)
+	s.cirRule.RefTcData = []string{tcID}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &enabled}
+
+	decision := s.rateChange()
+	(*decision.QosDecs)[cirQosID] = s.cirQosSent
+	decision.PccRules[cirRuleID] = s.cirRule
+	decision.TraffContDecs = &map[string]models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}}
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
+
+	param := BuildPfcpParam(s.sm)
+
+	if param.touches(s.allowUL) || param.touches(s.allowDL) {
+		t.Error("the catch-all was reprogrammed for a change to another rule's gate")
+	}
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		if !param.touches(pdr) {
+			t.Errorf("%s: the disabled rule's PDR was not reprogrammed", dir)
+			continue
+		}
+		var closed bool
+		for _, qer := range pdr.QER {
+			if qer.QERID != s.sessQER.QERID && qer.GateStatus != nil &&
+				qer.GateStatus.ULGate == smf_context.GateClose && qer.GateStatus.DLGate == smf_context.GateClose {
+				closed = true
+			}
+		}
+		if !closed {
+			t.Errorf("%s: the disabled rule's flow QER is not closed", dir)
+		}
+	}
+}

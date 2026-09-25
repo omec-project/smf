@@ -41,6 +41,15 @@ func GetTrafficControlUpdate(tcData map[string]models.TrafficControlData, ctxtTc
 	return &change
 }
 
+// GetModified returns the traffic control entries the decision changes.
+func (upd *TrafficControlUpdate) GetModified() map[string]*models.TrafficControlData {
+	if upd == nil {
+		return nil
+	}
+
+	return upd.mod
+}
+
 func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *TrafficControlUpdate) {
 	// Iterate through Add/Mod/Del TC
 
@@ -51,8 +60,10 @@ func CommitTrafficControlUpdate(smCtxtPolData *SmCtxtPolicyData, update *Traffic
 		}
 	}
 
-	// Mod rules
-	// TODO
+	// Modified entries replace what was committed, for the reason CommitQosFlowDescUpdate gives.
+	for name, tc := range update.mod {
+		smCtxtPolData.SmCtxtTCData.TrafficControlData[name] = tc
+	}
 
 	// Del Rules
 	if len(update.del) > 0 {
@@ -67,11 +78,13 @@ func GetTCDataChanges(pcfTc, ctxtTc *models.TrafficControlData) bool {
 		return true
 	}
 
+	// By value, for the reason GetQosDataChanges gives: compared by pointer, every entry of a decoded
+	// decision read as modified.
 	if pcfTc.TcId != ctxtTc.TcId ||
-		pcfTc.FlowStatus != ctxtTc.FlowStatus ||
-		pcfTc.MuteNotif != ctxtTc.MuteNotif ||
-		pcfTc.TrafficSteeringPolIdDl != ctxtTc.TrafficSteeringPolIdDl ||
-		pcfTc.TrafficSteeringPolIdUl != ctxtTc.TrafficSteeringPolIdUl {
+		!sameValue(pcfTc.FlowStatus, ctxtTc.FlowStatus) ||
+		!sameValue(pcfTc.MuteNotif, ctxtTc.MuteNotif) ||
+		!sameNullable(pcfTc.TrafficSteeringPolIdDl, ctxtTc.TrafficSteeringPolIdDl) ||
+		!sameNullable(pcfTc.TrafficSteeringPolIdUl, ctxtTc.TrafficSteeringPolIdUl) {
 		return true
 	}
 

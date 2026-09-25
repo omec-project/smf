@@ -274,8 +274,10 @@ func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
 	return smContext.SmPolicyUpdates[0].PccRuleUpdate.GetAddPccRuleUpdate()
 }
 
-// requalifiedPccRules names the established rules whose QoS data the pending update changes, or
-// which it changes themselves, with the QoS data each refers to. The second matters when a rule is
+// requalifiedPccRules names the established rules whose QoS data or traffic control data the pending
+// update changes, or which it changes themselves, with the QoS data each refers to. Traffic control
+// is where a rule's gate comes from -- CreatePccRuleQer closes the QER for a disabled flow -- so a
+// decision that only disables or re-enables a flow reaches the user plane through here too. The second matters when a rule is
 // re-pointed at QoS data that already exists: nothing about the QoS data changes, only which of it
 // the rule uses -- and undoing a re-pointing is exactly that case. A rule on the default QoS flow is
 // included: establishment builds its flow QER from its QoS data like any other rule's, so a change
@@ -302,6 +304,9 @@ func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 		}
 		if !ok {
 			_, ok = update.PccRuleUpdate.GetModPccRuleUpdate()[name]
+		}
+		if !ok && len(rule.RefTcData) > 0 {
+			_, ok = update.TCUpdate.GetModified()[rule.RefTcData[0]]
 		}
 		if !ok {
 			continue
