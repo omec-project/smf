@@ -74,13 +74,15 @@ func GetPccRuleChanges(s, d *models.PccRule) bool {
 		return true
 	}
 
+	// By value, for the reason GetQosDataChanges gives: compared by pointer, every rule of a decoded
+	// decision read as modified.
 	if s.PccRuleId != d.PccRuleId ||
-		s.AppId != d.AppId ||
-		s.ContVer != d.ContVer ||
-		s.Precedence != d.Precedence ||
-		s.AfSigProtocol != d.AfSigProtocol ||
-		s.AppReloc != d.AppReloc ||
-		s.RefCondData != d.RefCondData {
+		!sameValue(s.AppId, d.AppId) ||
+		!sameValue(s.ContVer, d.ContVer) ||
+		!sameValue(s.Precedence, d.Precedence) ||
+		!sameNullable(s.AfSigProtocol, d.AfSigProtocol) ||
+		!sameValue(s.AppReloc, d.AppReloc) ||
+		!sameNullable(s.RefCondData, d.RefCondData) {
 		return true
 	}
 
@@ -119,6 +121,15 @@ func stringSlicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// GetModPccRuleUpdate returns the established rules the decision changes.
+func (upd *PccRulesUpdate) GetModPccRuleUpdate() map[string]*models.PccRule {
+	if upd == nil {
+		return nil
+	}
+
+	return upd.mod
 }
 
 func (upd *PccRulesUpdate) GetAddPccRuleUpdate() map[string]*models.PccRule {
