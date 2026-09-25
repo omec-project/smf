@@ -252,6 +252,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			return
 		}
 		pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
+		// Which incarnation of the node acknowledged it, so a restoration after a restart can tell a
+		// session the restarted node lost from one it already holds. See AcknowledgedAtRecovery.
+		if upf := context.RetrieveUPFNodeByNodeID(*nodeID); upf != nil {
+			pfcpSessionCtx.AcknowledgedAtRecovery = upf.HeldRecovery()
+		}
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
 	}
 

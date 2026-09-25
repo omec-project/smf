@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/omec-project/smf/context"
 )
@@ -33,7 +34,7 @@ func TestSessionsAnchoredOnReturnsOnlyThatNodesSessions(t *testing.T) {
 	elsewhere := anchor(t, "imsi-208930000000002", 2, "10.20.0.2")
 	both := anchor(t, "imsi-208930000000003", 3, "10.20.0.1", "10.20.0.2")
 
-	found, _, _ := context.SessionsAnchoredOn(*context.NewNodeID("10.20.0.1"))
+	found, _, _ := context.SessionsAnchoredOn(*context.NewNodeID("10.20.0.1"), time.Time{})
 
 	seen := map[*context.SMContext]bool{}
 	for _, s := range found {
@@ -55,7 +56,7 @@ func TestSessionsAnchoredOnReturnsOnlyThatNodesSessions(t *testing.T) {
 func TestSessionsAnchoredOnAnUnknownNodeIsEmpty(t *testing.T) {
 	anchor(t, "imsi-208930000000004", 4, "10.20.0.3")
 
-	if found, _, _ := context.SessionsAnchoredOn(*context.NewNodeID("10.20.0.99")); len(found) != 0 {
+	if found, _, _ := context.SessionsAnchoredOn(*context.NewNodeID("10.20.0.99"), time.Time{}); len(found) != 0 {
 		t.Errorf("expected no sessions for a node holding none, got %d", len(found))
 	}
 }
@@ -115,7 +116,7 @@ func TestSessionsAnchoredOnSkipsASupersededSession(t *testing.T) {
 	superseded := anchor(t, supi, psi, "10.20.0.50")
 	current := anchor(t, supi, psi, "10.20.0.50") // same subscriber and session: repoints the ref
 
-	found, _, _ := context.SessionsAnchoredOn(node)
+	found, _, _ := context.SessionsAnchoredOn(node, time.Time{})
 
 	seen := map[*context.SMContext]bool{}
 	for _, s := range found {
@@ -131,7 +132,7 @@ func TestSessionsAnchoredOnSkipsASupersededSession(t *testing.T) {
 }
 
 func mustAnchored(node context.NodeID) []*context.SMContext {
-	anchored, _, _ := context.SessionsAnchoredOn(node)
+	anchored, _, _ := context.SessionsAnchoredOn(node, time.Time{})
 	return anchored
 }
 
@@ -175,4 +176,51 @@ func TestSessionsAnchoredOnStillReturnsASessionRestorationCleared(t *testing.T) 
 		t.Errorf("a session whose remote identifier a previous restoration cleared was not offered " +
 			"to the restart that superseded it; it would be left unrepaired")
 	}
+}
+
+// A session the restarted node itself acknowledged is not one it lost. The UE can re-attach while
+// the restart is still being detected, and its new session is established on the restarted node
+// before restoration enumerates; restoring it re-establishes a live session, the node answers with
+// a second SEID, and the first is left behind on it. Observed on a cluster at 133 ms.
+//
+// Identified by the incarnation that acknowledged it rather than by time: a node refuses an
+// establishment until it is associated, and association is where the held recovery timestamp is
+// replaced, so a session the restarted node accepted was accepted under its new timestamp.
+func TestSessionsAnchoredOnSkipsASessionTheRestartedNodeAcknowledged(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.52")
+	restart := time.Unix(1_790_000_000, 0)
+
+	lost := anchor(t, "imsi-208930000000052", 7, "10.20.0.52")
+	lost.SMLock.Lock()
+	lost.PFCPContext["10.20.0.52"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
+	lost.SMLock.Unlock()
+
+	recreated := anchor(t, "imsi-208930000000053", 8, "10.20.0.52")
+	recreated.SMLock.Lock()
+	recreated.PFCPContext["10.20.0.52"].AcknowledgedAtRecovery = restart
+	recreated.SMLock.Unlock()
+
+	// A session with no record of who acknowledged it -- restored from the database, or
+	// established before the field existed -- is assumed lost, which is what it was before.
+	unknown := anchor(t, "imsi-208930000000054", 9, "10.20.0.52")
+
+	seen := map[*context.SMContext]bool{}
+	for _, s := range mustAnchoredAt(node, restart) {
+		seen[s] = true
+	}
+	if seen[recreated] {
+		t.Errorf("a session the restarted node acknowledged was offered for restoration; " +
+			"re-establishing it gives the live session a second SEID on the node")
+	}
+	if !seen[lost] {
+		t.Errorf("a session the previous incarnation acknowledged was not offered for restoration")
+	}
+	if !seen[unknown] {
+		t.Errorf("a session with no acknowledging incarnation recorded was not offered for restoration")
+	}
+}
+
+func mustAnchoredAt(node context.NodeID, recovery time.Time) []*context.SMContext {
+	anchored, _, _ := context.SessionsAnchoredOn(node, recovery)
+	return anchored
 }
