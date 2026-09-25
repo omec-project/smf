@@ -119,6 +119,13 @@ type SMContext struct {
 	// PDUAddress             net.IP `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
 	PDUAddress *UeIpAddr `json:"pduAddress,omitempty" yaml:"pduAddress" bson:"pduAddress,omitempty"`
 
+	// PolicyReportedIpv4 is the UE IPv4 address the PCF currently believes this session has. It is
+	// not always PDUAddress: the policy association is created before the N4 session, so the PCF is
+	// told the address the SMF allocated, and a UPF that allocates its own replaces it afterwards.
+	// Keeping what was sent is what makes the report idempotent -- the establishment response can
+	// arrive once per UPF in the path, and a session whose address never moved must send nothing.
+	PolicyReportedIpv4 string `json:"policyReportedIpv4,omitempty" yaml:"policyReportedIpv4" bson:"policyReportedIpv4,omitempty"`
+
 	// Client
 	SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty" yaml:"smPolicyClient" bson:"smPolicyClient,omitempty"`                // ?
 	CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty" yaml:"communicationClient" bson:"communicationClient,omitempty"` // ?
