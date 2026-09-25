@@ -1061,9 +1061,9 @@ func realignAfterPartialRejection(smContext *context.SMContext, result context.M
 // programmed nothing, and the user-plane call blocked forever on a response the triggering
 // transaction had already taken.
 //
-// It runs on its own goroutine, and acquiring SMLock is what sequences it: the transaction that
-// brought the acknowledgement holds the lock for its whole life, so the correction cannot start
-// until that has finished and the user plane's response channel is free.
+// It runs as a task in the session's transaction queue: the transaction that brought the
+// acknowledgement is the session's active one for its whole life, so the correction cannot start
+// until that has ended and the user plane's response channel is free.
 func realignSession(smContext *context.SMContext, realign *context.PendingRealignment, corrective *qos.PolicyUpdate) {
 	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
 		realign.EstablishedQFIs, realign.RefusedQFIs)
@@ -1077,7 +1077,10 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 	}
 
 	refused := realign.RefusedQFIs
-	go func() {
+	// Queued in the session's transaction slot rather than run on a goroutine of its own: the
+	// correction is a modification like any other, and one that cannot be delivered is reverted,
+	// which has to happen inside the queue for the reason abandonIfCurrent's expiry is queued.
+	queueSessionTask(smContext, func() {
 		if err := applyModification(smContext, corrective); err != nil {
 			smContext.SubPduSessLog.Errorf("withdrawing the refused flows %v failed: %v; the UE still believes they exist and downlink traffic matching them will be dropped",
 				refused, err)
@@ -1085,7 +1088,7 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 			return
 		}
 		smContext.SubPduSessLog.Infof("corrective modification sent, withdrawing flows %v", refused)
-	}()
+	})
 }
 
 // refuseUeRequestedModification answers a UE-requested PDU session modification with a

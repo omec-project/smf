@@ -41,9 +41,9 @@ var (
 	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
 
 	// applyModification is behind a seam for the same reason as the two above, and for one more:
-	// the corrective modification after a partial rejection runs on its own goroutine, so without
-	// a seam a test cannot tell whether it was issued, and the goroutine outlives the test and
-	// reaches the real user plane.
+	// the corrective modification after a partial rejection runs asynchronously, as a task in the
+	// session's queue, so without a seam a test cannot tell whether it was issued, and the work
+	// outlives the test and reaches the real user plane.
 	applyModification = ApplyModification
 )
 
@@ -780,7 +780,12 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			}
 		},
 		func() {
-			abandonIfCurrent(smContext, timer)
+			// Queued rather than run on the timer's goroutine. The revert that follows waits on the
+			// session's one PFCP response channel, which carries no correlation, so it must not be
+			// in flight beside any other exchange for the session -- and a transaction that has
+			// already passed its wait for an owed revert, but not yet sent, is one the timer could
+			// otherwise overtake.
+			queueSessionTask(smContext, func() { abandonIfCurrent(smContext, timer) })
 		})
 	smContext.T3591 = timer
 	// StopT3591 above cleared it; the procedure is still running.
@@ -862,17 +867,17 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 
 // abandonIfCurrent abandons the modification only if the expiring timer is still the session's.
 //
-// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's own
-// goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing most
-// likely to be holding it is the acknowledgement that just arrived and superseded this procedure.
-// Resuming afterwards, it would discard whatever modification is pending by then, which after a
-// partial rejection is the corrective one started in the meantime.
+// Stopping a timer cannot recall an expiry already in flight. The abort is queued as a session
+// task and runs when it reaches the front of the session's transaction queue -- behind, most
+// likely, the acknowledgement that just arrived and superseded this procedure. Resuming then, it
+// would discard whatever modification is pending by then, which after a partial rejection is the
+// corrective one started in the meantime.
 func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer) {
 	// T3591 is the only timer whose expiry abandons a modification, and it expires for one reason.
 	const path, cause = "t3591_expiry", "ue_did_not_acknowledge"
 
-	// The timer goroutine holds no lock, so this takes it -- and keeps it across the check and
-	// the abandonment. Releasing in between put the two on either side of a lock acquisition, so
+	// This starts holding no lock, so it takes SMLock -- and keeps it across the check and the
+	// abandonment. Releasing in between put the two on either side of a lock acquisition, so
 	// an acknowledgement arriving in the gap could commit and start the next procedure, and this
 	// would then discard that newer one on the strength of a check that no longer held.
 	smContext.SMLock.Lock()
@@ -891,7 +896,8 @@ func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer) 
 	reportAbandonment(smContext, path, cause)
 
 	// The user plane was programmed before the command was first sent, and a UE that never
-	// answered never took the new parameters up. This is the timer's goroutine, holding no lock.
+	// answered never took the new parameters up. This holds no lock here, and runs in the session's
+	// transaction slot, so no other exchange for the session is in flight beside the revert.
 	restoreUserPlane(smContext, abandoned)
 }
 
@@ -910,6 +916,17 @@ func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
 func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
 	reportAbandonment(smContext, path, cause)
 	restoreUserPlaneAsync(smContext, abandonForRevertLocked(smContext))
+}
+
+// queueSessionTask runs work in the session's transaction queue. The fsm package owns the queue and
+// installs the real one at start; this package cannot import it, and until then the work runs on a
+// goroutine of its own, as it did before there was a queue to put it in.
+var queueSessionTask = func(_ *smfContext.SMContext, task func()) { go task() }
+
+// SetSessionTaskQueue installs the function that queues work for a session. Called once, by the fsm
+// package at start.
+func SetSessionTaskQueue(queue func(*smfContext.SMContext, func())) {
+	queueSessionTask = queue
 }
 
 // restoreUserPlaneAsync is behind a seam for the reason applyModification is: the restore runs on
@@ -931,9 +948,9 @@ func (p *pfcpParam) empty() bool {
 // update that was abandoned, and programs the committed rules back. A modification built before it
 // had finished would be programmed first and then undone -- the revert restores the committed
 // rules over whatever the new one had just set -- and the two would wait on the session's one
-// response channel at once. The revert runs on its own goroutine from T3591's expiry and from the
-// NAS and NGAP handlers, outside the transaction queue that orders everything else, so this is
-// where the order is kept.
+// response channel at once. Every transaction waits for an owed revert before processing; this is
+// the same wait for ApplyModification, which the realignment reaches as a queued task and the
+// delivery-failure paths reach from inside a transaction that is already past that point.
 func lockAfterRevert(smContext *smfContext.SMContext) {
 	for {
 		smContext.SMLock.Lock()
