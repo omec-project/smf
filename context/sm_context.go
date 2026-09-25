@@ -163,10 +163,14 @@ type SMContext struct {
 	NwModificationQuietUntil time.Time     `json:"-" yaml:"-" bson:"-"`
 
 	// RevertInFlight is open from the moment a modification whose user plane was programmed is
-	// abandoned until the revert that puts the user plane back has finished, and nil otherwise. A
-	// new modification waits for it: built first, it would be undone by the revert, which restores
-	// the committed rules over whatever the new one had just programmed. Not persisted, as the
-	// fields above are not.
+	// abandoned until the revert that puts the user plane back has finished, and nil otherwise.
+	// Every transaction for the session waits for it before processing, and ApplyModification waits
+	// for it too: the revert shares the session's uncorrelated PFCP response channel, and a
+	// modification built before it would be undone by it. It is only ever set from inside the
+	// session's queue (T3591's expiry, the realignment's correction and a held policy decision are
+	// queued as session tasks),
+	// so a transaction past its wait cannot see it set behind it. Not
+	// persisted, as the fields above are not.
 	RevertInFlight chan struct{} `json:"-" yaml:"-" bson:"-"`
 
 	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
