@@ -54,8 +54,11 @@ func CommitPccRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *PccRulesUpdat
 		}
 	}
 
-	// Mod rules
-	// TODO
+	// Modified rules replace what was committed, for the reason CommitQosFlowDescUpdate gives: a
+	// rule re-pointed at other QoS data would otherwise be recorded as still pointing at the old.
+	for name, rule := range update.mod {
+		smCtxtPolData.SmCtxtPccRules.PccRules[name] = rule
+	}
 
 	// Del Rules
 	if len(update.del) > 0 {
