@@ -39,6 +39,10 @@ const (
 // n2SmInformationContentID names the N2 SM information part of a multipart N1N2 transfer.
 const n2SmInformationContentID = "N2SmInformation"
 
+// sendAssociationSetupRequest is the association send ensureDataPathUpfAssociated makes, a variable
+// so a test can observe the lock it is made under.
+var sendAssociationSetupRequest = pfcp_message.SendPfcpAssociationSetupRequest
+
 func ensureDataPathUpfAssociated(dataPath *smf_context.DataPath) error {
 	for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
 		if node.UPF == nil {
@@ -60,7 +64,15 @@ func ensureDataPathUpfAssociated(dataPath *smf_context.DataPath) error {
 			continue
 		}
 
-		if err := pfcp_message.SendPfcpAssociationSetupRequest(node.UPF.NodeID, node.UPF.Port); err != nil {
+		// Sent under UpfLock, as probeUpf sends it. With the UPF adapter the response is handled
+		// synchronously inside this call, and its handler relies on the caller's lock
+		// (HandleAdapterPfcpRsp): without it, the UPF is marked associated before the new recovery
+		// timestamp is held, and an establishment acknowledged in between records the previous
+		// incarnation's -- so restoration re-establishes it over itself.
+		node.UPF.UpfLock.Lock()
+		err := sendAssociationSetupRequest(node.UPF.NodeID, node.UPF.Port)
+		node.UPF.UpfLock.Unlock()
+		if err != nil {
 			return fmt.Errorf("send PFCP Association Setup Request to UPF %s failed: %w", node.GetNodeIP(), err)
 		}
 
