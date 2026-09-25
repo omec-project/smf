@@ -350,3 +350,32 @@ func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.
 		t.Errorf("%d PFCP modifications were sent for a modification that had already ended", got)
 	}
 }
+
+// A revert after a delivery failure is owed while its exchange is in flight, like every other
+// revert: a modification or transaction for the session starting meanwhile would share its one
+// PFCP response channel. And it is settled once the exchange is done.
+func TestADeliveryFailureRevertIsOwedWhileItIsInFlight(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var owedDuringSend bool
+	sendPfcpSessionModifyReq = func(sm *smf_context.SMContext, _ *pfcpParam) error {
+		sm.SMLock.Lock()
+		owedDuringSend = sm.RevertInFlight != nil
+		sm.SMLock.Unlock()
+		return nil
+	}
+
+	sm := programmedRateChange(t).sm
+	if !revertModification(sm, "n1n2_transfer_failed", sm.NwModificationGen) {
+		t.Fatal("the revert reported failure")
+	}
+
+	if !owedDuringSend {
+		t.Error("the revert was not recorded as owed while its exchange was in flight")
+	}
+	sm.SMLock.Lock()
+	defer sm.SMLock.Unlock()
+	if sm.RevertInFlight != nil {
+		t.Error("the revert was left owed after it finished")
+	}
+}
