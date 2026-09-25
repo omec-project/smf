@@ -339,7 +339,6 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// own cause rather than a timeout, and it is reported on the same path as one, so that
 			// a modification the network could not apply is countable however it failed.
 			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
-			startDeferredModificationLocked(smContext)
 
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
@@ -896,16 +895,6 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		return nil
 	}
 
-	// The radio's answer can end the modification, by refusing all of it, and a policy decision
-	// held behind it then starts. A correction this answer calls for goes first: it marks the
-	// session pending, and the decision waits for the correction to end.
-	//
-	// Nothing waits for this answer itself. The UE's completion starts a held decision whether or
-	// not the radio has answered, as a notification arriving then would, because an answer that
-	// never comes would otherwise hold every later decision for good. A late answer meeting the
-	// newer modification is the case ranAnswerIsExpectedLocked already cannot separate.
-	defer startDeferredModificationLocked(smContext)
-
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("reading the modify response failed: %v", err)
@@ -954,9 +943,6 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 		smContext.SubPduSessLog.Warnln("a modify failure arrived for a modification this session is not waiting on; ignoring it")
 		return nil
 	}
-
-	// As in handleModifyResponse: refusing the modification ends it, and a held decision starts.
-	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {

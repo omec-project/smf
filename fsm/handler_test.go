@@ -4,50 +4,33 @@
 package fsm
 
 import (
-	"net"
 	"testing"
 
 	smf_context "github.com/omec-project/smf/context"
-	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/qos"
-	"github.com/omec-project/smf/transaction"
-	"go.uber.org/zap"
 )
 
-// A modification whose delivery failed and whose user-plane revert failed too is marked for
-// release by the producer, and the state the FSM applies afterwards has to keep that mark. The
-// handler returned Init for it, and HandleEvent applies whatever the handler returns, so the
-// session that needs releasing was relabelled as one that had never been set up.
+// The state the delivery-failure indication leaves the session in, for each thing the producer can
+// report it did. HandleEvent applies it on top of whatever the producer left, so a modification
+// whose revert failed has to keep the release mark the producer set: returning Init for it, as the
+// handler did, relabelled a session that needed releasing as one never set up.
 //
-// The revert fails for real here: the session has no tunnel, so the PFCP send refuses it.
-func TestARevertThatFailedLeavesTheSessionMarkedForRelease(t *testing.T) {
-	// Every state change publishes the session, which reads this.
-	if factory.SmfConfig.Configuration == nil {
-		off := false
-		factory.SmfConfig = factory.Config{Configuration: &factory.Configuration{KafkaInfo: factory.KafkaInfo{EnableKafka: &off}}}
+// Tested on the mapping and not end to end: a revert now has something to undo only when the
+// abandoned update changed rules the user plane carries, and the fixture for that lives with the
+// producer, whose own tests drive a revert that fails.
+func TestTheStateAfterADeliveryFailure(t *testing.T) {
+	cases := []struct {
+		name                   string
+		modification, reverted bool
+		want                   smf_context.SMContextState
+	}{
+		{"a modification put back", true, true, smf_context.SmStateActive},
+		{"a modification whose revert failed", true, false, smf_context.SmStatePfcpRelease},
+		{"not a modification", false, false, smf_context.SmStateInit},
 	}
 
-	log := zap.NewNop().Sugar()
-	sm := &smf_context.SMContext{
-		Supi:                  "imsi-208930000000101",
-		PDUSessionID:          10,
-		SMContextState:        smf_context.SmStateActive,
-		NwModificationPending: true,
-		SubPduSessLog:         log,
-		SubCtxLog:             log,
-		SubFsmLog:             log,
-		SubPfcpLog:            log,
-		PDUAddress:            &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.2")},
-	}
-	sm.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
-
-	txn := &transaction.Transaction{Ctxt: sm}
-	if err := HandleEvent(sm, SmEventPduSessN1N2TransferFailureIndication, SmEventData{Txn: txn}); err != nil {
-		t.Fatalf("handling the failure indication: %v", err)
-	}
-
-	if sm.SMContextState != smf_context.SmStatePfcpRelease {
-		t.Errorf("state = %s, want %s: the session runs parameters the UE was never told about",
-			sm.SMContextState, smf_context.SmStatePfcpRelease)
+	for _, tc := range cases {
+		if got := stateAfterTransferFailure(tc.modification, tc.reverted); got != tc.want {
+			t.Errorf("%s: state = %s, want %s", tc.name, got, tc.want)
+		}
 	}
 }

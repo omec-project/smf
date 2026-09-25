@@ -191,6 +191,12 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 		return smf_context.SmStateInit, err
 	}
 
+	return stateAfterTransferFailure(modification, reverted), nil
+}
+
+// stateAfterTransferFailure is the state the delivery-failure indication leaves the session in,
+// from what the producer reports it did.
+func stateAfterTransferFailure(modification, reverted bool) smf_context.SMContextState {
 	// HandleEvent applies whatever this returns, so the state a modification's revert leaves behind
 	// is decided here and not by the producer.
 	//
@@ -205,16 +211,16 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	// silently, for a case this has nothing to say about.
 	if modification {
 		if reverted {
-			return smf_context.SmStateActive, nil
+			return smf_context.SmStateActive
 		}
 
 		// Putting the user plane back failed, and the producer has marked the session for release:
 		// it runs parameters the UE was never told about. Returning Init here overwrote that mark.
-		return smf_context.SmStatePfcpRelease, nil
+		return smf_context.SmStatePfcpRelease
 	}
 
 	// Not a modification: Init is where this handler has always left the AN-release path.
-	return smf_context.SmStateInit, nil
+	return smf_context.SmStateInit
 }
 
 func HandleStateActiveEventPolicyUpdateNotify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
