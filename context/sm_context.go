@@ -168,6 +168,13 @@ type SMContext struct {
 	// Command, and is ignored. Read and written under SMLock; not persisted.
 	NwModificationUnsent bool `json:"-" yaml:"-" bson:"-"`
 
+	// RevertInFlight is open from the moment a modification whose user plane was programmed is
+	// abandoned until the revert that puts the user plane back has finished, and nil otherwise. A
+	// new modification waits for it: built first, it would be undone by the revert, which restores
+	// the committed rules over whatever the new one had just programmed. Not persisted, as the
+	// fields above are not.
+	RevertInFlight chan struct{} `json:"-" yaml:"-" bson:"-"`
+
 	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
 	// response or failure is acted on, or until the modification is abandoned. It is what tells a
 	// stale answer from the one this session is waiting for; NwModificationPending cannot, because
