@@ -11,11 +11,11 @@ import (
 )
 
 func TestTimerRetransmitsThenCancels(t *testing.T) {
-	var expiries int32
+	var expiries atomic.Int32
 	cancelled := make(chan struct{})
 
 	NewTimer(5*time.Millisecond, 4,
-		func(int32) { atomic.AddInt32(&expiries, 1) },
+		func(int32) { expiries.Add(1) },
 		func() { close(cancelled) },
 	)
 
@@ -25,7 +25,7 @@ func TestTimerRetransmitsThenCancels(t *testing.T) {
 		t.Fatal("timer never cancelled")
 	}
 
-	if got := atomic.LoadInt32(&expiries); got != 4 {
+	if got := expiries.Load(); got != 4 {
 		t.Errorf("retransmissions = %d, want 4 before the fifth expiry aborts", got)
 	}
 }
@@ -45,20 +45,20 @@ func TestTimerStopIsIdempotent(t *testing.T) {
 }
 
 func TestTimerStoppedBeforeExpiryDoesNotFire(t *testing.T) {
-	var expiries int32
-	var cancels int32
+	var expiries atomic.Int32
+	var cancels atomic.Int32
 
 	timer := NewTimer(20*time.Millisecond, 4,
-		func(int32) { atomic.AddInt32(&expiries, 1) },
-		func() { atomic.AddInt32(&cancels, 1) },
+		func(int32) { expiries.Add(1) },
+		func() { cancels.Add(1) },
 	)
 	timer.Stop()
 	time.Sleep(120 * time.Millisecond)
 
-	if got := atomic.LoadInt32(&expiries); got != 0 {
+	if got := expiries.Load(); got != 0 {
 		t.Errorf("expiries after Stop = %d, want 0", got)
 	}
-	if got := atomic.LoadInt32(&cancels); got != 0 {
+	if got := cancels.Load(); got != 0 {
 		t.Errorf("cancels after Stop = %d, want 0", got)
 	}
 }
