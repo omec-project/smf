@@ -287,6 +287,14 @@ var OnRestart func(nodeID NodeID, recovery time.Time)
 //	  context/upf.go            UPFStatus = NotAssociated at construction
 //
 // Wiring restoration to the second group would re-install sessions on a node that never lost them.
+// HeldRecovery returns the recovery timestamp this element holds for the node: the one the
+// association handlers last recorded, which identifies the incarnation it is associated with.
+func (upf *UPF) HeldRecovery() time.Time {
+	upf.UpfLock.RLock()
+	defer upf.UpfLock.RUnlock()
+	return upf.RecoveryTimeStamp.RecoveryTimeStamp
+}
+
 func (upf *UPF) HasRestarted(received time.Time) bool {
 	held := upf.RecoveryTimeStamp.RecoveryTimeStamp
 	if held.IsZero() {
