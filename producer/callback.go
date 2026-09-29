@@ -39,6 +39,9 @@ var (
 	// change takes — as the only one with no test.
 	sendPfcpSessionModifyReq = SendPfcpSessionModifyReq
 	sendQosN1N2TransferMsg   = BuildAndSendQosN1N2TransferMsg
+	// retransmitModificationCommand is the send a T3591 expiry makes, replaceable for the same
+	// reason as the two above.
+	retransmitModificationCommand = buildAndSendQosN1N2TransferMsg
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -354,7 +357,21 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 }
 
 // 3GPP Reference: TS 23.502 §4.3.3.4 – "PDU Session Modification" procedure
+// errModificationSuperseded reports a retransmission that was not sent because the procedure it
+// belonged to had already ended.
+var errModificationSuperseded = errors.New("the modification this command belongs to has already ended")
+
 func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
+	return buildAndSendQosN1N2TransferMsg(smContext, nil)
+}
+
+// buildAndSendQosN1N2TransferMsg sends the PDU session modification command. stillCurrent, when
+// given, is checked under SMLock each time the lock is taken, and the send is abandoned with
+// errModificationSuperseded once it reports false. Checking it in the same hold of the lock that
+// starts the transfer is what makes a retransmission exact: the UE's acknowledgement stops T3591
+// under SMLock, so it either lands before the check, which then fails, or waits until the command
+// is on its way, in which case the retransmission really did precede it.
+func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurrent func() bool) error {
 	// -------------------------------
 	// Initialize N1N2 Message Transfer Request
 	// -------------------------------
@@ -402,6 +419,12 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// would then carry NAS and NGAP describing different policies, or be built from an update
 	// that is no longer there. Neither builder takes the lock itself.
 	smContext.SMLock.Lock()
+
+	if stillCurrent != nil && !stillCurrent() {
+		smContext.SMLock.Unlock()
+
+		return errModificationSuperseded
+	}
 
 	smNasBuf, nasErr := smfContext.BuildGSMPDUSessionModificationCommand(smContext)
 
@@ -458,6 +481,11 @@ func BuildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext) error {
 	// Hold SMLock across the transfer so AMF re-discovery's mutation of
 	// AMFProfile/ServingNfId/CommunicationClient doesn't race with other SMContext users.
 	smContext.SMLock.Lock()
+	if stillCurrent != nil && !stillCurrent() {
+		smContext.SMLock.Unlock()
+
+		return errModificationSuperseded
+	}
 	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
 	smContext.SMLock.Unlock()
 	if err != nil {
@@ -660,7 +688,15 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 		func(expireTimes int32) {
 			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
 				expireTimes, maxRetries)
-			if err := sendQosN1N2TransferMsg(smContext); err != nil {
+			// Only while this timer is still the session's T3591. Stop does not wait for a tick
+			// that is already due, so an expiry can arrive after the UE has acknowledged the
+			// command; retransmitting it then would send the UE a command for a procedure that
+			// has ended.
+			err := retransmitModificationCommand(smContext, func() bool { return smContext.T3591 == timer })
+			switch {
+			case errors.Is(err, errModificationSuperseded):
+				smContext.SubPduSessLog.Infof("a T3591 expiry arrived for a modification that has already finished; not retransmitting")
+			case err != nil:
 				smContext.SubPduSessLog.Errorf("retransmitting the modification command failed: %v", err)
 			}
 		},
