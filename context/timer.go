@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
 // Copyright 2019 free5GC.org
 //
 // SPDX-License-Identifier: Apache-2.0
