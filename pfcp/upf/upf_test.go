@@ -123,3 +123,40 @@ func TestProbeUpfMarksSettingUpAfterSuccessfulSend(t *testing.T) {
 		t.Errorf("AssociationSetupSentAt was not refreshed for the new send: got %v, want at/after %v", upf.AssociationSetupSentAt, before)
 	}
 }
+
+// A heartbeat that could not be delivered is one the user plane has not answered, and it counts
+// toward declaring the user plane lost. Only sends that succeeded were counted, so a user plane
+// behind an adapter that was down or refusing never reached the limit: it stayed associated for
+// as long as it was unreachable, and new sessions went on being placed on it.
+func TestAHeartbeatThatCouldNotBeSentCountsAsUnanswered(t *testing.T) {
+	configureForNativeDatapath(t)
+	// No SMF socket, so every send fails with "PFCP server is not initialized".
+
+	upf := context.NewUPF(context.NewNodeID("127.0.0.1"), nil)
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upNode := &context.UPNode{UPF: upf, NodeID: *context.NewNodeID("127.0.0.1"), Port: 1234}
+
+	heartbeatUpf(upNode)
+
+	if upf.NHeartBeat != 1 {
+		t.Errorf("NHeartBeat = %d after a heartbeat that could not be sent, want 1", upf.NHeartBeat)
+	}
+}
+
+// And a user plane that cannot be reached at all is, in the end, declared lost -- which is what
+// the count exists for.
+func TestAUserPlaneThatCannotBeHeartbeatedIsEventuallyDeclaredLost(t *testing.T) {
+	configureForNativeDatapath(t)
+
+	upf := context.NewUPF(context.NewNodeID("127.0.0.1"), nil)
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upNode := &context.UPNode{UPF: upf, NodeID: *context.NewNodeID("127.0.0.1"), Port: 1234}
+
+	for range maxHeartbeatRetry + 1 {
+		heartbeatUpf(upNode)
+	}
+
+	if upf.UPFStatus != context.NotAssociated {
+		t.Errorf("UPFStatus = %v after %d undeliverable heartbeats, want NotAssociated", upf.UPFStatus, maxHeartbeatRetry+1)
+	}
+}

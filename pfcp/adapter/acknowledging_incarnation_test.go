@@ -58,13 +58,15 @@ func TestAnEstablishmentRecordsTheIncarnationThatAcknowledgedIt(t *testing.T) {
 
 	seq := uint32(localSEID)
 	adapter.InsertPfcpTxn(seq, nodeID)
-	adapter.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	if err := adapter.HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr: &net.UDPAddr{IP: net.ParseIP(ip), Port: 8805},
 		PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, localSEID, seq, 0,
 			ie.NewCause(ie.CauseRequestAccepted),
 			ie.NewNodeID(ip, "", ""),
 			ie.NewFSEID(0x77, net.ParseIP(ip), nil)),
-	})
+	}); err != nil {
+		t.Fatalf("the acknowledgement was refused: %v", err)
+	}
 
 	got := smContext.PFCPContext[ip]
 	if got.RemoteSEID != 0x77 {
