@@ -371,30 +371,35 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 		// secondary UPF's rejection merely by being visited first. EstablishmentFailed latches a
 		// rejection seen from any UPF until the verdict is queued, so a failure from one UPF is never
 		// erased by a later acceptance from another.
+		//
+		// A PSA/ULCL branch addition (BPManager.PendingUPF, a separate map) can establish further
+		// sessions while this context is still create-pending, and its responses reach this same
+		// handler. Only a response found in this map belongs to the batch the create verdict tracks;
+		// aggregating and emitting on any other response would let it poison or preempt that verdict.
 		upfIP := nodeID.ResolveNodeIdToIp().String()
 		if _, pending := smContext.PendingUPF[upfIP]; pending {
 			delete(smContext.PendingUPF, upfIP)
+			if !accepted {
+				smContext.EstablishmentFailed = true
+			}
+			if smContext.PendingUPF.IsEmpty() {
+				verdict := context.SessionEstablishSuccess
+				if smContext.EstablishmentFailed {
+					verdict = context.SessionEstablishFailed
+				}
+				smContext.EstablishmentFailed = false
+				// Not a blocking send. The response is dispatched inline, on the goroutine that reads the
+				// channel afterwards -- so a blocking write here would park the sender behind its own
+				// reader. The first verdict stands and a later, stale one (e.g. a response this call was
+				// not actually waiting for) is dropped rather than queued behind it.
+				select {
+				case smContext.SBIPFCPCommunicationChan <- verdict:
+				default:
+					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
+				}
+			}
 		} else {
 			smContext.SubPfcpLog.Warnf("PFCP Session Establishment Response from UPF[%s] was not pending; not counted toward the establishment verdict", upfIP)
-		}
-		if !accepted {
-			smContext.EstablishmentFailed = true
-		}
-		if smContext.PendingUPF.IsEmpty() {
-			verdict := context.SessionEstablishSuccess
-			if smContext.EstablishmentFailed {
-				verdict = context.SessionEstablishFailed
-			}
-			smContext.EstablishmentFailed = false
-			// Not a blocking send. The response is dispatched inline, on the goroutine that reads the
-			// channel afterwards -- so a blocking write here would park the sender behind its own
-			// reader. The first verdict stands and a later, stale one (e.g. a response this call was
-			// not actually waiting for) is dropped rather than queued behind it.
-			select {
-			case smContext.SBIPFCPCommunicationChan <- verdict:
-			default:
-				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
-			}
 		}
 	}
 	return nil

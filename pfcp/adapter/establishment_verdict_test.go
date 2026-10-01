@@ -123,6 +123,11 @@ func TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeidAdapter(t *test
 	}
 	pfcpCtx.RemoteSEID = 999
 
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before a response can arrive; simulated here since this test drives the handler
+	// directly.
+	smContext.PendingUPF = context.PendingUPF{upfIP: true}
+
 	const seq = 4343
 	InsertPfcpTxn(seq, nodeID)
 
@@ -204,6 +209,11 @@ func TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeidAdapter(t *te
 		t.Fatal("failed to allocate a local SEID for the test SMContext")
 	}
 	pfcpCtx.RemoteSEID = 777
+
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before a response can arrive; simulated here since this test drives the handler
+	// directly.
+	smContext.PendingUPF = context.PendingUPF{upfIP: true}
 
 	const seq = 4444
 	InsertPfcpTxn(seq, nodeID)
