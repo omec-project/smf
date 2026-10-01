@@ -122,6 +122,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 	} else {
 		InsertPfcpTxn(msg.Sequence(), &upNodeID)
 		if err := udp.SendPfcp(msg, addr, nil); err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(msg, err)
+
 			FetchPfcpTxn(msg.Sequence())
 			return err
 		}
@@ -221,6 +225,8 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
 		err := udp.SendPfcp(pfcpMsg, addr, nil)
 		if err != nil {
+			reportSendFailure(pfcpMsg, err)
+
 			return err
 		}
 	}
@@ -235,6 +241,8 @@ func SendPfcpAssociationSetupResponse(upNodeID smf_context.NodeID, cause uint8, 
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -249,6 +257,8 @@ func SendPfcpAssociationReleaseResponse(upNodeID smf_context.NodeID, cause uint8
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Release Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -654,6 +664,8 @@ func SendPfcpSessionReportResponse(addr *net.UDPAddr, cause uint8, pfcpSRflag sm
 	pfcpMsg := BuildPfcpSessionReportResponse(cause, pfcpSRflag.Drobu, seqFromUPF, SEID)
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Session Report Response Seq[%d] to NodeID[%s]", seqFromUPF, addr.IP.String())
@@ -664,6 +676,8 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 	pfcpMsg := BuildPfcpHeartbeatResponse(sequenceNumber, udp.GetServerStartTime())
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", sequenceNumber, addr.IP.String())

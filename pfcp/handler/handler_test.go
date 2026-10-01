@@ -197,6 +197,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
 		ie.NewRecoveryTimeStamp(recoveryTimestamp),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 		),
@@ -412,6 +413,98 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeid covers a response that carries
+// CauseRequestAccepted but no UP F-SEID: it must be treated as a rejection (SessionEstablishFailed)
+// and none of RemoteSEID, the UE address, the TEID or the N3 interface -- all of which the response
+// also carries, as a real UPF reply would -- may be applied, since a later modification or deletion
+// would have nothing but a stale RemoteSEID to address the session with at the UPF.
+func TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeid(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.3")
+	upf := &context.UPF{NodeID: *nodeID}
+	smContext := context.NewSMContext("imsi-100000000000004", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.PDUAddress = &context.UeIpAddr{Ip: net.ParseIP("10.1.0.5")}
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode: &context.DataPathNode{
+					UPF:          upf,
+					UpLinkTunnel: &context.GTPTunnel{TEID: 111},
+				},
+			},
+		},
+	}
+
+	datapath := &context.DataPath{FirstDPNode: &context.DataPathNode{UPF: upf}}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+
+	pfcpCtx := smContext.PFCPContext[nodeID.ResolveNodeIdToIp().String()]
+	if pfcpCtx == nil || pfcpCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+	pfcpCtx.RemoteSEID = 999
+
+	seq := uint32(pfcpCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// Accepted, with a CreatedPDR carrying a UE address and F-TEID as a real UPF reply would --
+	// but no F-SEID IE, the condition this handles.
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		pfcpCtx.LocalSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.3", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewCreatedPDR(
+			ie.NewFTEID(0, 4321, net.ParseIP("1.1.1.3"), nil, 0),
+			ie.NewUEIPAddress(2, "9.9.9.9", "", 0, 0),
+		),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.3"), Port: 8809},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected a send to SBIPFCPCommunicationChan for an accepted response with no UP F-SEID")
+	}
+
+	if pfcpCtx.RemoteSEID != 999 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 999", pfcpCtx.RemoteSEID)
+	}
+	if gotTEID := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID; gotTEID != 111 {
+		t.Errorf("TEID applied from a response that must be treated as rejected: got %d, want 111", gotTEID)
+	}
+	if len(upf.N3Interfaces) != 0 {
+		t.Errorf("N3Interfaces applied from a response that must be treated as rejected: got %v, want none", upf.N3Interfaces)
+	}
+	if !smContext.PDUAddress.Ip.Equal(net.ParseIP("10.1.0.5")) || smContext.PDUAddress.UpfProvided {
+		t.Errorf("PDUAddress applied from a response that must be treated as rejected: got %+v", smContext.PDUAddress)
 	}
 }
 

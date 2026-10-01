@@ -454,7 +454,25 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 
-	if rsp.UPFSEID != nil {
+	if rsp.Cause == nil {
+		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing Cause")
+		return
+	}
+	causeValue, causeErr := rsp.Cause.Cause()
+	if causeErr != nil {
+		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", causeErr)
+		return
+	}
+	// An accepted response with no UP F-SEID leaves no SEID the SMF can address this session's
+	// PFCP session with at the UPF, so every later modification or deletion would go out under
+	// whatever RemoteSEID defaulted to. Treated as a rejection rather than the silent success it
+	// would otherwise be. Validated up front, before any response-derived state is applied below,
+	// so a rejected response can never leave establishment state (RemoteSEID, UE address, TEID,
+	// N3 interface) partially applied.
+	acceptedWithNoSeid := causeValue == ie.CauseRequestAccepted && rsp.UPFSEID == nil
+	accepted := causeValue == ie.CauseRequestAccepted && !acceptedWithNoSeid
+
+	if accepted {
 		// NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
 		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
 		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
@@ -480,7 +498,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-	if rsp.CreatedPDR != nil {
+	if accepted && rsp.CreatedPDR != nil {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
 			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
@@ -533,26 +551,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	}
 
 	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
-		// UPF Accept
-		if rsp.Cause == nil {
-			logger.PfcpLog.Errorln("PFCP Session Establishment Response missing Cause")
-			return
-		}
-		causeValue, err := rsp.Cause.Cause()
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
-			return
-		}
 		// Gated on the state, like the modification and release handlers below. Restoration issues
 		// an establishment without waiting on this channel, so an unconditional send here would leave
 		// a stale value for whichever unrelated modification or release next waits on it.
 		awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
-		// An accepted response with no UP F-SEID leaves no SEID the SMF can address this session's
-		// PFCP session with at the UPF, so every later modification or deletion would go out under
-		// whatever RemoteSEID defaulted to. Treated as a rejection rather than the silent success it
-		// would otherwise be.
-		acceptedWithNoSeid := causeValue == ie.CauseRequestAccepted && rsp.UPFSEID == nil
-		accepted := causeValue == ie.CauseRequestAccepted && !acceptedWithNoSeid
+		// UPF Accept
 		if accepted {
 			if awaited {
 				// Not a blocking send. A data path through several user planes establishes one
