@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
+	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/v2/Nnrf_NFManagement"
@@ -478,12 +478,12 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 			return nil, openapi.ReportError("NfInstances is empty")
 		}
 		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
-		data, err := sonic.Marshal(instances[0])
+		data, err := gojson.Marshal(instances[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal AMF profile: %w", err)
 		}
 		var profile models.NFProfileDiscovery
-		if err := sonic.Unmarshal(data, &profile); err != nil {
+		if err := gojson.Unmarshal(data, &profile); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal AMF profile: %w", err)
 		}
 		smContext.AMFProfile = profile
@@ -700,12 +700,12 @@ func fetchAmfCandidates(ctx context.Context) ([]models.NFProfileDiscovery, error
 
 // useAmfProfile selects the given AMF profile on the SMContext and rebuilds the CommunicationClient.
 func useAmfProfile(smContext *smfContext.SMContext, profile models.NFProfileDiscovery) error {
-	data, err := sonic.Marshal(profile)
+	data, err := gojson.Marshal(profile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal AMF profile: %w", err)
 	}
 	var profileCopy models.NFProfileDiscovery
-	if err := sonic.Unmarshal(data, &profileCopy); err != nil {
+	if err := gojson.Unmarshal(data, &profileCopy); err != nil {
 		return fmt.Errorf("failed to unmarshal AMF profile: %w", err)
 	}
 	smContext.AMFProfile = profileCopy

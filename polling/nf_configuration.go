@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
+	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/logger"
 )
@@ -74,13 +74,13 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 			// Round-trip through JSON so the comparison and stored state always reflect the
 			// custom (Un)MarshalJSON behaviour of nfConfigApi types (e.g. AdditionalProperties
 			// defaulting to an empty map instead of nil), regardless of how the config was built.
-			data, err := sonic.Marshal(newSessionManagementConfig)
+			data, err := gojson.Marshal(newSessionManagementConfig)
 			if err != nil {
 				logger.PollConfigLog.Errorf("failed to marshal SessionManagement config: %v", err)
 				continue
 			}
 			var normalizedConfig []nfConfigApi.SessionManagement
-			if err := sonic.Unmarshal(data, &normalizedConfig); err != nil {
+			if err := gojson.Unmarshal(data, &normalizedConfig); err != nil {
 				logger.PollConfigLog.Errorf("failed to unmarshal SessionManagement config: %v", err)
 				continue
 			}
@@ -132,7 +132,7 @@ func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([
 		}
 
 		var config []nfConfigApi.SessionManagement
-		if err := sonic.Unmarshal(body, &config); err != nil {
+		if err := gojson.Unmarshal(body, &config); err != nil {
 			logger.PollConfigLog.Debugf("Session-management raw response: %s", body)
 			return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 		}
