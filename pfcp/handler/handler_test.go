@@ -386,6 +386,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID("1.1.1.1", "", ""),
 				ie.NewRecoveryTimeStamp(time.Now()),
+				ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 			)
 
 			udpMessage := udp.Message{

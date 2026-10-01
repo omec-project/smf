@@ -547,7 +547,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		// an establishment without waiting on this channel, so an unconditional send here would leave
 		// a stale value for whichever unrelated modification or release next waits on it.
 		awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
-		if causeValue == ie.CauseRequestAccepted {
+		// An accepted response with no UP F-SEID leaves no SEID the SMF can address this session's
+		// PFCP session with at the UPF, so every later modification or deletion would go out under
+		// whatever RemoteSEID defaulted to. Treated as a rejection rather than the silent success it
+		// would otherwise be.
+		acceptedWithNoSeid := causeValue == ie.CauseRequestAccepted && rsp.UPFSEID == nil
+		accepted := causeValue == ie.CauseRequestAccepted && !acceptedWithNoSeid
+		if accepted {
 			if awaited {
 				// Not a blocking send. A data path through several user planes establishes one
 				// session on each, and every response lands here while the channel holds one
@@ -578,7 +584,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishFailed)
 				}
 			}
-			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
+			if acceptedWithNoSeid {
+				smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected: accepted with no UP F-SEID")
+			} else {
+				smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
+			}
 			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
 				SetUpfInactive(*rspNodeID, msg.PfcpMessage.MessageTypeName())
 			}
