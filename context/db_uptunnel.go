@@ -7,7 +7,7 @@ package context
 import (
 	"net"
 
-	"github.com/bytedance/sonic"
+	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/util/idgenerator"
 	"github.com/omec-project/util/mongoapi"
@@ -138,12 +138,12 @@ func RecoverFirstDPNode(nodeIDInDB NodeIDInDB) (dataPathNode *DataPathNode) {
 }
 
 func ToBsonMNodeInDB(data *DataPathNodeInDB) (ret bson.M) {
-	tmp, err := sonic.Marshal(data)
+	tmp, err := gojson.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("ToBsonMNodeInDB marshal error: %v", err)
 		return
 	}
-	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+	if err = gojson.Unmarshal(tmp, &ret); err != nil {
 		logger.DataRepoLog.Errorf("ToBsonMNodeInDB unmarshal error: %v", err)
 	}
 	return
@@ -173,7 +173,7 @@ func GetNodeInDBFromDB(nodeIDInDB NodeIDInDB) (dataPathNodeInDB *DataPathNodeInD
 	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf state json:", result)
 	logger.CtxLog.Infoln("GetNodeInDBFromDB, smf dataPathNodeInDB:", dataPathNodeInDB)
 
-	err := sonic.Unmarshal(mapToByte(result), dataPathNodeInDB)
+	err := gojson.Unmarshal(mapToByte(result), dataPathNodeInDB)
 	if err != nil {
 		logger.DataRepoLog.Errorf("GetNodeInDBFromDB unmarshal error: %v", err)
 		return nil
