@@ -6,7 +6,6 @@ require (
 	github.com/bytedance/sonic v1.15.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
-	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/omec-project/nas/v2 v2.2.6
 	github.com/omec-project/ngap/v2 v2.1.8
 	github.com/omec-project/openapi/v2 v2.2.5

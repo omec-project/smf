@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mohae/deepcopy"
+	"github.com/bytedance/sonic"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/v2/Nnrf_NFManagement"
@@ -473,11 +473,18 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 	}
 
 	if localErr == nil {
-		if result.NfInstances == nil {
+		instances, ok := result.GetNfInstancesOk()
+		if !ok {
 			return nil, openapi.ReportError("NfInstances is nil")
 		}
 		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
-		smContext.AMFProfile = deepcopy.Copy(result.NfInstances[0]).(models.NFProfileDiscovery)
+		data, err := sonic.Marshal(instances[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal AMF profile: %w", err)
+		}
+		if err := sonic.Unmarshal(data, &smContext.AMFProfile); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal AMF profile: %w", err)
+		}
 	} else {
 		if problem, handledErr := util.HandleOpenAPIError(localErr); problem != nil {
 			return problem, nil
@@ -691,7 +698,13 @@ func fetchAmfCandidates(ctx context.Context) ([]models.NFProfileDiscovery, error
 
 // useAmfProfile selects the given AMF profile on the SMContext and rebuilds the CommunicationClient.
 func useAmfProfile(smContext *smfContext.SMContext, profile models.NFProfileDiscovery) error {
-	smContext.AMFProfile = deepcopy.Copy(profile).(models.NFProfileDiscovery)
+	data, err := sonic.Marshal(profile)
+	if err != nil {
+		return fmt.Errorf("failed to marshal AMF profile: %w", err)
+	}
+	if err := sonic.Unmarshal(data, &smContext.AMFProfile); err != nil {
+		return fmt.Errorf("failed to unmarshal AMF profile: %w", err)
+	}
 	smContext.ServingNfId = smContext.AMFProfile.GetNfInstanceId()
 	smContext.RebuildCommunicationClient()
 	if smContext.CommunicationClient == nil {
