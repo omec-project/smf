@@ -254,9 +254,13 @@ func TestAFailedRevertIsNotReportedAsASessionPutBack(t *testing.T) {
 
 	txn := &transaction.Transaction{Ctxt: sm}
 
-	reverted, err := HandlePduSessN1N2TransFailInd(txn)
+	modification, reverted, err := HandlePduSessN1N2TransFailInd(txn)
 	if err != nil {
 		t.Fatalf("handling the failure indication: %v", err)
+	}
+
+	if !modification {
+		t.Error("a failure indication for a pending modification was not reported as one")
 	}
 
 	if reverted {
