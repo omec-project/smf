@@ -5,6 +5,7 @@ package producer
 
 import (
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -214,5 +215,67 @@ func TestACorrectionWaitsOutTheCorrectedCommandsCopies(t *testing.T) {
 	case <-corrected:
 	case <-time.After(queuedWorkTimeout):
 		t.Fatal("the correction never started")
+	}
+}
+
+// When the wait for the radio's answer lapses, the decision held behind the modification starts.
+// The radio's answer, arriving after that, must not correct the first modification over the
+// second: the lapse dropped what the completion kept for that answer, and with the session no
+// longer waiting for the first modification's answer, the late one finds nothing of it to withdraw.
+// A correction built from it would replace the second's pending update and stop its T3591.
+func TestALateRadioAnswerDoesNotCorrectTheModificationAfterIt(t *testing.T) {
+	const guard = 300 * time.Millisecond
+
+	s := newDeferralSession(t)
+	s.sm.T3591Value = guard
+	originalRetransmit := retransmitModificationCommand
+	t.Cleanup(func() { retransmitModificationCommand = originalRetransmit })
+	retransmitModificationCommand = func(*smf_context.SMContext, func() bool) error { return nil }
+	s.startAndHold(t)
+
+	// The first modification carries flows, so a correction for it would have something to
+	// withdraw, and the radio has not answered it yet.
+	s.sm.SMLock.Lock()
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{flowsUpdate()}
+	s.sm.RanAnswerPending = true
+	s.sm.SMLock.Unlock()
+
+	originalApply := applyModification
+	t.Cleanup(func() { applyModification = originalApply })
+	var corrections atomic.Int32
+	applyModification = func(*smf_context.SMContext, *qos.PolicyUpdate) error {
+		corrections.Add(1)
+		return nil
+	}
+
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+	s.sm.SMLock.Lock()
+	s.sm.T3591Value = 16 * time.Second // for the held decision's own timer
+	s.sm.SMLock.Unlock()
+	s.waitForSend(t, "the held decision, once the wait for the radio lapsed")
+	s.waitUntilArmed(t, 2)
+
+	// The second modification's radio has not answered yet either, so an answer arriving now is
+	// taken as one this session is waiting for.
+	s.sm.SMLock.Lock()
+	second, pending := s.sm.T3591, s.sm.SmPolicyUpdates[0]
+	s.sm.RanAnswerPending = true
+	s.sm.SMLock.Unlock()
+
+	// The first modification's answer, refusing one of its flows, arrives late.
+	deliverModifyResponse(t, s.sm, craftModifyResponseTransfer(t, []int64{1}, []int64{2}))
+	time.Sleep(100 * time.Millisecond)
+
+	if got := corrections.Load(); got != 0 {
+		t.Errorf("%d corrections were started for the first modification after the second had begun", got)
+	}
+
+	s.sm.SMLock.Lock()
+	defer s.sm.SMLock.Unlock()
+	if s.sm.T3591 != second {
+		t.Error("the second modification's T3591 was replaced")
+	}
+	if len(s.sm.SmPolicyUpdates) != 1 || s.sm.SmPolicyUpdates[0] != pending {
+		t.Error("the second modification's pending update was replaced")
 	}
 }
