@@ -6,7 +6,9 @@ package producer
 import (
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -270,5 +272,42 @@ func TestAFailedRevertIsNotReportedAsASessionPutBack(t *testing.T) {
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
 		t.Errorf("state = %s, want %s: the session is running parameters the UE never saw",
 			sm.SMContextState, smf_context.SmStatePfcpRelease)
+	}
+}
+
+// A modification reverted after a delivery failure stops its T3591 rather than only forgetting it.
+// The indication arrives with the timer armed, and a timer dropped without being stopped went on
+// firing for the whole retransmission sequence.
+func TestARevertedModificationStopsItsTimer(t *testing.T) {
+	originalPfcp, originalRetransmit := sendPfcpSessionModifyReq, retransmitModificationCommand
+	t.Cleanup(func() { sendPfcpSessionModifyReq, retransmitModificationCommand = originalPfcp, originalRetransmit })
+
+	var retransmissions atomic.Int32
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	retransmitModificationCommand = func(*smf_context.SMContext, func() bool) error {
+		retransmissions.Add(1)
+		return nil
+	}
+
+	sm := modifyingSession()
+	sm.T3591Value = 20 * time.Millisecond
+	sm.SMLock.Lock()
+	startT3591Locked(sm, 4)
+	sm.SMLock.Unlock()
+	t.Cleanup(func() {
+		sm.SMLock.Lock()
+		sm.StopT3591()
+		sm.SMLock.Unlock()
+	})
+
+	if _, _, err := HandlePduSessN1N2TransFailInd(&transaction.Transaction{Ctxt: sm}); err != nil {
+		t.Fatalf("handling the failure indication: %v", err)
+	}
+
+	// The expiry already due when the timer is stopped can still be delivered (see Timer.Stop), so
+	// one is allowed for; the timer left running fires on every interval.
+	time.Sleep(150 * time.Millisecond)
+	if got := retransmissions.Load(); got > 1 {
+		t.Errorf("T3591 fired %d times after the modification was reverted; it was left running", got)
 	}
 }
