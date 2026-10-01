@@ -753,10 +753,12 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 		smContext.SubPduSessLog.Errorf("discarding the abandoned modification failed: %v", err)
 	}
 
-	// Drop the timer handle and leave the session settled so a later modification of the same
-	// session can be attempted.
-	smContext.T3591 = nil
-	smContext.NwModificationPending = false
+	// Stop the timer, not only drop its handle, and leave the session settled so a later
+	// modification of the same session can be attempted. Dropping the handle left the timer
+	// running after a delivery failure, the one abandonment that reaches here with it still armed:
+	// it went on retransmitting into the currency check and then abandoning nothing, for the
+	// whole retransmission sequence.
+	smContext.StopT3591()
 
 	smContext.ChangeState(smfContext.SmStateActive)
 }
