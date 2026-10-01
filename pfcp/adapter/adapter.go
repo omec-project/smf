@@ -257,12 +257,17 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 	if causeErr != nil {
 		return fmt.Errorf("pfcp session establishment response cause error: %v", causeErr)
 	}
+	// F-SEID only matters for an accepted response, so it is parsed only for one: a rejected
+	// response must still reach the failure branch below on its Cause alone, regardless of whether
+	// this unrelated IE is present, malformed, or absent. A parse failure on an accepted response is
+	// handled the same way as a missing F-SEID rather than by returning an error, so that case still
+	// reaches the rejection logic below instead of silently dropping the verdict.
 	var rspUPFseid *ie.FSEIDFields
-	if rsp.UPFSEID != nil {
+	if causeValue == ie.CauseRequestAccepted && rsp.UPFSEID != nil {
 		var fseidErr error
-		rspUPFseid, fseidErr = rsp.UPFSEID.FSEID()
-		if fseidErr != nil {
-			return fmt.Errorf("pfcp session establishment response UPFSEID error: %v", fseidErr)
+		if rspUPFseid, fseidErr = rsp.UPFSEID.FSEID(); fseidErr != nil {
+			logger.PfcpLog.Errorf("failed to parse FSEID IE: %+v", fseidErr)
+			rspUPFseid = nil
 		}
 	}
 	// An accepted response with no UP F-SEID, or a zero-valued one, leaves no usable SEID the SMF
@@ -345,18 +350,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 	awaited := smContext.SMContextState == context.SmStatePfcpCreatePending
 
 	if !accepted {
-		// An unusable response from any UPF on the path fails the establishment, not only one from
-		// the AN UPF below: a branching data path only works if every leg of it does. Still only a
-		// best-effort signal -- an unusable response arriving after the AN UPF's success has already
-		// been queued finds the channel full and is dropped, same as the first-verdict-stands
-		// tradeoff noted below.
-		if awaited {
-			select {
-			case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed:
-			default:
-				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishFailed)
-			}
-		}
 		if acceptedWithNoSeid {
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected: accepted with no usable UP F-SEID")
 		} else {
@@ -365,24 +358,44 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 		if causeValue == ie.CauseNoEstablishedPFCPAssociation {
 			SetUpfInactive(*rspNodeID)
 		}
-	} else if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
-		// Only the AN UPF's acceptance queues success: it is the one the create procedure's
-		// awaited verdict was always meant to track, and it is still read exactly once.
-		if awaited {
-			// Not a blocking send. A data path through several user planes establishes one
-			// session on each, and every response lands here while the channel holds one
-			// verdict and is read once. In adapter mode the response is dispatched inline, on the
-			// goroutine that reads the channel afterwards -- so a second blocking write parked it
-			// on its own channel, and two user planes that both accepted wedged the session.
-			// The first verdict stands and later ones are dropped; which one should stand when
-			// the user planes disagree is a separate question, and this does not answer it.
+	} else {
+		smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
+	}
+
+	if awaited {
+		// A branching data path sends an establishment request to every UPF on it (SendPFCPRules,
+		// producer/datapath.go), which populates PendingUPF with all of them before any request goes
+		// out. The single verdict the create procedure reads must reflect every one of those
+		// responses, not just whichever UPF this handler happens to be invoked for first -- SendPFCPRules
+		// iterates an unordered map, so the AN UPF's acceptance must not be able to win a race against a
+		// secondary UPF's rejection merely by being visited first. EstablishmentFailed latches a
+		// rejection seen from any UPF until the verdict is queued, so a failure from one UPF is never
+		// erased by a later acceptance from another.
+		upfIP := nodeID.ResolveNodeIdToIp().String()
+		if _, pending := smContext.PendingUPF[upfIP]; pending {
+			delete(smContext.PendingUPF, upfIP)
+		} else {
+			smContext.SubPfcpLog.Warnf("PFCP Session Establishment Response from UPF[%s] was not pending; not counted toward the establishment verdict", upfIP)
+		}
+		if !accepted {
+			smContext.EstablishmentFailed = true
+		}
+		if smContext.PendingUPF.IsEmpty() {
+			verdict := context.SessionEstablishSuccess
+			if smContext.EstablishmentFailed {
+				verdict = context.SessionEstablishFailed
+			}
+			smContext.EstablishmentFailed = false
+			// Not a blocking send. The response is dispatched inline, on the goroutine that reads the
+			// channel afterwards -- so a blocking write here would park the sender behind its own
+			// reader. The first verdict stands and a later, stale one (e.g. a response this call was
+			// not actually waiting for) is dropped rather than queued behind it.
 			select {
-			case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess:
+			case smContext.SBIPFCPCommunicationChan <- verdict:
 			default:
-				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishSuccess)
+				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
 			}
 		}
-		smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 	}
 	return nil
 }

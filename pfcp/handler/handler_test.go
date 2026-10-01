@@ -596,8 +596,9 @@ func TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeid(t *testing.T
 
 // TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF covers a multi-UPF data
 // path (e.g. ULCL branching): an unusable response (accepted with no UP F-SEID) from a UPF other
-// than the AN UPF must still fail the overall establishment, not just leave that UPF's own
-// RemoteSEID unset while the AN UPF's own acceptance silently carries the session to success.
+// than the AN UPF must still fail the overall establishment, even when the AN UPF's own response
+// arrives afterwards and is itself accepted -- aggregation, not response order, decides the
+// verdict, and a failure once seen is never erased by a later acceptance from another UPF.
 func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *testing.T) {
 	if factory.SmfConfig.Configuration == nil {
 		factory.SmfConfig = factory.Config{
@@ -620,7 +621,7 @@ func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *te
 		DataPathPool: context.DataPathPool{
 			10: &context.DataPath{
 				IsDefaultPath: true,
-				FirstDPNode:   &context.DataPathNode{UPF: anUPF},
+				FirstDPNode:   &context.DataPathNode{UPF: anUPF, UpLinkTunnel: &context.GTPTunnel{}},
 			},
 		},
 	}
@@ -628,32 +629,71 @@ func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *te
 	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: anUPF}})
 	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: secondaryUPF}})
 
+	anCtx := smContext.PFCPContext[anNodeID.ResolveNodeIdToIp().String()]
 	secondaryCtx := smContext.PFCPContext[secondaryNodeID.ResolveNodeIdToIp().String()]
-	if secondaryCtx == nil || secondaryCtx.LocalSEID == 0 {
-		t.Fatal("failed to allocate a local SEID for the secondary UPF")
+	if anCtx == nil || anCtx.LocalSEID == 0 || secondaryCtx == nil || secondaryCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the AN or secondary UPF")
 	}
 
-	seq := uint32(secondaryCtx.LocalSEID)
-	pfcp_message.InsertPfcpTxn(seq, secondaryNodeID)
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before either response can arrive; simulated here since this test drives the
+	// handler directly.
+	smContext.PendingUPF = context.PendingUPF{
+		anNodeID.ResolveNodeIdToIp().String():        true,
+		secondaryNodeID.ResolveNodeIdToIp().String(): true,
+	}
+
+	secondarySeq := uint32(secondaryCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(secondarySeq, secondaryNodeID)
 
 	// The secondary (non-AN) UPF's response: accepted but with no UP F-SEID.
-	rsp := message.NewSessionEstablishmentResponse(
+	secondaryRsp := message.NewSessionEstablishmentResponse(
 		0,
 		0,
 		secondaryCtx.LocalSEID,
-		seq,
+		secondarySeq,
 		0,
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.8", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
 	)
 
-	udpMessage := udp.Message{
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.8"), Port: 8809},
-		PfcpMessage: rsp,
+		PfcpMessage: secondaryRsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("expected no verdict yet, the AN UPF's response has not arrived: got %v", status)
+	default:
 	}
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+	if secondaryCtx.RemoteSEID != 0 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 0", secondaryCtx.RemoteSEID)
+	}
+
+	anSeq := uint32(anCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(anSeq, anNodeID)
+
+	// The AN UPF's own response is a normal acceptance; the earlier secondary-UPF rejection must
+	// still dominate the aggregated verdict.
+	anRsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		anCtx.LocalSEID,
+		anSeq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.7", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.7"), nil),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.7"), Port: 8809},
+		PfcpMessage: anRsp,
+	})
 
 	select {
 	case status := <-smContext.SBIPFCPCommunicationChan:
@@ -661,11 +701,11 @@ func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *te
 			t.Errorf("expected SessionEstablishFailed, got %v", status)
 		}
 	default:
-		t.Error("expected an unusable response from a non-AN UPF to fail the overall establishment")
+		t.Error("expected the aggregated verdict once every pending UPF has responded")
 	}
 
-	if secondaryCtx.RemoteSEID != 0 {
-		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 0", secondaryCtx.RemoteSEID)
+	if anCtx.RemoteSEID != 0xABCD {
+		t.Errorf("RemoteSEID not applied from the AN UPF's own accepted response: got %d, want %d", anCtx.RemoteSEID, 0xABCD)
 	}
 }
 
@@ -720,6 +760,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.2", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.2"), nil),
 	)
 
 	done := make(chan struct{})

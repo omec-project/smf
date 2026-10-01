@@ -66,9 +66,15 @@ func SendPFCPRules(smContext *context.SMContext) {
 			}
 		}
 	}
+	// Every UPF an establishment request goes out to here is one the response handlers must hear
+	// back from before the single create verdict is queued: see PendingUPF on SMContext. Reset
+	// rather than merged, so a UPF that already held a session (and so gets a modification instead,
+	// below) is never mistaken for one this call is still waiting to establish.
+	smContext.PendingUPF = make(context.PendingUPF)
 	for ip, pfcp := range pfcpPool {
 		sessionContext, exist := smContext.PFCPContext[ip]
 		if !exist || sessionContext.RemoteSEID == 0 {
+			smContext.PendingUPF[ip] = true
 			err := message.SendPfcpSessionEstablishmentRequest(
 				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
 			if err != nil {

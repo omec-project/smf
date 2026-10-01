@@ -463,13 +463,17 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", causeErr)
 		return
 	}
+	// F-SEID only matters for an accepted response, so it is parsed only for one: a rejected
+	// response must still reach the failure branch below on its Cause alone, regardless of whether
+	// this unrelated IE is present, malformed, or absent. A parse failure on an accepted response
+	// is handled the same way as a missing F-SEID rather than by returning early, so that case
+	// still reaches the rejection logic below instead of silently dropping the verdict.
 	var rspUPFseid *ie.FSEIDFields
-	if rsp.UPFSEID != nil {
+	if causeValue == ie.CauseRequestAccepted && rsp.UPFSEID != nil {
 		var fseidErr error
-		rspUPFseid, fseidErr = rsp.UPFSEID.FSEID()
-		if fseidErr != nil {
+		if rspUPFseid, fseidErr = rsp.UPFSEID.FSEID(); fseidErr != nil {
 			logger.PfcpLog.Errorf("failed to parse FSEID IE: %+v", fseidErr)
-			return
+			rspUPFseid = nil
 		}
 	}
 	// An accepted response with no UP F-SEID, or a zero-valued one, leaves no usable SEID the SMF
@@ -561,18 +565,6 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
 
 	if !accepted {
-		// An unusable response from any UPF on the path fails the establishment, not only one from
-		// the AN UPF below: a branching data path only works if every leg of it does. Still only a
-		// best-effort signal -- an unusable response arriving after the AN UPF's success has already
-		// been queued finds the channel full and is dropped, same as the first-verdict-stands
-		// tradeoff noted below.
-		if awaited {
-			select {
-			case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed:
-			default:
-				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishFailed)
-			}
-		}
 		if acceptedWithNoSeid {
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected: accepted with no usable UP F-SEID")
 		} else {
@@ -581,32 +573,59 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		if causeValue == ie.CauseNoEstablishedPFCPAssociation {
 			SetUpfInactive(*rspNodeID, msg.PfcpMessage.MessageTypeName())
 		}
-	} else if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
-		// Only the AN UPF's acceptance queues success: it is the one the create procedure's
-		// awaited verdict was always meant to track, and it is still read exactly once.
-		if awaited {
-			// Not a blocking send. A data path through several user planes establishes one
-			// session on each, and every response lands here while the channel holds one
-			// verdict and is read once. In adapter mode the response is dispatched inline, on the
-			// goroutine that reads the channel afterwards -- so a second blocking write parked it
-			// on its own channel, and two user planes that both accepted wedged the session.
-			// The first verdict stands and later ones are dropped; which one should stand when
-			// the user planes disagree is a separate question, and this does not answer it.
-			select {
-			case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess:
-			default:
-				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishSuccess)
-			}
-		}
+	} else {
 		smContext.SubPfcpLog.Infoln("PFCP Session Establishment accepted")
 	}
 
-	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
+	if awaited {
+		// A branching data path sends an establishment request to every UPF on it (SendPFCPRules,
+		// producer/datapath.go), which populates PendingUPF with all of them before any request goes
+		// out. The single verdict the create procedure reads must reflect every one of those
+		// responses, not just whichever UPF this handler happens to be invoked for first -- an
+		// unordered map iteration decides that order, so the AN UPF's acceptance must not be able to
+		// win a race against a secondary UPF's rejection merely by being visited first.
+		// EstablishmentFailed latches a rejection seen from any UPF until the verdict is queued, so a
+		// failure from one UPF is never erased by a later acceptance from another.
+		upfIP := nodeID.ResolveNodeIdToIp().String()
+		if _, pending := smContext.PendingUPF[upfIP]; pending {
+			delete(smContext.PendingUPF, upfIP)
+		} else {
+			smContext.SubPfcpLog.Warnf("PFCP Session Establishment Response from UPF[%s] was not pending; not counted toward the establishment verdict", upfIP)
+		}
+		if !accepted {
+			smContext.EstablishmentFailed = true
+		}
+		if smContext.PendingUPF.IsEmpty() {
+			verdict := smf_context.SessionEstablishSuccess
+			if smContext.EstablishmentFailed {
+				verdict = smf_context.SessionEstablishFailed
+			}
+			smContext.EstablishmentFailed = false
+			// Not a blocking send. In adapter mode the response is dispatched inline, on the
+			// goroutine that reads the channel afterwards -- so a blocking write here would park the
+			// sender behind its own reader. The first verdict stands and a later, stale one (e.g. a
+			// response this call was not actually waiting for) is dropped rather than queued behind it.
+			select {
+			case smContext.SBIPFCPCommunicationChan <- verdict:
+			default:
+				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
+			}
+		}
+	}
+
+	// Gated on acceptance: during AddingPSA this function's only other caller of
+	// AddPDUSessionAnchorAndULCL (the modification response handler) only ever calls it from its own
+	// accepted branch. Running the same success continuation here for a rejected response would
+	// remove this UPF from BPManager.PendingUPF and let the branch addition advance, or even be
+	// marked successful, although RemoteSEID was never set for it.
+	if accepted && smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
 			smContext.SubPfcpLog.Infoln("keep Adding PSAndULCL")
 			producer.AddPDUSessionAnchorAndULCL(smContext, *rspNodeID)
 			smContext.BPManager.BPStatus = smf_context.AddingPSA
 		}
+	} else if !accepted && smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil && smContext.BPManager.BPStatus == smf_context.AddingPSA {
+		smContext.SubPfcpLog.Errorf("PFCP Session Establishment for PSA/ULCL rejected by UPF[%s]; aborting branch addition", rspNodeID.ResolveNodeIdToIp().String())
 	}
 }
 
@@ -637,15 +656,6 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
 
-	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
-		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
-			smContext.SubPfcpLog.Infoln("keep Adding PSAAndULCL")
-
-			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
-			producer.AddPDUSessionAnchorAndULCL(smContext, upfNodeID)
-		}
-	}
-
 	if rsp.Cause == nil {
 		logger.PfcpLog.Errorln("PFCP Session Modification Response missing Cause")
 		return
@@ -655,6 +665,20 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
 		return
+	}
+
+	// Gated on acceptance: running this success continuation for a rejected response would remove
+	// this UPF from BPManager.PendingUPF and let the branch addition advance, or even be marked
+	// successful, although the modification it depended on was never applied.
+	if causeValue == ie.CauseRequestAccepted && smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
+		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
+			smContext.SubPfcpLog.Infoln("keep Adding PSAAndULCL")
+
+			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
+			producer.AddPDUSessionAnchorAndULCL(smContext, upfNodeID)
+		}
+	} else if causeValue != ie.CauseRequestAccepted && smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil && smContext.BPManager.BPStatus == smf_context.AddingPSA {
+		smContext.SubPfcpLog.Errorf("PFCP Session Modification for PSA/ULCL rejected with cause [%v]; aborting branch addition", causeValue)
 	}
 
 	if causeValue == ie.CauseRequestAccepted {
