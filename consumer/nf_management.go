@@ -474,17 +474,19 @@ func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.Problem
 
 	if localErr == nil {
 		instances, ok := result.GetNfInstancesOk()
-		if !ok {
-			return nil, openapi.ReportError("NfInstances is nil")
+		if !ok || len(instances) == 0 {
+			return nil, openapi.ReportError("NfInstances is empty")
 		}
 		smContext.SubConsumerLog.Info("send NF Discovery Serving AMF Successful")
 		data, err := sonic.Marshal(instances[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal AMF profile: %w", err)
 		}
-		if err := sonic.Unmarshal(data, &smContext.AMFProfile); err != nil {
+		var profile models.NFProfileDiscovery
+		if err := sonic.Unmarshal(data, &profile); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal AMF profile: %w", err)
 		}
+		smContext.AMFProfile = profile
 	} else {
 		if problem, handledErr := util.HandleOpenAPIError(localErr); problem != nil {
 			return problem, nil
@@ -702,9 +704,11 @@ func useAmfProfile(smContext *smfContext.SMContext, profile models.NFProfileDisc
 	if err != nil {
 		return fmt.Errorf("failed to marshal AMF profile: %w", err)
 	}
-	if err := sonic.Unmarshal(data, &smContext.AMFProfile); err != nil {
+	var profileCopy models.NFProfileDiscovery
+	if err := sonic.Unmarshal(data, &profileCopy); err != nil {
 		return fmt.Errorf("failed to unmarshal AMF profile: %w", err)
 	}
+	smContext.AMFProfile = profileCopy
 	smContext.ServingNfId = smContext.AMFProfile.GetNfInstanceId()
 	smContext.RebuildCommunicationClient()
 	if smContext.CommunicationClient == nil {
