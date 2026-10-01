@@ -183,29 +183,35 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
-	reverted, err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn)
+	modification, reverted, err := producer.HandlePduSessN1N2TransFailInd(eventData.Txn)
 	if err != nil {
 		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
 
+	// HandleEvent applies whatever this returns, so the state a modification's revert leaves behind
+	// is decided here and not by the producer.
+	//
 	// A modification that could not be delivered is reverted rather than released: the producer
 	// has put the session back to Active and it is still serving the parameters the UE holds.
 	// Returning Init unconditionally, as this did, moved that working session to Init on the way
-	// out -- HandleEvent applies whatever this returns -- so the rollback was undone one frame
-	// after it was made.
+	// out, so the rollback was undone one frame after it was made.
 	//
-	// The test is the revert itself and not the state it leaves behind. This handler is shared
+	// The test is what the producer did and not the state it leaves behind. This handler is shared
 	// with the AN-release path, which also ends Active when its PFCP update succeeds, and that
 	// path has always finished in Init: reading Active as "a revert happened" would change it too,
 	// silently, for a case this has nothing to say about.
-	if reverted {
-		return smf_context.SmStateActive, nil
+	if modification {
+		if reverted {
+			return smf_context.SmStateActive, nil
+		}
+
+		// Putting the user plane back failed, and the producer has marked the session for release:
+		// it runs parameters the UE was never told about. Returning Init here overwrote that mark.
+		return smf_context.SmStatePfcpRelease, nil
 	}
 
-	// Either this was not a modification, or reverting it failed. The second case has already
-	// marked the session for release, and Init is where this handler has always left the first,
-	// so neither is described as a session put back.
+	// Not a modification: Init is where this handler has always left the AN-release path.
 	return smf_context.SmStateInit, nil
 }
 
