@@ -66,6 +66,10 @@ func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID context.Nod
 
 		if exist {
 			delete(pendingUPF, trggierUPFIP)
+			// ULCL is shared with the already-active path: its branch PDR/FAR is now really
+			// installed on that pre-existing session, so a later abort must remove just that
+			// rule rather than leave it or delete the whole session.
+			bpMGR.AcceptedModificationUPFs[trggierUPFIP] = true
 		} else {
 			logger.CtxLog.Warnln("In AddPDUSessionAnchorAndULCL case EstablishingULCL")
 			logger.CtxLog.Warnln("UPF IP ", trggierUPFIP, " doesn't exist in pending UPF!")
@@ -98,6 +102,9 @@ func AddPDUSessionAnchorAndULCL(smContext *context.SMContext, nodeID context.Nod
 
 		if exist {
 			delete(pendingUPF, trggierUPFIP)
+			// This UPF is on the RAN side of ULCL, shared with the already-active path, same as
+			// ULCL itself above.
+			bpMGR.AcceptedModificationUPFs[trggierUPFIP] = true
 		} else {
 			logger.CtxLog.Warnln("In AddPDUSessionAnchorAndULCL case UpdatingRANAndIUPFUpLink")
 			logger.CtxLog.Warnf("UPF IP %s doesn't exist in pending UPF", trggierUPFIP)

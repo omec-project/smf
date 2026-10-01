@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
@@ -412,21 +413,111 @@ func HandlePfcpSessionSetDeletionResponse(msg *udp.Message) {
 	logger.PfcpLog.Warnln("PFCP Session Set Deletion Response handling is not implemented")
 }
 
-// abortAddingPSA rolls back a PSA/ULCL branch addition a UPF has rejected. Left as logging only,
-// BPStatus stays AddingPSA forever: the activating path's PDR/FAR/QER state stays applied, its
-// pending bookkeeping stays populated, and the only trigger that starts a fresh attempt
-// (BPStatus == UnInitialized, see the accepted branch below) can never fire again. Tearing down
-// the activating path mirrors the cleanup ActivateTunnelAndPDR itself does on failure, and
-// InitializedFail -- distinct from UnInitialized -- records that this addition needs a new attempt
-// rather than being silently retried with stale state.
+// abortAddingPSA rolls back a PSA/ULCL branch addition a UPF has rejected.
+//
+// ActivatingPath carries its own PDR/FAR/QER for every node on it, RAN to tail, allocated once up
+// front by ActivateTunnelAndPDR. A node already on an active path -- the ULCL branching point and
+// any RAN-side node upstream of it -- keeps that path's PFCP session (AllocateLocalSEIDForDataPath
+// only allocates a new one where none exists yet); this attempt only ever adds a further PDR/FAR
+// to it. The tail past the ULCL node has no such session to keep: it belongs to this attempt
+// alone. Deactivating every node's local state the same way, as this used to, freed the SMF's own
+// PDR/FAR/QER IDs for both kinds of node while whichever UPFs had already accepted them kept
+// enforcing them -- orphaning that state at the tail, and at a shared node leaving the freed IDs
+// free for a later, unrelated rule to collide with.
+//
+// So each node is compensated accordingly: a tail node's session, once established, is deleted
+// outright, since this attempt is the only thing that ever referenced it; a shared node's session
+// is left alone, and only the PDR/FAR this attempt added to it -- if that modification was already
+// accepted before the rejection that triggers this abort -- is removed from it by a further
+// modification.
 func abortAddingPSA(smContext *smf_context.SMContext) {
 	bpMGR := smContext.BPManager
+
 	if bpMGR.ActivatingPath != nil {
-		bpMGR.ActivatingPath.DeactivateTunnelAndPDR(smContext)
+		// True for every node up to and including the ULCL node, which are the ones sharing a
+		// session with the already-active path; false from the node after it on, which have none.
+		// No ULCL at all (bpMGR.ULCL nil) means the whole path is new, so nothing on it is shared.
+		upToAndIncludingULCL := bpMGR.ULCL != nil
+		// Next() reads a tunnel's SrcEndPoint, which DeactivateDownLinkTunnel below replaces -- so
+		// the next node is saved before that happens, not read off the node after deactivating it.
+		for node := bpMGR.ActivatingPath.FirstDPNode; node != nil; {
+			next := node.Next()
+
+			isSharedNode := upToAndIncludingULCL
+			if isSharedNode && reflect.DeepEqual(node.UPF.NodeID, bpMGR.ULCL.NodeID) {
+				// This is the ULCL node itself -- still shared -- but every node reached from here
+				// on is past it.
+				upToAndIncludingULCL = false
+			}
+
+			nodeIP := node.GetNodeIP()
+			if isSharedNode {
+				if _, accepted := bpMGR.AcceptedModificationUPFs[nodeIP]; accepted {
+					removeBranchRulesFromSharedUPF(smContext, node, nodeIP)
+					delete(bpMGR.AcceptedModificationUPFs, nodeIP)
+				}
+			} else if pfcpCtx, ok := smContext.PFCPContext[nodeIP]; ok && pfcpCtx.RemoteSEID != 0 {
+				if err := pfcp_message.SendPfcpSessionDeletionRequest(node.UPF.NodeID, smContext, node.UPF.Port); err != nil {
+					smContext.SubPfcpLog.Errorf("failed to delete orphaned PSA2 branch session at UPF[%s]: %v", nodeIP, err)
+				}
+				delete(smContext.PFCPContext, nodeIP)
+			}
+
+			node.DeactivateUpLinkTunnel(smContext)
+			node.DeactivateDownLinkTunnel(smContext)
+			node = next
+		}
+		bpMGR.ActivatingPath.Activated = false
 	}
+
 	bpMGR.PendingUPF = make(smf_context.PendingUPF)
 	bpMGR.AddingPSAState = smf_context.ActivatingDataPath
 	bpMGR.BPStatus = smf_context.InitializedFail
+}
+
+// removeBranchRulesFromSharedUPF removes, by ID, exactly the PDR/FAR/QER a PSA/ULCL branch
+// addition had added to a node's pre-existing PFCP session -- leaving every rule that session
+// already carried for other traffic untouched.
+func removeBranchRulesFromSharedUPF(smContext *smf_context.SMContext, node *smf_context.DataPathNode, nodeIP string) {
+	var removePDR []*smf_context.PDR
+	fars := make(map[uint32]*smf_context.FAR)
+	qers := make(map[uint32]*smf_context.QER)
+	collect := func(pdrs map[string]*smf_context.PDR) {
+		for _, pdr := range pdrs {
+			if pdr == nil {
+				continue
+			}
+			removePDR = append(removePDR, pdr)
+			if pdr.FAR != nil {
+				fars[pdr.FAR.FARID] = pdr.FAR
+			}
+			for _, qer := range pdr.QER {
+				if qer != nil {
+					qers[qer.QERID] = qer
+				}
+			}
+		}
+	}
+	collect(node.UpLinkTunnel.PDR)
+	collect(node.DownLinkTunnel.PDR)
+
+	if len(removePDR) == 0 && len(fars) == 0 && len(qers) == 0 {
+		return
+	}
+	removeFAR := make([]*smf_context.FAR, 0, len(fars))
+	for _, far := range fars {
+		removeFAR = append(removeFAR, far)
+	}
+	removeQER := make([]*smf_context.QER, 0, len(qers))
+	for _, qer := range qers {
+		removeQER = append(removeQER, qer)
+	}
+
+	if err := pfcp_message.SendPfcpSessionModificationRequest(
+		node.UPF.NodeID, smContext, nil, nil, nil, nil, removePDR, removeFAR, removeQER, node.UPF.Port,
+	); err != nil {
+		smContext.SubPfcpLog.Errorf("failed to remove PSA/ULCL branch rule at UPF[%s]: %v", nodeIP, err)
+	}
 }
 
 func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
