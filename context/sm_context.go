@@ -136,6 +136,20 @@ type SMContext struct {
 	// for that session disregarded from then on.
 	NwModificationPending bool `json:"-" yaml:"-" bson:"-"`
 
+	// NwModificationGen counts the network-requested modifications started on this session, so
+	// that a procedure finishing late can tell whether the session has moved on to a later one.
+	// Read and written under SMLock; not persisted, for the reason NwModificationPending is not.
+	NwModificationGen uint64 `json:"-" yaml:"-" bson:"-"`
+
+	// DeferredPolicyDecisions holds the policy decisions that arrived while a network-requested
+	// modification was pending, oldest first. Each is applied as a procedure of its own once the one
+	// before it ends. TS 24.501 subclause 6.3.2.5 gives the network no way to run two at once: the
+	// UE's answer to a Command carries no procedure transaction identity, so it cannot say which
+	// Command it answers. Read and written under SMLock. Not persisted: like NwModificationPending,
+	// it belongs to a procedure in flight, and a session restored without that procedure would
+	// never start the next one.
+	DeferredPolicyDecisions []*models.SmPolicyDecision `json:"-" yaml:"-" bson:"-"`
+
 	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
 
 	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`

@@ -75,13 +75,34 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
 	}
 
+	// A decision that arrives while the network's previous modification is still waiting for the UE
+	// is held, not applied: starting a second procedure would replace the pending update and stop
+	// the first T3591, and the UE's answer to the first Command -- which carries nothing to say
+	// which Command it answers -- would then commit an update the UE was never sent. The PCF is
+	// answered as for an applied decision; the decision is applied when the procedure ends.
+	if smContext.NwModificationPending {
+		smContext.DeferredPolicyDecisions = append(smContext.DeferredPolicyDecisions, request.SmPolicyDecision)
+		smContext.SubPduSessLog.Infof("a modification is already waiting for the UE; holding this policy decision until it ends (%d held)",
+			len(smContext.DeferredPolicyDecisions))
+		smContext.SMLock.Unlock()
+
+		txn.Rsp = &httpwrapper.Response{
+			Status: http.StatusOK,
+			Body:   nil,
+		}
+
+		return nil
+	}
+
 	logger.PduSessLog.Infof("Building SM Policy Update for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
 
 	policyUpdates := qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, request.SmPolicyDecision)
-	smContext.SMLock.Unlock()
 
-	if err := ApplyModification(smContext, policyUpdates); err != nil {
+	// Started in the same hold of the lock that checked nothing was pending. A held decision is
+	// started from outside the session's transaction queue, so releasing the lock here would let
+	// it start in the gap, and the two procedures would run at once.
+	if err := applyModificationLocked(smContext, policyUpdates); err != nil {
 		txn.Err = err
 		if errors.Is(err, ErrPfcpModifyFailed) {
 			txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
@@ -575,6 +596,14 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 // the session lock is what wedges a session.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	smContext.SMLock.Lock()
+	return applyModificationLocked(smContext, update)
+}
+
+// applyModificationLocked is ApplyModification for a caller that holds SMLock and has just checked
+// that no modification is pending. It releases the lock: what follows blocks on the user plane.
+func applyModificationLocked(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
+	smContext.NwModificationGen++
+	gen := smContext.NwModificationGen
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
@@ -601,6 +630,7 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 		// Back to active, and the pending user-plane entry cleared with it: an entry left behind
 		// is waited on by the next modification, which would then wait for an answer to this one.
 		abandonPendingModify(smContext, smfContext.SmStateActive)
+		startDeferredModificationLocked(smContext)
 		smContext.SMLock.Unlock()
 		return fmt.Errorf("%w: %v", ErrPfcpModifyFailed, err)
 	}
@@ -619,6 +649,14 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
+
+	// The UE can acknowledge this procedure before the transfer call returns, and once it has, a
+	// held decision may already have started the next one. That procedure owns the session's state
+	// and its timer now, so this one leaves both alone.
+	if smContext.NwModificationGen != gen {
+		smContext.SubPduSessLog.Infoln("the UE acknowledged the modification before the transfer returned, and the next one has started; leaving the session to it")
+		return nil
+	}
 
 	smContext.ChangeState(smfContext.SmStateActive)
 	smContext.SubCtxLog.Info("PFCP Modify success and N1N2 Msg sent, new state:",
@@ -785,6 +823,7 @@ func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, 
 	}
 
 	abandonModificationLocked(smContext)
+	startDeferredModificationLocked(smContext)
 	smContext.SMLock.Unlock()
 
 	// Reported outside the lock: it logs and counts, and touches no session state.
@@ -843,6 +882,7 @@ func revertModification(smContext *smfContext.SMContext, cause string) bool {
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)
+		startDeferredModificationLocked(smContext)
 		smContext.SMLock.Unlock()
 
 		return false
@@ -850,5 +890,60 @@ func revertModification(smContext *smfContext.SMContext, cause string) bool {
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 
+	// Only now, and not when abandonModification settled the session above: the revert is a PFCP
+	// exchange on the session's one response channel, and a held decision started before it had
+	// its answer would program the user plane alongside it.
+	smContext.SMLock.Lock()
+	startDeferredModificationLocked(smContext)
+	smContext.SMLock.Unlock()
+
 	return true
+}
+
+// startDeferredModificationLocked starts the oldest held policy decision once the modification
+// before it has ended. The caller holds SMLock, and has just settled that modification.
+//
+// The decision runs on a goroutine of its own, because a modification blocks on the user plane and
+// every caller holds the session lock: the N1 and N2 handlers across their whole body.
+func startDeferredModificationLocked(smContext *smfContext.SMContext) {
+	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 {
+		return
+	}
+
+	go runDeferredModification(smContext)
+}
+
+// runDeferredModification applies the oldest held policy decision as a modification of its own. The
+// update is computed now, against what the session has committed by now, because a decision is a
+// change to the policy in force and not a description of all of it (TS 29.512 subclause 4.2.6.1).
+func runDeferredModification(smContext *smfContext.SMContext) {
+	smContext.SMLock.Lock()
+
+	// Something else started first, and its end starts this one instead.
+	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 {
+		smContext.SMLock.Unlock()
+		return
+	}
+
+	// A session on its way out takes its held decisions with it, as a notification arriving now
+	// would be refused. PfcpModify is a session whose UE answered before the transfer returned, and
+	// it is settling back to Active.
+	if smContext.Tunnel == nil ||
+		(smContext.SMContextState != smfContext.SmStateActive && smContext.SMContextState != smfContext.SmStatePfcpModify) {
+		smContext.SubPduSessLog.Warnf("dropping %d held policy decisions: the session is %s and will not be modified",
+			len(smContext.DeferredPolicyDecisions), smContext.SMContextState.String())
+		smContext.DeferredPolicyDecisions = nil
+		smContext.SMLock.Unlock()
+
+		return
+	}
+
+	decision := smContext.DeferredPolicyDecisions[0]
+	smContext.DeferredPolicyDecisions = smContext.DeferredPolicyDecisions[1:]
+	smContext.SubPduSessLog.Infof("applying a policy decision held while the previous modification was pending (%d still held)",
+		len(smContext.DeferredPolicyDecisions))
+
+	if err := applyModificationLocked(smContext, qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, decision)); err != nil {
+		smContext.SubPduSessLog.Errorf("the held policy decision could not be applied: %v", err)
+	}
 }

@@ -252,6 +252,8 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, committing the modification failed: %v", err)
 			}
 
+			startDeferredModificationLocked(smContext)
+
 		case nas.MsgTypePDUSessionModificationCommandReject:
 			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
 			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
@@ -260,6 +262,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// own cause rather than a timeout, and it is reported on the same path as one, so that
 			// a modification the network could not apply is countable however it failed.
 			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
+			startDeferredModificationLocked(smContext)
 
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
