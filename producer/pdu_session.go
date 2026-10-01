@@ -958,10 +958,11 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	return nil
 }
 
-// HandlePduSessN1N2TransFailInd answers a delivery failure, and reports whether it reverted a
-// modification rather than dropping the session -- which decides the state the caller leaves
-// behind, and is a fact about what happened here rather than one the state can be read back from.
-func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err error) {
+// HandlePduSessN1N2TransFailInd answers a delivery failure. It reports whether the failure was a
+// modification's, and if so whether it reverted it rather than dropping the session. Together the
+// two decide the state the caller leaves behind, and they are facts about what happened here rather
+// than ones the state can be read back from.
+func HandlePduSessN1N2TransFailInd(eventData interface{}) (modification, reverted bool, err error) {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
@@ -990,7 +991,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err er
 		reverted = revertModification(smContext, "n1n2_transfer_failure_indication")
 		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent, Body: nil}
 
-		return reverted, nil
+		return true, reverted, nil
 	}
 
 	var httpResponse *httpwrapper.Response
@@ -1011,7 +1012,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err er
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 				if DLPDR == nil {
 					smContext.SubPduSessLog.Errorln("AN Release Error")
-					return false, fmt.Errorf("AN Release Error")
+					return false, false, fmt.Errorf("AN Release Error")
 				} else {
 					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
 					DLPDR.FAR.State = smf_context.RULE_UPDATE
@@ -1059,7 +1060,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err er
 		smContext.SubPduSessLog.Infoln("no PFCP modification was sent, answering the notification without waiting")
 		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent}
 
-		return false, nil
+		return false, false, nil
 	}
 
 	// Listening PFCP modification response.
@@ -1067,7 +1068,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (reverted bool, err er
 
 	httpResponse = HandlePFCPResponse(smContext, PFCPResponseStatus)
 	txn.Rsp = httpResponse
-	return false, nil
+	return false, false, nil
 }
 
 // abandonPendingModify undoes the bookkeeping for a modification that failed, whatever the
