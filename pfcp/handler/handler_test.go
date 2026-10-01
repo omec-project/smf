@@ -508,6 +508,167 @@ func TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeid(t *testing.T) 
 	}
 }
 
+// TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeid covers a response that carries
+// CauseRequestAccepted and an F-SEID IE, but whose decoded SEID is 0. SendPFCPRules
+// (producer/datapath.go) treats RemoteSEID == 0 as "not yet established" and would keep reissuing
+// an establishment request for the UPF instead of a modification, so a zero SEID must be treated
+// the same as a missing one: a rejection, with none of RemoteSEID/TEID/N3Interfaces/PDUAddress
+// applied.
+func TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeid(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.6")
+	upf := &context.UPF{NodeID: *nodeID}
+	smContext := context.NewSMContext("imsi-100000000000005", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.PDUAddress = &context.UeIpAddr{Ip: net.ParseIP("10.1.0.7")}
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode: &context.DataPathNode{
+					UPF:          upf,
+					UpLinkTunnel: &context.GTPTunnel{TEID: 222},
+				},
+			},
+		},
+	}
+
+	datapath := &context.DataPath{FirstDPNode: &context.DataPathNode{UPF: upf}}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+
+	pfcpCtx := smContext.PFCPContext[nodeID.ResolveNodeIdToIp().String()]
+	if pfcpCtx == nil || pfcpCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+	pfcpCtx.RemoteSEID = 888
+
+	seq := uint32(pfcpCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// Accepted, with an F-SEID IE present but decoding to SEID 0 -- the condition this handles.
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		pfcpCtx.LocalSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.6", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0, net.ParseIP("1.1.1.6"), nil),
+		ie.NewCreatedPDR(
+			ie.NewFTEID(0, 6543, net.ParseIP("1.1.1.6"), nil, 0),
+		),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.6"), Port: 8809},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected a send to SBIPFCPCommunicationChan for an accepted response with a zero UP F-SEID")
+	}
+
+	if pfcpCtx.RemoteSEID != 888 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 888", pfcpCtx.RemoteSEID)
+	}
+	if gotTEID := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID; gotTEID != 222 {
+		t.Errorf("TEID applied from a response that must be treated as rejected: got %d, want 222", gotTEID)
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF covers a multi-UPF data
+// path (e.g. ULCL branching): an unusable response (accepted with no UP F-SEID) from a UPF other
+// than the AN UPF must still fail the overall establishment, not just leave that UPF's own
+// RemoteSEID unset while the AN UPF's own acceptance silently carries the session to success.
+func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	anNodeID := context.NewNodeID("1.1.1.7")
+	anUPF := &context.UPF{NodeID: *anNodeID}
+	secondaryNodeID := context.NewNodeID("1.1.1.8")
+	secondaryUPF := &context.UPF{NodeID: *secondaryNodeID}
+
+	smContext := context.NewSMContext("imsi-100000000000006", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: anUPF},
+			},
+		},
+	}
+
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: anUPF}})
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: secondaryUPF}})
+
+	secondaryCtx := smContext.PFCPContext[secondaryNodeID.ResolveNodeIdToIp().String()]
+	if secondaryCtx == nil || secondaryCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the secondary UPF")
+	}
+
+	seq := uint32(secondaryCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(seq, secondaryNodeID)
+
+	// The secondary (non-AN) UPF's response: accepted but with no UP F-SEID.
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		secondaryCtx.LocalSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.8", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.8"), Port: 8809},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected an unusable response from a non-AN UPF to fail the overall establishment")
+	}
+
+	if secondaryCtx.RemoteSEID != 0 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 0", secondaryCtx.RemoteSEID)
+	}
+}
+
 // A data path through several user planes establishes a session on each, and every answer lands
 // on the session's channel, which holds one verdict and is read once. Written with a blocking send,
 // the second answer parked its dispatch goroutine until the first was read and then left itself
