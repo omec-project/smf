@@ -903,14 +903,30 @@ func revertModification(smContext *smfContext.SMContext, cause string) bool {
 // startDeferredModificationLocked starts the oldest held policy decision once the modification
 // before it has ended. The caller holds SMLock, and has just settled that modification.
 //
-// The decision runs on a goroutine of its own, because a modification blocks on the user plane and
-// every caller holds the session lock: the N1 and N2 handlers across their whole body.
+// The decision runs as a task in the session's queue. Not on the caller's goroutine, because a
+// modification blocks on the user plane and every caller holds the session lock: the N1 and N2
+// handlers across their whole body. And not on a goroutine of its own either, because the caller is
+// usually a transaction whose state machine has not finished: HandleEvent applies the handler's
+// returned state after the handler has released the lock, and a modification started in between
+// moved the session to SmStatePfcpModify only for that to put it back to Active -- after which the
+// user plane's answer, delivered only in SmStatePfcpModify, never reached it.
 func startDeferredModificationLocked(smContext *smfContext.SMContext) {
 	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 {
 		return
 	}
 
-	go runDeferredModification(smContext)
+	queueSessionTask(smContext, func() { runDeferredModification(smContext) })
+}
+
+// queueSessionTask runs work in the session's transaction queue. The fsm package owns the queue and
+// installs the real one at start; this package cannot import it, and until then the work runs on a
+// goroutine of its own.
+var queueSessionTask = func(_ *smfContext.SMContext, task func()) { go task() }
+
+// SetSessionTaskQueue installs the function that queues work for a session. Called once, by the fsm
+// package at start.
+func SetSessionTaskQueue(queue func(*smfContext.SMContext, func())) {
+	queueSessionTask = queue
 }
 
 // runDeferredModification applies the oldest held policy decision as a modification of its own. The
