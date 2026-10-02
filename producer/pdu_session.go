@@ -955,7 +955,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (modification, reverte
 	// So a modification is reverted instead: the pending update is discarded and the user plane is
 	// put back to the parameters the UE still believes are in force.
 	smContext.SMLock.Lock()
-	modifying := smContext.NwModificationPending
+	modifying, gen := smContext.NwModificationPending, smContext.NwModificationGen
 	smContext.SMLock.Unlock()
 	if modifying {
 		smContext.SubPduSessLog.Warnf("the modification could not be delivered to the UE; reverting it and leaving the session on its previous parameters")
@@ -963,7 +963,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) (modification, reverte
 		// Reported, not assumed. Putting the user plane back can itself fail, and revertModification
 		// then marks the session for release because it is running parameters the UE was never told
 		// about. Answering "reverted" there would have the caller move it to Active and erase that.
-		reverted = revertModification(smContext, "n1n2_transfer_failure_indication")
+		reverted = revertModification(smContext, "n1n2_transfer_failure_indication", gen)
 		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent, Body: nil}
 
 		return true, reverted, nil
