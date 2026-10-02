@@ -99,11 +99,15 @@ func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
 	t.Cleanup(func() { stopWaitTimeout = previous })
 
 	var callbackLock sync.Mutex
-	var enterOnce sync.Once
 	entered := make(chan struct{})
+
+	// Acquired before the timer is even started - and not released until cleanup - so the
+	// callback below is guaranteed to block on it rather than racing this goroutine for it.
+	callbackLock.Lock() // simulate the caller already holding the lock expiredFunc needs
+
 	timer := NewTimer(time.Microsecond, 1_000_000,
 		func(int32) {
-			enterOnce.Do(func() { close(entered) })
+			close(entered)
 			callbackLock.Lock()
 			defer callbackLock.Unlock()
 		},
@@ -114,9 +118,9 @@ func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
 		timer.Stop()
 	})
 
-	<-entered // wait for a callback to be in flight and blocked on the lock below
-
-	callbackLock.Lock() // simulate the caller already holding the lock expiredFunc needs
+	// callbackLock is already held above, so the callback closing entered right before its own
+	// Lock() call proves it is now blocked on that lock, not merely about to attempt it.
+	<-entered
 
 	stopReturned := make(chan struct{})
 	go func() {

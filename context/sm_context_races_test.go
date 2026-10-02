@@ -115,3 +115,38 @@ func TestPendingUPFSurvivesConcurrentRebuildAndResponseHandling(t *testing.T) {
 
 	wg.Wait()
 }
+
+// MarshalJSON and ToBsonM walk SMContext's exported fields outside of PendingUPFLock. If
+// PendingUPF were still among those fields, a concurrent unlocked response handler mutating it
+// (as the PFCP modification/deletion handlers do) would race the encoder's map iteration, and for
+// Go maps that is a potential process-crashing fatal error, not just a race report. PendingUPF is
+// excluded from JSON/BSON for exactly this reason; this test guards against that exclusion being
+// silently reverted. Run under -race.
+func TestSerializationDoesNotRaceConcurrentPendingUPFMutation(t *testing.T) {
+	smContext := &SMContext{PFCPContext: make(map[string]*PFCPSessionContext)}
+
+	const iterations = 500
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.AddPendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+			smContext.DeletePendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range iterations {
+			_ = ToBsonM(smContext)
+			if _, err := smContext.MarshalJSON(); err != nil {
+				t.Errorf("MarshalJSON failed: %v", err)
+			}
+		}
+	}()
+
+	wg.Wait()
+}

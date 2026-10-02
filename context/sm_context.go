@@ -152,7 +152,11 @@ type SMContext struct {
 	// unsupported structure - madatory!
 	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
 
-	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
+	// PendingUPF is excluded from JSON/BSON: it only tracks PFCP requests in flight for the
+	// current process, so a DB/API snapshot of it would be stale the instant it is read, and
+	// MarshalJSON/ToBsonM encode this field outside of PendingUPFLock (see below), so including
+	// it would race the PFCP response handlers that mutate it concurrently.
+	PendingUPF PendingUPF `json:"-" yaml:"-" bson:"-"` // ignore
 	// PendingUPFLock guards PendingUPF against the same unlocked-handler/SMLock-holder conflict
 	// LocalPurged has: releaseTunnel rebuilds PendingUPF under SMLock (both on the normal release
 	// path and from HandlePduSessionContextReplacement), while the PFCP modification/deletion
