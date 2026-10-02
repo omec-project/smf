@@ -43,6 +43,9 @@ var (
 	// retransmitModificationCommand is the send a T3591 expiry makes, replaceable for the same
 	// reason as the two above.
 	retransmitModificationCommand = buildAndSendQosN1N2TransferMsg
+	// sendModificationTransfer is the transfer the Command goes out on, replaceable so a test can
+	// have it report that it was sent more than once.
+	sendModificationTransfer = consumer.SendN1N2TransferCountingSends
 )
 
 func HandleSMPolicyUpdateNotify(eventData interface{}) error {
@@ -519,7 +522,12 @@ func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurren
 
 		return errModificationSuperseded
 	}
-	rspData, err := consumer.SendN1N2TransferWithRediscovery(context.Background(), smContext, n1n2Request)
+	rspData, sends, err := sendModificationTransfer(context.Background(), smContext, n1n2Request)
+	// More than one send means the Command may have been delivered twice, and the UE answers every
+	// copy: the procedure's end then waits out a T3591 interval, as after a retransmission.
+	if sends > 1 {
+		recordDuplicateCommandLocked(smContext)
+	}
 	smContext.SMLock.Unlock()
 	if err != nil {
 		smContext.SubPfcpLog.Warnf("send N1N2Transfer failed: %v", err.Error())
@@ -1011,5 +1019,18 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 
 	if err := applyModificationLocked(smContext, qos.BuildSmPolicyUpdate(&smContext.SmPolicyData, decision)); err != nil {
 		smContext.SubPduSessLog.Errorf("the held policy decision could not be applied: %v", err)
+	}
+}
+
+// recordDuplicateCommandLocked records that the pending modification's Command may have reached the
+// UE more than once, so that its end waits out one T3591 interval before the next modification
+// starts. The caller holds SMLock.
+func recordDuplicateCommandLocked(smContext *smfContext.SMContext) {
+	interval := smContext.T3591Value
+	if interval <= 0 {
+		interval, _ = smfContext.ResolveT3591(factory.SmfConfig.Configuration.T3591, smContext.ExtendedNasSmTimer)
+	}
+	if interval > smContext.NwModificationQuietFor {
+		smContext.NwModificationQuietFor = interval
 	}
 }
