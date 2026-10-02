@@ -121,7 +121,7 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 		smCtxt.SubPduSessLog.Warn("PDUSessionSMContextCreate, old context exist, purging")
 		smCtxt.SMLock.Lock()
 
-		smCtxt.LocalPurged = true
+		smCtxt.LocalPurged.Store(true)
 
 		// Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
 		// RemoveSMContextLocked already transitions to SmStateRelease, which publishes the Kafka

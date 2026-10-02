@@ -411,7 +411,7 @@ func reissue(smContext *context.SMContext, nodeIP string) bool {
 	// Set as the first act of replacing a session. The context is on its way out and the
 	// replacement is waiting for this very lock, so restoring it would repair something that is
 	// about to be discarded while delaying the session taking its place.
-	if smContext.LocalPurged {
+	if smContext.LocalPurged.Load() {
 		smContext.SubPfcpLog.Infof("session has been purged and replaced; not restoring it")
 		return false
 	}

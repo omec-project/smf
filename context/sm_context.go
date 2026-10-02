@@ -169,7 +169,12 @@ type SMContext struct {
 	SelectedPDUSessionType              uint8          `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
 	UnauthenticatedSupi                 bool           `json:"unauthenticatedSupi,omitempty" yaml:"unauthenticatedSupi" bson:"unauthenticatedSupi,omitempty"`                                                 // ignore
 	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool           `json:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty" yaml:"pduSessionRelease_DUE_TO_DUP_PDU_ID" bson:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty"` // ignore
-	LocalPurged                         bool           `json:"localPurged,omitempty" yaml:"localPurged" bson:"localPurged,omitempty"`                                                                         // ignore
+	// atomic because the PFCP modification/deletion response handlers read it without SMLock:
+	// the producer side holds SMLock across its blocking wait on SBIPFCPCommunicationChan, so a
+	// handler that took SMLock to send on that channel would deadlock against itself.
+	// omitempty has no effect on a struct field (atomic.Bool never reads as empty), kept only
+	// for consistency with the tag style of neighboring fields.
+	LocalPurged atomic.Bool `json:"-" yaml:"localPurged" bson:"-"`
 	// NAS
 	Pti                     uint8 `json:"pti,omitempty" yaml:"pti" bson:"pti,omitempty"` // ignore
 	EstAcceptCause5gSMValue uint8 `json:"estAcceptCause5gSMValue,omitempty" yaml:"estAcceptCause5gSMValue" bson:"estAcceptCause5gSMValue,omitempty"`

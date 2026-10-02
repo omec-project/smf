@@ -472,13 +472,13 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) error {
 			delete(smContext.PendingUPF, upfIP)
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
+			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged.Load() {
 				smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 			}
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]", SEID)
 	} else {
-		if smContext.SMContextState == context.SmStatePfcpRelease && !smContext.LocalPurged {
+		if smContext.SMContextState == context.SmStatePfcpRelease && !smContext.LocalPurged.Load() {
 			smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)
