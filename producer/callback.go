@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/openapi/v2/models"
@@ -79,8 +80,10 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	// is held, not applied: starting a second procedure would replace the pending update and stop
 	// the first T3591, and the UE's answer to the first Command -- which carries nothing to say
 	// which Command it answers -- would then commit an update the UE was never sent. The PCF is
-	// answered as for an applied decision; the decision is applied when the procedure ends.
-	if smContext.NwModificationPending {
+	// answered as for an applied decision; the decision is applied when the procedure ends. The same
+	// holds for one T3591 interval after a procedure whose Command was retransmitted, while a late
+	// answer to a retransmission can still arrive.
+	if smContext.NwModificationPending || time.Now().Before(smContext.NwModificationQuietUntil) {
 		smContext.DeferredPolicyDecisions = append(smContext.DeferredPolicyDecisions, request.SmPolicyDecision)
 		smContext.SubPduSessLog.Infof("a modification is already waiting for the UE; holding this policy decision until it ends (%d held)",
 			len(smContext.DeferredPolicyDecisions))
@@ -604,6 +607,7 @@ func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate
 func applyModificationLocked(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	smContext.NwModificationGen++
 	gen := smContext.NwModificationGen
+	smContext.NwModificationQuietFor = 0
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
@@ -722,10 +726,18 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 	}
 
 	var timer *smfContext.Timer
-	timer = smfContext.NewTimer(smContext.T3591Value, maxRetries,
+	interval := smContext.T3591Value
+	timer = smfContext.NewTimer(interval, maxRetries,
 		func(expireTimes int32) {
 			smContext.SubPduSessLog.Warnf("T3591 expired (%d of %d), retransmitting PDU session modification command",
 				expireTimes, maxRetries)
+			// Recorded before the retransmission rather than after: the UE may answer this copy, and
+			// an answer to it can arrive after the procedure has ended.
+			smContext.SMLock.Lock()
+			if smContext.T3591 == timer {
+				smContext.NwModificationQuietFor = interval
+			}
+			smContext.SMLock.Unlock()
 			// Only while this timer is still the session's T3591. Stop does not wait for a tick
 			// that is already due, so an expiry can arrive after the UE has acknowledged the
 			// command; retransmitting it then would send the UE a command for a procedure that
@@ -911,7 +923,28 @@ func revertModification(smContext *smfContext.SMContext, cause string) bool {
 // moved the session to SmStatePfcpModify only for that to put it back to Active -- after which the
 // user plane's answer, delivered only in SmStatePfcpModify, never reached it.
 func startDeferredModificationLocked(smContext *smfContext.SMContext) {
-	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 {
+	if smContext.NwModificationPending {
+		return
+	}
+
+	// The modification that has just ended was retransmitted, so the UE may still answer one of its
+	// copies. That answer cannot be told from an answer to the next Command, so nothing starts for one
+	// T3591 interval: an answer arriving meanwhile finds nothing pending and changes nothing. Then
+	// the next held decision starts, if there is one by then.
+	if quiet := smContext.NwModificationQuietFor; quiet > 0 {
+		smContext.NwModificationQuietFor = 0
+		smContext.NwModificationQuietUntil = time.Now().Add(quiet)
+		smContext.SubPduSessLog.Infof("the modification that ended was retransmitted; starting no other for %s, while the UE may still answer a copy of it", quiet)
+		time.AfterFunc(quiet, func() {
+			smContext.SMLock.Lock()
+			defer smContext.SMLock.Unlock()
+			startDeferredModificationLocked(smContext)
+		})
+
+		return
+	}
+
+	if time.Now().Before(smContext.NwModificationQuietUntil) || len(smContext.DeferredPolicyDecisions) == 0 {
 		return
 	}
 
@@ -936,7 +969,8 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 	smContext.SMLock.Lock()
 
 	// Something else started first, and its end starts this one instead.
-	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 {
+	if smContext.NwModificationPending || len(smContext.DeferredPolicyDecisions) == 0 ||
+		time.Now().Before(smContext.NwModificationQuietUntil) {
 		smContext.SMLock.Unlock()
 		return
 	}

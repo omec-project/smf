@@ -150,6 +150,18 @@ type SMContext struct {
 	// never start the next one.
 	DeferredPolicyDecisions []*models.SmPolicyDecision `json:"-" yaml:"-" bson:"-"`
 
+	// NwModificationQuietFor is the T3591 interval of the pending modification once its Command has
+	// been retransmitted, and zero before; NwModificationQuietUntil is when the session may start the next
+	// network-requested modification after one that was. The UE answers every copy of a Command it
+	// receives, and a network-requested Command carries no procedure transaction identity, so a late
+	// answer to a retransmission is indistinguishable from an answer to the next Command; for one
+	// T3591 interval after such a procedure ends, decisions are held as if it were still pending.
+	// TS 24.501 subclause 6.3.2.3 NOTE 5 has the UE keep a PTI it assigned for at least the default
+	// T3591 for the same reason; this is the network-side counterpart for the unassigned one. Read
+	// and written under SMLock; not persisted, for the reason NwModificationPending is not.
+	NwModificationQuietFor   time.Duration `json:"-" yaml:"-" bson:"-"`
+	NwModificationQuietUntil time.Time     `json:"-" yaml:"-" bson:"-"`
+
 	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
 
 	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`

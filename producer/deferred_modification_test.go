@@ -415,3 +415,80 @@ func TestAHeldDecisionIsQueuedBehindTheTransactionThatEndedItsPredecessor(t *tes
 	s.waitForSend(t, "the held decision, once the queue ran it")
 	s.waitUntilArmed(t, 2)
 }
+
+// retransmitOnce starts a modification on a short T3591, stubs the retransmission, and waits until
+// the timer has retransmitted the Command once. The caller answers before the timer's next expiry,
+// so the stub's one call is the only read of the seam the timer makes; waiting on the call is what
+// orders that read before the seam is restored. Later modifications run on the ordinary interval.
+func (s *deferralSession) retransmitOnce(t *testing.T, interval time.Duration) {
+	t.Helper()
+
+	original := retransmitModificationCommand
+	t.Cleanup(func() { retransmitModificationCommand = original })
+	retransmitted := make(chan struct{}, 1)
+	retransmitModificationCommand = func(*smf_context.SMContext, func() bool) error {
+		select {
+		case retransmitted <- struct{}{}:
+		default:
+		}
+		return nil
+	}
+
+	s.sm.T3591Value = interval
+	s.notify(t)
+	s.waitForSend(t, "the first decision")
+
+	s.sm.SMLock.Lock()
+	s.sm.T3591Value = 16 * time.Second
+	s.sm.SMLock.Unlock()
+
+	select {
+	case <-retransmitted:
+	case <-time.After(2 * interval):
+		t.Fatal("T3591 never retransmitted the Command")
+	}
+}
+
+// The UE answers every copy of a Command, and a network-requested Command carries no procedure
+// transaction identity. After a retransmitted Command is answered, a late answer to another copy
+// can still arrive, and would be taken as the next Command's: it would stop that Command's T3591
+// and commit an update the UE never acknowledged. So the held decision waits one T3591 interval
+// first, the network-side counterpart of the PTI the UE keeps for T3591 (TS 24.501 subclause
+// 6.3.2.3 NOTE 5).
+func TestAHeldDecisionWaitsOutTheRetransmittedCommandsAnswers(t *testing.T) {
+	const interval = 500 * time.Millisecond
+
+	s := newDeferralSession(t)
+	s.retransmitOnce(t, interval)
+	s.notify(t)
+	s.expectNoSend(t, "a decision arriving while the first modification waits for the UE")
+
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+	select {
+	case <-s.pfcp:
+		t.Fatal("the held decision started while the UE could still answer a copy of the first Command")
+	case <-time.After(interval / 2):
+	}
+
+	s.waitForSend(t, "the held decision, once the first Command's answers have had their interval")
+	s.waitUntilArmed(t, 2)
+}
+
+// A decision that arrives in that interval is held too, and applied once it is over.
+func TestADecisionArrivingWhileACopyCanStillBeAnsweredIsHeld(t *testing.T) {
+	const interval = 500 * time.Millisecond
+
+	s := newDeferralSession(t)
+	s.retransmitOnce(t, interval)
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+
+	s.notify(t)
+	select {
+	case <-s.pfcp:
+		t.Fatal("a decision was applied while the UE could still answer a copy of the previous Command")
+	case <-time.After(interval / 2):
+	}
+
+	s.waitForSend(t, "the held decision, once the interval is over")
+	s.waitUntilArmed(t, 2)
+}
