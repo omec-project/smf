@@ -386,3 +386,32 @@ func TestAHeldDecisionThatFailsToProgramStartsTheNext(t *testing.T) {
 		t.Errorf("held decisions = %d, want 0", got)
 	}
 }
+
+// A held decision is queued in the session's transaction queue, not started on a goroutine of its
+// own. The caller is the transaction that ended the modification before it, and that transaction's
+// state machine still applies its own state after the handler returns: a modification started in
+// between had its SmStatePfcpModify put back to Active, and the user plane's answer, delivered only
+// in SmStatePfcpModify, never reached it.
+func TestAHeldDecisionIsQueuedBehindTheTransactionThatEndedItsPredecessor(t *testing.T) {
+	s := newDeferralSession(t)
+	s.startAndHold(t)
+
+	original := queueSessionTask
+	t.Cleanup(func() { queueSessionTask = original })
+	queued := make(chan func(), 1)
+	queueSessionTask = func(_ *smf_context.SMContext, task func()) { queued <- task }
+
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+	s.expectNoSend(t, "the held decision, before the queue reached it")
+
+	var task func()
+	select {
+	case task = <-queued:
+	default:
+		t.Fatal("the held decision was not queued")
+	}
+
+	task()
+	s.waitForSend(t, "the held decision, once the queue ran it")
+	s.waitUntilArmed(t, 2)
+}
