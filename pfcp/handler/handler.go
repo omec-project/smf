@@ -655,7 +655,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	if causeValue == ie.CauseRequestAccepted {
 		smContext.SubPduSessLog.Infoln("PFCP Modification Response Accept")
-		if smContext.SMContextState == smf_context.SmStatePfcpModify {
+		if smContext.SMContextState == smf_context.SmStatePfcpModify || smContext.RevertOwed.Load() {
 			// The dispatch-time PFCPContext key (recovered from the response's local SEID), not a
 			// re-resolution of the NodeID: an FQDN UPF's address can move under the DNS refresh while
 			// the modification is in flight, and a re-resolved key would miss PendingUPF and leave the
@@ -682,7 +682,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]", SEID)
 	} else {
 		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]", SEID)
-		if smContext.SMContextState == smf_context.SmStatePfcpModify {
+		if smContext.SMContextState == smf_context.SmStatePfcpModify || smContext.RevertOwed.Load() {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateFailed
 		}
 	}
