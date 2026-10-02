@@ -16,6 +16,12 @@ type PolicyUpdate struct {
 
 	// relevant SM Policy Decision from PCF
 	SmPolicyDecision *models.SmPolicyDecision
+
+	// Corrective marks an update produced by RemoveFlows rather than by the PCF: the realignment
+	// that follows a partial rejection, withdrawing the flows the radio refused. The flows it
+	// deletes were never established at the radio, so unlike an ordinary deletion it has nothing
+	// to ask the radio to release.
+	Corrective bool
 }
 
 type SmCtxtPolicyData struct {
