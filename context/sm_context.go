@@ -153,6 +153,9 @@ type SMContext struct {
 	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
 
 	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
+	// EstablishmentFailed latches a rejection seen from any UPF while PendingUPF is drained, so the
+	// verdict queued once it empties reflects every response gathered, not only the last one.
+	EstablishmentFailed bool `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	// TxnBus per subscriber

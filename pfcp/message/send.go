@@ -122,6 +122,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 	} else {
 		InsertPfcpTxn(msg.Sequence(), &upNodeID)
 		if err := udp.SendPfcp(msg, addr, nil); err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(msg, err)
+
 			FetchPfcpTxn(msg.Sequence())
 			return err
 		}
@@ -221,6 +225,8 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
 		err := udp.SendPfcp(pfcpMsg, addr, nil)
 		if err != nil {
+			reportSendFailure(pfcpMsg, err)
+
 			return err
 		}
 	}
@@ -235,6 +241,8 @@ func SendPfcpAssociationSetupResponse(upNodeID smf_context.NodeID, cause uint8, 
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -249,6 +257,8 @@ func SendPfcpAssociationReleaseResponse(upNodeID smf_context.NodeID, cause uint8
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Release Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -372,6 +382,10 @@ func SendPfcpSessionEstablishmentRequest(
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(pfcpMsg, err)
+
 			// The entry is consumed by the response, and a request that never went out has none.
 			FetchPfcpTxn(pfcpMsg.Sequence())
 
@@ -482,13 +496,15 @@ func sendPfcpSessionModificationRequest(
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: sessionSendErrorHandler(ctx.PFCPContext[nodeIDtoIP].LocalSEID, awaited)}
 		if err := udp.SendPfcp(pfcpMsg, upaddr, eventData); err != nil {
-			logger.PfcpLog.Errorf("send pfcp session modify msg to upf error [%v]", err.Error())
+			// Reported here, not just logged: a synchronous send failure never reaches
+			// startTxLifeCycle, so nothing else counts it as a failure or refreshes the DNS cache.
+			reportSendFailure(pfcpMsg, err)
 
-			// Returned rather than logged. The timeout that would otherwise end the caller's
-			// wait is raised by the transaction this send failed to create, so there is nothing
-			// left to answer with. The bookkeeping entry goes with it -- though only for
-			// tidiness: the modification response handler correlates by SEID and never reads
-			// this map, so the entry the line above makes is unread on the success path too.
+			// The timeout that would otherwise end the caller's wait is raised by the transaction
+			// this send failed to create, so there is nothing left to answer with. The bookkeeping
+			// entry goes with it -- though only for tidiness: the modification response handler
+			// correlates by SEID and never reads this map, so the entry the line above makes is
+			// unread on the success path too.
 			FetchPfcpTxn(pfcpMsg.Sequence())
 			restoreRuleStates()
 
@@ -628,6 +644,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 		eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: sessionSendErrorHandler(pfcpContext.LocalSEID, true)}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(pfcpMsg, err)
+
 			// Taken back as on the modification path. No response handler reads this entry, for a
 			// deletion that was answered either, so this only stops a failing send adding to it.
 			FetchPfcpTxn(pfcpMsg.Sequence())
@@ -644,6 +664,8 @@ func SendPfcpSessionReportResponse(addr *net.UDPAddr, cause uint8, pfcpSRflag sm
 	pfcpMsg := BuildPfcpSessionReportResponse(cause, pfcpSRflag.Drobu, seqFromUPF, SEID)
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Session Report Response Seq[%d] to NodeID[%s]", seqFromUPF, addr.IP.String())
@@ -654,6 +676,8 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 	pfcpMsg := BuildPfcpHeartbeatResponse(sequenceNumber, udp.GetServerStartTime())
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", sequenceNumber, addr.IP.String())

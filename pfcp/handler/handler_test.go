@@ -197,6 +197,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
 		ie.NewRecoveryTimeStamp(recoveryTimestamp),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 		),
@@ -374,6 +375,11 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				t.Fatal("failed to allocate a local SEID for the test SMContext")
 			}
 
+			// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment
+			// request went out to before a response can arrive; simulated here since this test drives
+			// the handler directly.
+			smContext.PendingUPF = context.PendingUPF{nodeID.ResolveNodeIdToIp().String(): true}
+
 			seq := uint32(localSEID)
 			pfcp_message.InsertPfcpTxn(seq, nodeID)
 
@@ -386,6 +392,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID("1.1.1.1", "", ""),
 				ie.NewRecoveryTimeStamp(time.Now()),
+				ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 			)
 
 			udpMessage := udp.Message{
@@ -411,6 +418,309 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeid covers a response that carries
+// CauseRequestAccepted but no UP F-SEID: it must be treated as a rejection (SessionEstablishFailed)
+// and none of RemoteSEID, the UE address, the TEID or the N3 interface -- all of which the response
+// also carries, as a real UPF reply would -- may be applied, since a later modification or deletion
+// would have nothing but a stale RemoteSEID to address the session with at the UPF.
+func TestHandlePfcpSessionEstablishmentResponseAcceptedWithNoSeid(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.3")
+	upf := &context.UPF{NodeID: *nodeID}
+	smContext := context.NewSMContext("imsi-100000000000004", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.PDUAddress = &context.UeIpAddr{Ip: net.ParseIP("10.1.0.5")}
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode: &context.DataPathNode{
+					UPF:          upf,
+					UpLinkTunnel: &context.GTPTunnel{TEID: 111},
+				},
+			},
+		},
+	}
+
+	datapath := &context.DataPath{FirstDPNode: &context.DataPathNode{UPF: upf}}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+
+	pfcpCtx := smContext.PFCPContext[nodeID.ResolveNodeIdToIp().String()]
+	if pfcpCtx == nil || pfcpCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+	pfcpCtx.RemoteSEID = 999
+
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before a response can arrive; simulated here since this test drives the handler
+	// directly.
+	smContext.PendingUPF = context.PendingUPF{nodeID.ResolveNodeIdToIp().String(): true}
+
+	seq := uint32(pfcpCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// Accepted, with a CreatedPDR carrying a UE address and F-TEID as a real UPF reply would --
+	// but no F-SEID IE, the condition this handles.
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		pfcpCtx.LocalSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.3", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewCreatedPDR(
+			ie.NewFTEID(0, 4321, net.ParseIP("1.1.1.3"), nil, 0),
+			ie.NewUEIPAddress(2, "9.9.9.9", "", 0, 0),
+		),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.3"), Port: 8809},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected a send to SBIPFCPCommunicationChan for an accepted response with no UP F-SEID")
+	}
+
+	if pfcpCtx.RemoteSEID != 999 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 999", pfcpCtx.RemoteSEID)
+	}
+	if gotTEID := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID; gotTEID != 111 {
+		t.Errorf("TEID applied from a response that must be treated as rejected: got %d, want 111", gotTEID)
+	}
+	if len(upf.N3Interfaces) != 0 {
+		t.Errorf("N3Interfaces applied from a response that must be treated as rejected: got %v, want none", upf.N3Interfaces)
+	}
+	if !smContext.PDUAddress.Ip.Equal(net.ParseIP("10.1.0.5")) || smContext.PDUAddress.UpfProvided {
+		t.Errorf("PDUAddress applied from a response that must be treated as rejected: got %+v", smContext.PDUAddress)
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeid covers a response that carries
+// CauseRequestAccepted and an F-SEID IE, but whose decoded SEID is 0. SendPFCPRules
+// (producer/datapath.go) treats RemoteSEID == 0 as "not yet established" and would keep reissuing
+// an establishment request for the UPF instead of a modification, so a zero SEID must be treated
+// the same as a missing one: a rejection, with none of RemoteSEID/TEID/N3Interfaces/PDUAddress
+// applied.
+func TestHandlePfcpSessionEstablishmentResponseAcceptedWithZeroSeid(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.6")
+	upf := &context.UPF{NodeID: *nodeID}
+	smContext := context.NewSMContext("imsi-100000000000005", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.PDUAddress = &context.UeIpAddr{Ip: net.ParseIP("10.1.0.7")}
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode: &context.DataPathNode{
+					UPF:          upf,
+					UpLinkTunnel: &context.GTPTunnel{TEID: 222},
+				},
+			},
+		},
+	}
+
+	datapath := &context.DataPath{FirstDPNode: &context.DataPathNode{UPF: upf}}
+	smContext.AllocateLocalSEIDForDataPath(datapath)
+
+	pfcpCtx := smContext.PFCPContext[nodeID.ResolveNodeIdToIp().String()]
+	if pfcpCtx == nil || pfcpCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+	pfcpCtx.RemoteSEID = 888
+
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before a response can arrive; simulated here since this test drives the handler
+	// directly.
+	smContext.PendingUPF = context.PendingUPF{nodeID.ResolveNodeIdToIp().String(): true}
+
+	seq := uint32(pfcpCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// Accepted, with an F-SEID IE present but decoding to SEID 0 -- the condition this handles.
+	rsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		pfcpCtx.LocalSEID,
+		seq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.6", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0, net.ParseIP("1.1.1.6"), nil),
+		ie.NewCreatedPDR(
+			ie.NewFTEID(0, 6543, net.ParseIP("1.1.1.6"), nil, 0),
+		),
+	)
+
+	udpMessage := udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.6"), Port: 8809},
+		PfcpMessage: rsp,
+	}
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected a send to SBIPFCPCommunicationChan for an accepted response with a zero UP F-SEID")
+	}
+
+	if pfcpCtx.RemoteSEID != 888 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 888", pfcpCtx.RemoteSEID)
+	}
+	if gotTEID := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID; gotTEID != 222 {
+		t.Errorf("TEID applied from a response that must be treated as rejected: got %d, want 222", gotTEID)
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF covers a multi-UPF data
+// path (e.g. ULCL branching): an unusable response (accepted with no UP F-SEID) from a UPF other
+// than the AN UPF must still fail the overall establishment, even when the AN UPF's own response
+// arrives afterwards and is itself accepted -- aggregation, not response order, decides the
+// verdict, and a failure once seen is never erased by a later acceptance from another UPF.
+func TestHandlePfcpSessionEstablishmentResponseFailsOnUnusableSecondaryUPF(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	anNodeID := context.NewNodeID("1.1.1.7")
+	anUPF := &context.UPF{NodeID: *anNodeID}
+	secondaryNodeID := context.NewNodeID("1.1.1.8")
+	secondaryUPF := &context.UPF{NodeID: *secondaryNodeID}
+
+	smContext := context.NewSMContext("imsi-100000000000006", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: anUPF, UpLinkTunnel: &context.GTPTunnel{}},
+			},
+		},
+	}
+
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: anUPF}})
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: secondaryUPF}})
+
+	anCtx := smContext.PFCPContext[anNodeID.ResolveNodeIdToIp().String()]
+	secondaryCtx := smContext.PFCPContext[secondaryNodeID.ResolveNodeIdToIp().String()]
+	if anCtx == nil || anCtx.LocalSEID == 0 || secondaryCtx == nil || secondaryCtx.LocalSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the AN or secondary UPF")
+	}
+
+	// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment request
+	// went out to before either response can arrive; simulated here since this test drives the
+	// handler directly.
+	smContext.PendingUPF = context.PendingUPF{
+		anNodeID.ResolveNodeIdToIp().String():        true,
+		secondaryNodeID.ResolveNodeIdToIp().String(): true,
+	}
+
+	secondarySeq := uint32(secondaryCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(secondarySeq, secondaryNodeID)
+
+	// The secondary (non-AN) UPF's response: accepted but with no UP F-SEID.
+	secondaryRsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		secondaryCtx.LocalSEID,
+		secondarySeq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.8", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.8"), Port: 8809},
+		PfcpMessage: secondaryRsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("expected no verdict yet, the AN UPF's response has not arrived: got %v", status)
+	default:
+	}
+
+	if secondaryCtx.RemoteSEID != 0 {
+		t.Errorf("RemoteSEID applied from a response that must be treated as rejected: got %d, want 0", secondaryCtx.RemoteSEID)
+	}
+
+	anSeq := uint32(anCtx.LocalSEID)
+	pfcp_message.InsertPfcpTxn(anSeq, anNodeID)
+
+	// The AN UPF's own response is a normal acceptance; the earlier secondary-UPF rejection must
+	// still dominate the aggregated verdict.
+	anRsp := message.NewSessionEstablishmentResponse(
+		0,
+		0,
+		anCtx.LocalSEID,
+		anSeq,
+		0,
+		ie.NewCause(ie.CauseRequestAccepted),
+		ie.NewNodeID("1.1.1.7", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.7"), nil),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.7"), Port: 8809},
+		PfcpMessage: anRsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		if status != context.SessionEstablishFailed {
+			t.Errorf("expected SessionEstablishFailed, got %v", status)
+		}
+	default:
+		t.Error("expected the aggregated verdict once every pending UPF has responded")
+	}
+
+	if anCtx.RemoteSEID != 0xABCD {
+		t.Errorf("RemoteSEID not applied from the AN UPF's own accepted response: got %d, want %d", anCtx.RemoteSEID, 0xABCD)
 	}
 }
 
@@ -465,6 +775,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.2", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.2"), nil),
 	)
 
 	done := make(chan struct{})
@@ -486,6 +797,81 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 
 	if len(smContext.SBIPFCPCommunicationChan) != 1 {
 		t.Errorf("channel holds %d verdicts, want the one the create procedure will read", len(smContext.SBIPFCPCommunicationChan))
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse covers a response from a
+// UPF this handler is not actually waiting on as part of the create batch -- e.g. a PSA/ULCL branch
+// addition, which tracks its own responses in BPManager.PendingUPF rather than smContext.PendingUPF,
+// but can still be in flight while the context is create-pending. Counting such a response toward
+// smContext.EstablishmentFailed or treating an unrelated, already-empty smContext.PendingUPF as "no
+// more to wait for" would let it poison or preempt the verdict for a batch it was never part of.
+func TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.11")
+	smContext := context.NewSMContext("imsi-100000000000009", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+			},
+		},
+	}
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{
+		FirstDPNode: &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+	})
+
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+
+	// Nothing is pending for the initial create: a prior batch already completed (or, as here,
+	// this UPF's establishment belongs to a PSA/ULCL addition tracked in BPManager.PendingUPF
+	// instead).
+	smContext.PendingUPF = context.PendingUPF{}
+
+	seq := uint32(localSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// A rejected response: on the old, ungated logic this would still set EstablishmentFailed and,
+	// finding smContext.PendingUPF empty, queue a stale SessionEstablishFailed.
+	rsp := message.NewSessionEstablishmentResponse(
+		0, 0, localSEID, seq, 0,
+		ie.NewCause(ie.CauseRequestRejected),
+		ie.NewNodeID("1.1.1.11", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.11"), Port: 8809},
+		PfcpMessage: rsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("expected no verdict for a response outside the tracked batch, got %v", status)
+	default:
+	}
+
+	if smContext.EstablishmentFailed {
+		t.Error("EstablishmentFailed latched by a response that was never part of the tracked batch")
 	}
 }
 

@@ -21,6 +21,14 @@ type BPManager struct {
 
 	BPStatus       BPStatus
 	AddingPSAState AddingPSAState
+
+	// AcceptedModificationUPFs records, by node IP, every UPF already shared with an active path
+	// (the ULCL branching point and any RAN-side node upstream of it) whose PFCP Session
+	// Modification Response for the current branch-addition attempt was accepted -- i.e. whose
+	// new branch PDR/FAR really is installed on that UPF's pre-existing session. A rejection
+	// elsewhere in the same attempt uses this to know which already-installed rules to remove, as
+	// distinct from the attempt's own brand-new PSA2 sessions, which it tears down outright.
+	AcceptedModificationUPFs map[string]bool
 }
 type BPStatus int
 
@@ -47,11 +55,12 @@ type PendingUPF map[string]bool
 
 func NewBPManager(supi string) (bpManager *BPManager) {
 	bpManager = &BPManager{
-		BPStatus:              UnInitialized,
-		AddingPSAState:        ActivatingDataPath,
-		ActivatedPaths:        make([]*DataPath, 0),
-		UpdatedBranchingPoint: make(map[*UPF]int),
-		PendingUPF:            make(PendingUPF),
+		BPStatus:                 UnInitialized,
+		AddingPSAState:           ActivatingDataPath,
+		ActivatedPaths:           make([]*DataPath, 0),
+		UpdatedBranchingPoint:    make(map[*UPF]int),
+		PendingUPF:               make(PendingUPF),
+		AcceptedModificationUPFs: make(map[string]bool),
 	}
 
 	return
