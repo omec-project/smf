@@ -120,4 +120,3 @@ func TestPendingUPFSurvivesConcurrentRebuildAndResponseHandling(t *testing.T) {
 
 	wg.Wait()
 }
-
