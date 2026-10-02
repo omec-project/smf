@@ -227,7 +227,8 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// to every PDR on the path, so removing the ones this PDR points at would take rate
 		// enforcement off the rules that remain. One left unreferenced enforces nothing and goes
 		// with the session.
-		for deletedRule := range deletedPccRules(smContext) {
+		deleted := deletedPccRules(smContext)
+		for deletedRule := range deleted {
 			if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[deletedRule]; ok {
 				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
 				if dlPDR.FAR != nil {
@@ -255,6 +256,11 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 
 			// Release-only scenario: mark PDR, FAR, QER for removal
 			if shouldSendReleaseOnly {
+				// Not twice: a rule the update deletes was marked above, and a Remove PDR repeated in
+				// one request is one the user plane can refuse the whole request for.
+				if _, removed := deleted[ruleid]; removed {
+					continue
+				}
 				logger.PduSessLog.Infof("[BuildPfcpParam] Marking DL PDR[%s] for removal", ruleid)
 				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
 				if dlPDR.FAR != nil {
@@ -322,6 +328,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// ----------------------
 		if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
 			if shouldSendReleaseOnly {
+				if _, removed := deleted[ruleid]; removed {
+					continue
+				}
 				// Mark UL PDR, FAR, QER for removal
 				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
 				if ulPDR.FAR != nil {
