@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
 // SPDX-License-Identifier: Apache-2.0
 
@@ -60,5 +61,29 @@ func TestTimerStoppedBeforeExpiryDoesNotFire(t *testing.T) {
 	}
 	if got := cancels.Load(); got != 0 {
 		t.Errorf("cancels after Stop = %d, want 0", got)
+	}
+}
+
+// A tick racing Stop must never produce a callback that outlives Stop's return: the select
+// inside the timer's goroutine has no preference between the done channel and the ticker, so a
+// tick already queued when Stop is called can still be the one chosen. Stop must wait for that
+// callback rather than let it run unobserved after telling its caller the timer is dead.
+func TestTimerStopWaitsOutACallbackRacingIt(t *testing.T) {
+	for i := range 200 {
+		var stopped atomic.Int32
+		observedAfterStop := func() {
+			if stopped.Load() != 0 {
+				t.Errorf("iteration %d: a callback ran after Stop returned", i)
+			}
+		}
+
+		timer := NewTimer(time.Microsecond, 1_000_000,
+			func(int32) { observedAfterStop() },
+			observedAfterStop,
+		)
+
+		time.Sleep(time.Microsecond) // let a tick queue before racing Stop against it
+		timer.Stop()
+		stopped.Store(1)
 	}
 }

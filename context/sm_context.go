@@ -153,6 +153,20 @@ type SMContext struct {
 	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
 
 	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
+	// PendingUPFLock guards PendingUPF against the same unlocked-handler/SMLock-holder conflict
+	// LocalPurged has: releaseTunnel rebuilds PendingUPF under SMLock (both on the normal release
+	// path and from HandlePduSessionContextReplacement), while the PFCP modification/deletion
+	// response handlers delete from it without SMLock. A plain map under that pattern is a
+	// concurrent read/write, which for Go maps is not just a race but a potential process-crashing
+	// fatal error - unlike a scalar field, it cannot be made safe with atomic.Bool-style typing, so a
+	// dedicated mutex (distinct from SMLock, and never held across a blocking channel op) guards it
+	// instead.
+	// Known gap, not covered here: the code that populates PendingUPF before sending a request
+	// (producer/callback.go, producer/n1n2_data_handler.go) does so in a loop, under SMLock, while
+	// sending - an early UPF's response can be dispatched and start deleting entries before a later
+	// UPF's send adds its own, racing that same loop. Pre-existing, narrower, and orthogonal to the
+	// replacement-vs-response-handler race this lock closes.
+	PendingUPFLock sync.Mutex `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	// TxnBus per subscriber
@@ -172,8 +186,7 @@ type SMContext struct {
 	// atomic because the PFCP modification/deletion response handlers read it without SMLock:
 	// the producer side holds SMLock across its blocking wait on SBIPFCPCommunicationChan, so a
 	// handler that took SMLock to send on that channel would deadlock against itself.
-	// omitempty has no effect on a struct field (atomic.Bool never reads as empty), kept only
-	// for consistency with the tag style of neighboring fields.
+	// JSON and BSON exclude this runtime synchronization flag.
 	LocalPurged atomic.Bool `json:"-" yaml:"localPurged" bson:"-"`
 	// NAS
 	Pti                     uint8 `json:"pti,omitempty" yaml:"pti" bson:"pti,omitempty"` // ignore

@@ -795,7 +795,12 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 		return false
 	}
 	deletedPFCPNode := make(map[string]bool)
+	// PendingUPFLock, not SMLock: the PFCP deletion response handlers delete entries from this
+	// same map without SMLock (see the handler-side comment on PendingUPFLock's declaration), so
+	// the rebuild here needs its own, briefly-held lock to avoid a concurrent map read/write.
+	smContext.PendingUPFLock.Lock()
 	smContext.PendingUPF = make(smf_context.PendingUPF)
+	smContext.PendingUPFLock.Unlock()
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		dataPath.DeactivateTunnelAndPDR(smContext)
 		for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
@@ -810,7 +815,9 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 					smContext.SubPduSessLog.Errorf("releaseTunnel, send PFCP session deletion request failed: %v", err)
 				}
 				deletedPFCPNode[curUPFID] = true
+				smContext.PendingUPFLock.Lock()
 				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
+				smContext.PendingUPFLock.Unlock()
 			}
 		}
 	}

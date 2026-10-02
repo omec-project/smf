@@ -80,3 +80,44 @@ func TestCreatingSessionsConcurrentlyWithPoolReadsIsRaceFree(t *testing.T) {
 	}
 	t.Logf("pool reads that met a published context: %d", observed.Load())
 }
+
+// releaseTunnel (producer package) rebuilds PendingUPF under SMLock while the PFCP
+// modification/deletion response handlers delete from it without SMLock (they can't take SMLock:
+// the producer side holds it across a blocking channel wait). Without PendingUPFLock serializing
+// both sides, this is a concurrent map read/write, which for Go maps panics the process rather
+// than just tripping the race detector. Run this under -race: without the lock, both the panic and
+// a race report are possible depending on scheduling.
+func TestPendingUPFSurvivesConcurrentRebuildAndResponseHandling(t *testing.T) {
+	smContext := &SMContext{}
+
+	const iterations = 2000
+	var wg sync.WaitGroup
+
+	// Simulates releaseTunnel: reset then repopulate, as the replacement and normal release paths
+	// do under SMLock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.PendingUPFLock.Lock()
+			smContext.PendingUPF = make(PendingUPF)
+			smContext.PendingUPF[fmt.Sprintf("10.0.0.%d", i%255)] = true
+			smContext.PendingUPFLock.Unlock()
+		}
+	}()
+
+	// Simulates the unlocked response handlers: delete the responding UPF, then check IsEmpty.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.PendingUPFLock.Lock()
+			delete(smContext.PendingUPF, fmt.Sprintf("10.0.0.%d", i%255))
+			_ = smContext.PendingUPF.IsEmpty()
+			smContext.PendingUPFLock.Unlock()
+		}
+	}()
+
+	wg.Wait()
+}
+
