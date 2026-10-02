@@ -647,7 +647,7 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 		// The user plane was programmed before this. Leaving it there would have the session
 		// enforcing parameters the UE was never told about, which is the divergence this whole
 		// path exists to avoid.
-		revertModification(smContext, "n1n2_transfer_failed")
+		revertModification(smContext, "n1n2_transfer_failed", gen)
 		return err
 	}
 
@@ -781,23 +781,14 @@ func effectiveT3591Retries(smContext *smfContext.SMContext) (bool, int) {
 	return enabled, maxRetries
 }
 
-// abandonModification gives up on a modification and leaves the session on the parameters it
-// already had, by discarding the pending policy update rather than committing it.
+// abandonModificationLocked gives up on a modification and leaves the session on the parameters it
+// already had, by discarding the pending policy update rather than committing it. The caller holds
+// SMLock, as the N1 and N2 update handlers all are, and reports the abandonment (reportAbandonment).
 //
 // Nothing re-drives the change afterwards. On a link where a fade can outlast the whole
-// retransmission sequence, abandonment is an ordinary outcome rather than a rare one, so the
-// site stays on its old policy until someone re-issues it — which is why this is reported
-// rather than only logged at debug.
-func abandonModification(smContext *smfContext.SMContext, path, cause string) {
-	reportAbandonment(smContext, path, cause)
-
-	smContext.SMLock.Lock()
-	defer smContext.SMLock.Unlock()
-	abandonModificationLocked(smContext)
-}
-
-// abandonModificationLocked is the state half of abandonModification, for a caller that already
-// holds SMLock. The N1 and N2 update handlers are all called with it held.
+// retransmission sequence, abandonment is an ordinary outcome rather than a rare one, so the site
+// stays on its old policy until someone re-issues it -- which is why it is reported rather than only
+// logged at debug.
 func abandonModificationLocked(smContext *smfContext.SMContext) {
 	if err := smContext.CommitSmPolicyDecisionLocked(false); err != nil {
 		smContext.SubPduSessLog.Errorf("discarding the abandoned modification failed: %v", err)
@@ -869,9 +860,25 @@ func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause s
 // varies, by how the delivery failed.
 // revertModification reports whether the user plane went back. A false answer means the session is
 // running parameters the UE was never told about and the caller must not describe it as recovered.
-func revertModification(smContext *smfContext.SMContext, cause string) bool {
+//
+// gen is the modification the caller is reverting, read under SMLock when it saw that modification
+// pending. The check that it still is, and the abandonment, happen in one hold of the lock: the
+// failure indication reads the session in one hold and reverts in another, and T3591 can abandon the
+// modification in between and a held decision then start, which the revert would otherwise discard
+// as though it were the one whose delivery failed.
+func revertModification(smContext *smfContext.SMContext, cause string, gen uint64) bool {
 	const path = "delivery_failure"
-	abandonModification(smContext, path, cause)
+
+	smContext.SMLock.Lock()
+	if !smContext.NwModificationPending || smContext.NwModificationGen != gen {
+		smContext.SMLock.Unlock()
+		smContext.SubPduSessLog.Infof("the modification whose delivery failed has already ended; nothing to revert")
+
+		return true
+	}
+	abandonModificationLocked(smContext)
+	smContext.SMLock.Unlock()
+	reportAbandonment(smContext, path, cause)
 
 	smContext.SMLock.Lock()
 	pfcpParam := BuildPfcpParam(smContext)
@@ -902,7 +909,7 @@ func revertModification(smContext *smfContext.SMContext, cause string) bool {
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 
-	// Only now, and not when abandonModification settled the session above: the revert is a PFCP
+	// Only now, and not when the abandonment above settled the session: the revert is a PFCP
 	// exchange on the session's one response channel, and a held decision started before it had
 	// its answer would program the user plane alongside it.
 	smContext.SMLock.Lock()

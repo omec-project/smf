@@ -30,6 +30,9 @@ func modifyingSession() *smf_context.SMContext {
 	}
 	sm.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
 	sm.ChangeState(smf_context.SmStatePfcpModify)
+	// A modification in flight is a pending one, and a revert acts only on the one it was asked to.
+	sm.NwModificationPending = true
+	sm.NwModificationGen = 1
 	return sm
 }
 
@@ -46,7 +49,7 @@ func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "n1n2_transfer_failed")
+	revertModification(sm, "n1n2_transfer_failed", sm.NwModificationGen)
 
 	if !reverted {
 		t.Error("the user plane must be reprogrammed when a modification cannot be delivered")
@@ -70,7 +73,7 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "n1n2_transfer_failed")
+	revertModification(sm, "n1n2_transfer_failed", sm.NwModificationGen)
 
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
 		t.Errorf("state = %s, want %s: a session whose user plane cannot be corrected must not keep running",
@@ -309,5 +312,42 @@ func TestARevertedModificationStopsItsTimer(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	if got := retransmissions.Load(); got > 1 {
 		t.Errorf("T3591 fired %d times after the modification was reverted; it was left running", got)
+	}
+}
+
+// The failure indication reads the session in one hold of the lock and reverts in another, and
+// T3591 can abandon the modification between the two and a held decision then start. The revert
+// is for the modification the indication read, and leaves the next one alone: discarding it would
+// drop an update whose Command is on its way to the UE.
+func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var sent atomic.Int32
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		sent.Add(1)
+		return nil
+	}
+
+	sm := modifyingSession()
+	read := sm.NwModificationGen
+
+	// T3591 abandons it, and a held decision starts as the next modification.
+	sm.SMLock.Lock()
+	abandonModificationLocked(sm)
+	next := &qos.PolicyUpdate{}
+	sm.SmPolicyUpdates = []*qos.PolicyUpdate{next}
+	sm.NwModificationGen++
+	sm.NwModificationPending = true
+	sm.SMLock.Unlock()
+
+	if !revertModification(sm, "n1n2_transfer_failure_indication", read) {
+		t.Error("a revert with nothing of its own to put back was reported as failed")
+	}
+
+	if !sm.NwModificationPending || len(sm.SmPolicyUpdates) != 1 || sm.SmPolicyUpdates[0] != next {
+		t.Error("the delivery failure of an ended modification discarded the one after it")
+	}
+	if got := sent.Load(); got != 0 {
+		t.Errorf("%d PFCP modifications were sent for a modification that had already ended", got)
 	}
 }

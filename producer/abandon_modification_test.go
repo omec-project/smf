@@ -30,7 +30,7 @@ func TestAbandonModificationDiscardsAndSettlesTheSession(t *testing.T) {
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
 	smContext.ChangeState(smf_context.SmStatePfcpModify)
 
-	abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+	abandonHolding(smContext)
 
 	if len(smContext.SmPolicyUpdates) != 0 {
 		t.Errorf("pending updates = %d, want the abandoned one discarded", len(smContext.SmPolicyUpdates))
@@ -57,8 +57,8 @@ func TestAbandonModificationTwiceIsSafe(t *testing.T) {
 	}
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
 
-	abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
-	abandonModification(smContext, "t3591_expiry", "ue_did_not_acknowledge")
+	abandonHolding(smContext)
+	abandonHolding(smContext)
 }
 
 // A T3591 expiry belonging to a finished modification must not abandon the one now in progress.
@@ -139,4 +139,11 @@ func TestArmingT3591ResolvesAValueARestoredSessionDoesNotCarry(t *testing.T) {
 	if timer == nil {
 		t.Error("no timer was armed for a session that carried no value")
 	}
+}
+
+// abandonHolding abandons the session's modification as every abandonment path does, holding SMLock.
+func abandonHolding(smContext *smf_context.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	abandonModificationLocked(smContext)
 }
