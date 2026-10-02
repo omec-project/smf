@@ -138,7 +138,8 @@ func (s *deferralSession) startAndHold(t *testing.T) {
 	s.expectNoSend(t, "a decision arriving while the first modification waits for the UE")
 }
 
-func encodeModificationAnswer(t *testing.T, messageType uint8) []byte {
+// encodeModificationAnswerFor encodes the UE's answer to a Command, as carrying pduSessionID.
+func encodeModificationAnswerFor(t *testing.T, messageType, pduSessionID uint8) []byte {
 	t.Helper()
 
 	m := nas.NewMessage()
@@ -150,13 +151,13 @@ func encodeModificationAnswer(t *testing.T, messageType uint8) []byte {
 		msg := nasMessage.NewPDUSessionModificationComplete(0)
 		msg.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
 		msg.SetMessageType(messageType)
-		msg.SetPDUSessionID(deferralPduSessionID)
+		msg.SetPDUSessionID(pduSessionID)
 		m.PDUSessionModificationComplete = msg
 	case nas.MsgTypePDUSessionModificationCommandReject:
 		msg := nasMessage.NewPDUSessionModificationCommandReject(0)
 		msg.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
 		msg.SetMessageType(messageType)
-		msg.SetPDUSessionID(deferralPduSessionID)
+		msg.SetPDUSessionID(pduSessionID)
 		msg.SetCauseValue(nasMessage.Cause5GSMRequestRejectedUnspecified)
 		m.PDUSessionModificationCommandReject = msg
 	default:
@@ -175,10 +176,16 @@ func encodeModificationAnswer(t *testing.T, messageType uint8) []byte {
 // under the lock HandlePDUSessionSMContextUpdate holds across it.
 func (s *deferralSession) answer(t *testing.T, messageType uint8) {
 	t.Helper()
+	s.answerAs(t, messageType, deferralPduSessionID)
+}
+
+// answerAs delivers the UE's answer as carrying pduSessionID, to this session's context.
+func (s *deferralSession) answerAs(t *testing.T, messageType, pduSessionID uint8) {
+	t.Helper()
 
 	request := models.UpdateSmContextRequest{}
 	request.SetJsonData(models.SmContextUpdateData{})
-	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeModificationAnswer(t, messageType)))
+	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeModificationAnswerFor(t, messageType, pduSessionID)))
 
 	txn := transaction.NewTransaction(request, nil, svcmsgtypes.UpdateSmContext)
 	txn.Ctxt = s.sm
@@ -491,4 +498,35 @@ func TestADecisionArrivingWhileACopyCanStillBeAnsweredIsHeld(t *testing.T) {
 
 	s.waitForSend(t, "the held decision, once the interval is over")
 	s.waitUntilArmed(t, 2)
+}
+
+// An answer carrying another PDU session's identity is ignored, not taken as this session's: TS
+// 24.501 subclause 7.3.2 d). Taken, a Complete committed this session's pending update and a
+// Command Reject abandoned it, and either stopped its T3591.
+func TestAnAnswerForAnotherSessionLeavesThisOneAlone(t *testing.T) {
+	for name, messageType := range map[string]uint8{
+		"Complete":       nas.MsgTypePDUSessionModificationComplete,
+		"Command Reject": nas.MsgTypePDUSessionModificationCommandReject,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newDeferralSession(t)
+			s.notify(t)
+			s.waitForSend(t, "the decision")
+
+			s.sm.SMLock.Lock()
+			timer, pending := s.sm.T3591, s.sm.SmPolicyUpdates[0]
+			s.sm.SMLock.Unlock()
+
+			s.answerAs(t, messageType, deferralPduSessionID+1)
+
+			s.sm.SMLock.Lock()
+			defer s.sm.SMLock.Unlock()
+			if !s.sm.NwModificationPending || s.sm.T3591 != timer {
+				t.Error("another session's answer ended this session's procedure")
+			}
+			if len(s.sm.SmPolicyUpdates) != 1 || s.sm.SmPolicyUpdates[0] != pending {
+				t.Error("another session's answer committed or discarded this session's pending update")
+			}
+		})
+	}
 }

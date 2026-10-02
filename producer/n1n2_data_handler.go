@@ -235,6 +235,14 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			}
 		case nas.MsgTypePDUSessionModificationComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Complete received")
+			// Another session's answer must not end this session's procedure. TS 24.501 subclause
+			// 7.3.2 d) has the network ignore a 5GSM message whose PDU session identity does not
+			// match an existing PDU session, and this context is the session the message reached.
+			if id := int32(m.PDUSessionModificationComplete.GetPDUSessionID()); id != smContext.PDUSessionID {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Complete carries PDU session ID %d, not this session's %d; ignoring it",
+					id, smContext.PDUSessionID)
+				break
+			}
 			// The modification is complete only now. Committing on the UE's acknowledgement rather
 			// than when the command was sent is what keeps the SMF's record of the session in step
 			// with what the UE is actually running, so the next modification computes its delta
@@ -255,6 +263,12 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			startDeferredModificationLocked(smContext)
 
 		case nas.MsgTypePDUSessionModificationCommandReject:
+			// As for the Complete above: another session's reject must not abandon this procedure.
+			if id := int32(m.PDUSessionModificationCommandReject.GetPDUSessionID()); id != smContext.PDUSessionID {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Command Reject carries PDU session ID %d, not this session's %d; ignoring it",
+					id, smContext.PDUSessionID)
+				break
+			}
 			cause := m.PDUSessionModificationCommandReject.GetCauseValue()
 			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Command Reject received, 5GSM cause %d", cause)
 			smContext.StopT3591()
