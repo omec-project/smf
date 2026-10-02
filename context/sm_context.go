@@ -179,6 +179,16 @@ type SMContext struct {
 	// persisted, as the fields above are not.
 	RevertInFlight chan struct{} `json:"-" yaml:"-" bson:"-"`
 
+	// RevertOwed is whether RevertInFlight is open, set and cleared with it under SMLock, and read
+	// without the lock by the PFCP modification response handlers. They cannot take SMLock: in
+	// adapter mode the response is handled inside the send, on a goroutine whose caller may hold it.
+	// The revert's answer is delivered while one is owed whatever the session's state: the revert
+	// moves the session to SmStatePfcpModify for its exchange, but a NAS or NGAP handler that started
+	// it from inside a transaction has its state machine set Active after it returns, possibly while
+	// the exchange is out. Nothing else for the session is in flight while a revert is owed, so the
+	// answer arriving then is the revert's.
+	RevertOwed atomic.Bool `json:"-" yaml:"-" bson:"-"`
+
 	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
 	// response or failure is acted on, or until the modification is abandoned. It is what tells a
 	// stale answer from the one this session is waiting for; NwModificationPending cannot, because

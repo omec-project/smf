@@ -1017,8 +1017,11 @@ func handleSendPfcpSessModReqError(msg message.Message, pfcpErr error, localSEID
 	smContext.SubPfcpLog.Errorf("PFCP Session Modification send failure, %v", pfcpErr.Error())
 
 	// Only for a request its sender waits on, and only while the session still waits: the state
-	// alone is shared by every modification in flight on the session, awaited or not.
-	answerFailedRequest(smContext, awaited && smContext.SMContextState == smf_context.SmStatePfcpModify,
+	// alone is shared by every modification in flight on the session, awaited or not. A revert waits
+	// whatever the state, which a transaction's trailing state change can move on while the revert is
+	// in flight; the response handlers deliver its answer by RevertOwed, and so does this.
+	answerFailedRequest(smContext,
+		awaited && (smContext.SMContextState == smf_context.SmStatePfcpModify || smContext.RevertOwed.Load()),
 		smf_context.SessionUpdateTimeout)
 }
 

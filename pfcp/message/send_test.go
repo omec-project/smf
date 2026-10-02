@@ -591,6 +591,30 @@ func TestATimeoutNobodyIsWaitingForLeavesNothingBehind(t *testing.T) {
 	}
 }
 
+// A revert is waited on whatever the session's state, so its timeout is answered whatever the state
+// too. The revert moves the session to SmStatePfcpModify for its exchange, but a transaction's
+// trailing state change can move it on before the user plane has answered, and the response handlers
+// deliver a revert's answer by RevertOwed for that reason. A timeout read only the state: it was
+// dropped, the revert waited on its channel for good, and nothing queued for the session ran again.
+func TestARevertTheUserPlaneNeverAnswersAnswersItsWaiterInAnyState(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStateActive)
+	smContext.RevertOwed.Store(true)
+
+	if err := message.SendAwaitedPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	verdict, arrived := awaitVerdict(smContext)
+	if !arrived {
+		t.Fatal("the revert timed out and nothing answered it, because the session had left SmStatePfcpModify")
+	}
+
+	if verdict != context.SessionUpdateTimeout {
+		t.Errorf("verdict = %v, want SessionUpdateTimeout", verdict)
+	}
+}
+
 // Nor is a modification its sender does not wait on answered, even while the session waits on
 // another one. Restoration reissues rules to every user plane of a session without waiting, and a
 // policy update can be holding the session in SmStatePfcpModify at the time: taking that state to

@@ -1088,6 +1088,7 @@ func abandonForRevertLocked(smContext *smfContext.SMContext) *qos.PolicyUpdate {
 	abandonModificationLocked(smContext)
 	if abandoned != nil && smContext.RevertInFlight == nil {
 		smContext.RevertInFlight = make(chan struct{})
+		smContext.RevertOwed.Store(true)
 	}
 
 	return abandoned
@@ -1165,6 +1166,7 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		if owed := smContext.RevertInFlight; owed != nil {
 			close(owed)
 			smContext.RevertInFlight = nil
+			smContext.RevertOwed.Store(false)
 		}
 		smContext.SMLock.Unlock()
 	}()

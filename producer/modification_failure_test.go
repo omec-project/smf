@@ -381,7 +381,7 @@ func TestADeliveryFailureRevertIsOwedWhileItIsInFlight(t *testing.T) {
 	var owedDuringSend bool
 	sendPfcpSessionModifyReq = func(sm *smf_context.SMContext, _ *pfcpParam) error {
 		sm.SMLock.Lock()
-		owedDuringSend = sm.RevertInFlight != nil
+		owedDuringSend = sm.RevertInFlight != nil && sm.RevertOwed.Load()
 		sm.SMLock.Unlock()
 		return nil
 	}
@@ -396,7 +396,7 @@ func TestADeliveryFailureRevertIsOwedWhileItIsInFlight(t *testing.T) {
 	}
 	sm.SMLock.Lock()
 	defer sm.SMLock.Unlock()
-	if sm.RevertInFlight != nil {
+	if sm.RevertInFlight != nil || sm.RevertOwed.Load() {
 		t.Error("the revert was left owed after it finished")
 	}
 }
