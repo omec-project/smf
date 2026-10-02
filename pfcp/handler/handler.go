@@ -643,7 +643,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 
 	if causeValue == ie.CauseRequestAccepted {
 		smContext.SubPduSessLog.Infoln("PFCP Modification Response Accept")
-		if smContext.SMContextState == smf_context.SmStatePfcpModify {
+		if smContext.SMContextState == smf_context.SmStatePfcpModify || smContext.RevertOwed.Load() {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
 			delete(smContext.PendingUPF, upfIP)
@@ -666,7 +666,7 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		smContext.SubPfcpLog.Infof("PFCP Session Modification Success[%d]", SEID)
 	} else {
 		smContext.SubPfcpLog.Infof("PFCP Session Modification Failed[%d]", SEID)
-		if smContext.SMContextState == smf_context.SmStatePfcpModify {
+		if smContext.SMContextState == smf_context.SmStatePfcpModify || smContext.RevertOwed.Load() {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateFailed
 		}
 	}
