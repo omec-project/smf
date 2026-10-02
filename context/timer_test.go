@@ -99,6 +99,7 @@ func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
 	t.Cleanup(func() { stopWaitTimeout = previous })
 
 	var callbackLock sync.Mutex
+	var enteredOnce sync.Once
 	entered := make(chan struct{})
 
 	// Acquired before the timer is even started - and not released until cleanup - so the
@@ -107,7 +108,11 @@ func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
 
 	timer := NewTimer(time.Microsecond, 1_000_000,
 		func(int32) {
-			close(entered)
+			// Once Stop times out it may still race its own goroutine's select against the
+			// 1-microsecond ticker after this callback finally unblocks (done is ready but not
+			// guaranteed to win over ticker.C), so expiredFunc can run more than once; guard the
+			// channel close against that instead of assuming a single invocation.
+			enteredOnce.Do(func() { close(entered) })
 			callbackLock.Lock()
 			defer callbackLock.Unlock()
 		},
