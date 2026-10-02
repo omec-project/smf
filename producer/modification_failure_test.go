@@ -351,3 +351,32 @@ func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.
 		t.Errorf("%d PFCP modifications were sent for a modification that had already ended", got)
 	}
 }
+
+// A decision that deletes only the default rule carries no valid rule, so the builder also takes
+// its release-only branch for that rule. The deletion has already marked it, and marking it again
+// sent each Remove PDR and Remove FAR twice in one request.
+func TestDeletingTheDefaultRuleRemovesItOnce(t *testing.T) {
+	sm := modifyingSession()
+
+	pdr := &smf_context.PDR{PDRID: 1, FAR: &smf_context.FAR{FARID: 1}}
+	node := &smf_context.DataPathNode{
+		UPF:            &smf_context.UPF{NodeID: *smf_context.NewNodeID("10.0.0.1")},
+		DownLinkTunnel: &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{defaultPdrKey: pdr}},
+		UpLinkTunnel:   &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{}},
+	}
+	sm.Tunnel = &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{
+		1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
+	}}
+
+	decision := &models.SmPolicyDecision{PccRules: map[string]models.PccRule{defaultPdrKey: {}}}
+	sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(sm)
+
+	if got := len(param.removePDR); got != 1 {
+		t.Errorf("Remove PDRs = %d, want the default rule's one PDR once", got)
+	}
+	if got := len(param.removeFAR); got != 1 {
+		t.Errorf("Remove FARs = %d, want the default rule's one FAR once", got)
+	}
+}
