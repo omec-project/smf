@@ -4,6 +4,7 @@
 package producer
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -92,20 +93,7 @@ func TestAT3591ExpiryRetransmitsOnlyWhileItsTimerIsCurrent(t *testing.T) {
 // acknowledgement that lands while the command is being built stops T3591 before the transfer
 // begins, and the command must not go out after all.
 func TestARetransmissionIsAbandonedIfItsProcedureEndsWhileItIsBuilt(t *testing.T) {
-	// A session whose command builds: a committed session rule and default flow, which the NGAP
-	// transfer reads, and a pending update that changes nothing.
-	smContext := modifyingSession()
-	smContext.SubPfcpLog = zap.NewNop().Sugar()
-	smContext.SubGsmLog = zap.NewNop().Sugar()
-	smContext.SmPolicyData.Initialize()
-	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		SessRuleId:   "rule-1",
-		AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "100 Mbps"},
-		AuthDefQos:   &models.AuthorizedDefaultQos{Var5qi: openapi.PtrInt32(9)},
-	}
-	defaultFlow := &models.QosData{QosId: "1", Var5qi: openapi.PtrInt32(9)}
-	defaultFlow.SetDefQosFlowIndication(true)
-	smContext.SmPolicyData.SmCtxtQosData.QosData["1"] = defaultFlow
+	smContext := commandBuildingSession()
 
 	checks := 0
 	err := buildAndSendQosN1N2TransferMsg(smContext, func() bool {
@@ -119,4 +107,48 @@ func TestARetransmissionIsAbandonedIfItsProcedureEndsWhileItIsBuilt(t *testing.T
 	if checks != 2 {
 		t.Errorf("checked %d times, want twice: at the build and again when the transfer starts", checks)
 	}
+}
+
+// A Command that went out more than once on its first transfer -- a transfer that got no HTTP
+// answer, retried against another AMF -- may have reached the UE twice, and the UE answers every
+// copy. Its procedure's end then waits out one T3591 interval, as after a retransmission, so a late
+// answer to the other copy cannot be taken as the next Command's.
+func TestACommandSentTwiceOnItsFirstTransferIsTreatedAsRetransmitted(t *testing.T) {
+	original := sendModificationTransfer
+	t.Cleanup(func() { sendModificationTransfer = original })
+	sendModificationTransfer = func(context.Context, *smf_context.SMContext, *models.N1N2MessageTransferRequest) (*models.N1N2MessageTransferRspData, int, error) {
+		return models.NewN1N2MessageTransferRspData(models.N1N2MESSAGETRANSFERCAUSE_N1_N2_TRANSFER_INITIATED), 2, nil
+	}
+
+	smContext := commandBuildingSession()
+	smContext.T3591Value = 16 * time.Second
+
+	if err := buildAndSendQosN1N2TransferMsg(smContext, nil); err != nil {
+		t.Fatalf("sending the command: %v", err)
+	}
+
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	if smContext.NwModificationQuietFor != smContext.T3591Value {
+		t.Errorf("quiet interval = %s, want %s: the UE may answer the Command's other copy", smContext.NwModificationQuietFor, smContext.T3591Value)
+	}
+}
+
+// commandBuildingSession is a session whose Command builds: a committed session rule and default
+// flow, which the NGAP transfer reads, and a pending update that changes nothing.
+func commandBuildingSession() *smf_context.SMContext {
+	smContext := modifyingSession()
+	smContext.SubPfcpLog = zap.NewNop().Sugar()
+	smContext.SubGsmLog = zap.NewNop().Sugar()
+	smContext.SmPolicyData.Initialize()
+	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
+		SessRuleId:   "rule-1",
+		AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "100 Mbps"},
+		AuthDefQos:   &models.AuthorizedDefaultQos{Var5qi: openapi.PtrInt32(9)},
+	}
+	defaultFlow := &models.QosData{QosId: "1", Var5qi: openapi.PtrInt32(9)}
+	defaultFlow.SetDefQosFlowIndication(true)
+	smContext.SmPolicyData.SmCtxtQosData.QosData["1"] = defaultFlow
+
+	return smContext
 }
