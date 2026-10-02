@@ -87,3 +87,46 @@ func TestTimerStopWaitsOutACallbackRacingIt(t *testing.T) {
 		stopped.Store(1)
 	}
 }
+
+// If a caller breaks the contract documented on Stop (holding a lock expiredFunc/cancelFunc also
+// needs), Stop must still return — bounded by stopWaitTimeout — rather than join the timer's
+// goroutine in a permanent deadlock. The callback is free to still be blocked on the lock after
+// Stop returns in that case; that is the documented fallout of the caller's own bug, not something
+// this test asserts against.
+func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
+	previous := stopWaitTimeout
+	stopWaitTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { stopWaitTimeout = previous })
+
+	var callbackLock sync.Mutex
+	var enterOnce sync.Once
+	entered := make(chan struct{})
+	timer := NewTimer(time.Microsecond, 1_000_000,
+		func(int32) {
+			enterOnce.Do(func() { close(entered) })
+			callbackLock.Lock()
+			defer callbackLock.Unlock()
+		},
+		func() {},
+	)
+	t.Cleanup(func() {
+		callbackLock.Unlock()
+		timer.Stop()
+	})
+
+	<-entered // wait for a callback to be in flight and blocked on the lock below
+
+	callbackLock.Lock() // simulate the caller already holding the lock expiredFunc needs
+
+	stopReturned := make(chan struct{})
+	go func() {
+		timer.Stop()
+		close(stopReturned)
+	}()
+
+	select {
+	case <-stopReturned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return within its timeout while a callback was blocked on a caller-held lock")
+	}
+}

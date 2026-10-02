@@ -141,7 +141,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	}
 
 	// Initialize map to track UPFs pending PFCP configuration
-	smContext.PendingUPF = make(smfContext.PendingUPF)
+	smContext.ResetPendingUPF(nil)
 
 	// Determine if we only need to release existing rules (no new policy).
 	// A valid rule is one where both the map key and PccRuleId are non-empty.
@@ -261,7 +261,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				logger.PduSessLog.Errorf("dedicated QER is nil")
 			}
 
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+			smContext.AddPendingUPF(ANUPF.GetNodeIP())
 		}
 
 		// ----------------------
@@ -319,7 +319,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				logger.PduSessLog.Errorf("ulFAR is nil")
 			}
 
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+			smContext.AddPendingUPF(ANUPF.GetNodeIP())
 			logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", ruleid, ulPDR)
 		}
 	}

@@ -161,11 +161,10 @@ type SMContext struct {
 	// fatal error - unlike a scalar field, it cannot be made safe with atomic.Bool-style typing, so a
 	// dedicated mutex (distinct from SMLock, and never held across a blocking channel op) guards it
 	// instead.
-	// Known gap, not covered here: the code that populates PendingUPF before sending a request
-	// (producer/callback.go, producer/n1n2_data_handler.go) does so in a loop, under SMLock, while
-	// sending - an early UPF's response can be dispatched and start deleting entries before a later
-	// UPF's send adds its own, racing that same loop. Pre-existing, narrower, and orthogonal to the
-	// replacement-vs-response-handler race this lock closes.
+	// Every read or write of PendingUPF, anywhere in the codebase, must go through the
+	// ResetPendingUPF/AddPendingUPF/MergePendingUPF/DeletePendingUPF/HasPendingUPF/PendingUPFIsEmpty
+	// methods below rather than the field directly - a lock only some accessors take does not
+	// prevent the concurrent map access the others still cause.
 	PendingUPFLock sync.Mutex `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
@@ -272,6 +271,67 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubConsumerLog = logger.ConsumerLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 	smContext.SubFsmLog = logger.FsmLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 	smContext.SubQosLog = logger.QosLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
+}
+
+// ResetPendingUPF replaces PendingUPF with entries (an empty map if entries is nil).
+func (smContext *SMContext) ResetPendingUPF(entries PendingUPF) {
+	if entries == nil {
+		entries = make(PendingUPF)
+	}
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	smContext.PendingUPF = entries
+}
+
+// AddPendingUPF marks nodeIP as awaiting a PFCP response, creating PendingUPF first if nil.
+func (smContext *SMContext) AddPendingUPF(nodeIP string) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	if smContext.PendingUPF == nil {
+		smContext.PendingUPF = make(PendingUPF)
+	}
+	smContext.PendingUPF[nodeIP] = true
+}
+
+// MergePendingUPF adds every entry of entries into PendingUPF without clearing what is already
+// there (unlike ResetPendingUPF), creating PendingUPF first if nil.
+func (smContext *SMContext) MergePendingUPF(entries PendingUPF) {
+	if len(entries) == 0 {
+		return
+	}
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	if smContext.PendingUPF == nil {
+		smContext.PendingUPF = make(PendingUPF)
+	}
+	for nodeIP, v := range entries {
+		smContext.PendingUPF[nodeIP] = v
+	}
+}
+
+// DeletePendingUPF removes nodeIP and reports whether PendingUPF is now empty, as one atomic
+// operation: splitting the delete and the emptiness check across two lock acquisitions would let
+// a concurrent writer's entry land in between and be missed by the check.
+func (smContext *SMContext) DeletePendingUPF(nodeIP string) (empty bool) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	delete(smContext.PendingUPF, nodeIP)
+	return smContext.PendingUPF.IsEmpty()
+}
+
+// HasPendingUPF reports whether nodeIP is already recorded in PendingUPF.
+func (smContext *SMContext) HasPendingUPF(nodeIP string) bool {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	_, exist := smContext.PendingUPF[nodeIP]
+	return exist
+}
+
+// PendingUPFIsEmpty reports whether PendingUPF currently has no entries.
+func (smContext *SMContext) PendingUPFIsEmpty() bool {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	return smContext.PendingUPF.IsEmpty()
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {

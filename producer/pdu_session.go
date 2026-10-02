@@ -789,18 +789,29 @@ func HandlePDUSessionSMContextRelease(eventData interface{}) error {
 	return nil
 }
 
+// deletionTarget is a UPF releaseTunnel has decided to send a PFCP Session Deletion Request to,
+// captured so the send can happen in a pass separate from deciding the full pending set.
+type deletionTarget struct {
+	nodeID smf_context.NodeID
+	port   uint16
+}
+
 func releaseTunnel(smContext *smf_context.SMContext) bool {
 	if smContext.Tunnel == nil {
 		smContext.SubPduSessLog.Warnln("releaseTunnel, pfcp tunnel already released")
 		return false
 	}
+
+	// Decide the complete set of UPFs to delete, and register all of them in PendingUPF, before
+	// sending any request. An immediate response (synchronous in adapter mode, or just a fast UDP
+	// round trip) can be dispatched before this function would otherwise have reached a later
+	// UPF's send; the response handler gates its verdict on PendingUPF.IsEmpty(), so registering
+	// an entry only after its own send returns lets that race find the map still missing entries
+	// this loop has not reached yet, signal success early, and leave the rest as stale,
+	// never-cleaned residue.
 	deletedPFCPNode := make(map[string]bool)
-	// PendingUPFLock, not SMLock: the PFCP deletion response handlers delete entries from this
-	// same map without SMLock (see the handler-side comment on PendingUPFLock's declaration), so
-	// the rebuild here needs its own, briefly-held lock to avoid a concurrent map read/write.
-	smContext.PendingUPFLock.Lock()
-	smContext.PendingUPF = make(smf_context.PendingUPF)
-	smContext.PendingUPFLock.Unlock()
+	pendingUPF := make(smf_context.PendingUPF)
+	targets := make([]deletionTarget, 0)
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		dataPath.DeactivateTunnelAndPDR(smContext)
 		for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
@@ -810,17 +821,24 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 				continue
 			}
 			if _, exist := deletedPFCPNode[curUPFID]; !exist {
-				err := pfcp_message.SendPfcpSessionDeletionRequest(curDataPathNode.UPF.NodeID, smContext, curDataPathNode.UPF.Port)
-				if err != nil {
-					smContext.SubPduSessLog.Errorf("releaseTunnel, send PFCP session deletion request failed: %v", err)
-				}
 				deletedPFCPNode[curUPFID] = true
-				smContext.PendingUPFLock.Lock()
-				smContext.PendingUPF[curDataPathNode.GetNodeIP()] = true
-				smContext.PendingUPFLock.Unlock()
+				pendingUPF[curDataPathNode.GetNodeIP()] = true
+				targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.Port})
 			}
 		}
 	}
+
+	// PendingUPFLock, not SMLock: the PFCP deletion response handlers delete entries from this
+	// same map without SMLock (see SMContext.PendingUPFLock's declaration), so this assignment
+	// goes through the locked helper rather than the field directly.
+	smContext.ResetPendingUPF(pendingUPF)
+
+	for _, target := range targets {
+		if err := pfcp_message.SendPfcpSessionDeletionRequest(target.nodeID, smContext, target.port); err != nil {
+			smContext.SubPduSessLog.Errorf("releaseTunnel, send PFCP session deletion request failed: %v", err)
+		}
+	}
+
 	smContext.Tunnel = nil
 	return true
 }
@@ -969,8 +987,8 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 		// are still in farList, as they were before: that they go to one UPF is a
 		// separate defect, and pretending to await answers that were never asked for
 		// does not fix it.
-		smContext.PendingUPF = make(smf_context.PendingUPF)
-		smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+		smContext.ResetPendingUPF(nil)
+		smContext.AddPendingUPF(ANUPF.GetNodeIP())
 
 		// The response handler only signals SBIPFCPCommunicationChan while the context
 		// is in this state. Without the transition the modification was answered, the
@@ -1022,7 +1040,7 @@ func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
 // the indefinite wait this change exists to remove, reintroduced through its own failure path.
 func abandonPendingModify(smContext *smf_context.SMContext, previous smf_context.SMContextState) {
 	smContext.ChangeState(previous)
-	smContext.PendingUPF = make(smf_context.PendingUPF)
+	smContext.ResetPendingUPF(nil)
 }
 
 // Handles PFCP response depending upon response cause recevied.
