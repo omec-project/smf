@@ -24,6 +24,11 @@ import (
 
 const deferralPduSessionID = 10
 
+// queuedWorkTimeout bounds how long a test waits for work the session runs asynchronously. Generous
+// rather than tight: a loaded runner, and the race detector, can hold queued work back by seconds,
+// and the bound only decides how long a real failure takes to be reported.
+const queuedWorkTimeout = 10 * time.Second
+
 // deferralSession is an active session with the network's sends stubbed: every PFCP modification
 // it sends is counted and announced on pfcp, and every Command transfer succeeds.
 type deferralSession struct {
@@ -86,7 +91,7 @@ func (s *deferralSession) waitForSend(t *testing.T, what string) {
 
 	select {
 	case <-s.pfcp:
-	case <-time.After(2 * time.Second):
+	case <-time.After(queuedWorkTimeout):
 		t.Fatalf("%s: no PFCP modification was sent", what)
 	}
 }
@@ -96,7 +101,7 @@ func (s *deferralSession) waitForSend(t *testing.T, what string) {
 func (s *deferralSession) waitUntilArmed(t *testing.T, gen uint64) {
 	t.Helper()
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(queuedWorkTimeout)
 	for time.Now().Before(deadline) {
 		s.sm.SMLock.Lock()
 		armed := s.sm.NwModificationGen == gen && s.sm.T3591 != nil
@@ -335,7 +340,7 @@ func TestAnEarlyAcknowledgementLeavesTheNextProcedureItsTimer(t *testing.T) {
 		s.answer(t, nas.MsgTypePDUSessionModificationComplete)
 		s.waitForSend(t, "the held decision, after the early acknowledgement")
 
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(queuedWorkTimeout)
 		for time.Now().Before(deadline) {
 			sm.SMLock.Lock()
 			second = sm.T3591
@@ -451,7 +456,7 @@ func (s *deferralSession) retransmitOnce(t *testing.T, interval time.Duration) {
 
 	select {
 	case <-retransmitted:
-	case <-time.After(2 * interval):
+	case <-time.After(queuedWorkTimeout):
 		t.Fatal("T3591 never retransmitted the Command")
 	}
 }
