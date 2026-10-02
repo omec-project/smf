@@ -322,6 +322,74 @@ func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 	}
 }
 
+// The CHOOSE ID has to reach the wire, not only the PDR: the UPF sees the encoded F-TEID, and
+// a builder that dropped the CHID flag or the CHOOSE ID octet would leave each PDR on a TEID of
+// its own while the activated PDRs looked right.
+func TestTheUplinkPdrsOfATunnelAskForOneFTEIDOnTheWire(t *testing.T) {
+	smContext := &context.SMContext{
+		PDUAddress: &context.UeIpAddr{Ip: net.IPv4(192, 168, 1, 1)},
+		Dnn:        "internet",
+	}
+	dpNode := &context.DataPathNode{
+		UPF: &context.UPF{},
+		UpLinkTunnel: &context.GTPTunnel{
+			PDR: map[string]*context.PDR{
+				"ALLOW-ALL": {PDRID: 1, FAR: &context.FAR{FARID: 1}},
+				"CIR-TEST":  {PDRID: 2, FAR: &context.FAR{FARID: 2}},
+			},
+		},
+	}
+	if err := dpNode.ActivateUpLinkPdr(smContext, &context.QER{QERID: 1}, 10); err != nil {
+		t.Fatalf("ActivateUpLinkPdr: %v", err)
+	}
+	var pdrList []*context.PDR
+	for _, pdr := range dpNode.UpLinkTunnel.PDR {
+		pdrList = append(pdrList, pdr)
+	}
+
+	msg, err := message.BuildPfcpSessionEstablishmentRequest(43, cpNodeID, net.ParseIP(cpNodeID), 1, pdrList, nil, nil)
+	if err != nil {
+		t.Fatalf("building the establishment request: %v", err)
+	}
+	buf := make([]byte, msg.MarshalLen())
+	if err = msg.MarshalTo(buf); err != nil {
+		t.Fatalf("marshalling the establishment request: %v", err)
+	}
+	req, err := pfcp_message.ParseSessionEstablishmentRequest(buf)
+	if err != nil {
+		t.Fatalf("parsing the establishment request: %v", err)
+	}
+	if len(req.CreatePDR) != 2 {
+		t.Fatalf("%d Create PDRs on the wire, want 2", len(req.CreatePDR))
+	}
+
+	chooseIDs := map[uint8]int{}
+	for _, createPDR := range req.CreatePDR {
+		pdi, err := createPDR.PDI()
+		if err != nil {
+			t.Fatalf("Create PDR without a PDI: %v", err)
+		}
+		var fteid *ie.FTEIDFields
+		for _, x := range pdi {
+			if x.Type == ie.FTEID {
+				if fteid, err = x.FTEID(); err != nil {
+					t.Fatalf("decoding the F-TEID: %v", err)
+				}
+			}
+		}
+		if fteid == nil {
+			t.Fatal("Create PDR without a local F-TEID")
+		}
+		if !fteid.HasCh() || !fteid.HasChID() || !fteid.HasIPv4() {
+			t.Errorf("F-TEID flags %#x: want CH, CHID and V4", fteid.Flags)
+		}
+		chooseIDs[fteid.ChooseID]++
+	}
+	if len(chooseIDs) != 1 {
+		t.Errorf("CHOOSE IDs on the wire %v, want one shared by both PDRs", chooseIDs)
+	}
+}
+
 func TestBuildPfcpSessionModificationRequest(t *testing.T) {
 	pdrList := []*context.PDR{
 		{
