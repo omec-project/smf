@@ -59,7 +59,7 @@ func TestNoVerdictIsLeftForASessionThatIsNotWaiting(t *testing.T) {
 // second condition.
 func TestALocallyPurgedReleaseIsNotAnswered(t *testing.T) {
 	smContext := waitingSession(t, smf_context.SmStatePfcpRelease)
-	smContext.LocalPurged = true
+	smContext.LocalPurged.Store(true)
 
 	answerTheWaitingSession(smContext, awaitingRelease, smf_context.SessionReleaseSuccess)
 

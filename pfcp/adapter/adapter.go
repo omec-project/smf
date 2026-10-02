@@ -411,10 +411,11 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) error {
 		if smContext.SMContextState == context.SmStatePfcpModify {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
-			delete(smContext.PendingUPF, upfIP)
+			// DeletePendingUPF: see SMContext.PendingUPFLock's declaration.
+			pendingEmpty := smContext.DeletePendingUPF(upfIP)
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() {
+			if pendingEmpty {
 				smContext.SBIPFCPCommunicationChan <- context.SessionUpdateSuccess
 			}
 		}
@@ -469,16 +470,18 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) error {
 		if smContext.SMContextState == context.SmStatePfcpRelease {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
-			delete(smContext.PendingUPF, upfIP)
+			// DeletePendingUPF: releaseTunnel rebuilds this same map under SMLock, which this
+			// handler cannot take (see SMContext.PendingUPFLock's declaration).
+			pendingEmpty := smContext.DeletePendingUPF(upfIP)
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
+			if pendingEmpty && !smContext.LocalPurged.Load() {
 				smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 			}
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]", SEID)
 	} else {
-		if smContext.SMContextState == context.SmStatePfcpRelease && !smContext.LocalPurged {
+		if smContext.SMContextState == context.SmStatePfcpRelease && !smContext.LocalPurged.Load() {
 			smContext.SBIPFCPCommunicationChan <- context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)

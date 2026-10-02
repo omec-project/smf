@@ -735,7 +735,7 @@ func awaitingEstablishment(smContext *smf_context.SMContext) bool {
 }
 
 func awaitingRelease(smContext *smf_context.SMContext) bool {
-	return smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged
+	return smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged.Load()
 }
 
 // snapshotRuleStates records the states of the rules a request is about to be built from, and
@@ -942,7 +942,7 @@ func handleSendPfcpSessRelReqError(msg message.Message, pfcpErr error, localSEID
 	// Success, as the response handler reports a refused deletion too: a session whose user plane
 	// will not confirm the deletion still has to be released here, or it is never released at all.
 	answerFailedRequest(smContext,
-		smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged,
+		smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged.Load(),
 		smf_context.SessionReleaseSuccess)
 }
 
