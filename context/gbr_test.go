@@ -234,6 +234,19 @@ func TestARawBpsRateIsNotRoundedForTheGNB(t *testing.T) {
 	}
 }
 
+// A negative magnitude is malformed input, not a rate going the other way. Rejected before the
+// uint64 cast, it must read as zero rather than wrap around to an enormous unsigned rate.
+func TestANegativeBitRateIsZeroNotAWrappedUnsignedRate(t *testing.T) {
+	for _, rate := range []string{"-500 bps", "-1 Mbps", "-100 Mbps"} {
+		if got := util.BitRateToBps(rate); got != 0 {
+			t.Errorf("BitRateToBps(%q) = %d, want 0", rate, got)
+		}
+		if got := util.BitRateTokbps(rate); got != 0 {
+			t.Errorf("BitRateTokbps(%q) = %d, want 0", rate, got)
+		}
+	}
+}
+
 // A session AMBR with no unit has to reach every end without taking the SMF down. The user plane's
 // converter was guarded against "10"; the gNB's and the UE's were not, and the same string reaches
 // all three, so the process still went down -- one step later, building the transfer for the radio

@@ -27,8 +27,10 @@ func BitRateToBps(bitrate string) uint64 {
 		return 0
 	}
 
+	// Rejected here, before the uint64 cast below: a negative magnitude would otherwise wrap
+	// around to an enormous unsigned rate instead of the zero a malformed value should produce.
 	digit, err := strconv.Atoi(s[0])
-	if err != nil {
+	if err != nil || digit < 0 {
 		return 0
 	}
 
