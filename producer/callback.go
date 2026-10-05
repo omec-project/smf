@@ -82,10 +82,13 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	// A decision that arrives while the network's previous modification is still waiting for the UE
 	// is held, not applied: starting a second procedure would replace the pending update and stop
 	// the first T3591, and the UE's answer to the first Command -- which carries nothing to say
-	// which Command it answers -- would then commit an update the UE was never sent. The PCF is
-	// answered as for an applied decision; the decision is applied when the procedure ends. The same
-	// holds for one T3591 interval after a procedure whose Command was retransmitted, while a late
-	// answer to a retransmission can still arrive.
+	// which Command it answers -- would then commit an update the UE was never sent. The decision
+	// is applied when the procedure ends. The same holds for one T3591 interval after a procedure
+	// whose Command was retransmitted, while a late answer to a retransmission can still arrive.
+	//
+	// The PCF is answered "204 No Content": TS 29.512 subclause 4.2.3.2 NOTE has an SMF with a
+	// colliding procedure in progress delay the update, answer 204, and process it when the
+	// procedure is finished.
 	if smContext.NwModificationPending || time.Now().Before(smContext.NwModificationQuietUntil) {
 		smContext.DeferredPolicyDecisions = append(smContext.DeferredPolicyDecisions, request.SmPolicyDecision)
 		smContext.SubPduSessLog.Infof("a modification is already waiting for the UE; holding this policy decision until it ends (%d held)",
@@ -93,7 +96,7 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMLock.Unlock()
 
 		txn.Rsp = &httpwrapper.Response{
-			Status: http.StatusOK,
+			Status: http.StatusNoContent,
 			Body:   nil,
 		}
 
