@@ -32,9 +32,10 @@ const queuedWorkTimeout = 10 * time.Second
 // deferralSession is an active session with the network's sends stubbed: every PFCP modification
 // it sends is counted and announced on pfcp, and every Command transfer succeeds.
 type deferralSession struct {
-	sm    *smf_context.SMContext
-	pfcp  chan struct{}
-	sends atomic.Int32
+	sm         *smf_context.SMContext
+	pfcp       chan struct{}
+	sends      atomic.Int32
+	lastStatus int
 }
 
 func newDeferralSession(t *testing.T) *deferralSession {
@@ -80,9 +81,12 @@ func (s *deferralSession) notify(t *testing.T) {
 	if err := HandleSMPolicyUpdateNotify(txn); err != nil {
 		t.Fatalf("HandleSMPolicyUpdateNotify returned an error: %v", err)
 	}
-	if rsp, ok := txn.Rsp.(*httpwrapper.Response); !ok || rsp.Status != http.StatusOK {
-		t.Fatalf("the PCF was answered %+v, want 200", txn.Rsp)
+	// 204 for a held decision (TS 29.512 subclause 4.2.3.2 NOTE), 200 for one applied at once, as
+	// this endpoint has always answered.
+	if rsp, ok := txn.Rsp.(*httpwrapper.Response); !ok || (rsp.Status != http.StatusOK && rsp.Status != http.StatusNoContent) {
+		t.Fatalf("the PCF was answered %+v, want a success", txn.Rsp)
 	}
+	s.lastStatus = txn.Rsp.(*httpwrapper.Response).Status
 }
 
 // waitForSend waits for the PFCP modification the session sends next.
@@ -212,6 +216,9 @@ func TestAPolicyDecisionArrivingWhileTheUeHasNotAnsweredIsHeld(t *testing.T) {
 
 	s.notify(t)
 	s.waitForSend(t, "the first decision")
+	if s.lastStatus != http.StatusOK {
+		t.Errorf("the PCF was answered %d for a decision applied at once, want 200", s.lastStatus)
+	}
 
 	s.sm.SMLock.Lock()
 	first, pending := s.sm.T3591, s.sm.SmPolicyUpdates[0]
@@ -225,6 +232,9 @@ func TestAPolicyDecisionArrivingWhileTheUeHasNotAnsweredIsHeld(t *testing.T) {
 
 	if got := len(s.sm.DeferredPolicyDecisions); got != 1 {
 		t.Errorf("held decisions = %d, want 1", got)
+	}
+	if s.lastStatus != http.StatusNoContent {
+		t.Errorf("the PCF was answered %d for a held decision, want 204 (TS 29.512 subclause 4.2.3.2 NOTE)", s.lastStatus)
 	}
 	if s.sm.T3591 != first {
 		t.Error("the first modification's T3591 was replaced; its retransmissions would stop")
