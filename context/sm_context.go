@@ -645,6 +645,14 @@ func RemoveSMContextLocked(smContext *SMContext) {
 	smContext.SubCtxLog.Infof("RemoveSMContext, SM context released ")
 	smContext.ChangeState(SmStateRelease)
 
+	// A network-requested modification of a removed session ends here. Left running, T3591 went on
+	// retransmitting its Command for the removed context -- after a replacement establishment, to
+	// the UE's new session with the same PDU session ID -- and later abandoned it; cancelling it and
+	// dropping the handle makes both callbacks find their timer superseded. Decisions held for the
+	// session go with it.
+	smContext.StopT3591()
+	smContext.DeferredPolicyDecisions = nil
+
 	for _, pfcpSessionContext := range smContext.PFCPContext {
 		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
 		if factory.SmfConfig.Configuration.EnableDbStore {
