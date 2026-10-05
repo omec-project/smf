@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/omec-project/ngap/v2/aper"
-	"github.com/omec-project/ngap/v2/ngapConvert"
 	"github.com/omec-project/ngap/v2/ngapType"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/util"
 )
 
 const DefaultNonGBR5QI = 9
@@ -77,7 +77,7 @@ func sessionAmbrToBps(ambr string) int64 {
 		return 0
 	}
 
-	return ngapConvert.UEAmbrToInt64(ambr)
+	return int64(util.BitRateTokbps(ambr) * 1000)
 }
 
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {
