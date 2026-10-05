@@ -637,3 +637,27 @@ func TestANewerDecisionDoesNotOvertakeAHeldOne(t *testing.T) {
 		t.Errorf("held decisions = %d after the older one started, want the newer one still held", got)
 	}
 }
+
+// A removed session's modification ends with it. Removal is also how a replacement establishment
+// purges the old context, and a T3591 left running went on retransmitting the old context's
+// Command, to the UE's new session with the same PDU session ID, and later abandoning it.
+func TestRemovingTheSessionEndsItsModification(t *testing.T) {
+	s := newDeferralSession(t)
+	s.startAndHold(t)
+
+	s.sm.SMLock.Lock()
+	timer := s.sm.T3591
+	smf_context.RemoveSMContextLocked(s.sm)
+	stopped, held := s.sm.T3591 == nil && !s.sm.NwModificationPending, len(s.sm.DeferredPolicyDecisions)
+	s.sm.SMLock.Unlock()
+
+	if timer == nil {
+		t.Fatal("the modification had no T3591 to begin with")
+	}
+	if !stopped {
+		t.Error("the removed session's T3591 was left running")
+	}
+	if held != 0 {
+		t.Errorf("held decisions = %d after the session was removed, want 0", held)
+	}
+}
