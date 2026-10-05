@@ -9,7 +9,13 @@ import (
 	"strings"
 )
 
-const bpsUnit = "bps"
+const (
+	bpsUnit  = "bps"
+	kbpsUnit = "kbps"
+	mbpsUnit = "mbps"
+	gbpsUnit = "gbps"
+	tbpsUnit = "tbps"
+)
 
 // BitRateToBps is the single place a bitrate string is parsed into a number: every unit-aware
 // consumer of these strings -- the user plane's kbps rates below and the gNB's raw bps AMBR in
@@ -40,13 +46,13 @@ func BitRateToBps(bitrate string) uint64 {
 	switch strings.ToLower(s[1]) {
 	case bpsUnit:
 		return uint64(digit)
-	case "kbps":
+	case kbpsUnit:
 		return uint64(digit) * 1000
-	case "mbps":
+	case mbpsUnit:
 		return uint64(digit) * 1000000
-	case "gbps":
+	case gbpsUnit:
 		return uint64(digit) * 1000000000
-	case "tbps":
+	case tbpsUnit:
 		return uint64(digit) * 1000000000000
 	}
 	return 0
@@ -74,7 +80,7 @@ func NormalizeBitRate(br string) string {
 		// Handle concatenated forms like "100Mbps" / "100mbps"
 		s := fields[0]
 		lower := strings.ToLower(s)
-		for _, u := range []string{"tbps", "gbps", "mbps", "kbps", "bps"} {
+		for _, u := range []string{tbpsUnit, gbpsUnit, mbpsUnit, kbpsUnit, bpsUnit} {
 			if strings.HasSuffix(lower, u) {
 				numeric = s[:len(s)-len(u)]
 				unit = u
@@ -94,15 +100,15 @@ func NormalizeBitRate(br string) string {
 
 	// Canonicalize unit casing to match BitRateTokbps
 	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "bps":
+	case bpsUnit:
 		unit = bpsUnit
-	case "kbps":
+	case kbpsUnit:
 		unit = "Kbps"
-	case "mbps":
+	case mbpsUnit:
 		unit = "Mbps"
-	case "gbps":
+	case gbpsUnit:
 		unit = "Gbps"
-	case "tbps":
+	case tbpsUnit:
 		unit = "Tbps"
 	default:
 		unit = strings.TrimSpace(unit)
