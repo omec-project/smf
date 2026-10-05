@@ -8,7 +8,6 @@ package producer
 import (
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"os"
 
@@ -316,7 +315,7 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 			// TODO: Deactivate N2 downlink tunnel
 			// Set FAR and An, N3 Release Info
 			farList := []*context.FAR{}
-			smContext.PendingUPF = make(context.PendingUPF)
+			smContext.ResetPendingUPF(nil)
 			for _, dataPath := range smContext.Tunnel.DataPathPool {
 				ANUPF := dataPath.FirstDPNode
 				for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
@@ -331,7 +330,7 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 						if DLPDR.FAR.ForwardingParameters != nil {
 							DLPDR.FAR.ForwardingParameters.OuterHeaderCreation = nil
 						}
-						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+						smContext.AddPendingUPF(ANUPF.GetNodeIP())
 						farList = append(farList, DLPDR.FAR)
 					}
 				}
@@ -420,10 +419,7 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		// HandleHandoverRequestAcknowledgeTransfer above.
 		pendingUPF := collectHoFARsForPFCPModify(smContext.Tunnel, pfcpParam)
 		if len(pendingUPF) > 0 {
-			if smContext.PendingUPF == nil {
-				smContext.PendingUPF = make(context.PendingUPF)
-			}
-			maps.Copy(smContext.PendingUPF, pendingUPF)
+			smContext.MergePendingUPF(pendingUPF)
 			pfcpAction.sendPfcpModify = true
 			smContext.ChangeState(context.SmStatePfcpModify)
 			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
@@ -529,7 +525,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		pdrList := []*context.PDR{}
 		farList := []*context.FAR{}
 
-		smContext.PendingUPF = make(context.PendingUPF)
+		smContext.ResetPendingUPF(nil)
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
@@ -546,9 +542,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					pdrList = append(pdrList, DLPDR)
 					farList = append(farList, DLPDR.FAR)
 
-					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-					}
+					smContext.AddPendingUPF(ANUPF.GetNodeIP())
 				}
 			}
 		}
@@ -672,7 +666,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 
 		pdrList := []*context.PDR{}
 		farList := []*context.FAR{}
-		smContext.PendingUPF = make(context.PendingUPF)
+		smContext.ResetPendingUPF(nil)
 		for _, dataPath := range tunnel.DataPathPool {
 			if dataPath.Activated {
 				ANUPF := dataPath.FirstDPNode
@@ -680,9 +674,7 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					pdrList = append(pdrList, DLPDR)
 					farList = append(farList, DLPDR.FAR)
 
-					if _, exist := smContext.PendingUPF[ANUPF.GetNodeIP()]; !exist {
-						smContext.PendingUPF[ANUPF.GetNodeIP()] = true
-					}
+					smContext.AddPendingUPF(ANUPF.GetNodeIP())
 				}
 			}
 		}

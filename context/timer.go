@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
 // Copyright 2019 free5GC.org
 //
@@ -10,7 +11,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/omec-project/smf/logger"
 )
+
+// stopWaitTimeout bounds how long Stop waits for a callback racing it to finish, so a caller that
+// breaks the no-locks-held contract documented on Stop gets a logged diagnostic rather than
+// joining the timer's goroutine in a permanent, unrecoverable deadlock. A var, not a const, so
+// tests can shorten it rather than actually waiting out the default.
+var stopWaitTimeout = 5 * time.Second
 
 // Timer can be used for retransmission, it will manage retry times automatically.
 //
@@ -25,6 +34,7 @@ type Timer struct {
 	maxRetryTimes atomic.Int32
 	done          chan bool
 	stopOnce      sync.Once
+	wg            sync.WaitGroup
 }
 
 // NewTimer returns a Timer and starts a goroutine that calls expiredFunc on every interval d
@@ -40,7 +50,9 @@ func NewTimer(d time.Duration, maxRetryTimes int,
 	t.done = make(chan bool, 1)
 	t.ticker = time.NewTicker(d)
 
+	t.wg.Add(1)
 	go func(ticker *time.Ticker) {
+		defer t.wg.Done()
 		defer ticker.Stop()
 
 		for {
@@ -71,18 +83,36 @@ func (t *Timer) ExpireTimes() int32 {
 	return t.expireTimes.Load()
 }
 
-// Stop turns off the timer. Stop is safe to call more than once and safe to call concurrently with
-// the timer aborting on its own.
-//
-// Stop does not wait for the timer's goroutine. An expiry that is already due when Stop is called
-// can still be delivered afterwards: the goroutine selects between the stop signal and the ticker,
-// and Go's select picks at random when both are ready. A caller whose callbacks must not act for a
-// stopped timer has to check that the timer is still the one it is using, under the same lock that
-// it holds when it calls Stop. Waiting here for a callback in progress is not an alternative, since
-// callers stop the timer under the lock their callbacks take.
+// Stop turns off the timer. After Stop returns (within stopWaitTimeout — see below), no further
+// expiry event is triggered: Stop waits for the timer's own goroutine to exit rather than merely
+// signalling it, because the select in that goroutine gives no priority between the done channel
+// and the ticker — a tick already queued when Stop is called can still be the one chosen, and
+// without waiting here that callback would be free to run after Stop had already returned to a
+// caller who believed the timer dead.
+// Stop is safe to call more than once and safe to call concurrently with the timer aborting on
+// its own. It must not be called from expiredFunc or cancelFunc themselves: those run on the
+// goroutine this waits for, and calling Stop from there deadlocks.
+// Callers must also not hold any lock that expiredFunc or cancelFunc need to acquire: the wait
+// above blocks until a callback already in flight returns, so holding such a lock here deadlocks
+// this goroutine against the timer's, with neither able to make progress. stopWaitTimeout bounds
+// that wait so a caller breaking this contract gets a logged diagnostic instead of hanging forever
+// — the callback can still run after Stop returns in that case, same as the race this function
+// exists to close, but only as the fallout of a caller bug rather than as a permanent deadlock.
 func (t *Timer) Stop() {
 	t.stopOnce.Do(func() {
 		t.done <- true
 		close(t.done)
 	})
+
+	done := make(chan struct{})
+	go func() {
+		t.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(stopWaitTimeout):
+		logger.CtxLog.Errorf("Timer.Stop: timed out after %s waiting for a racing callback; "+
+			"the caller likely holds a lock expiredFunc/cancelFunc also needs", stopWaitTimeout)
+	}
 }

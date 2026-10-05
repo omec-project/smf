@@ -24,11 +24,11 @@ import (
 type fakeDeleteOneDBClient struct {
 	mongoapi.DBInterface
 	failThenSucceed int32 // number of calls that should fail before one succeeds
-	calls           int32
+	calls           atomic.Int32
 }
 
 func (f *fakeDeleteOneDBClient) RestfulAPIDeleteOne(_ string, _ bson.M) error {
-	if atomic.AddInt32(&f.calls, 1) <= atomic.LoadInt32(&f.failThenSucceed) {
+	if f.calls.Add(1) <= atomic.LoadInt32(&f.failThenSucceed) {
 		return errors.New("simulated mongo delete failure")
 	}
 	return nil
@@ -55,7 +55,7 @@ func TestDeleteSmContextInDBByRef_RetriesUntilSuccess(t *testing.T) {
 	withSmContextWriteWorkers(t, fake, func() {
 		DeleteSmContextInDBByRef(ref)
 	})
-	if got := atomic.LoadInt32(&fake.calls); got != 3 {
+	if got := fake.calls.Load(); got != 3 {
 		t.Errorf("expected 3 delete attempts (2 failures + 1 success), got %d", got)
 	}
 	if IsSmContextDeleteFailed(ref) {
@@ -69,7 +69,7 @@ func TestDeleteSmContextInDBByRef_GivesUpAfterMaxAttempts(t *testing.T) {
 	withSmContextWriteWorkers(t, fake, func() {
 		DeleteSmContextInDBByRef(ref)
 	})
-	if got := atomic.LoadInt32(&fake.calls); got != 3 {
+	if got := fake.calls.Load(); got != 3 {
 		t.Errorf("expected exactly 3 delete attempts before giving up, got %d", got)
 	}
 	if !IsSmContextDeleteFailed(ref) {
