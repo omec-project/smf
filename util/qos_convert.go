@@ -5,6 +5,7 @@
 package util
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -43,19 +44,29 @@ func BitRateToBps(bitrate string) uint64 {
 	// Matched case-insensitively: a policy's "10 mbps" is as valid as "10 Mbps", and the caller
 	// reaching this directly (sessionAmbrToBps, the raw-string MBR reads in CreatePccRuleQer and
 	// CreateSessRuleQer) has no other chance to canonicalize the casing before it is read.
+	var multiplier uint64
 	switch strings.ToLower(s[1]) {
 	case bpsUnit:
-		return uint64(digit)
+		multiplier = 1
 	case kbpsUnit:
-		return uint64(digit) * 1000
+		multiplier = 1000
 	case mbpsUnit:
-		return uint64(digit) * 1000000
+		multiplier = 1000000
 	case gbpsUnit:
-		return uint64(digit) * 1000000000
+		multiplier = 1000000000
 	case tbpsUnit:
-		return uint64(digit) * 1000000000000
+		multiplier = 1000000000000
+	default:
+		return 0
 	}
-	return 0
+
+	magnitude := uint64(digit)
+	// Rejected here, before multiplying: a magnitude this large would otherwise wrap around
+	// silently in the scaled units instead of being treated like any other malformed value.
+	if magnitude > math.MaxUint64/multiplier {
+		return 0
+	}
+	return magnitude * multiplier
 }
 
 // BitRateTokbps rounds a bitrate down to whole kbps, for the user plane's MBR/GBR rate fields.

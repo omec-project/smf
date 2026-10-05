@@ -7,6 +7,7 @@ package context
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,7 +74,13 @@ func buildAllocationAndRetentionPriority(qosFlow *models.QosData, sessRule *mode
 // BitRateTokbps -- so this reads util.BitRateToBps directly, the same parser BitRateTokbps itself
 // is built on.
 func sessionAmbrToBps(ambr string) int64 {
-	return int64(util.BitRateToBps(ambr))
+	bps := util.BitRateToBps(ambr)
+	// Rejected here, before the int64 cast: NGAP's BitRate is signed, so a magnitude between
+	// int64's and uint64's range would otherwise wrap around to a negative rate.
+	if bps > math.MaxInt64 {
+		return 0
+	}
+	return int64(bps)
 }
 
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {

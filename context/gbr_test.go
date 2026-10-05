@@ -234,6 +234,15 @@ func TestARawBpsRateIsNotRoundedForTheGNB(t *testing.T) {
 	}
 }
 
+// A magnitude between int64's range and uint64's is one BitRateToBps itself accepts -- it does not
+// overflow uint64 -- but NGAP's BitRate is signed, so casting it straight to int64 wrapped it to a
+// negative rate instead of the zero a value the gNB's IE cannot carry should produce.
+func TestANonNegativeBpsTooLargeForInt64IsZeroForTheGNB(t *testing.T) {
+	if got := sessionAmbrToBps("10000000 Tbps"); got != 0 {
+		t.Errorf("sessionAmbrToBps(10000000 Tbps) = %d, want 0: the bps value overflows int64", got)
+	}
+}
+
 // A negative magnitude is malformed input, not a rate going the other way. Rejected before the
 // uint64 cast, it must read as zero rather than wrap around to an enormous unsigned rate.
 func TestANegativeBitRateIsZeroNotAWrappedUnsignedRate(t *testing.T) {
@@ -244,6 +253,34 @@ func TestANegativeBitRateIsZeroNotAWrappedUnsignedRate(t *testing.T) {
 		if got := util.BitRateTokbps(rate); got != 0 {
 			t.Errorf("BitRateTokbps(%q) = %d, want 0", rate, got)
 		}
+	}
+}
+
+// A magnitude that would overflow uint64 once scaled to the unit's multiplier is malformed input,
+// not an enormous rate. The multiplication used to run unchecked, so a value like "18446745
+// Tbps" wrapped around silently and reached both the user plane and the gNB as a small,
+// seemingly valid rate instead of the zero a value this size cannot represent.
+func TestAnOverflowingBitRateIsZeroNotAWrappedRate(t *testing.T) {
+	for _, rate := range []string{
+		"18446744073709552 kbps", // overflows at the kbps multiplier (1000)
+		"18446744073710 Mbps",    // overflows at the Mbps multiplier (1e6)
+		"18446744074 Gbps",       // overflows at the Gbps multiplier (1e9)
+		"18446745 Tbps",          // overflows at the Tbps multiplier (1e12), the PR's own example
+	} {
+		if got := util.BitRateToBps(rate); got != 0 {
+			t.Errorf("BitRateToBps(%q) = %d, want 0: an overflowing magnitude is not a rate", rate, got)
+		}
+		if got := util.BitRateTokbps(rate); got != 0 {
+			t.Errorf("BitRateTokbps(%q) = %d, want 0", rate, got)
+		}
+	}
+
+	// The largest magnitude that does not overflow at each multiplier must still convert exactly.
+	if got, want := util.BitRateToBps("9223372036854775807 bps"), uint64(9223372036854775807); got != want {
+		t.Errorf("BitRateToBps(max bps) = %d, want %d", got, want)
+	}
+	if got, want := util.BitRateToBps("18446744073 Gbps"), uint64(18446744073)*1000000000; got != want {
+		t.Errorf("BitRateToBps(max Gbps) = %d, want %d", got, want)
 	}
 }
 
