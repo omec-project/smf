@@ -243,6 +243,12 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					id, smContext.PDUSessionID)
 				break
 			}
+			// Nor may a late answer to an earlier Command end a procedure whose own Command has not
+			// gone out: the UE has nothing of this one to answer yet.
+			if smContext.NwModificationPending && smContext.NwModificationUnsent {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, a Modification Complete arrived before this modification's Command was sent; it answers an earlier one, ignoring it")
+				break
+			}
 			// The modification is complete only now. Committing on the UE's acknowledgement rather
 			// than when the command was sent is what keeps the SMF's record of the session in step
 			// with what the UE is actually running, so the next modification computes its delta
@@ -267,6 +273,10 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			if id := int32(m.PDUSessionModificationCommandReject.GetPDUSessionID()); id != smContext.PDUSessionID {
 				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Command Reject carries PDU session ID %d, not this session's %d; ignoring it",
 					id, smContext.PDUSessionID)
+				break
+			}
+			if smContext.NwModificationPending && smContext.NwModificationUnsent {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, a Modification Command Reject arrived before this modification's Command was sent; it answers an earlier one, ignoring it")
 				break
 			}
 			cause := m.PDUSessionModificationCommandReject.GetCauseValue()

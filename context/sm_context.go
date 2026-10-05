@@ -162,6 +162,12 @@ type SMContext struct {
 	NwModificationQuietFor   time.Duration `json:"-" yaml:"-" bson:"-"`
 	NwModificationQuietUntil time.Time     `json:"-" yaml:"-" bson:"-"`
 
+	// NwModificationUnsent is true from the moment a network-requested modification starts until its
+	// Command has been handed to the AMF. An answer arriving while it is set cannot be this
+	// procedure's -- the UE has nothing of it to answer -- so it is a late answer to an earlier
+	// Command, and is ignored. Read and written under SMLock; not persisted.
+	NwModificationUnsent bool `json:"-" yaml:"-" bson:"-"`
+
 	T3591 *Timer `json:"-" yaml:"-" bson:"-"`
 
 	T3591Source      NasTimerSource          `json:"t3591Source,omitempty" yaml:"t3591Source" bson:"t3591Source,omitempty"`

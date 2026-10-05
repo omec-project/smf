@@ -50,7 +50,7 @@ func newDeferralSession(t *testing.T) *deferralSession {
 		s.pfcp <- struct{}{}
 		return nil
 	}
-	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+	sendQosN1N2TransferMsg = commandHandedToTheAMF
 
 	sm := smf_context.NewSMContext("imsi-208930100007601", deferralPduSessionID)
 	t.Cleanup(func() {
@@ -342,6 +342,9 @@ func TestAnEarlyAcknowledgementLeavesTheNextProcedureItsTimer(t *testing.T) {
 	var second *smf_context.Timer
 	var calls atomic.Int32
 	sendQosN1N2TransferMsg = func(sm *smf_context.SMContext) error {
+		if err := commandHandedToTheAMF(sm); err != nil {
+			return err
+		}
 		if calls.Add(1) != 1 {
 			return nil // the held decision's own transfer
 		}
@@ -542,6 +545,64 @@ func TestAnAnswerForAnotherSessionLeavesThisOneAlone(t *testing.T) {
 			if len(s.sm.SmPolicyUpdates) != 1 || s.sm.SmPolicyUpdates[0] != pending {
 				t.Error("another session's answer committed or discarded this session's pending update")
 			}
+		})
+	}
+}
+
+// commandHandedToTheAMF stands in for the Command's transfer in tests: it records the Command as
+// handed to the AMF, as the transfer does, and sends nothing.
+func commandHandedToTheAMF(sm *smf_context.SMContext) error {
+	sm.SMLock.Lock()
+	defer sm.SMLock.Unlock()
+	sm.NwModificationUnsent = false
+
+	return nil
+}
+
+// A late answer to an earlier Command that arrives while the next modification is being started --
+// its user plane programmed, its Command not yet handed to the AMF -- is ignored. The UE has
+// nothing of the new modification to answer, and taken as its answer the Complete would commit an
+// update the UE was never sent.
+func TestAnAnswerBeforeTheCommandIsSentIsIgnored(t *testing.T) {
+	for name, late := range map[string]uint8{
+		"Complete":       nas.MsgTypePDUSessionModificationComplete,
+		"Command Reject": nas.MsgTypePDUSessionModificationCommandReject,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newDeferralSession(t)
+			s.startAndHold(t)
+
+			release := make(chan struct{})
+			transferring := make(chan struct{}, 1)
+			sendQosN1N2TransferMsg = func(sm *smf_context.SMContext) error {
+				transferring <- struct{}{}
+				<-release
+				return commandHandedToTheAMF(sm)
+			}
+
+			s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+			s.waitForSend(t, "the held decision")
+			select {
+			case <-transferring:
+			case <-time.After(queuedWorkTimeout):
+				t.Fatal("the held decision never reached its transfer")
+			}
+
+			s.sm.SMLock.Lock()
+			pending := s.sm.SmPolicyUpdates[0]
+			s.sm.SMLock.Unlock()
+
+			// The first Command's answer, again.
+			s.answer(t, late)
+
+			s.sm.SMLock.Lock()
+			stillPending := s.sm.NwModificationPending && len(s.sm.SmPolicyUpdates) == 1 && s.sm.SmPolicyUpdates[0] == pending
+			s.sm.SMLock.Unlock()
+			close(release)
+			if !stillPending {
+				t.Fatal("an answer that arrived before the Command was sent ended the procedure and committed its update")
+			}
+			s.waitUntilArmed(t, 2)
 		})
 	}
 }
