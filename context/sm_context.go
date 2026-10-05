@@ -1272,6 +1272,11 @@ func (smContext *SMContext) StopT3591() {
 	if smContext.T3591 == nil {
 		return
 	}
-	smContext.T3591.Stop()
+	// Cancel, not Stop: the caller holds SMLock, which both T3591 callbacks take, and T3591's own
+	// abandonment calls this from inside its cancellation callback. Stop would wait on that callback
+	// -- on itself, in the second case -- until its timeout. The callbacks instead check, under
+	// SMLock, that their timer is still the session's T3591, and dropping the handle below is what
+	// makes a late one find it is not.
+	smContext.T3591.Cancel()
 	smContext.T3591 = nil
 }
