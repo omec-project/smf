@@ -540,8 +540,11 @@ func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurren
 		smContext.NwModificationUnsent = false
 	}
 	// More than one send means the Command may have been delivered twice, and the UE answers every
-	// copy: the procedure's end then waits out a T3591 interval, as after a retransmission.
-	if sends > 1 {
+	// copy: the procedure's end then waits out a T3591 interval, as after a retransmission. So does a
+	// failed send that was attempted: a transfer whose answer was lost may still have reached the
+	// UE, and its answer can then arrive after the next modification has started. A failure that
+	// proves nothing was delivered is not told apart; waiting needlessly only delays the next one.
+	if sends > 1 || (err != nil && sends > 0) {
 		recordDuplicateCommandLocked(smContext)
 	}
 	smContext.SMLock.Unlock()

@@ -152,3 +152,49 @@ func commandBuildingSession() *smf_context.SMContext {
 
 	return smContext
 }
+
+// A transfer that was attempted and failed may still have reached the UE -- its answer lost, and no
+// other AMF to try -- so its procedure's end waits out a T3591 interval too.
+func TestAFailedTransferThatWasAttemptedIsTreatedAsRetransmitted(t *testing.T) {
+	original := sendModificationTransfer
+	t.Cleanup(func() { sendModificationTransfer = original })
+	sendModificationTransfer = func(context.Context, *smf_context.SMContext, *models.N1N2MessageTransferRequest) (*models.N1N2MessageTransferRspData, int, error) {
+		return nil, 1, errors.New("no HTTP answer, and no other AMF to try")
+	}
+
+	smContext := commandBuildingSession()
+	smContext.T3591Value = 16 * time.Second
+
+	if err := buildAndSendQosN1N2TransferMsg(smContext, nil); err == nil {
+		t.Fatal("a failed transfer was reported as sent")
+	}
+
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	if smContext.NwModificationQuietFor != smContext.T3591Value {
+		t.Errorf("quiet interval = %s, want %s: the Command may have reached the UE", smContext.NwModificationQuietFor, smContext.T3591Value)
+	}
+}
+
+// A transfer that failed before anything was sent -- no AMF found, or no client to send with --
+// cannot have reached the UE, so it leaves no quiet interval behind.
+func TestATransferThatWasNeverSentLeavesNoQuietInterval(t *testing.T) {
+	original := sendModificationTransfer
+	t.Cleanup(func() { sendModificationTransfer = original })
+	sendModificationTransfer = func(context.Context, *smf_context.SMContext, *models.N1N2MessageTransferRequest) (*models.N1N2MessageTransferRspData, int, error) {
+		return nil, 0, errors.New("no AMF to send to")
+	}
+
+	smContext := commandBuildingSession()
+	smContext.T3591Value = 16 * time.Second
+
+	if err := buildAndSendQosN1N2TransferMsg(smContext, nil); err == nil {
+		t.Fatal("a failed transfer was reported as sent")
+	}
+
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+	if smContext.NwModificationQuietFor != 0 {
+		t.Errorf("quiet interval = %s, want none: nothing was sent", smContext.NwModificationQuietFor)
+	}
+}
