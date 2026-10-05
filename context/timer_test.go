@@ -139,3 +139,33 @@ func TestTimerStopTimesOutRatherThanDeadlockingOnACallbackLock(t *testing.T) {
 		t.Fatal("Stop did not return within its timeout while a callback was blocked on a caller-held lock")
 	}
 }
+
+// T3591's abandonment stops the session's T3591 from inside the timer's own cancellation callback,
+// holding SMLock, and an acknowledgement stops it holding SMLock while a callback may be waiting for
+// that lock. Both have to return at once. Stop waits for the timer's goroutine -- the goroutine the
+// first case runs on, and one the second blocks -- until its timeout, so StopT3591 cancels without
+// waiting.
+func TestStopT3591FromItsOwnCallbackDoesNotWait(t *testing.T) {
+	sm := &SMContext{}
+	returned := make(chan time.Duration, 1)
+
+	sm.SMLock.Lock()
+	sm.NwModificationPending = true
+	sm.T3591 = NewTimer(10*time.Millisecond, 0, func(int32) {}, func() {
+		sm.SMLock.Lock()
+		defer sm.SMLock.Unlock()
+		start := time.Now()
+		sm.StopT3591()
+		returned <- time.Since(start)
+	})
+	sm.SMLock.Unlock()
+
+	select {
+	case took := <-returned:
+		if took > time.Second {
+			t.Errorf("StopT3591 from the timer's own callback took %s; it waited on itself", took)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the timer never expired")
+	}
+}
