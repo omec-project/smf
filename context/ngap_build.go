@@ -7,16 +7,17 @@ package context
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/omec-project/ngap/v2/aper"
-	"github.com/omec-project/ngap/v2/ngapConvert"
 	"github.com/omec-project/ngap/v2/ngapType"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/util"
 )
 
 const DefaultNonGBR5QI = 9
@@ -67,17 +68,19 @@ func buildAllocationAndRetentionPriority(qosFlow *models.QosData, sessRule *mode
 	}
 }
 
-// sessionAmbrToBps converts a session AMBR for the gNB. ngapConvert.UEAmbrToInt64 reads the unit
-// from the second token without looking, so a rate with no unit -- "10", which a policy can carry
-// -- indexed past the end and took the SMF down while the transfer was being built: the same
-// defect the user plane's converter had, on the other path the same string travels. Anything else
-// goes through unchanged, so the gNB is told exactly what it was told before.
+// sessionAmbrToBps converts a session AMBR for the gNB. NGAP carries the AMBR in bps and has no
+// need of the whole-kbps rounding util.BitRateTokbps applies for the user plane's benefit -- that
+// rounding reached the gNB as 1000 for "1500 bps" and 0 for "500 bps" when this went through
+// BitRateTokbps -- so this reads util.BitRateToBps directly, the same parser BitRateTokbps itself
+// is built on.
 func sessionAmbrToBps(ambr string) int64 {
-	if len(strings.Split(ambr, " ")) < 2 {
+	bps := util.BitRateToBps(ambr)
+	// Rejected here, before the int64 cast: NGAP's BitRate is signed, so a magnitude between
+	// int64's and uint64's range would otherwise wrap around to a negative rate.
+	if bps > math.MaxInt64 {
 		return 0
 	}
-
-	return ngapConvert.UEAmbrToInt64(ambr)
+	return int64(bps)
 }
 
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {

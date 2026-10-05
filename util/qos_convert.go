@@ -5,52 +5,75 @@
 package util
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
 
-const bpsUnit = "bps"
+const (
+	bpsUnit  = "bps"
+	kbpsUnit = "kbps"
+	mbpsUnit = "mbps"
+	gbpsUnit = "gbps"
+	tbpsUnit = "tbps"
+)
 
-func BitRateTokbps(bitrate string) uint64 {
-	// Split on a single space and read the first two tokens, deliberately: that is how the radio's
-	// side of the same rate is parsed. The session AMBR reaches this function raw and reaches
-	// ngapConvert.UEAmbrToInt64 raw as well, for the PDU session AMBR the gNB is sent, and that
-	// parser splits the same way and reads the same two tokens. Parsing differently here -- being
-	// stricter about what follows the unit, or more tolerant of how the two are spaced -- makes the
-	// user plane enforce one rate while the gNB is told another, for exactly the spellings where
-	// the two parsers part. Making both stricter, or both tolerant, belongs where the rate first
-	// arrives, so that every consumer reads the same canonical string.
+// BitRateToBps is the single place a bitrate string is parsed into a number: every unit-aware
+// consumer of these strings -- the user plane's kbps rates below and the gNB's raw bps AMBR in
+// context.sessionAmbrToBps -- is built on this, so there is exactly one reading of what "10 Mbps"
+// means rather than two parsers that can drift apart on how they split or round.
+//
+// Split on a single space and read the first two tokens, deliberately: that is how the radio's
+// side of the same rate is parsed (ngapConvert.UEAmbrToInt64). Without a unit there is nothing to
+// scale by, and the unit is read from s[1] a few lines down -- so a value like "10", which a
+// policy can carry and NormalizeBitRate passes through unchanged when it recognises no unit,
+// indexed past the end and took the process with it.
+func BitRateToBps(bitrate string) uint64 {
 	s := strings.Split(bitrate, " ")
-	var kbps uint64
-
-	var digit int
-
-	// Without a unit there is nothing to scale by, and the unit is read from s[1] a few lines down
-	// -- so a value like "10", which a policy can carry and NormalizeBitRate passes through
-	// unchanged when it recognises no unit, indexed past the end and took the process with it.
 	if len(s) < 2 {
 		return 0
 	}
 
-	if n, err := strconv.Atoi(s[0]); err != nil {
+	// Rejected here, before the uint64 cast below: a negative magnitude would otherwise wrap
+	// around to an enormous unsigned rate instead of the zero a malformed value should produce.
+	digit, err := strconv.Atoi(s[0])
+	if err != nil || digit < 0 {
 		return 0
-	} else {
-		digit = n
 	}
 
-	switch s[1] {
+	// Matched case-insensitively: a policy's "10 mbps" is as valid as "10 Mbps", and the caller
+	// reaching this directly (sessionAmbrToBps, the raw-string MBR reads in CreatePccRuleQer and
+	// CreateSessRuleQer) has no other chance to canonicalize the casing before it is read.
+	var multiplier uint64
+	switch strings.ToLower(s[1]) {
 	case bpsUnit:
-		kbps = uint64(digit / 1000)
-	case "Kbps":
-		kbps = uint64(digit * 1)
-	case "Mbps":
-		kbps = uint64(digit * 1000)
-	case "Gbps":
-		kbps = uint64(digit * 1000000)
-	case "Tbps":
-		kbps = uint64(digit * 1000000000)
+		multiplier = 1
+	case kbpsUnit:
+		multiplier = 1000
+	case mbpsUnit:
+		multiplier = 1000000
+	case gbpsUnit:
+		multiplier = 1000000000
+	case tbpsUnit:
+		multiplier = 1000000000000
+	default:
+		return 0
 	}
-	return kbps
+
+	magnitude := uint64(digit)
+	// Rejected here, before multiplying: a magnitude this large would otherwise wrap around
+	// silently in the scaled units instead of being treated like any other malformed value.
+	if magnitude > math.MaxUint64/multiplier {
+		return 0
+	}
+	return magnitude * multiplier
+}
+
+// BitRateTokbps rounds a bitrate down to whole kbps, for the user plane's MBR/GBR rate fields.
+// The rounding is for the user plane's benefit alone: it is why NGAP's AMBR reads BitRateToBps
+// directly instead of going through this.
+func BitRateTokbps(bitrate string) uint64 {
+	return BitRateToBps(bitrate) / 1000
 }
 
 func NormalizeBitRate(br string) string {
@@ -68,7 +91,7 @@ func NormalizeBitRate(br string) string {
 		// Handle concatenated forms like "100Mbps" / "100mbps"
 		s := fields[0]
 		lower := strings.ToLower(s)
-		for _, u := range []string{"tbps", "gbps", "mbps", "kbps", "bps"} {
+		for _, u := range []string{tbpsUnit, gbpsUnit, mbpsUnit, kbpsUnit, bpsUnit} {
 			if strings.HasSuffix(lower, u) {
 				numeric = s[:len(s)-len(u)]
 				unit = u
@@ -88,15 +111,15 @@ func NormalizeBitRate(br string) string {
 
 	// Canonicalize unit casing to match BitRateTokbps
 	switch strings.ToLower(strings.TrimSpace(unit)) {
-	case "bps":
+	case bpsUnit:
 		unit = bpsUnit
-	case "kbps":
+	case kbpsUnit:
 		unit = "Kbps"
-	case "mbps":
+	case mbpsUnit:
 		unit = "Mbps"
-	case "gbps":
+	case gbpsUnit:
 		unit = "Gbps"
-	case "tbps":
+	case tbpsUnit:
 		unit = "Tbps"
 	default:
 		unit = strings.TrimSpace(unit)
