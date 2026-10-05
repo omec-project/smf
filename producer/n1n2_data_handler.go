@@ -1076,6 +1076,12 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		return nil
 	}
 
+	// The radio's answer ends the modification when the UE has already completed it, and a policy
+	// decision held behind the modification then starts. It is queued as a session task, so it waits
+	// for any revert owed, and a correction this answer calls for goes first, since it marks the
+	// session pending.
+	defer startDeferredModificationLocked(smContext)
+
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {
 		smContext.SubPduSessLog.Errorf("reading the modify response failed: %v", err)
@@ -1137,6 +1143,9 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 		smContext.SubPduSessLog.Warnln("a modify failure arrived for a modification this session is not waiting on; ignoring it")
 		return nil
 	}
+
+	// As in handleModifyResponse: the answer can end the modification, and a held decision starts.
+	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
 	if err != nil {
