@@ -89,10 +89,18 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 	// The PCF is answered "204 No Content": TS 29.512 subclause 4.2.3.2 NOTE has an SMF with a
 	// colliding procedure in progress delay the update, answer 204, and process it when the
 	// procedure is finished.
-	if smContext.NwModificationPending || time.Now().Before(smContext.NwModificationQuietUntil) {
+	//
+	// And it is held behind decisions already held, even with nothing in progress: the oldest of them
+	// is started as a session task, and this notification can be ahead of that task in the session's
+	// queue. Applied now, it would be overtaken, and then overwritten, by the older decision.
+	if smContext.NwModificationPending || time.Now().Before(smContext.NwModificationQuietUntil) ||
+		len(smContext.DeferredPolicyDecisions) > 0 {
 		smContext.DeferredPolicyDecisions = append(smContext.DeferredPolicyDecisions, request.SmPolicyDecision)
-		smContext.SubPduSessLog.Infof("a modification is already waiting for the UE; holding this policy decision until it ends (%d held)",
+		smContext.SubPduSessLog.Infof("a modification is in progress or decisions are already held; holding this policy decision behind them (%d held)",
 			len(smContext.DeferredPolicyDecisions))
+		// Nothing may be in progress to start the oldest when it ends. Starting it here is harmless if
+		// it is already on its way: the later of the two finds a modification pending and stops.
+		startDeferredModificationLocked(smContext)
 		smContext.SMLock.Unlock()
 
 		txn.Rsp = &httpwrapper.Response{

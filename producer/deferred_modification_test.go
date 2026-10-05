@@ -333,12 +333,6 @@ func TestAHeldDecisionWaitsForTheRevertBeforeIt(t *testing.T) {
 func TestAnEarlyAcknowledgementLeavesTheNextProcedureItsTimer(t *testing.T) {
 	s := newDeferralSession(t)
 
-	// Hold a decision behind the first modification before it is even started: the first
-	// notification's transfer delivers the UE's answer, and the second decision arrives first.
-	s.sm.SMLock.Lock()
-	s.sm.DeferredPolicyDecisions = append(s.sm.DeferredPolicyDecisions, &models.SmPolicyDecision{})
-	s.sm.SMLock.Unlock()
-
 	var second *smf_context.Timer
 	var calls atomic.Int32
 	sendQosN1N2TransferMsg = func(sm *smf_context.SMContext) error {
@@ -349,7 +343,9 @@ func TestAnEarlyAcknowledgementLeavesTheNextProcedureItsTimer(t *testing.T) {
 			return nil // the held decision's own transfer
 		}
 
-		// The UE answers while this transfer is still in flight, and the held decision starts.
+		// A second decision arrives and is held, then the UE answers while this transfer is still in
+		// flight, and the held decision starts.
+		s.notify(t)
 		s.answer(t, nas.MsgTypePDUSessionModificationComplete)
 		s.waitForSend(t, "the held decision, after the early acknowledgement")
 
@@ -604,5 +600,40 @@ func TestAnAnswerBeforeTheCommandIsSentIsIgnored(t *testing.T) {
 			}
 			s.waitUntilArmed(t, 2)
 		})
+	}
+}
+
+// A decision arriving while an older one is held is held behind it, even with nothing in progress.
+// The older one is started as a session task, and a notification already in the session's queue
+// runs before that task: applied at once, it would be overtaken, and then overwritten, by the older
+// decision.
+func TestANewerDecisionDoesNotOvertakeAHeldOne(t *testing.T) {
+	s := newDeferralSession(t)
+	s.startAndHold(t)
+
+	original := queueSessionTask
+	t.Cleanup(func() { queueSessionTask = original })
+	queued := make(chan func(), 4)
+	queueSessionTask = func(_ *smf_context.SMContext, task func()) { queued <- task }
+
+	// The first modification ends; the held decision's task is queued but has not run.
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+
+	// A newer decision reaches the session first.
+	s.notify(t)
+	s.expectNoSend(t, "a newer decision, while an older one is held")
+	if s.lastStatus != http.StatusNoContent {
+		t.Errorf("the PCF was answered %d for a decision held behind an older one, want 204", s.lastStatus)
+	}
+
+	// The older decision runs first.
+	(<-queued)()
+	s.waitForSend(t, "the older held decision")
+	s.waitUntilArmed(t, 2)
+
+	s.sm.SMLock.Lock()
+	defer s.sm.SMLock.Unlock()
+	if got := len(s.sm.DeferredPolicyDecisions); got != 1 {
+		t.Errorf("held decisions = %d after the older one started, want the newer one still held", got)
 	}
 }
