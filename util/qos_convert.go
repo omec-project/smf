@@ -11,46 +11,50 @@ import (
 
 const bpsUnit = "bps"
 
-func BitRateTokbps(bitrate string) uint64 {
-	// Split on a single space and read the first two tokens, deliberately: that is how the radio's
-	// side of the same rate is parsed. The session AMBR reaches this function raw and reaches
-	// ngapConvert.UEAmbrToInt64 raw as well, for the PDU session AMBR the gNB is sent, and that
-	// parser splits the same way and reads the same two tokens. Parsing differently here -- being
-	// stricter about what follows the unit, or more tolerant of how the two are spaced -- makes the
-	// user plane enforce one rate while the gNB is told another, for exactly the spellings where
-	// the two parsers part. Making both stricter, or both tolerant, belongs where the rate first
-	// arrives, so that every consumer reads the same canonical string.
+// BitRateToBps is the single place a bitrate string is parsed into a number: every unit-aware
+// consumer of these strings -- the user plane's kbps rates below and the gNB's raw bps AMBR in
+// context.sessionAmbrToBps -- is built on this, so there is exactly one reading of what "10 Mbps"
+// means rather than two parsers that can drift apart on how they split or round.
+//
+// Split on a single space and read the first two tokens, deliberately: that is how the radio's
+// side of the same rate is parsed (ngapConvert.UEAmbrToInt64). Without a unit there is nothing to
+// scale by, and the unit is read from s[1] a few lines down -- so a value like "10", which a
+// policy can carry and NormalizeBitRate passes through unchanged when it recognises no unit,
+// indexed past the end and took the process with it.
+func BitRateToBps(bitrate string) uint64 {
 	s := strings.Split(bitrate, " ")
-	var kbps uint64
-
-	var digit int
-
-	// Without a unit there is nothing to scale by, and the unit is read from s[1] a few lines down
-	// -- so a value like "10", which a policy can carry and NormalizeBitRate passes through
-	// unchanged when it recognises no unit, indexed past the end and took the process with it.
 	if len(s) < 2 {
 		return 0
 	}
 
-	if n, err := strconv.Atoi(s[0]); err != nil {
+	digit, err := strconv.Atoi(s[0])
+	if err != nil {
 		return 0
-	} else {
-		digit = n
 	}
 
-	switch s[1] {
+	// Matched case-insensitively: a policy's "10 mbps" is as valid as "10 Mbps", and the caller
+	// reaching this directly (sessionAmbrToBps, the raw-string MBR reads in CreatePccRuleQer and
+	// CreateSessRuleQer) has no other chance to canonicalize the casing before it is read.
+	switch strings.ToLower(s[1]) {
 	case bpsUnit:
-		kbps = uint64(digit / 1000)
-	case "Kbps":
-		kbps = uint64(digit * 1)
-	case "Mbps":
-		kbps = uint64(digit * 1000)
-	case "Gbps":
-		kbps = uint64(digit * 1000000)
-	case "Tbps":
-		kbps = uint64(digit * 1000000000)
+		return uint64(digit)
+	case "kbps":
+		return uint64(digit) * 1000
+	case "mbps":
+		return uint64(digit) * 1000000
+	case "gbps":
+		return uint64(digit) * 1000000000
+	case "tbps":
+		return uint64(digit) * 1000000000000
 	}
-	return kbps
+	return 0
+}
+
+// BitRateTokbps rounds a bitrate down to whole kbps, for the user plane's MBR/GBR rate fields.
+// The rounding is for the user plane's benefit alone: it is why NGAP's AMBR reads BitRateToBps
+// directly instead of going through this.
+func BitRateTokbps(bitrate string) uint64 {
+	return BitRateToBps(bitrate) / 1000
 }
 
 func NormalizeBitRate(br string) string {

@@ -196,15 +196,40 @@ func TestARateWithNoUnitDoesNotEndTheProcess(t *testing.T) {
 // spellings; this pins the two together.
 //
 // Two spellings still differ, and differed before: "100  Mbps" and "100 mbps", where the gNB's
-// parser takes an empty or unrecognised unit to be bits per second and this one reads no rate.
-// Settling those means both parsers reading one canonical string, which belongs where the rate
-// first arrives.
+// parser takes an empty or unrecognised unit to be bits per second and this one reads no rate. A
+// raw "bps" rate differs too, deliberately: see TestARawBpsRateIsNotRoundedForTheGNB. Settling the
+// first two means both parsers reading one canonical string, which belongs where the rate first
+// arrives.
 func TestTheUserPlaneIsToldTheRateTheRadioIsTold(t *testing.T) {
 	for _, rate := range []string{
 		"100 Mbps", "100 Mbps ", "100 Mbps junk", "100Mbps", " 100 Mbps", "100\tMbps", "2 Gbps", "10", "",
 	} {
 		if upf, gnb := int64(util.BitRateTokbps(rate))*1000, sessionAmbrToBps(rate); upf != gnb {
 			t.Errorf("%q: the user plane enforces %d bps and the gNB is told %d", rate, upf, gnb)
+		}
+	}
+}
+
+// A raw "bps" rate is where the user plane and the gNB intentionally part. BitRateTokbps rounds
+// to whole kbps for the user plane's benefit, so "1500 bps" and "500 bps" cannot survive it; NGAP
+// carries the AMBR in bps and has no need of that rounding. Before sessionAmbrToBps parsed "bps"
+// directly, "1500 bps" reached the gNB as 1000 and "500 bps" reached it as 0.
+func TestARawBpsRateIsNotRoundedForTheGNB(t *testing.T) {
+	tests := []struct {
+		ambr    string
+		wantGnb int64
+		wantUpf uint64
+	}{
+		{"1500 bps", 1500, 1},
+		{"500 bps", 500, 0},
+		{"0 bps", 0, 0},
+	}
+	for _, tt := range tests {
+		if got := sessionAmbrToBps(tt.ambr); got != tt.wantGnb {
+			t.Errorf("sessionAmbrToBps(%q) = %d, want %d", tt.ambr, got, tt.wantGnb)
+		}
+		if got := util.BitRateTokbps(tt.ambr); got != tt.wantUpf {
+			t.Errorf("BitRateTokbps(%q) = %d, want %d", tt.ambr, got, tt.wantUpf)
 		}
 	}
 }
