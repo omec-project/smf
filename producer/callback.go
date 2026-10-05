@@ -526,6 +526,11 @@ func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurren
 		return errModificationSuperseded
 	}
 	rspData, sends, err := sendModificationTransfer(context.Background(), smContext, n1n2Request)
+	// Handed to the AMF, if anything was sent at all; from here the UE can answer it. Cleared in
+	// the hold that sent it, so the UE's answer, which needs this lock, cannot be judged before.
+	if sends > 0 {
+		smContext.NwModificationUnsent = false
+	}
 	// More than one send means the Command may have been delivered twice, and the UE answers every
 	// copy: the procedure's end then waits out a T3591 interval, as after a retransmission.
 	if sends > 1 {
@@ -628,6 +633,7 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 	smContext.NwModificationGen++
 	gen := smContext.NwModificationGen
 	smContext.NwModificationQuietFor = 0
+	smContext.NwModificationUnsent = true
 	smContext.SmPolicyUpdates = append(smContext.SmPolicyUpdates[:0], update)
 	// From here the network owns this session's modification, and a UE request for the same session
 	// is a collision to be disregarded rather than refused.
