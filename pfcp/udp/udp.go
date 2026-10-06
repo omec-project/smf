@@ -157,10 +157,12 @@ func WaitForServer() error {
 //
 // A synchronous failure here -- marshalling, a missing server, or a duplicate-sequence
 // PutTransaction error -- returns an error and is NOT counted at this layer: the goroutine that
-// would report it is never started. Every caller must report that returned error through
-// message.reportSendFailure (directly or via handlePfcpSendError) so the N4 "Out/Failure" count and
-// DNS refresh still happen; the counting was moved out of this function so the two failure paths
-// (synchronous here, asynchronous in the goroutine) are each reported exactly once.
+// would report it is never started. Every caller must report that returned error through the
+// exported ReportSendFailure (pfcp/message's reportSendFailure and handlePfcpSendError are thin
+// wrappers over it) so the N4 "Out/Failure" count and DNS refresh still happen. Reporting lives in
+// this package, not pfcp/message, precisely so a caller in any package can satisfy this contract
+// without an import cycle. The counting was kept out of this function so the two failure paths
+// (synchronous at the caller, asynchronous in the goroutine) are each reported exactly once.
 func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) error {
 	server := GetServer()
 	if server == nil {
@@ -299,6 +301,52 @@ func PutTransaction(tx *Transaction) error {
 	return nil
 }
 
+// The bounded vocabulary for the N4 "Out/Failure" metric's reason label. Kept as named constants so
+// the set stays small and explicit -- a Prometheus label with unbounded values (an error string
+// carrying a sequence number or peer address) would spawn a time series per attempt.
+const (
+	ReasonTimeout    = "Timeout"
+	ReasonWriteError = "WriteError"
+	ReasonSendError  = "SendError"
+)
+
+// OutFailureReason maps a send failure to a bounded reason label for the N4 "Out/Failure" metric.
+// The raw error must never be used as the label: a request timeout carries the sequence number (see
+// ErrRequestTimeout) and a socket write error the peer address, so err.Error() would create a new
+// n4_messages_total time series per attempt (unbounded Prometheus cardinality). The returned set is
+// fixed to the Reason* constants (and "" for no error) while the full error stays in the logs for
+// diagnosis.
+func OutFailureReason(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrRequestTimeout):
+		return ReasonTimeout
+	case errors.Is(err, ErrWriteFailed):
+		return ReasonWriteError
+	default:
+		return ReasonSendError
+	}
+}
+
+// ReportSendFailure records a PFCP send failure that concerns no particular session: it logs the
+// failure, counts exactly one bounded N4 "Out/Failure" (OutFailureReason, never err.Error()), and
+// refreshes the SMF DNS cache so the next resolve can pick up a user plane that has moved.
+//
+// It lives in this layer, not pfcp/message, so the exported SendPfcp's synchronous-failure contract
+// can be honoured by any caller: pfcp/message cannot be imported here (cycle), and reaching for an
+// unexported reporter left callers outside pfcp/message unable to count a synchronous SendPfcp error.
+// The asynchronous fallback below and pfcp/message's own reportSendFailure wrapper both route through
+// this, so a failure is reported through exactly one path.
+func ReportSendFailure(msg message.Message, err error) {
+	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v", msg.MessageTypeName(), err)
+	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID,
+		msg.MessageTypeName(), "Out", "Failure", OutFailureReason(err))
+
+	// Refresh SMF DNS Cache in case of any send failure (includes timeout).
+	context.RefreshDnsHostIpCache()
+}
+
 func startTxLifeCycle(tx *Transaction) {
 	sendErr := tx.Start()
 
@@ -330,8 +378,9 @@ func startTxLifeCycle(tx *Transaction) {
 		return
 	}
 
-	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v", msg.MessageTypeName(), sendErr)
-	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", sendErr.Error())
+	// Native send (nil event data: a heartbeat/association request, or any response) with no handler
+	// to report it -- count it here, exactly once, as the single reporter for this transaction.
+	ReportSendFailure(msg, sendErr)
 }
 
 func removeTransaction(tx *Transaction) error {

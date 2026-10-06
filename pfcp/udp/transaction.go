@@ -6,6 +6,7 @@
 package udp
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -15,6 +16,19 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/wmnsk/go-pfcp/message"
 )
+
+// ErrRequestTimeout is returned by Transaction.Start when a request exhausts its retries without a
+// response. It is wrapped with the sequence number for the logs, but callers must classify it with
+// errors.Is (see OutFailureReason) rather than read the message: the per-attempt sequence number
+// must never reach a Prometheus label, or every timed-out heartbeat/association creates a new
+// n4_messages_total time series (unbounded cardinality).
+var ErrRequestTimeout = errors.New("request timeout")
+
+// ErrWriteFailed wraps the socket error when Transaction.Start fails to write a datagram. Like
+// ErrRequestTimeout it exists so callers classify the failure with errors.Is for a bounded metric
+// label: the underlying net error's message carries the peer address, which must not reach a
+// Prometheus label.
+var ErrWriteFailed = errors.New("pfcp write failed")
 
 type TransactionType uint8
 
@@ -148,7 +162,7 @@ func (transaction *Transaction) Start() error {
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {
 				logger.PfcpLog.Warnf("request transaction [%d]: %s", transaction.SequenceNumber, err)
-				return err
+				return fmt.Errorf("%w: %w", ErrWriteFailed, err)
 			}
 
 			select {
@@ -164,8 +178,10 @@ func (transaction *Transaction) Start() error {
 				continue
 			}
 		}
-		// Num of retries exhausted, send failure back to app
-		return fmt.Errorf("request timeout, seq [%d]", transaction.SequenceNumber)
+		// Num of retries exhausted, send failure back to app. Wrap ErrRequestTimeout so the sequence
+		// number stays in the log but callers classify the failure with errors.Is for a bounded
+		// metric label.
+		return fmt.Errorf("%w, seq [%d]", ErrRequestTimeout, transaction.SequenceNumber)
 	} else if transaction.TxType == SendingResponse {
 		// Todo :Implement SendingResponse type of reliable delivery
 		timer := time.NewTimer(responseTimeout)
@@ -173,7 +189,7 @@ func (transaction *Transaction) Start() error {
 			_, err := transaction.Conn.WriteToUDP(transaction.SendMsg, transaction.DestAddr)
 			if err != nil {
 				logger.PfcpLog.Warnf("response transaction [%d]: sending error", transaction.SequenceNumber)
-				return err
+				return fmt.Errorf("%w: %w", ErrWriteFailed, err)
 			}
 
 			select {

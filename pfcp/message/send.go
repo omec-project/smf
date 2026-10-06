@@ -363,14 +363,18 @@ func SendPfcpSessionEstablishmentRequest(
 				if err != nil {
 					// Returned, not fatal. A reply that stops early is one request's failure, and
 					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
+					// session paths, the deferred answer that would have released this one. Counted
+					// here as the other adapter reply failures are.
+					readErr := fmt.Errorf("reading the adapter's reply: %w", err)
+					reportSendFailure(pfcpMsg, readErr)
+					return readErr
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
 				if err != nil {
 					logger.PfcpLog.Errorf("parse pfcp session establish response failed: %v", err)
+					reportSendFailure(pfcpMsg, err)
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -508,6 +512,10 @@ func sendPfcpSessionModificationRequest(
 			logger.PfcpLog.Debugf("send pfcp session modify response [%v]", rsp)
 
 			if err := handleAdapterModificationResponse(rsp, ctx.PFCPContext[nodeIDtoIP].LocalSEID); err != nil {
+				// The adapter accepted the POST but rejected the status/body/message or could not
+				// dispatch the response, so this N4 exchange failed with no response coming. Counted
+				// here, as the heartbeat/association adapter paths count their reply failures.
+				reportSendFailure(pfcpMsg, err)
 				return err
 			}
 		}
@@ -632,14 +640,18 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 				if err != nil {
 					// Returned, not fatal. A reply that stops early is one request's failure, and
 					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
+					// session paths, the deferred answer that would have released this one. Counted
+					// here as the other adapter reply failures are.
+					readErr := fmt.Errorf("reading the adapter's reply: %w", err)
+					reportSendFailure(pfcpMsg, readErr)
+					return readErr
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
 				if err != nil {
 					logger.PfcpLog.Errorf("parse pfcp session delete response failed: %v", err)
+					reportSendFailure(pfcpMsg, err)
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -831,17 +843,13 @@ func snapshotRuleStates(pdrs []*smf_context.PDR, fars []*smf_context.FAR, qers [
 	}
 }
 
-// reportSendFailure is the part of a send failure that concerns no session: the log, the N4
+// reportSendFailure is the part of a send failure that concerns no session: the log, the bounded N4
 // failure count and the DNS refresh. The adapter paths, which answer their own session, report
-// through this alone.
+// through this alone. It is a thin wrapper over udp.ReportSendFailure, which owns the reporting so
+// that callers of the exported udp.SendPfcp in any package can report a synchronous failure without
+// an import cycle; this keeps the familiar name for pfcp/message's own call sites.
 func reportSendFailure(msg message.Message, pfcpErr error) {
-	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
-		msg.MessageTypeName(), pfcpErr.Error())
-	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
-		msg.MessageTypeName(), "Out", "Failure", pfcpErr.Error())
-
-	// Refresh SMF DNS Cache incase of any send failure(includes timeout)
-	smf_context.RefreshDnsHostIpCache()
+	udp.ReportSendFailure(msg, pfcpErr)
 }
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {
