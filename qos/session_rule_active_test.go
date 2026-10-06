@@ -91,7 +91,7 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 	update := GetSessionRulesUpdate(
 		map[string]models.SessionRule{testRuleID2: {
 			SessRuleId:   testRuleID2,
-			AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "100 Mbps"},
+			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
 		}},
 		polData.SmCtxtSessionRules.SessionRules,
 		polData.SmCtxtSessionRules.ActiveRuleName,

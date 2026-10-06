@@ -481,3 +481,284 @@ func TestSendPfcpMsgToAdapter(t *testing.T) {
 		t.Errorf("HTTP status code mismatch. got = %d, want = %d", rsp.StatusCode, http.StatusOK)
 	}
 }
+
+// unansweredUserPlane stands up the SMF's PFCP socket and a session on a user plane that never
+// answers: requests are sent to the socket itself, which nothing reads, so every one times out.
+// The retry timing is shortened so the timeout arrives in milliseconds rather than nine seconds.
+func unansweredUserPlane(t *testing.T, state context.SMContextState) (context.NodeID, *context.SMContext, uint16) {
+	t.Helper()
+
+	initTestSmfConfig()
+
+	udp.SetRetryTimingForTest(1, 50*time.Millisecond, 50*time.Millisecond)
+	t.Cleanup(func() {
+		udp.SetRetryTimingForTest(udp.NumOfResend,
+			udp.ResendRequestTimeOutPeriod*time.Second, udp.ResendResponseTimeOutPeriod*time.Second)
+	})
+
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("listening: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	setTestServer(t, &udp.PfcpServer{Conn: conn})
+
+	upNodeID := context.NewNodeID("127.0.0.1")
+	upf := &context.UPF{NodeID: *upNodeID}
+
+	smContext := context.NewSMContext(fmt.Sprintf("imsi-20893000009%04d", time.Now().UnixNano()%10000), 5)
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{FirstDPNode: &context.DataPathNode{UPF: upf}})
+
+	pfcpContext := smContext.PFCPContext["127.0.0.1"]
+	if pfcpContext == nil || pfcpContext.LocalSEID == 0 {
+		t.Fatal("no local SEID was allocated for the fixture session")
+	}
+
+	// The user plane's SEID, which these requests carry in their header. Chosen to name no session,
+	// so a lookup by the header finds nothing -- which is what it did in production.
+	pfcpContext.RemoteSEID = 0xdead0000 + pfcpContext.LocalSEID
+
+	smContext.SMContextState = state
+
+	return *upNodeID, smContext, uint16(conn.LocalAddr().(*net.UDPAddr).Port)
+}
+
+// awaitVerdict reports what arrives on the session's channel within the timeout.
+func awaitVerdict(smContext *context.SMContext) (context.PFCPSessionResponseStatus, bool) {
+	select {
+	case verdict := <-smContext.SBIPFCPCommunicationChan:
+		return verdict, true
+	case <-time.After(2 * time.Second):
+		return 0, false
+	}
+}
+
+// A modification the user plane never answers has to answer the exchange waiting for it. The UDP
+// layer reports the timeout with only the message, the message carries the user plane's SEID, and
+// the session was looked up by it -- so the handler found nothing and the modification waited on
+// its channel for good, holding the session's lock in the caller that does.
+func TestAModificationTheUserPlaneNeverAnswersAnswersItsWaiter(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpModify)
+
+	if err := message.SendAwaitedPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	verdict, arrived := awaitVerdict(smContext)
+	if !arrived {
+		t.Fatal("the modification timed out and nothing answered the exchange waiting for it")
+	}
+
+	if verdict != context.SessionUpdateTimeout {
+		t.Errorf("verdict = %v, want SessionUpdateTimeout", verdict)
+	}
+}
+
+// And a deletion likewise: a release the user plane never confirms still ends, as a refused one
+// does, or the session is never released.
+func TestADeletionTheUserPlaneNeverAnswersAnswersItsWaiter(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpRelease)
+
+	if err := message.SendPfcpSessionDeletionRequest(upNodeID, smContext, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	verdict, arrived := awaitVerdict(smContext)
+	if !arrived {
+		t.Fatal("the deletion timed out and nothing answered the release waiting for it")
+	}
+
+	if verdict != context.SessionReleaseSuccess {
+		t.Errorf("verdict = %v, want SessionReleaseSuccess", verdict)
+	}
+}
+
+// Only an exchange that is waiting is answered. Modifications are sent that nobody waits for, and a
+// verdict written for one of those is read by the next unrelated exchange on the session as its
+// own -- which the handler could not do before only because it could not find the session.
+func TestATimeoutNobodyIsWaitingForLeavesNothingBehind(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStateActive)
+
+	if err := message.SendAwaitedPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	if verdict, arrived := awaitVerdict(smContext); arrived {
+		t.Errorf("%v was left on the channel of a session nothing was waiting on", verdict)
+	}
+}
+
+// Nor is a modification its sender does not wait on answered, even while the session waits on
+// another one. Restoration reissues rules to every user plane of a session without waiting, and a
+// policy update can be holding the session in SmStatePfcpModify at the time: taking that state to
+// mean "this request is awaited" handed the policy update the timeout of restoration's request.
+func TestAnUnawaitedModificationDoesNotAnswerAnotherExchange(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpModify)
+
+	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	if verdict, arrived := awaitVerdict(smContext); arrived {
+		t.Errorf("%v from a request nobody awaited was handed to the exchange waiting on the session", verdict)
+	}
+}
+
+// A send that fails before it creates a transaction has nothing left to answer the caller: the
+// timeout that ends SendPfcpSessionModifyReq's wait on SBIPFCPCommunicationChan is raised by that
+// transaction. Reporting the failure is what lets the caller stop waiting; logging it and
+// returning nil left the caller waiting for a response that could not arrive.
+func TestSendPfcpSessionModificationRequestReportsASendThatDidNotHappen(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses before any transaction exists.
+	setTestServer(t, nil)
+
+	if err := message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		nil, nil, nil, nil, nil, nil, nil, 8806); err == nil {
+		t.Error("a modification the UDP layer refused was reported as sent; the caller waits for an answer to it")
+	}
+}
+
+// A modification that never left the SMF has to leave its rules as it found them. The builder
+// marks every rule it is handed as applied while it builds, so a send that then failed left the
+// session believing the user plane held rules it had never received -- a removal recorded as done,
+// an update recorded as applied -- and the next modification, which sends only rules not yet
+// applied, skipped them for good.
+//
+// Removal and update states are used because they build without a full rule behind them, and
+// because they are the cases where the damage is quietest: nothing is missing from the SMF's view.
+func TestAModificationThatNeverWentOutLeavesItsRulesAsTheyWere(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID, LocalSEID: 11, RemoteSEID: 12},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses after the request has been built.
+	setTestServer(t, nil)
+
+	pdr := &context.PDR{PDRID: 1, State: context.RULE_REMOVE}
+	far := &context.FAR{FARID: 1, State: context.RULE_REMOVE}
+	qer := &context.QER{QERID: 1, State: context.RULE_UPDATE}
+
+	err = message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+		[]*context.PDR{pdr}, []*context.FAR{far}, nil, []*context.QER{qer}, nil, nil, nil, 8806)
+	if err == nil {
+		t.Fatal("a modification the socket refused was reported as sent")
+	}
+
+	if pdr.State != context.RULE_REMOVE || far.State != context.RULE_REMOVE || qer.State != context.RULE_UPDATE {
+		t.Errorf("rule states after a request that never went out: PDR %v, FAR %v, QER %v; want them as they were",
+			pdr.State, far.State, qer.State)
+	}
+}
+
+// pendingRequestsFor counts the bookkeeping entries naming this user plane.
+func pendingRequestsFor(nodeID context.NodeID) int {
+	message.PfcpTxnLock.Lock()
+	defer message.PfcpTxnLock.Unlock()
+
+	n := 0
+
+	for _, pending := range message.PfcpTxns {
+		if pending != nil && pending.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// An establishment or deletion that never left the SMF takes back the bookkeeping entry it made
+// for its response. There will be no response, so nothing else removes it, and each failed send
+// -- one per attempt for as long as the PFCP server is down -- added one more. The modification
+// path already did this.
+func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
+	initTestSmfConfig()
+
+	// A user plane no other test names, so the count below is this test's alone.
+	upNodeID := *context.NewNodeID("127.0.0.78")
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			"127.0.0.78": {NodeID: upNodeID, LocalSEID: 21, RemoteSEID: 22},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses after the entry has been made.
+	setTestServer(t, nil)
+
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, nil, nil, nil, nil, 8808); err == nil {
+		t.Fatal("an establishment the socket refused was reported as sent")
+	}
+
+	if n := pendingRequestsFor(upNodeID); n != 0 {
+		t.Errorf("%d pending entries after a failed establishment, want 0", n)
+	}
+
+	if err := message.SendPfcpSessionDeletionRequest(upNodeID, smContext, 8808); err == nil {
+		t.Fatal("a deletion the socket refused was reported as sent")
+	}
+
+	if n := pendingRequestsFor(upNodeID); n != 0 {
+		t.Errorf("%d pending entries after a failed deletion, want 0", n)
+	}
+
+	// Association setup took the entry it made back only on the heartbeat and session paths; a failed
+	// association attempt leaked one entry per try. It must take its own entry back too.
+	if err := message.SendPfcpAssociationSetupRequest(upNodeID, 8808); err == nil {
+		t.Fatal("an association setup the socket refused was reported as sent")
+	}
+
+	if n := pendingRequestsFor(upNodeID); n != 0 {
+		t.Errorf("%d pending entries after a failed association setup, want 0", n)
+	}
+}

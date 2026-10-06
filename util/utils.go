@@ -8,11 +8,89 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
+	"strconv"
 
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/logger"
 )
+
+// NFProfileServices reads profile's NF services from NfServiceList, falling back to the
+// deprecated NfServices slice only when the list is unset.
+func NFProfileServices(profile *models.NFProfile) map[string]models.NFService {
+	if profile.HasNfServiceList() {
+		return profile.GetNfServiceList()
+	}
+	return nfServicesSliceToMap(profile.GetNfServices())
+}
+
+// NFProfileDiscoveryServices is NFProfileServices for a discovered (peer) NF profile.
+func NFProfileDiscoveryServices(profile *models.NFProfileDiscovery) map[string]models.NFService {
+	if profile.HasNfServiceList() {
+		return profile.GetNfServiceList()
+	}
+	return nfServicesSliceToMap(profile.GetNfServices())
+}
+
+// nfServicesSliceToMap keys the deprecated NfServices slice by ServiceInstanceId, falling back
+// to the index when it is empty, matching how NfServiceList itself is keyed. Entries with a
+// ServiceInstanceId are merged first so an index-based fallback key never overwrites them; any
+// remaining collision is resolved by appending a suffix so no entry is silently dropped.
+func nfServicesSliceToMap(services []models.NFService) map[string]models.NFService {
+	if len(services) == 0 {
+		return nil
+	}
+	merged := make(map[string]models.NFService, len(services))
+	var missingID []int
+	for i, svc := range services {
+		if key := svc.GetServiceInstanceId(); key != "" {
+			merged[key] = svc
+		} else {
+			missingID = append(missingID, i)
+		}
+	}
+	for _, i := range missingID {
+		key := strconv.Itoa(i)
+		for {
+			if _, exists := merged[key]; !exists {
+				break
+			}
+			key += "_"
+		}
+		merged[key] = services[i]
+	}
+	return merged
+}
+
+// FindServiceByName returns the service named name from services. When more than one entry
+// shares that name, the one with the lexicographically smallest key is returned so the result
+// does not depend on Go's randomized map iteration order.
+func FindServiceByName(services map[string]models.NFService, name models.ServiceName) (models.NFService, bool) {
+	keys := make([]string, 0, len(services))
+	for key := range services {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if svc := services[key]; svc.GetServiceName() == name {
+			return svc, true
+		}
+	}
+	return models.NFService{}, false
+}
+
+// SetNFProfileServices writes services to both NfServiceList and the deprecated NfServices
+// slice, so profile is understood by peers that still only read the old field.
+// TODO: drop the NfServices write once NfServices is removed from the API.
+func SetNFProfileServices(profile *models.NFProfile, services map[string]models.NFService) {
+	profile.SetNfServiceList(services)
+	slice := make([]models.NFService, 0, len(services))
+	for _, svc := range services {
+		slice = append(slice, svc)
+	}
+	profile.SetNfServices(slice)
+}
 
 // HandleOpenAPIError processes OpenAPI errors and extracts ProblemDetails if available.
 func HandleOpenAPIError(err error) (*models.ProblemDetails, error) {

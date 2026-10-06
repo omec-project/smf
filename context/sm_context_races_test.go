@@ -80,3 +80,73 @@ func TestCreatingSessionsConcurrentlyWithPoolReadsIsRaceFree(t *testing.T) {
 	}
 	t.Logf("pool reads that met a published context: %d", observed.Load())
 }
+
+// releaseTunnel (producer package) rebuilds PendingUPF under SMLock while the PFCP
+// modification/deletion response handlers delete from it without SMLock (they can't take SMLock:
+// the producer side holds it across a blocking channel wait). Without every accessor going
+// through the PendingUPFLock-guarded helper methods, this is a concurrent map read/write, which
+// for Go maps panics the process rather than just tripping the race detector. Run this under
+// -race: without the lock, both the panic and a race report are possible depending on scheduling.
+func TestPendingUPFSurvivesConcurrentRebuildAndResponseHandling(t *testing.T) {
+	smContext := &SMContext{}
+
+	const iterations = 2000
+	var wg sync.WaitGroup
+
+	// Simulates releaseTunnel: reset then repopulate, as the replacement and normal release paths
+	// do under SMLock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.ResetPendingUPF(nil)
+			smContext.AddPendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+		}
+	}()
+
+	// Simulates the unlocked response handlers: delete the responding UPF, then check IsEmpty.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.DeletePendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+		}
+	}()
+
+	wg.Wait()
+}
+
+// MarshalJSON and ToBsonM walk SMContext's exported fields outside of PendingUPFLock. If
+// PendingUPF were still among those fields, a concurrent unlocked response handler mutating it
+// (as the PFCP modification/deletion handlers do) would race the encoder's map iteration, and for
+// Go maps that is a potential process-crashing fatal error, not just a race report. PendingUPF is
+// excluded from JSON/BSON for exactly this reason; this test guards against that exclusion being
+// silently reverted. Run under -race.
+func TestSerializationDoesNotRaceConcurrentPendingUPFMutation(t *testing.T) {
+	smContext := &SMContext{PFCPContext: make(map[string]*PFCPSessionContext)}
+
+	const iterations = 500
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			smContext.AddPendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+			smContext.DeletePendingUPF(fmt.Sprintf("10.0.0.%d", i%255))
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range iterations {
+			_ = ToBsonM(smContext)
+			if _, err := smContext.MarshalJSON(); err != nil {
+				t.Errorf("MarshalJSON failed: %v", err)
+			}
+		}
+	}()
+
+	wg.Wait()
+}

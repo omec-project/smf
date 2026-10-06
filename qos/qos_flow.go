@@ -83,6 +83,26 @@ type QosFlowsUpdate struct {
 	add, mod, del map[string]*models.QosData
 }
 
+// ParseQosFlowId reads an assignable QoS flow identifier, refusing what cannot be one.
+//
+// GetQosFlowIdFromQosId below narrows to uint8 before anyone can check the value, so a policy
+// identifier of 257 arrives as 1 -- a valid identifier belonging to a different flow. Callers
+// that put the result on the wire have to know the difference between "flow 1" and "not a flow
+// identifier at all", so the parse and the range check happen together, at full width.
+func ParseQosFlowId(qosId string) (uint8, error) {
+	id, err := strconv.Atoi(qosId)
+	if err != nil {
+		return 0, fmt.Errorf("QoS id %q is not a number: %w", qosId, err)
+	}
+
+	// TS 23.501 subclause 5.7.1.1: the identifier is six bits and zero is not assigned.
+	if id < 1 || id > 63 {
+		return 0, fmt.Errorf("%d is not an assignable QoS flow identifier", id)
+	}
+
+	return uint8(id), nil
+}
+
 func GetQosFlowIdFromQosId(qosId string) uint8 {
 	id, err := strconv.Atoi(qosId)
 	if err != nil {
@@ -115,20 +135,16 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 			for pccRuleID := range smPolicyUpdates.PccRuleUpdate.del {
 				logger.QosLog.Infof("Processing deletion for PCC rule ID: %s", pccRuleID)
 
-				qfiVal, err := strconv.Atoi(pccRuleID)
+				// Range-checked before narrowing, like every other identifier here. The check
+				// for zero came after the conversion, so 256 was caught and 257 was not: it
+				// arrived as 1 and told the UE to drop whatever flow 1 is on this session.
+				qfi, err := ParseQosFlowId(pccRuleID)
 				if err != nil {
-					logger.QosLog.Errorf("Invalid QFI string for PCC rule ID '%s': %v", pccRuleID, err)
+					logger.QosLog.Errorf("PCC rule %q names no usable flow identifier (%v); the UE is not told to drop it", pccRuleID, err)
 					continue
 				}
-				qfi := uint8(qfiVal)
 
 				logger.QosLog.Infof("Deleting QoS Flow Description for QFI=%d (from PCC rule %s)", qfi, pccRuleID)
-
-				// Skip if QFI is zero
-				if qfi == 0 {
-					logger.QosLog.Warnf("Skipping QoS Flow deletion because QFI=0 for PCC rule ID='%s'", pccRuleID)
-					continue
-				}
 
 				// Build delete QoS Flow Description
 				QFDescriptions.BuildDelQosFlowDescFromQoSDesc(qfi)
@@ -153,8 +169,10 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 			logger.QosLog.Infof("Processing %d QoS flows to add", len(qosFlowUpdate.add))
 			for name, qosFlow := range qosFlowUpdate.add {
 				logger.QosLog.Infof("Adding QoS Flow Description [%v]", name)
-				QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow)
-				hasUpdates = true
+
+				if QFDescriptions.BuildAddQosFlowDescFromQoSDesc(qosFlow) {
+					hasUpdates = true
+				}
 			}
 		}
 
@@ -163,21 +181,33 @@ func BuildAuthorizedQosFlowDescriptions(smPolicyUpdates *PolicyUpdate) *QosFlowD
 			logger.QosLog.Infof("Processing %d QoS flows to modify", len(qosFlowUpdate.mod))
 			for name, qosFlow := range qosFlowUpdate.mod {
 				logger.QosLog.Infof("Modifying QoS Flow Description [%v]", name)
-				QFDescriptions.BuildModQosFlowDescFromQoSDesc(qosFlow)
-				hasUpdates = true
+
+				if QFDescriptions.BuildModQosFlowDescFromQoSDesc(qosFlow) {
+					hasUpdates = true
+				}
 			}
 		}
 
 		// Delete QoS flows
 		if len(qosFlowUpdate.del) > 0 {
 			logger.QosLog.Infof("Processing %d QoS flows to delete", len(qosFlowUpdate.del))
-			for qfiStr := range qosFlowUpdate.del {
-				qfiVal, err := strconv.Atoi(qfiStr)
+			for key, deleted := range qosFlowUpdate.del {
+				// The entry carries the flow's own identifier, resolved from committed data when
+				// the update was built. The key is the fallback, and it is only an identifier for
+				// a decision that keys qosDecs by the QoS data id -- names of this core's shape
+				// ("QosData7" for the flow whose id is 7) do not parse, which is how every
+				// ordinary deletion used to be skipped here while the radio was asked to release
+				// the bearer.
+				identifier := key
+				if deleted != nil && deleted.GetQosId() != "" {
+					identifier = deleted.GetQosId()
+				}
+
+				qfi, err := ParseQosFlowId(identifier)
 				if err != nil {
-					logger.QosLog.Errorf("invalid QFI string: %s, err: %v", qfiStr, err)
+					logger.QosLog.Errorf("deleted QoS data %q carries no usable flow identifier (%v); the UE is not told to drop it", key, err)
 					continue
 				}
-				qfi := uint8(qfiVal)
 
 				logger.QosLog.Infof("Deleting QoS Flow Description [QFI=%v]", qfi)
 				QFDescriptions.BuildDelQosFlowDescFromQoSDesc(qfi)
@@ -244,16 +274,27 @@ func (q *QosFlowsUpdate) GetDeleted() map[string]*models.QosData {
 // for the "create new QoS flow" operation, based on QoS data from PCF.
 // This is used when a new QoS flow is authorized by policy control.
 
-func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *models.QosData) {
+func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *models.QosData) bool {
 	if qosData == nil {
 		logger.QosLog.Warn("skipping nil QoS flow description")
-		return
+		return false
+	}
+
+	// Parsed at full width, as the NGAP half of the same modification does. GetQosFlowIdFromQosId
+	// narrows to uint8 before anything can range-check it, so an identifier of 257 reached the UE
+	// as flow 1 while the radio was told about neither -- the two ends given different
+	// modifications by construction.
+	qfi, err := ParseQosFlowId(qosData.GetQosId())
+	if err != nil {
+		logger.QosLog.Errorf("not telling the UE to create QoS flow %q: %v", qosData.GetQosId(), err)
+
+		return false
 	}
 
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	// Set QFI
-	qfd.SetQoSFlowDescQfi(GetQosFlowIdFromQosId(qosData.QosId))
+	qfd.SetQoSFlowDescQfi(qfi)
 
 	// Operation Code
 	qfd.SetQoSFlowDescOpCode(QFDOpCreate)
@@ -287,21 +328,34 @@ func (d *QosFlowDescriptionsAuthorized) BuildAddQosFlowDescFromQoSDesc(qosData *
 
 	// Add QFD to Authorised QFD IE
 	d.AddQFD(&qfd)
+
+	return true
 }
 
 // BuildModQosFlowDescFromQoSDesc builds a QoS Flow Description (QFD)
 // for the "modify existing QoS flow" operation, based on updated QoS data.
 // Only parameters that are present and need to be modified are added.
-func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *models.QosData) {
+func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *models.QosData) bool {
 	if qosData == nil {
 		logger.QosLog.Warn("skipping nil QoS flow description")
-		return
+		return false
+	}
+
+	// Parsed at full width, as the NGAP half of the same modification does. GetQosFlowIdFromQosId
+	// narrows to uint8 before anything can range-check it, so an identifier of 257 reached the UE
+	// as flow 1 while the radio was told about neither -- the two ends given different
+	// modifications by construction.
+	qfi, err := ParseQosFlowId(qosData.GetQosId())
+	if err != nil {
+		logger.QosLog.Errorf("not telling the UE to modify QoS flow %q: %v", qosData.GetQosId(), err)
+
+		return false
 	}
 
 	qfd := QoSFlowDescription{QFDLen: QFDFixLen}
 
 	// Set QFI
-	qfd.SetQoSFlowDescQfi(GetQosFlowIdFromQosId(qosData.QosId))
+	qfd.SetQoSFlowDescQfi(qfi)
 
 	// Operation Code
 	qfd.SetQoSFlowDescOpCode(QFDOpModify)
@@ -338,6 +392,8 @@ func (d *QosFlowDescriptionsAuthorized) BuildModQosFlowDescFromQoSDesc(qosData *
 
 	// Add QFD to Authorised QFD IE
 	d.AddQFD(&qfd)
+
+	return true
 }
 
 // BuildDelQosFlowDescFromQoSDesc builds a QoS Flow Description (QFD)
@@ -537,7 +593,16 @@ func GetQosFlowDescUpdate(pcfQosData map[string]models.QosData, ctxtQosData map[
 		qosData := pcfQF
 		// if pcfQF is null then rule is deleted
 		if qosData.GetQosId() == "" {
-			update.del[name] = &qosData // nil
+			// A decision expresses a deletion as an entry with nothing in it, so the flow's own
+			// identifier is not in the entry -- it is in the committed data under the same key,
+			// which is in hand here and nowhere else. Carrying it now is what keeps the two
+			// halves of one modification naming the same flow: the NAS descriptions and the NGAP
+			// release list both read this entry, and each was left to guess from the key.
+			if committed := ctxtQosData[name]; committed != nil {
+				qosData.QosId = committed.GetQosId()
+			}
+
+			update.del[name] = &qosData
 			continue
 		}
 

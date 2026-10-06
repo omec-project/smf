@@ -7,7 +7,7 @@ package context
 import (
 	"reflect"
 
-	"github.com/bytedance/sonic"
+	gojson "github.com/goccy/go-json"
 )
 
 type BPManager struct {
@@ -124,7 +124,7 @@ func (bpMGR *BPManager) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	return sonic.Marshal(&SimpleBPManager{
+	return gojson.Marshal(&SimpleBPManager{
 		ULCL:                  bpMGR.ULCL,
 		ActivatingPath:        bpMGR.ActivatingPath,
 		UpdatedBranchingPoint: converted,

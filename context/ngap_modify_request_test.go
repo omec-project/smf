@@ -1,0 +1,412 @@
+// SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
+// SPDX-License-Identifier: Apache-2.0
+
+package context
+
+import (
+	"testing"
+
+	"github.com/omec-project/ngap/v2/aper"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/qos"
+	"go.uber.org/zap"
+)
+
+// modifyingContext is a session with a modification pending that adds two dedicated QoS flows,
+// which is what an application function asking for audio and video produces.
+// Repeated across the context tests; goconst asks for names.
+const (
+	testRuleID1         = "rule-1"
+	testSessionAmbr     = "50 Mbps"
+	testUnparsableQosID = "not-a-number"
+)
+
+func modifyingContext(t *testing.T, added map[string]*models.QosData) *SMContext {
+	t.Helper()
+
+	ctx := &SMContext{
+		Supi:          "imsi-208930100007487",
+		PDUSessionID:  10,
+		SubPduSessLog: zap.NewNop().Sugar(),
+		SubCtxLog:     zap.NewNop().Sugar(),
+	}
+	ctx.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
+		SessRuleId:   testRuleID1,
+		AuthSessAmbr: &models.Ambr{Uplink: testSessionAmbr, Downlink: testSessionAmbr},
+		AuthDefQos:   &models.AuthorizedDefaultQos{Var5qi: openapi.PtrInt32(9)},
+	}
+	// A default flow exists, so the old behaviour had something to fall back on. If the list is
+	// still built from it, the assertions below catch that rather than passing on an empty session.
+	defQos := &models.QosData{QosId: "1", Var5qi: openapi.PtrInt32(9)}
+	defQos.SetDefQosFlowIndication(true)
+	ctx.SmPolicyData.SmCtxtQosData.QosData = map[string]*models.QosData{"1": defQos}
+
+	// Built through the real delta function rather than a test-only constructor, so the test
+	// exercises the same shape production produces.
+	pcfQosData := make(map[string]models.QosData, len(added)+1)
+	pcfQosData["1"] = *defQos
+	for id, qd := range added {
+		pcfQosData[id] = *qd
+	}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{{
+		QosFlowUpdate: qos.GetQosFlowDescUpdate(pcfQosData, ctx.SmPolicyData.SmCtxtQosData.QosData),
+	}}
+	return ctx
+}
+
+func decodeModifyRequest(t *testing.T, encoded []byte) *ngapType.QosFlowAddOrModifyRequestList {
+	t.Helper()
+
+	transfer := ngapType.PDUSessionResourceModifyRequestTransfer{}
+	if err := aper.UnmarshalWithParams(encoded, &transfer, "valueExt"); err != nil {
+		t.Fatalf("the transfer this SMF produced does not decode: %v", err)
+	}
+	for _, ie := range transfer.ProtocolIEs.List {
+		if ie.Id.Value == ngapType.ProtocolIEIDQosFlowAddOrModifyRequestList {
+			return ie.Value.QosFlowAddOrModifyRequestList
+		}
+	}
+	return nil
+}
+
+// The radio must be asked about every flow the modification concerns.
+//
+// The request used to carry exactly one item, taken from the session's default flow indication.
+// So a modification adding dedicated flows asked the radio about none of them: the UE was told
+// about all of them over NAS while the radio was told about one, which is the divergence the
+// realignment procedure exists to repair — manufactured in the request itself. Observed on a
+// cluster as NAS rules for QFI 2 and QFI 3 with the gNB asked about QFI 2 alone.
+func TestModifyRequestCarriesEveryFlowTheModificationConcerns(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		t.Fatal("no QoS flow add-or-modify list in the request")
+	}
+	if len(list.List) != 2 {
+		t.Fatalf("flows in the request = %d, want 2: the radio must be asked about every flow the UE is told about", len(list.List))
+	}
+
+	seen := map[int64]bool{}
+	for _, item := range list.List {
+		seen[item.QosFlowIdentifier.Value] = true
+	}
+	for _, want := range []int64{2, 3} {
+		if !seen[want] {
+			t.Errorf("QFI %d is missing from the request; the UE will believe it exists and the radio will not have built it", want)
+		}
+	}
+	if seen[1] {
+		t.Error("the default flow was included; this modification does not concern it")
+	}
+}
+
+// A modification that names no flows still has to ask about something, and the default flow is
+// the right fallback — that is the one case the old single-item behaviour was correct for.
+func TestModifyRequestFallsBackToTheDefaultFlowWhenNoFlowsAreNamed(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil || len(list.List) != 1 {
+		t.Fatalf("flows in the request = %v, want exactly the default flow", list)
+	}
+	if got := list.List[0].QosFlowIdentifier.Value; got != 1 {
+		t.Errorf("QFI = %d, want the default flow 1", got)
+	}
+}
+
+// A QoS identifier that does not parse must not reach the radio as QFI 0.
+//
+// GetQosFlowIdFromQosId returns 0 for an identifier it cannot read, and TS 23.501 table 5.7.1.1
+// gives the assignable range as 1 to 63, so 0 in the request is malformed. RefusedFlowSet already
+// drops out-of-range identifiers coming the other way; this is the same rule applied outbound.
+func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2":                 {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
+	})
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		t.Fatal("no QoS flow add-or-modify list in the request")
+	}
+	for _, item := range list.List {
+		if item.QosFlowIdentifier.Value < 1 || item.QosFlowIdentifier.Value > 63 {
+			t.Errorf("QFI %d is not assignable and must not be sent", item.QosFlowIdentifier.Value)
+		}
+	}
+	if len(list.List) != 1 || list.List[0].QosFlowIdentifier.Value != 2 {
+		t.Errorf("request carries %d flow(s), want only QFI 2: the readable flow still has to be asked about", len(list.List))
+	}
+}
+
+// If nothing the modification names can be identified, the build fails rather than quietly
+// falling back to the default flow. The fallback is for an update that names no flows at all; using
+// it here would ask the radio about a flow the modification does not concern while saying nothing
+// about the ones it does - the divergence this builder was fixed to stop producing.
+func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
+	})
+
+	if _, err := BuildPDUSessionResourceModifyRequestTransfer(ctx); err == nil {
+		t.Fatal("build succeeded; a modification whose flows cannot be identified must not be sent")
+	}
+}
+
+// An identifier that cannot be a QoS flow identifier must not become one on the way to the radio.
+//
+// GetQosFlowIdFromQosId narrows to uint8 before any range check can run, so a policy naming 257
+// reaches the request as QFI 1 -- an identifier that is very likely to exist on the session and
+// belongs to a different flow. The radio would then be asked to modify that one.
+func TestModifyRequestSkipsAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2":   {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"257": {QosId: "257", Var5qi: openapi.PtrInt32(2)},
+	})
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeModifyRequest(t, encoded)
+	if list == nil {
+		t.Fatal("no QoS flow add-or-modify list in the request")
+	}
+
+	for _, item := range list.List {
+		if item.QosFlowIdentifier.Value == 1 {
+			t.Error("QoS id 257 was sent as QFI 1: the narrowing made it a flow this modification does not concern")
+		}
+	}
+
+	if len(list.List) != 1 || list.List[0].QosFlowIdentifier.Value != 2 {
+		t.Errorf("flows in the request = %v, want only QFI 2", list.List)
+	}
+}
+
+// decodeReleaseList returns the QoS Flow to Release List the transfer carries, or nil.
+func decodeReleaseList(t *testing.T, encoded []byte) *ngapType.QosFlowListWithCause {
+	t.Helper()
+	var transfer ngapType.PDUSessionResourceModifyRequestTransfer
+	if err := aper.UnmarshalWithParams(encoded, &transfer, "valueExt"); err != nil {
+		t.Fatalf("the transfer this SMF produced does not decode: %v", err)
+	}
+	for _, ie := range transfer.ProtocolIEs.List {
+		if ie.Id.Value == ngapType.ProtocolIEIDQosFlowToReleaseList {
+			return ie.Value.QosFlowToReleaseList
+		}
+	}
+	return nil
+}
+
+// A flow an ordinary deletion withdraws has to be named for release, or the radio keeps a bearer
+// for a flow the SMF and the UE have both dropped and the uplink still has somewhere to arrive.
+func TestModifyRequestNamesTheFlowsAnOrdinaryDeletionWithdraws(t *testing.T) {
+	ctx := modifyingContext(t, map[string]*models.QosData{
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+	})
+	// What the PCF sends when it withdraws a rule: flow 3 is established on the session and absent
+	// from the decision, so the delta deletes it. Built through the same delta function production
+	// uses, and it is not the realignment RemoveFlows produces.
+	ctx.SmPolicyData.SmCtxtQosData.QosData["3"] = &models.QosData{QosId: "3", Var5qi: openapi.PtrInt32(2)}
+	// A withdrawn flow arrives as an entry with no QosId, which is how the PCF says "deleted" and
+	// what GetQosFlowDescUpdate reads as a deletion -- the identifier is the key.
+	remaining := map[string]models.QosData{
+		"1": *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"3": {},
+	}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(remaining, ctx.SmPolicyData.SmCtxtQosData.QosData)
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("building the transfer failed: %v", err)
+	}
+
+	released := decodeReleaseList(t, encoded)
+	if released == nil || len(released.List) == 0 {
+		t.Fatal("the transfer names no flow for release, so the radio keeps serving the withdrawn one")
+	}
+	if got := released.List[0].QosFlowIdentifier.Value; got != 3 {
+		t.Errorf("released QFI = %d, want 3", got)
+	}
+	if cause := released.List[0].Cause; cause.Present != ngapType.CausePresentNas ||
+		cause.Nas == nil || cause.Nas.Value != ngapType.CauseNasPresentNormalRelease {
+		t.Errorf("release cause = %+v, want a NAS normal release", cause)
+	}
+}
+
+// The release list is built from the names of deleted QoS data, and those go on the wire as flow
+// identifiers. GetQosFlowIdFromQosId narrows to uint8 before anything can range-check it, so a
+// QoS id of 257 arrives as 1 — and the radio is asked to release whatever flow 1 is on this
+// session, which is very likely one it is carrying.
+func TestModifyRequestDoesNotReleaseAFlowAnIdentifierOnlyNarrowsInto(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	qosDecs := map[string]models.QosData{
+		"257": {},
+		"3":   {},
+	}
+	decision := &models.SmPolicyDecision{QosDecs: &qosDecs}
+	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&ctx.SmPolicyData, decision)}
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	transfer := ngapType.PDUSessionResourceModifyRequestTransfer{}
+	if err := aper.UnmarshalWithParams(encoded, &transfer, "valueExt"); err != nil {
+		t.Fatalf("the transfer this SMF produced does not decode: %v", err)
+	}
+
+	for _, ie := range transfer.ProtocolIEs.List {
+		if ie.Id.Value != ngapType.ProtocolIEIDQosFlowToReleaseList || ie.Value.QosFlowToReleaseList == nil {
+			continue
+		}
+
+		for _, item := range ie.Value.QosFlowToReleaseList.List {
+			if item.QosFlowIdentifier.Value == 1 {
+				t.Error("QoS id 257 was asked to be released as QFI 1: the narrowing made it a flow this session may well be carrying")
+			}
+		}
+	}
+}
+
+// A deletion is named by whatever the decision keys it under, and that key is not the flow
+// identifier: this core's policy writes names like "QosData2" for a flow whose QosId is "2".
+// Reading the key therefore skipped every ordinary deletion and left the bearer up at the radio,
+// which is the opposite of what the release list exists for. The identifier comes from the
+// session's committed description of the flow, which survives the deletion that empties the entry.
+func TestModifyRequestReleasesAFlowNamedByAReferenceRatherThanItsIdentifier(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	const (
+		reference = "QosData7"
+		flowID    = "7"
+	)
+
+	// What the session has in force: the flow, under the name the policy uses for it.
+	ctx.SmPolicyData.SmCtxtQosData.QosData[reference] = &models.QosData{
+		QosId:  flowID,
+		Var5qi: openapi.PtrInt32(9),
+	}
+
+	// And the decision that withdraws it. A deletion is an entry the policy sends empty under the
+	// name the flow is filed under -- not an entry it leaves out -- so the name is all the
+	// decision carries and the identifier has to come from what the session has committed.
+	decision := map[string]models.QosData{
+		"1":       *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+		reference: {},
+	}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(decision, ctx.SmPolicyData.SmCtxtQosData.QosData)
+
+	released := releasedQosFlowItems(ctx)
+	if len(released) != 1 {
+		t.Fatalf("released %d flows, want the one the decision withdrew: a deletion named by reference is skipped and its bearer stays up", len(released))
+	}
+
+	if got := released[0].QosFlowIdentifier.Value; got != 7 {
+		t.Errorf("released flow %d, want 7 -- the identifier of the flow, not the name it is filed under", got)
+	}
+}
+
+// A decision whose PCC rules are empty or unusable takes the release-only path, and that path
+// returns before the release list is built from the policy's deletions. So a decision that also
+// withdrew a dedicated flow had the withdrawal dropped: its bearer stayed up at the radio with no
+// rule behind it, which is the fault the release list exists to fix, reached through the one path
+// that never reached it.
+func TestReleaseOnlyAlsoReleasesTheFlowsTheDecisionWithdraws(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	// A flow this session holds, withdrawn by the decision under the name it was committed under.
+	ctx.SmPolicyData.SmCtxtQosData.QosData["QosData7"] = &models.QosData{QosId: "7"}
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(
+		map[string]models.QosData{"QosData7": {}},
+		ctx.SmPolicyData.SmCtxtQosData.QosData,
+	)
+
+	// And a PCC rule with no identity, which is what puts this decision on the release-only path.
+	decision := &models.SmPolicyDecision{PccRules: map[string]models.PccRule{"": {}}}
+	ctx.SmPolicyUpdates[0].SmPolicyDecision = decision
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeReleaseList(t, encoded)
+	if list == nil {
+		t.Fatal("no release list in the request")
+	}
+
+	seen := map[int64]bool{}
+	for _, item := range list.List {
+		seen[item.QosFlowIdentifier.Value] = true
+	}
+
+	if !seen[7] {
+		t.Errorf("QFI 7 is not released; its bearer stays up at the radio with no rule behind it (released: %v)", seen)
+	}
+
+	if !seen[1] {
+		t.Errorf("the default flow is no longer released on this path (released: %v)", seen)
+	}
+}
+
+// A decision that withdraws PCC rules and carries no QoS-flow update at all reaches the UE through
+// the NAS descriptions, which fall back to the rule ids. The release list has to fall back with
+// them: otherwise the UE is told to drop the flow while the radio keeps the bearer, which is the
+// disagreement this list exists to end, in the one shape that skipped it.
+func TestAPccOnlyDeletionIsAlsoReleasedAtTheRadio(t *testing.T) {
+	ctx := modifyingContext(t, nil)
+
+	// No QoS-flow update at all, and one PCC rule withdrawn under the id of the flow it carried.
+	ctx.SmPolicyUpdates[0].QosFlowUpdate = nil
+	ctx.SmPolicyUpdates[0].PccRuleUpdate = qos.GetPccRulesUpdate(
+		map[string]models.PccRule{"5": {}},
+		map[string]*models.PccRule{"5": {PccRuleId: "5"}},
+	)
+
+	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	list := decodeReleaseList(t, encoded)
+	if list == nil {
+		t.Fatal("no release list in the request; the radio keeps a bearer the UE has been told to drop")
+	}
+
+	seen := map[int64]bool{}
+	for _, item := range list.List {
+		seen[item.QosFlowIdentifier.Value] = true
+	}
+
+	if !seen[5] {
+		t.Errorf("QFI 5 is not released (released: %v)", seen)
+	}
+}

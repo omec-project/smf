@@ -37,6 +37,24 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 
 	smContext.SMLock.Lock()
 
+	// A session being released has no tunnel by the time a notification for it can arrive, and
+	// BuildPfcpParam below reads through it without looking. Refused here, under the lock release
+	// takes to clear it, rather than in the send: the send runs after this lock is dropped, so a
+	// guard there was never reached -- the builder had already dereferenced nil. And a panic here
+	// is worse than a failed request. The unlock below is not deferred, and the recover in the
+	// transaction lifecycle catches the panic without releasing this lock, so every later
+	// operation on the session would wait on it for good.
+	if smContext.Tunnel == nil {
+		smContext.SMLock.Unlock()
+
+		err := fmt.Errorf("SMContext[%s-%02d] has no tunnel: it is being released", smContext.Supi, smContext.PDUSessionID)
+		logger.PduSessLog.Warnf("policy update notification refused: %v", err)
+		txn.Err = err
+		txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
+
+		return err
+	}
+
 	if smContext.SMContextState != smfContext.SmStateActive {
 		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be SmStateActive, but actual %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
@@ -61,6 +79,12 @@ func HandleSMPolicyUpdateNotify(eventData interface{}) error {
 		smContext.SMLock.Lock()
 
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
+
+		// Back to active, whatever the failure. SmStatePfcpModify has no FSM handlers, and this
+		// path does not change the state again, so a session left in it answered every later
+		// event with "unhandled event" and could no longer be modified or released -- whether
+		// the user plane refused the modification or never answered it.
+		abandonPendingModify(smContext, smfContext.SmStateActive)
 
 		logger.PduSessLog.Infof("SMContext[%s-%02d] state after PFCP error: %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
@@ -117,7 +141,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	}
 
 	// Initialize map to track UPFs pending PFCP configuration
-	smContext.PendingUPF = make(smfContext.PendingUPF)
+	smContext.ResetPendingUPF(nil)
 
 	// Determine if we only need to release existing rules (no new policy).
 	// A valid rule is one where both the map key and PccRuleId are non-empty.
@@ -237,7 +261,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				logger.PduSessLog.Errorf("dedicated QER is nil")
 			}
 
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+			smContext.AddPendingUPF(ANUPF.GetNodeIP())
 		}
 
 		// ----------------------
@@ -295,7 +319,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 				logger.PduSessLog.Errorf("ulFAR is nil")
 			}
 
-			smContext.PendingUPF[ANUPF.GetNodeIP()] = true
+			smContext.AddPendingUPF(ANUPF.GetNodeIP())
 			logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", ruleid, ulPDR)
 		}
 	}

@@ -785,3 +785,29 @@ func outstandingIn(batch []*context.SMContext, nodeIP string) int {
 	}
 	return outstanding
 }
+
+// The sweep is scoped to the restart it repairs. A session the restarted incarnation acknowledged
+// -- the UE re-attached while the restart was being detected -- is already on the node, and
+// re-establishing it gives the live session a second SEID there. The session filter lives in
+// context; this pins that the run's own recovery timestamp is what reaches it.
+func TestASweepLeavesAloneASessionTheRestartedNodeAlreadyHolds(t *testing.T) {
+	restoreQuickly(t)
+	nodeIP := "10.30.0.52"
+	nodeID := *context.NewNodeID(nodeIP)
+	associatedUpfAt(t, nodeIP)
+	restart := time.Unix(1_790_000_000, 0)
+
+	recreated := sessionOn(t, "imsi-208930000000082", 1, nodeIP)
+	recreated.SMLock.Lock()
+	recreated.PFCPContext[nodeIP].AcknowledgedAtRecovery = restart
+	recreated.SMLock.Unlock()
+
+	anchored, _, _ := enumerateWithRetry(nodeID, nodeIP, &restorationRun{recovery: restart})
+
+	for _, s := range anchored {
+		if s == recreated {
+			t.Fatalf("the sweep for the restart at %v offered a session that restart's own incarnation "+
+				"acknowledged; restoring it gives the live session a second SEID on the node", restart)
+		}
+	}
+}

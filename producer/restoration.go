@@ -218,7 +218,7 @@ func RestoreSessionsOnUPF(nodeID context.NodeID, recovery time.Time) {
 func enumerateWithRetry(nodeID context.NodeID, nodeIP string, run *restorationRun) (anchoredSessions []*context.SMContext, unexaminableAtTheEnd []string, stillEstablishing int) {
 	deadline := time.Now().Add(enumerationWindow)
 	for attempt := 0; ; attempt++ {
-		anchored, unexaminable, establishing := context.SessionsAnchoredOn(nodeID)
+		anchored, unexaminable, establishing := context.SessionsAnchoredOn(nodeID, run.recovery)
 		if len(anchored) > 0 || len(unexaminable) == 0 || !time.Now().Before(deadline) || run.isSuperseded() {
 			if len(unexaminable) > 0 && len(anchored) == 0 {
 				// Reported as a fault only when nothing explains it. A run that displaced another
@@ -411,7 +411,7 @@ func reissue(smContext *context.SMContext, nodeIP string) bool {
 	// Set as the first act of replacing a session. The context is on its way out and the
 	// replacement is waiting for this very lock, so restoring it would repair something that is
 	// about to be discarded while delaying the session taking its place.
-	if smContext.LocalPurged {
+	if smContext.LocalPurged.Load() {
 		smContext.SubPfcpLog.Infof("session has been purged and replaced; not restoring it")
 		return false
 	}

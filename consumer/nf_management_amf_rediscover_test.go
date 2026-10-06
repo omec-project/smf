@@ -49,12 +49,13 @@ func TestShouldRediscoverAMF(t *testing.T) {
 }
 
 func amfDiscoveryProfile(nfInstanceId, apiPrefix string) models.NFProfileDiscovery {
+	svc := models.NFService{ServiceInstanceId: "namf-comm", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString(apiPrefix)}
 	return models.NFProfileDiscovery{
 		NfInstanceId: nfInstanceId,
 		NfType:       models.NFTYPE_AMF,
 		NfStatus:     models.NFSTATUS_REGISTERED,
-		NfServices: []models.NFService{
-			{ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString(apiPrefix)},
+		NfServiceList: &map[string]models.NFService{
+			svc.ServiceInstanceId: svc,
 		},
 	}
 }
@@ -106,9 +107,14 @@ func TestOrderAmfCandidates_SameIdRetainedForInPlaceReRegistration(t *testing.T)
 	if got[0].GetNfInstanceId() != "amf-stable" {
 		t.Errorf("expected amf-stable, got %s", got[0].GetNfInstanceId())
 	}
-	svc := got[0].GetNfServices()
-	if len(svc) == 0 || svc[0].GetApiPrefix() != "http://10.42.0.99:29518" {
-		t.Errorf("expected refreshed ApiPrefix to be preserved, got %+v", svc)
+	svc := got[0].GetNfServiceList()
+	if len(svc) == 0 {
+		t.Fatalf("expected at least one NF service, got %+v", svc)
+	}
+	for _, s := range svc {
+		if s.GetApiPrefix() != "http://10.42.0.99:29518" {
+			t.Errorf("expected refreshed ApiPrefix to be preserved, got %+v", svc)
+		}
 	}
 }
 

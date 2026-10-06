@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytedance/sonic"
+	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2/Namf_Communication"
 	"github.com/omec-project/openapi/v2/Npcf_SMPolicyControl"
 	"github.com/omec-project/smf/factory"
@@ -38,7 +38,7 @@ const (
 
 func SetupSmfCollection() {
 	dbName := "sdcore_smf"
-	dbUrl := "mongodb://mongodb-arbiter-headless"
+	dbUrl := "mongodb://mongodb-headless:27017/?replicaSet=rs0"
 
 	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
 		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url
@@ -132,13 +132,13 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 	var bpJSON json.RawMessage
 	if smContext.BPManager != nil {
 		var err error
-		bpJSON, err = sonic.Marshal(smContext.BPManager)
+		bpJSON, err = gojson.Marshal(smContext.BPManager)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return sonic.Marshal(&struct {
+	return gojson.Marshal(&struct {
 		*Alias
 		PFCPContext         PFCPContextInDB                 `json:"pfcpContext"`
 		Tunnel              UPTunnelInDB                    `json:"tunnel"`
@@ -165,7 +165,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(smContext),
 	}
 
-	if err := sonic.Unmarshal(data, &aux); err != nil {
+	if err := gojson.Unmarshal(data, &aux); err != nil {
 		logger.DataRepoLog.Errorln("err in customized unMarshall")
 		return err
 	}
@@ -225,19 +225,19 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 }
 
 func ToBsonMSeidRef(data SeidSmContextRef) (ret bson.M) {
-	tmp, err := sonic.Marshal(data)
+	tmp, err := gojson.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("SMContext marshal error: %v", err)
 		return
 	}
-	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+	if err = gojson.Unmarshal(tmp, &ret); err != nil {
 		logger.DataRepoLog.Errorf("SMContext unmarshal error: %v", err)
 	}
 	return
 }
 
-// smContextAlias is a type alias that breaks the json.Marshaler interface, letting sonic
-// encode it as a plain struct instead of going through EncodeJsonMarshaler.
+// smContextAlias is a type alias that breaks the json.Marshaler interface, letting the encoder
+// encode it as a plain struct instead of going through SMContext's own MarshalJSON.
 type smContextAlias SMContext
 
 // smContextForDB is the DB serialization form with complex fields pre-transformed.
@@ -246,7 +246,7 @@ type smContextForDB struct {
 	PFCPContext PFCPContextInDB `json:"pfcpContext"`
 	Tunnel      UPTunnelInDB    `json:"tunnel"`
 	BPManager   json.RawMessage `json:"bpManager,omitempty"`
-	// Shadow with nil so sonic skips these unreconstructable API handles; they
+	// Shadow with nil so the encoder skips these unreconstructable API handles; they
 	// are rebuilt from AMFProfile / SelectedPCFProfile on context recovery.
 	SMPolicyClient      *Npcf_SMPolicyControl.APIClient `json:"smPolicyClient,omitempty"`
 	CommunicationClient *Namf_Communication.APIClient   `json:"communicationClient,omitempty"`
@@ -284,7 +284,7 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 	var bpJSON json.RawMessage
 	if data.BPManager != nil {
 		var err error
-		bpJSON, err = sonic.Marshal(data.BPManager)
+		bpJSON, err = gojson.Marshal(data.BPManager)
 		if err != nil {
 			logger.DataRepoLog.Errorf("BPManager marshal error: %v", err)
 			return ret
@@ -297,12 +297,12 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 		Tunnel:         upTunnelVal,
 		BPManager:      bpJSON,
 	}
-	tmp, err := sonic.Marshal(&dbDoc)
+	tmp, err := gojson.Marshal(&dbDoc)
 	if err != nil {
 		logger.DataRepoLog.Errorf("SMContext marshal error: %v", err)
 		return ret
 	}
-	if err = sonic.Unmarshal(tmp, &ret); err != nil {
+	if err = gojson.Unmarshal(tmp, &ret); err != nil {
 		logger.DataRepoLog.Errorf("SMContext unmarshal error: %v", err)
 	}
 	return ret
@@ -458,7 +458,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 	}
 
 	if result != nil {
-		err := sonic.Unmarshal(mapToByte(result), smContext)
+		err := gojson.Unmarshal(mapToByte(result), smContext)
 		if err != nil {
 			logger.DataRepoLog.Errorf("smContext unmarshal error: %v", err)
 			return nil
@@ -566,7 +566,7 @@ func DeleteSmContextInDBByRef(ref string) {
 }
 
 func mapToByte(data map[string]interface{}) (ret []byte) {
-	ret, err := sonic.Marshal(data)
+	ret, err := gojson.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("map to byte error: %v", err)
 	}

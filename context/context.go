@@ -23,13 +23,11 @@ import (
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
-	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/util/drsm"
 )
 
 func init() {
 	smfContext.NfInstanceID = uuid.New().String()
-	metrics.SetNfInstanceId(smfContext.NfInstanceID)
 }
 
 const (
@@ -427,7 +425,7 @@ func (smfCtxt *SMFContext) InitDrsm() error {
 	podip := os.Getenv("POD_IP")
 	podId := drsm.PodId{PodName: podname, PodInstance: smfCtxt.NfInstanceID, PodIp: podip}
 	dbName := "sdcore_smf"
-	dbUrl := "mongodb://mongodb-arbiter-headless"
+	dbUrl := "mongodb://mongodb-headless:27017/?replicaSet=rs0"
 
 	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
 		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url

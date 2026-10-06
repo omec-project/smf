@@ -10,11 +10,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/omec-project/nas/v2"
 	"github.com/omec-project/nas/v2/nasConvert"
 	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
@@ -23,6 +25,30 @@ import (
 const (
 	PTI uint8 = 0 // indicates that the request is initiated by the core network.
 )
+
+// sessionAmbrForNas encodes a session AMBR for the UE. nasConvert.ModelsToSessionAMBR reads each
+// direction's unit from the second token without looking, so a rate with no unit -- "10", which a
+// policy can carry -- indexed past the end and took the SMF down building the UE's establishment
+// accept or modification command: the defect this change fixed in the user plane's converter and
+// the gNB's, on the third path the same string travels.
+//
+// A direction with no unit is encoded as a rate of zero -- byte for byte what the function already
+// produces when a direction's number cannot be read -- and zero is what the user plane and the gNB
+// are given for the same string, so the three ends still agree. Refusing the message instead would be worse: the Session-AMBR is
+// mandatory in the accept, and its caller logs a build failure and sends the transfer without it.
+func sessionAmbrForNas(ambr *models.Ambr) nasType.SessionAMBR {
+	readable := *ambr
+
+	if len(strings.Split(readable.Uplink, " ")) < 2 {
+		readable.Uplink = "0 Kbps"
+	}
+
+	if len(strings.Split(readable.Downlink, " ")) < 2 {
+		readable.Downlink = "0 Kbps"
+	}
+
+	return nasConvert.ModelsToSessionAMBR(&readable)
+}
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {
 	m := nas.NewMessage()
@@ -53,7 +79,7 @@ func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error)
 	pDUSessionEstablishmentAccept.SetPDUSessionType(smContext.SelectedPDUSessionType)
 
 	pDUSessionEstablishmentAccept.SetSSCMode(1)
-	pDUSessionEstablishmentAccept.SessionAMBR = nasConvert.ModelsToSessionAMBR(sessRule.AuthSessAmbr)
+	pDUSessionEstablishmentAccept.SessionAMBR = sessionAmbrForNas(sessRule.AuthSessAmbr)
 	pDUSessionEstablishmentAccept.SessionAMBR.SetLen(uint8(len(pDUSessionEstablishmentAccept.SessionAMBR.Octet)))
 
 	qoSRules := qos.BuildQosRules(smContext.SmPolicyUpdates[0])
@@ -245,7 +271,7 @@ func BuildGSMPDUSessionModificationCommand(smContext *SMContext) ([]byte, error)
 		smContext.SmPolicyUpdates[0].SessRuleUpdate != nil &&
 		smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule != nil &&
 		smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule.AuthSessAmbr != nil {
-		modAmbr := nasConvert.ModelsToSessionAMBR(smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule.AuthSessAmbr)
+		modAmbr := sessionAmbrForNas(smContext.SmPolicyUpdates[0].SessRuleUpdate.ActiveSessRule.AuthSessAmbr)
 		pDUSessionModificationCommand.SessionAMBR = &modAmbr
 		pDUSessionModificationCommand.SessionAMBR.SetLen(uint8(len(pDUSessionModificationCommand.SessionAMBR.Octet)))
 

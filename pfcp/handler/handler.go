@@ -465,6 +465,11 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		}
 		pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
 		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
+		// Which incarnation of the node acknowledged it, so a restoration after a restart can tell a
+		// session the restarted node lost from one it already holds. See AcknowledgedAtRecovery.
+		if upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID); upf != nil {
+			pfcpSessionCtx.AcknowledgedAtRecovery = upf.HeldRecovery()
+		}
 	}
 
 	// Get N3 interface UPF
@@ -505,6 +510,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			return
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		if err := ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
+			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
+				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
+		}
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
@@ -552,12 +561,34 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
 		if causeValue == ie.CauseRequestAccepted {
 			if awaited {
-				smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess
+				// Not a blocking send. A data path through several user planes establishes one
+				// session on each, and every response lands here while the channel holds one
+				// verdict and is read once. In adapter mode the response is dispatched inline, on the
+				// goroutine that reads the channel afterwards -- so a second blocking write parked it
+				// on its own channel, and two user planes that both accepted wedged the session.
+				// The first verdict stands and later ones are dropped; which one should stand when
+				// the user planes disagree is a separate question, and this does not answer it.
+				select {
+				case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess:
+				default:
+					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishSuccess)
+				}
 			}
 			smContext.SubPfcpLog.Infoln("PFCP Session Establishment accepted")
 		} else {
 			if awaited {
-				smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed
+				// Not a blocking send. A data path through several user planes establishes one
+				// session on each, and every response lands here while the channel holds one
+				// verdict and is read once. In adapter mode the response is dispatched inline, on the
+				// goroutine that reads the channel afterwards -- so a second blocking write parked it
+				// on its own channel, and two user planes that both accepted wedged the session.
+				// The first verdict stands and later ones are dropped; which one should stand when
+				// the user planes disagree is a separate question, and this does not answer it.
+				select {
+				case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed:
+				default:
+					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishFailed)
+				}
 			}
 			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
 			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
@@ -627,10 +658,11 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		if smContext.SMContextState == smf_context.SmStatePfcpModify {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
-			delete(smContext.PendingUPF, upfIP)
+			// DeletePendingUPF: see SMContext.PendingUPFLock's declaration.
+			pendingEmpty := smContext.DeletePendingUPF(upfIP)
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() {
+			if pendingEmpty {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateSuccess
 			}
 
@@ -698,16 +730,18 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 		if smContext.SMContextState == smf_context.SmStatePfcpRelease {
 			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
 			upfIP := upfNodeID.ResolveNodeIdToIp().String()
-			delete(smContext.PendingUPF, upfIP)
+			// DeletePendingUPF: releaseTunnel rebuilds this same map under SMLock, which this
+			// handler cannot take (see SMContext.PendingUPFLock's declaration).
+			pendingEmpty := smContext.DeletePendingUPF(upfIP)
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
 
-			if smContext.PendingUPF.IsEmpty() && !smContext.LocalPurged {
+			if pendingEmpty && !smContext.LocalPurged.Load() {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 			}
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]", SEID)
 	} else {
-		if smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged {
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged.Load() {
 			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)

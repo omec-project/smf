@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/omec-project/nas/v2/nasConvert"
@@ -158,7 +159,24 @@ type SMContext struct {
 	// unsupported structure - madatory!
 	SBIPFCPCommunicationChan chan PFCPSessionResponseStatus `json:"-" yaml:"sbiPFCPCommunicationChan" bson:"-"` // ignore
 
-	PendingUPF PendingUPF `json:"pendingUPF,omitempty" yaml:"pendingUPF" bson:"pendingUPF,omitempty"` // ignore
+	// PendingUPF is excluded from JSON/BSON: it only tracks PFCP requests in flight for the
+	// current process, so a DB/API snapshot of it would be stale the instant it is read, and
+	// MarshalJSON/ToBsonM encode this field outside of PendingUPFLock (see below), so including
+	// it would race the PFCP response handlers that mutate it concurrently.
+	PendingUPF PendingUPF `json:"-" yaml:"-" bson:"-"` // ignore
+	// PendingUPFLock guards PendingUPF against the same unlocked-handler/SMLock-holder conflict
+	// LocalPurged has: releaseTunnel rebuilds PendingUPF under SMLock (both on the normal release
+	// path and from HandlePduSessionContextReplacement), while the PFCP modification/deletion
+	// response handlers delete from it without SMLock. A plain map under that pattern is a
+	// concurrent read/write, which for Go maps is not just a race but a potential process-crashing
+	// fatal error - unlike a scalar field, it cannot be made safe with atomic.Bool-style typing, so a
+	// dedicated mutex (distinct from SMLock, and never held across a blocking channel op) guards it
+	// instead.
+	// Every read or write of PendingUPF, anywhere in the codebase, must go through the
+	// ResetPendingUPF/AddPendingUPF/MergePendingUPF/DeletePendingUPF/HasPendingUPF/PendingUPFIsEmpty
+	// methods below rather than the field directly - a lock only some accessors take does not
+	// prevent the concurrent map access the others still cause.
+	PendingUPFLock sync.Mutex `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	// TxnBus per subscriber
@@ -175,7 +193,11 @@ type SMContext struct {
 	SelectedPDUSessionType              uint8          `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
 	UnauthenticatedSupi                 bool           `json:"unauthenticatedSupi,omitempty" yaml:"unauthenticatedSupi" bson:"unauthenticatedSupi,omitempty"`                                                 // ignore
 	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool           `json:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty" yaml:"pduSessionRelease_DUE_TO_DUP_PDU_ID" bson:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty"` // ignore
-	LocalPurged                         bool           `json:"localPurged,omitempty" yaml:"localPurged" bson:"localPurged,omitempty"`                                                                         // ignore
+	// atomic because the PFCP modification/deletion response handlers read it without SMLock:
+	// the producer side holds SMLock across its blocking wait on SBIPFCPCommunicationChan, so a
+	// handler that took SMLock to send on that channel would deadlock against itself.
+	// JSON and BSON exclude this runtime synchronization flag.
+	LocalPurged atomic.Bool `json:"-" yaml:"localPurged" bson:"-"`
 	// NAS
 	Pti                     uint8 `json:"pti,omitempty" yaml:"pti" bson:"pti,omitempty"` // ignore
 	EstAcceptCause5gSMValue uint8 `json:"estAcceptCause5gSMValue,omitempty" yaml:"estAcceptCause5gSMValue" bson:"estAcceptCause5gSMValue,omitempty"`
@@ -262,6 +284,67 @@ func (smContext *SMContext) initLogTags() {
 	smContext.SubQosLog = logger.QosLog.With("uuid", smContext.Ref, "id", smContext.Identifier, "pduid", smContext.PDUSessionID)
 }
 
+// ResetPendingUPF replaces PendingUPF with entries (an empty map if entries is nil).
+func (smContext *SMContext) ResetPendingUPF(entries PendingUPF) {
+	if entries == nil {
+		entries = make(PendingUPF)
+	}
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	smContext.PendingUPF = entries
+}
+
+// AddPendingUPF marks nodeIP as awaiting a PFCP response, creating PendingUPF first if nil.
+func (smContext *SMContext) AddPendingUPF(nodeIP string) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	if smContext.PendingUPF == nil {
+		smContext.PendingUPF = make(PendingUPF)
+	}
+	smContext.PendingUPF[nodeIP] = true
+}
+
+// MergePendingUPF adds every entry of entries into PendingUPF without clearing what is already
+// there (unlike ResetPendingUPF), creating PendingUPF first if nil.
+func (smContext *SMContext) MergePendingUPF(entries PendingUPF) {
+	if len(entries) == 0 {
+		return
+	}
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	if smContext.PendingUPF == nil {
+		smContext.PendingUPF = make(PendingUPF)
+	}
+	for nodeIP, v := range entries {
+		smContext.PendingUPF[nodeIP] = v
+	}
+}
+
+// DeletePendingUPF removes nodeIP and reports whether PendingUPF is now empty, as one atomic
+// operation: splitting the delete and the emptiness check across two lock acquisitions would let
+// a concurrent writer's entry land in between and be missed by the check.
+func (smContext *SMContext) DeletePendingUPF(nodeIP string) (empty bool) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	delete(smContext.PendingUPF, nodeIP)
+	return smContext.PendingUPF.IsEmpty()
+}
+
+// HasPendingUPF reports whether nodeIP is already recorded in PendingUPF.
+func (smContext *SMContext) HasPendingUPF(nodeIP string) bool {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	_, exist := smContext.PendingUPF[nodeIP]
+	return exist
+}
+
+// PendingUPFIsEmpty reports whether PendingUPF currently has no entries.
+func (smContext *SMContext) PendingUPFIsEmpty() bool {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	return smContext.PendingUPF.IsEmpty()
+}
+
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	if smContext.SMContextState == nextState {
 		// Not a real transition (e.g. a retry/no-op ChangeState call with the same target
@@ -346,6 +429,12 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // just restarted and must not be re-installed, and sessions released after it must not be
 // resurrected — so callers work from the list as taken and re-check liveness before acting on any
 // entry.
+//
+// recovery is the node's recovery timestamp after the restart being repaired, and it covers the
+// sessions the snapshot alone does not: those the restarted node acknowledged *before* the
+// snapshot was taken. A UE that re-attaches while the restart is still being detected has its new
+// session established on the restarted node, and without this it would be re-established over
+// itself. Zero excludes nothing on this ground.
 // The second return names the sessions that could not be examined, rather than counting them.
 //
 // A session whose lock could not be taken cannot have its PFCPContext read, so there is no way to
@@ -357,12 +446,12 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // They are excluded from restoration deliberately -- reissuing over an establishment in flight
 // overwrites it -- but a caller that sees no anchored sessions must not conclude the node is empty
 // when this is non-zero.
-func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
+func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
 	nodeIP := nodeID.ResolveNodeIdToIp().String()
 
 	anchored := make([]*SMContext, 0)
 	unexaminable := make([]string, 0)
-	scanned, superseded, establishing := 0, 0, 0
+	scanned, superseded, establishing, recreated := 0, 0, 0, 0
 	otherKeys := make(map[string]int)
 	smContextPool.Range(func(_, value any) bool {
 		smContext, ok := value.(*SMContext)
@@ -397,6 +486,13 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 		// before the UPF had chosen one, and the subscriber came up on an address outside the pool
 		// with no downlink -- a worse outcome than the stall this change exists to fix.
 		neverAcknowledged := onThisNode && pfcpContext.RemoteSEID == 0 && !pfcpContext.ClearedByRestoration
+		// A session the restarted incarnation itself acknowledged is not one it lost: the UE
+		// re-attached while the restart was being detected, and its new session is already on the
+		// node. Restoring it re-establishes a live session, the node answers with a second SEID,
+		// and the first is left behind on it. See AcknowledgedAtRecovery for why the timestamp,
+		// not the time, is what identifies the incarnation.
+		acknowledgedByRestarted := onThisNode && !neverAcknowledged && !recovery.IsZero() &&
+			pfcpContext.AcknowledgedAtRecovery.Unix() == recovery.Unix()
 		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
 		if !onThisNode {
 			for key := range smContext.PFCPContext {
@@ -412,6 +508,10 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 			establishing++
 			return true
 		}
+		if acknowledgedByRestarted {
+			recreated++
+			return true
+		}
 		if !isCurrent(identifier, pduSessionID, ref) {
 			superseded++
 			return true
@@ -424,8 +524,9 @@ func SessionsAnchoredOn(nodeID NodeID) (anchoredSessions []*SMContext, couldNotE
 	// case that matters most -- finding nothing at all -- and that silence cost a diagnosis round:
 	// "no sessions anchored" with no way to tell an empty pool from a mis-keyed lookup.
 	logger.CtxLog.Infof("sessions anchored on %s: %d of %d scanned (%d could not be examined and may be "+
-		"on any node, %d superseded by a later session for the same subscriber, %d still being established)",
-		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing)
+		"on any node, %d superseded by a later session for the same subscriber, %d still being established, "+
+		"%d already established on the restarted node)",
+		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing, recreated)
 	if len(anchored) == 0 && len(otherKeys) > 0 {
 		// Separates an empty pool from a lookup that did not match: if sessions are anchored under
 		// some other key, the node identity resolved differently here than when they were created.
@@ -572,36 +673,34 @@ func (smContext *SMContext) RebuildCommunicationClient() {
 	// Clear any existing client first so stale data does not linger if the
 	// (re-discovered) AMF profile has no namf-comm service.
 	smContext.CommunicationClient = nil
-	for _, service := range smContext.AMFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NAMF_COMM {
-			communicationConf := Namf_Communication.NewConfiguration()
-			serverConfig := &communicationConf.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
-			return
-		}
+	service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.AMFProfile), models.SERVICENAME_NAMF_COMM)
+	if !ok {
+		return
 	}
+	communicationConf := Namf_Communication.NewConfiguration()
+	serverConfig := &communicationConf.Servers[0]
+	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = service.GetApiPrefix()
+		serverConfig.Variables["apiRoot"] = apiRootVar
+	}
+	smContext.CommunicationClient = Namf_Communication.NewAPIClient(communicationConf)
 }
 
 // RebuildSMPolicyClient reconstructs the Npcf_SMPolicyControl API client
 // from the stored SelectedPCFProfile after recovering an SMContext from MongoDB.
 func (smContext *SMContext) RebuildSMPolicyClient() {
 	smContext.SMPolicyClient = nil
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
-			cfg := Npcf_SMPolicyControl.NewConfiguration()
-			serverConfig := &cfg.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
-			return
-		}
+	service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile), models.SERVICENAME_NPCF_SMPOLICYCONTROL)
+	if !ok {
+		return
 	}
+	cfg := Npcf_SMPolicyControl.NewConfiguration()
+	serverConfig := &cfg.Servers[0]
+	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+		apiRootVar.DefaultValue = service.GetApiPrefix()
+		serverConfig.Variables["apiRoot"] = apiRootVar
+	}
+	smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
 }
 
 func (smContext *SMContext) BuildCreatedData() (createdData *models.SmContextCreatedData) {
@@ -671,16 +770,14 @@ func (smContext *SMContext) PCFSelection() error {
 	smContext.SelectedPCFProfile = rep.NfInstances[0]
 
 	// Create SMPolicyControl Client for this SM Context
-	for _, service := range smContext.SelectedPCFProfile.GetNfServices() {
-		if service.GetServiceName() == models.SERVICENAME_NPCF_SMPOLICYCONTROL {
-			cfg := Npcf_SMPolicyControl.NewConfiguration()
-			serverConfig := &cfg.Servers[0]
-			if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-				apiRootVar.DefaultValue = service.GetApiPrefix()
-				serverConfig.Variables["apiRoot"] = apiRootVar
-			}
-			smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
+	if service, ok := util.FindServiceByName(util.NFProfileDiscoveryServices(&smContext.SelectedPCFProfile), models.SERVICENAME_NPCF_SMPOLICYCONTROL); ok {
+		cfg := Npcf_SMPolicyControl.NewConfiguration()
+		serverConfig := &cfg.Servers[0]
+		if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
+			apiRootVar.DefaultValue = service.GetApiPrefix()
+			serverConfig.Variables["apiRoot"] = apiRootVar
 		}
+		smContext.SMPolicyClient = Npcf_SMPolicyControl.NewAPIClient(cfg)
 	}
 
 	return nil
