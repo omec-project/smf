@@ -11,6 +11,7 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/pfcp/ies"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -294,6 +295,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			return fmt.Errorf("failed to parse TEID IE: %+v", err)
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		if err := ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
+			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
+				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
+		}
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
