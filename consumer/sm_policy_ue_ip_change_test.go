@@ -259,3 +259,30 @@ func TestUeIpChangeReportFallsBackForAContextFromBeforeTheFieldExisted(t *testin
 			"session no longer has", body.GetRelIpv4Address(), testSmfAllocatedIpv4)
 	}
 }
+
+// The fallback holds only while the context still has the address it allocated. A
+// pre-upgrade context whose establishment response already adopted the UPF's
+// address, as a restoration re-establishing it finds, holds an address the PCF was
+// never told, and the create-time one is recorded nowhere. Releasing the held
+// address would tell the PCF to drop a binding it does not have.
+func TestUeIpChangeReportReleasesNothingItCannotName(t *testing.T) {
+	server, _, bodies := pcfStub(t, http.StatusOK)
+	smContext := smContextWithPCF(t, server)
+
+	const restoredUpfIpv4 = "192.168.100.7"
+	smContext.PolicyReportedIpv4 = ""
+	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP(restoredUpfIpv4), UpfProvided: true}
+
+	if _, err := SendSMPolicyAssociationUpdateUeIpChange(smContext, testUpfAllocatedIpv4); err != nil {
+		t.Fatalf("report failed: %v", err)
+	}
+
+	body := <-bodies
+	// Proves the body decoded, so the absence below is the report's and not the decoder's.
+	if body.GetIpv4Address() != testUpfAllocatedIpv4 {
+		t.Fatalf("ipv4Address = %q, want %q", body.GetIpv4Address(), testUpfAllocatedIpv4)
+	}
+	if body.HasRelIpv4Address() {
+		t.Errorf("relIpv4Address = %q, want none: the PCF was never told that address", body.GetRelIpv4Address())
+	}
+}

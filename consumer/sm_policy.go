@@ -98,11 +98,17 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 // outcome this report exists to prevent. For those, the address the PCF was told
 // at create is still the one the context holds, because this runs before the
 // UPF's address is adopted and before the old one is released.
+//
+// Unless an earlier establishment response already adopted one, as a restoration
+// re-establishing such a session finds. The context then holds the UPF's address,
+// which the PCF was never told, and the SMF that wrote it released the create-time
+// address without recording it. Nothing names what the PCF binds, so nothing is
+// released rather than an address the PCF does not hold.
 func releasedIpv4(smContext *smf_context.SMContext) string {
 	if smContext.PolicyReportedIpv4 != "" {
 		return smContext.PolicyReportedIpv4
 	}
-	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil {
+	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil || smContext.PDUAddress.UpfProvided {
 		return ""
 	}
 	ipv4 := smContext.PDUAddress.Ip.To4()
