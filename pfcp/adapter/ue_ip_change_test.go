@@ -52,13 +52,17 @@ func TestAdapterEstablishmentResponseReportsTheUpfAllocatedAddress(t *testing.T)
 	}
 
 	nodeID := smf_context.NewNodeID("3.3.3.3")
+	// Registered, so that the response is handled to the end rather than refused after the
+	// address has been reported.
+	smf_context.NewUPF(nodeID, nil)
+	t.Cleanup(func() { smf_context.RemoveUPFNodeByNodeID(*nodeID) })
 	smContext := smf_context.NewSMContext("imsi-001010123456798", 10)
 	smContext.Tunnel = &smf_context.UPTunnel{
 		DataPathPool: smf_context.DataPathPool{
 			10: &smf_context.DataPath{
 				IsDefaultPath: true,
 				FirstDPNode: &smf_context.DataPathNode{
-					UPF:          &smf_context.UPF{},
+					UPF:          &smf_context.UPF{NodeID: *nodeID},
 					UpLinkTunnel: &smf_context.GTPTunnel{},
 				},
 			},
@@ -96,10 +100,12 @@ func TestAdapterEstablishmentResponseReportsTheUpfAllocatedAddress(t *testing.T)
 		),
 	)
 
-	adapter.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	if err := adapter.HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("3.3.3.3"), Port: 8805},
 		PfcpMessage: rsp,
-	})
+	}); err != nil {
+		t.Fatalf("the establishment response was refused: %v", err)
+	}
 
 	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip.String() != upfIpv4 {
 		t.Fatalf("the adapter handler did not adopt the UPF address; PDUAddress = %+v", smContext.PDUAddress)
