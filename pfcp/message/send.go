@@ -98,6 +98,11 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, msg, addr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp heartbeat msg to upf-adapter error [%v] ", err.Error())
+			// Counted here as on the native branch: in adapter mode the exchange is synchronous, so
+			// there is no transaction goroutine to report an asynchronous failure, and nothing else
+			// books this one. Without it, removing the aggregate heartbeat metric in heartbeatUpf
+			// would leave adapter-mode heartbeat failures uncounted entirely.
+			reportSendFailure(msg, err)
 			return err
 		} else {
 			logger.PfcpLog.Debugf("send pfcp heartbeat response [%v] ", rsp)
@@ -109,12 +114,14 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 			pfcpRspMsg, err := adapterReply(rsp, "heartbeat")
 			if err != nil {
 				logger.PfcpLog.Errorf("pfcp heartbeat not answered: %v", err)
+				reportSendFailure(msg, err)
 
 				return err
 			}
 
 			if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
 				logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				reportSendFailure(msg, err)
 
 				return fmt.Errorf("handling the adapter's response: %w", err)
 			}
@@ -122,6 +129,10 @@ func SendHeartbeatRequest(upNodeID smf_context.NodeID, upfPort uint16) (err erro
 	} else {
 		InsertPfcpTxn(msg.Sequence(), &upNodeID)
 		if err := udp.SendPfcp(msg, addr, nil); err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(msg, err)
+
 			FetchPfcpTxn(msg.Sequence())
 			return err
 		}
@@ -193,6 +204,9 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, addr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp association msg to upf-adapter error [%v]", err.Error())
+			// Counted here as on the native branch and the heartbeat adapter path: the adapter
+			// exchange is synchronous, so no transaction goroutine reports it, and nothing else does.
+			reportSendFailure(pfcpMsg, err)
 			return err
 		} else {
 			defer func() {
@@ -207,12 +221,14 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 			pfcpRspMsg, err := adapterReply(rsp, "association setup")
 			if err != nil {
 				logger.PfcpLog.Errorf("pfcp association setup not answered: %v", err)
+				reportSendFailure(pfcpMsg, err)
 
 				return err
 			}
 
 			if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, nil); err != nil {
 				logger.PfcpLog.Errorf("handle adapter pfcp response failed: %v", err)
+				reportSendFailure(pfcpMsg, err)
 
 				return fmt.Errorf("handling the adapter's response: %w", err)
 			}
@@ -221,6 +237,12 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
 		err := udp.SendPfcp(pfcpMsg, addr, nil)
 		if err != nil {
+			reportSendFailure(pfcpMsg, err)
+
+			// A synchronous send failure never reaches startTxLifeCycle, so nothing will ever consume
+			// the txn inserted above; remove it here as the heartbeat and session request paths do, so
+			// a failed association attempt does not leak one PfcpTxns entry per try.
+			FetchPfcpTxn(pfcpMsg.Sequence())
 			return err
 		}
 	}
@@ -235,6 +257,8 @@ func SendPfcpAssociationSetupResponse(upNodeID smf_context.NodeID, cause uint8, 
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -249,6 +273,8 @@ func SendPfcpAssociationReleaseResponse(upNodeID smf_context.NodeID, cause uint8
 	}
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Association Release Response to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
@@ -337,14 +363,18 @@ func SendPfcpSessionEstablishmentRequest(
 				if err != nil {
 					// Returned, not fatal. A reply that stops early is one request's failure, and
 					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
+					// session paths, the deferred answer that would have released this one. Counted
+					// here as the other adapter reply failures are.
+					readErr := fmt.Errorf("reading the adapter's reply: %w", err)
+					reportSendFailure(pfcpMsg, readErr)
+					return readErr
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
 				if err != nil {
 					logger.PfcpLog.Errorf("parse pfcp session establish response failed: %v", err)
+					reportSendFailure(pfcpMsg, err)
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -372,6 +402,10 @@ func SendPfcpSessionEstablishmentRequest(
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(pfcpMsg, err)
+
 			// The entry is consumed by the response, and a request that never went out has none.
 			FetchPfcpTxn(pfcpMsg.Sequence())
 
@@ -465,6 +499,9 @@ func sendPfcpSessionModificationRequest(
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session modify msg to upf-adapter error [%v]", err.Error())
+			// Counted here as on the native branch: the adapter POST failed, so the request never
+			// reached the user plane and no transaction goroutine will report it.
+			reportSendFailure(pfcpMsg, err)
 			return err
 		} else {
 			defer func() {
@@ -475,6 +512,10 @@ func sendPfcpSessionModificationRequest(
 			logger.PfcpLog.Debugf("send pfcp session modify response [%v]", rsp)
 
 			if err := handleAdapterModificationResponse(rsp, ctx.PFCPContext[nodeIDtoIP].LocalSEID); err != nil {
+				// The adapter accepted the POST but rejected the status/body/message or could not
+				// dispatch the response, so this N4 exchange failed with no response coming. Counted
+				// here, as the heartbeat/association adapter paths count their reply failures.
+				reportSendFailure(pfcpMsg, err)
 				return err
 			}
 		}
@@ -482,13 +523,15 @@ func sendPfcpSessionModificationRequest(
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
 		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: sessionSendErrorHandler(ctx.PFCPContext[nodeIDtoIP].LocalSEID, awaited)}
 		if err := udp.SendPfcp(pfcpMsg, upaddr, eventData); err != nil {
-			logger.PfcpLog.Errorf("send pfcp session modify msg to upf error [%v]", err.Error())
+			// Reported here, not just logged: a synchronous send failure never reaches
+			// startTxLifeCycle, so nothing else counts it as a failure or refreshes the DNS cache.
+			reportSendFailure(pfcpMsg, err)
 
-			// Returned rather than logged. The timeout that would otherwise end the caller's
-			// wait is raised by the transaction this send failed to create, so there is nothing
-			// left to answer with. The bookkeeping entry goes with it -- though only for
-			// tidiness: the modification response handler correlates by SEID and never reads
-			// this map, so the entry the line above makes is unread on the success path too.
+			// The timeout that would otherwise end the caller's wait is raised by the transaction
+			// this send failed to create, so there is nothing left to answer with. The bookkeeping
+			// entry goes with it -- though only for tidiness: the modification response handler
+			// correlates by SEID and never reads this map, so the entry the line above makes is
+			// unread on the success path too.
 			FetchPfcpTxn(pfcpMsg.Sequence())
 			restoreRuleStates()
 
@@ -580,6 +623,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 		// answers this one.
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
 			logger.PfcpLog.Errorf("send pfcp session delete msg to upf-adapter error [%v]", err.Error())
+			// Counted here, as the other adapter failure exits of this function already are: the
+			// adapter POST failed, so nothing else books it. The deferred answer above releases the
+			// waiting session; this only records the metric.
+			reportSendFailure(pfcpMsg, err)
 			return err
 		} else {
 			defer func() {
@@ -593,14 +640,18 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 				if err != nil {
 					// Returned, not fatal. A reply that stops early is one request's failure, and
 					// ending the process takes every other session with it -- including, on the
-					// session paths, the deferred answer that would have released this one.
-					return fmt.Errorf("reading the adapter's reply: %w", err)
+					// session paths, the deferred answer that would have released this one. Counted
+					// here as the other adapter reply failures are.
+					readErr := fmt.Errorf("reading the adapter's reply: %w", err)
+					reportSendFailure(pfcpMsg, readErr)
+					return readErr
 				}
 				pfcpMsgString := string(pfcpMsgBytes)
 				logger.PfcpLog.Debugf("pfcp rsp status ok, %s", pfcpMsgString)
 				pfcpRspMsg, err := message.Parse(pfcpMsgBytes)
 				if err != nil {
 					logger.PfcpLog.Errorf("parse pfcp session delete response failed: %v", err)
+					reportSendFailure(pfcpMsg, err)
 					return err
 				}
 				eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: HandlePfcpSendError}
@@ -628,6 +679,10 @@ func SendPfcpSessionDeletionRequest(upNodeID smf_context.NodeID, ctx *smf_contex
 		eventData := udp.PfcpEventData{LSEID: pfcpContext.LocalSEID, ErrHandler: sessionSendErrorHandler(pfcpContext.LocalSEID, true)}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
+			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
+			// else calls this for it.
+			reportSendFailure(pfcpMsg, err)
+
 			// Taken back as on the modification path. No response handler reads this entry, for a
 			// deletion that was answered either, so this only stops a failing send adding to it.
 			FetchPfcpTxn(pfcpMsg.Sequence())
@@ -644,6 +699,8 @@ func SendPfcpSessionReportResponse(addr *net.UDPAddr, cause uint8, pfcpSRflag sm
 	pfcpMsg := BuildPfcpSessionReportResponse(cause, pfcpSRflag.Drobu, seqFromUPF, SEID)
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Session Report Response Seq[%d] to NodeID[%s]", seqFromUPF, addr.IP.String())
@@ -654,6 +711,8 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 	pfcpMsg := BuildPfcpHeartbeatResponse(sequenceNumber, udp.GetServerStartTime())
 	err := udp.SendPfcp(pfcpMsg, addr, nil)
 	if err != nil {
+		reportSendFailure(pfcpMsg, err)
+
 		return err
 	}
 	logger.PfcpLog.Infof("sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", sequenceNumber, addr.IP.String())
@@ -784,17 +843,13 @@ func snapshotRuleStates(pdrs []*smf_context.PDR, fars []*smf_context.FAR, qers [
 	}
 }
 
-// reportSendFailure is the part of a send failure that concerns no session: the log, the N4
+// reportSendFailure is the part of a send failure that concerns no session: the log, the bounded N4
 // failure count and the DNS refresh. The adapter paths, which answer their own session, report
-// through this alone.
+// through this alone. It is a thin wrapper over udp.ReportSendFailure, which owns the reporting so
+// that callers of the exported udp.SendPfcp in any package can report a synchronous failure without
+// an import cycle; this keeps the familiar name for pfcp/message's own call sites.
 func reportSendFailure(msg message.Message, pfcpErr error) {
-	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v",
-		msg.MessageTypeName(), pfcpErr.Error())
-	metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID,
-		msg.MessageTypeName(), "Out", "Failure", pfcpErr.Error())
-
-	// Refresh SMF DNS Cache incase of any send failure(includes timeout)
-	smf_context.RefreshDnsHostIpCache()
+	udp.ReportSendFailure(msg, pfcpErr)
 }
 
 func HandlePfcpSendError(msg message.Message, pfcpErr error) {

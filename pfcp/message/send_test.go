@@ -751,4 +751,14 @@ func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
 	if n := pendingRequestsFor(upNodeID); n != 0 {
 		t.Errorf("%d pending entries after a failed deletion, want 0", n)
 	}
+
+	// Association setup took the entry it made back only on the heartbeat and session paths; a failed
+	// association attempt leaked one entry per try. It must take its own entry back too.
+	if err := message.SendPfcpAssociationSetupRequest(upNodeID, 8808); err == nil {
+		t.Fatal("an association setup the socket refused was reported as sent")
+	}
+
+	if n := pendingRequestsFor(upNodeID); n != 0 {
+		t.Errorf("%d pending entries after a failed association setup, want 0", n)
+	}
 }
