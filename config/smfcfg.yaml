@@ -12,7 +12,7 @@ configuration:
   debugProfilePort: 5001
   mongodb:
     name: sdcore_smf
-    url: "mongodb://mongodb-headless"
+    url: "mongodb://mongodb-headless:27017/?replicaSet=rs0"
   kafkaInfo:
     brokerUri: "sd-core-kafka-headless"
     brokerPort: 9092
