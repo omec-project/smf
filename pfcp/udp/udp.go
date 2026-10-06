@@ -48,6 +48,10 @@ var ServerStartTime time.Time
 
 var serverMu sync.RWMutex
 
+// txWG tracks the transaction goroutines started by SendPfcp so their lifetime can be awaited --
+// see WaitForAllTransactions.
+var txWG sync.WaitGroup
+
 func GetServer() *PfcpServer {
 	serverMu.RLock()
 	defer serverMu.RUnlock()
@@ -146,6 +150,17 @@ func WaitForServer() error {
 	}
 }
 
+// SendPfcp marshals msg and hands it to the transaction layer. On success it counts one N4
+// "Out/Success" and returns nil; the transaction goroutine then reports any later, asynchronous
+// failure (an unanswered request or a write that failed on its own goroutine) through the
+// eventData error handler.
+//
+// A synchronous failure here -- marshalling, a missing server, or a duplicate-sequence
+// PutTransaction error -- returns an error and is NOT counted at this layer: the goroutine that
+// would report it is never started. Every caller must report that returned error through
+// message.reportSendFailure (directly or via handlePfcpSendError) so the N4 "Out/Failure" count and
+// DNS refresh still happen; the counting was moved out of this function so the two failure paths
+// (synchronous here, asynchronous in the goroutine) are each reported exactly once.
 func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) error {
 	server := GetServer()
 	if server == nil {
@@ -165,12 +180,23 @@ func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) err
 	err = PutTransaction(tx)
 	if err != nil {
 		logger.PfcpLog.Errorf("Failed to send PFCP message: %v", err)
-		metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", err.Error())
 		return err
 	}
-	go startTxLifeCycle(tx)
+	txWG.Go(func() {
+		startTxLifeCycle(tx)
+	})
 	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Success", "")
 	return nil
+}
+
+// WaitForAllTransactions blocks until every transaction goroutine started by SendPfcp has returned,
+// including its error handler. It exists for tests: such a goroutine is not tied to the lifecycle
+// of the test whose send started it, and its error handler reads shared state (e.g.
+// factory.SmfConfig) that a later, unrelated test may rewrite -- a race the detector reports
+// between the two. Draining before a test returns keeps a goroutine from outliving it. Production
+// code has no reason to call this.
+func WaitForAllTransactions() {
+	txWG.Wait()
 }
 
 func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, interface{}, error) {
@@ -281,18 +307,31 @@ func startTxLifeCycle(tx *Transaction) {
 		logger.PfcpLog.Warnln(err)
 	}
 
-	if sendErr != nil && tx.EventData != nil {
-		if eventData, ok := tx.EventData.(PfcpEventData); ok {
-			if errHandler := eventData.ErrHandler; errHandler != nil {
-				msg, err := message.Parse(tx.SendMsg)
-				if err != nil {
-					logger.PfcpLog.Warnf("Parse message error: %v", err)
-					return
-				}
-				errHandler(msg, sendErr)
-			}
-		}
+	if sendErr == nil {
+		return
 	}
+
+	// An asynchronous send failure -- a request that exhausted its retries without a response, or a
+	// write that failed on this goroutine -- must be counted as one N4 "Out/Failure" to balance the
+	// "Out/Success" SendPfcp optimistically counted when it handed the message off. A session send
+	// supplies a PfcpEventData error handler that reports it (and drives the session's own recovery),
+	// so when one is present it is the single reporter. A native send with nil event data (a
+	// heartbeat/association request, or any response) carries no handler, so without the fallback
+	// below its failure would be left counted only as Out/Success -- exactly the native send failure
+	// this change set out to count.
+	msg, parseErr := message.Parse(tx.SendMsg)
+	if parseErr != nil {
+		logger.PfcpLog.Warnf("Parse message error: %v", parseErr)
+		return
+	}
+
+	if eventData, ok := tx.EventData.(PfcpEventData); ok && eventData.ErrHandler != nil {
+		eventData.ErrHandler(msg, sendErr)
+		return
+	}
+
+	logger.PfcpLog.Errorf("send of PFCP msg [%v] failed, %v", msg.MessageTypeName(), sendErr)
+	metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msg.MessageTypeName(), "Out", "Failure", sendErr.Error())
 }
 
 func removeTransaction(tx *Transaction) error {

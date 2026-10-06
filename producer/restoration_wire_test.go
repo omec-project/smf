@@ -150,6 +150,22 @@ func startSmfPfcpSocket(t *testing.T) {
 	self.PFCPPort = port
 	udp.Run(func(*udp.Message) {})
 	time.Sleep(50 * time.Millisecond) // let the listener bind before anything is sent
+
+	t.Cleanup(func() {
+		// A transaction goroutine started by a send in this test is not tied to the test's
+		// lifecycle, and its error handler reads factory.SmfConfig, which a later test rewrites --
+		// a race the detector reports between the two. Drain them before returning, then take the
+		// server down so it does not linger into a later test and make that one send real packets
+		// (and leak its own such goroutines) too.
+		udp.WaitForAllTransactions()
+		if server := udp.GetServer(); server != nil {
+			if server.Conn != nil {
+				server.Conn.Close()
+				<-server.Done // the read loop has observed the close and returned
+			}
+			udp.SetServer(nil)
+		}
+	})
 }
 
 func readPfcp(t *testing.T, conn *net.UDPConn) message.Message {

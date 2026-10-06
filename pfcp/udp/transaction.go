@@ -90,6 +90,13 @@ func SetRetryTimingForTest(retries int, requestTimeout, responseTimeout time.Dur
 	resendResponseTimeout.Store(int64(responseTimeout))
 }
 
+// GetRetryTimingForTest returns the current resend count and timeout periods so a test that overrides
+// them with SetRetryTimingForTest can snapshot the prior values and restore them on cleanup, keeping
+// the package-global timing from leaking into later tests in the same process.
+func GetRetryTimingForTest() (retries int, requestTimeout, responseTimeout time.Duration) {
+	return int(numOfResend.Load()), time.Duration(resendRequestTimeout.Load()), time.Duration(resendResponseTimeout.Load())
+}
+
 type Transaction struct {
 	EventChannel   chan EventType
 	Conn           *net.UDPConn
@@ -179,7 +186,13 @@ func (transaction *Transaction) Start() error {
 				}
 			case <-timer.C:
 				logger.PfcpLog.Debugf("response transaction [%d]: timeout expire", transaction.SequenceNumber)
-				return fmt.Errorf("response timeout, seq [%d]", transaction.SequenceNumber)
+				// Not a send failure. The datagram was already written above; this timer is only the
+				// retention window kept to answer a retransmitted request, and its expiry is the normal,
+				// successful end of a response transaction -- no retransmission arrived. Returning an
+				// error here would make startTxLifeCycle count every ordinary heartbeat/session/
+				// association response as an N4 "Out/Failure" once the window closes. A genuine write
+				// failure is the separate error returned above.
+				return nil
 			}
 		}
 	}
