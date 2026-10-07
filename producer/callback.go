@@ -205,6 +205,9 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		return pfcpParam
 	}
 
+	// The rules the pending update removes, the same for every path.
+	deleted := deletedPccRules(smContext)
+
 	for dpIndex, dataPath := range smContext.Tunnel.DataPathPool {
 		logger.PduSessLog.Infof("[BuildPfcpParam] Processing DataPath[%d], Activated=%v", dpIndex, dataPath.Activated)
 		if !dataPath.Activated {
@@ -241,7 +244,6 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// to every PDR on the path, so removing the ones this PDR points at would take rate
 		// enforcement off the rules that remain. One left unreferenced enforces nothing and goes
 		// with the session.
-		deleted := deletedPccRules(smContext)
 		for deletedRule := range deleted {
 			if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[deletedRule]; ok {
 				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
