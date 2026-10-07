@@ -49,7 +49,7 @@ func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "n1n2_transfer_failed", sm.NwModificationGen)
+	revertModification(sm, sm.NwModificationGen)
 
 	if !reverted {
 		t.Error("the user plane must be reprogrammed when a modification cannot be delivered")
@@ -73,7 +73,7 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 	}
 
 	sm := modifyingSession()
-	revertModification(sm, "n1n2_transfer_failed", sm.NwModificationGen)
+	revertModification(sm, sm.NwModificationGen)
 
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
 		t.Errorf("state = %s, want %s: a session whose user plane cannot be corrected must not keep running",
@@ -243,45 +243,37 @@ func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
 	}
 }
 
-// Putting the user plane back can fail, and the revert then marks the session for release because
-// it is running parameters the UE was never told about. Answering "reverted" there has the caller
-// move it to Active, which erases exactly the marker that says a human needs to look.
-func TestAFailedRevertIsNotReportedAsASessionPutBack(t *testing.T) {
+// The AMF's failure notification is never a modification's: only the downlink data paging transfer
+// asks for one, and a Command arriving while the AMF pages can end that paging and fail the paging
+// transfer. Taken as the Command's delivery failure, it reverted a modification that was on its way
+// to the UE.
+func TestAPagingFailureLeavesAPendingModificationAlone(t *testing.T) {
 	original := sendPfcpSessionModifyReq
-	defer func() { sendPfcpSessionModifyReq = original }()
-
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var sent atomic.Int32
 	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
-		return errors.New("upf unreachable")
+		sent.Add(1)
+		return nil
 	}
 
 	sm := modifyingSession()
-	sm.NwModificationPending = true
+	pending := sm.SmPolicyUpdates[0]
 
-	txn := &transaction.Transaction{Ctxt: sm}
-
-	modification, reverted, err := HandlePduSessN1N2TransFailInd(txn)
-	if err != nil {
-		t.Fatalf("handling the failure indication: %v", err)
+	if err := HandlePduSessN1N2TransFailInd(&transaction.Transaction{Ctxt: sm}); err != nil {
+		t.Fatalf("handling the failure notification: %v", err)
 	}
 
-	if !modification {
-		t.Error("a failure indication for a pending modification was not reported as one")
+	if !sm.NwModificationPending || sm.NwModificationGen != 1 || len(sm.SmPolicyUpdates) != 1 || sm.SmPolicyUpdates[0] != pending {
+		t.Error("a paging failure discarded the modification in progress")
 	}
-
-	if reverted {
-		t.Error("a revert whose user-plane restore failed was reported as a session put back")
-	}
-
-	if sm.SMContextState != smf_context.SmStatePfcpRelease {
-		t.Errorf("state = %s, want %s: the session is running parameters the UE never saw",
-			sm.SMContextState, smf_context.SmStatePfcpRelease)
+	if got := sent.Load(); got != 0 {
+		t.Errorf("%d PFCP modifications were sent to revert a modification nothing had failed to deliver", got)
 	}
 }
 
-// A modification reverted after a delivery failure stops its T3591 rather than only forgetting it.
-// The indication arrives with the timer armed, and a timer dropped without being stopped went on
-// firing for the whole retransmission sequence.
-func TestARevertedModificationStopsItsTimer(t *testing.T) {
+// An abandoned modification stops its T3591 rather than only forgetting it. A timer dropped without
+// being stopped went on firing for the whole retransmission sequence.
+func TestAnAbandonedModificationStopsItsTimer(t *testing.T) {
 	originalPfcp, originalRetransmit := sendPfcpSessionModifyReq, retransmitModificationCommand
 	t.Cleanup(func() { sendPfcpSessionModifyReq, retransmitModificationCommand = originalPfcp, originalRetransmit })
 
@@ -303,22 +295,21 @@ func TestARevertedModificationStopsItsTimer(t *testing.T) {
 		sm.SMLock.Unlock()
 	})
 
-	if _, _, err := HandlePduSessN1N2TransFailInd(&transaction.Transaction{Ctxt: sm}); err != nil {
-		t.Fatalf("handling the failure indication: %v", err)
-	}
+	sm.SMLock.Lock()
+	abandonModificationLocked(sm)
+	sm.SMLock.Unlock()
 
 	// The expiry already due when the timer is stopped can still be delivered (see Timer.Stop), so
 	// one is allowed for; the timer left running fires on every interval.
 	time.Sleep(150 * time.Millisecond)
 	if got := retransmissions.Load(); got > 1 {
-		t.Errorf("T3591 fired %d times after the modification was reverted; it was left running", got)
+		t.Errorf("T3591 fired %d times after the modification was abandoned; it was left running", got)
 	}
 }
 
-// The failure indication reads the session in one hold of the lock and reverts in another, and
-// T3591 can abandon the modification between the two and a held decision then start. The revert
-// is for the modification the indication read, and leaves the next one alone: discarding it would
-// drop an update whose Command is on its way to the UE.
+// A revert is for the modification its caller read, and leaves one started since alone: the caller
+// reads the session in one hold of the lock and reverts in a later one, and discarding the newer
+// modification would drop an update whose Command is on its way to the UE.
 func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.T) {
 	original := sendPfcpSessionModifyReq
 	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
@@ -340,7 +331,7 @@ func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.
 	sm.NwModificationPending = true
 	sm.SMLock.Unlock()
 
-	if !revertModification(sm, "n1n2_transfer_failure_indication", read) {
+	if !revertModification(sm, read) {
 		t.Error("a revert with nothing of its own to put back was reported as failed")
 	}
 
