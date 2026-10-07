@@ -958,41 +958,17 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	return nil
 }
 
-// HandlePduSessN1N2TransFailInd answers a delivery failure. It reports whether the failure was a
-// modification's, and if so whether it reverted it rather than dropping the session. Together the
-// two decide the state the caller leaves behind, and they are facts about what happened here rather
-// than ones the state can be read back from.
-func HandlePduSessN1N2TransFailInd(eventData any) (modification, reverted bool, err error) {
+// HandlePduSessN1N2TransFailInd answers the AMF's report that a transfer could not reach the UE.
+//
+// The AMF reports only a transfer that asked for it, and the only one that does is the downlink data
+// paging transfer. A modification's Command does not, so this is never its delivery failure, even
+// when a modification is pending: a Command that arrives while the AMF is paging can end that paging
+// and fails the paging transfer. A Command that never reaches the UE is left to T3591.
+func HandlePduSessN1N2TransFailInd(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
 	smContext.SubPduSessLog.Infoln("in HandlePduSessN1N2TransFailInd, N1N2 Transfer Failure Notification received")
-
-	// A failure to deliver means something different depending on what was being delivered, and
-	// this handler is shared.
-	//
-	// For an establishment the session was never usable, so dropping the data path below is right.
-	// For a modification it is not: the session was working before the modification, and the only
-	// thing that failed was telling the UE about a change to it. Dropping the data path there takes
-	// down a working session because a QoS change could not be delivered — on a satellite link,
-	// where delivery failures are ordinary, that turns a routine event into an outage.
-	//
-	// So a modification is reverted instead: the pending update is discarded and the user plane is
-	// put back to the parameters the UE still believes are in force.
-	smContext.SMLock.Lock()
-	modifying, gen := smContext.NwModificationPending, smContext.NwModificationGen
-	smContext.SMLock.Unlock()
-	if modifying {
-		smContext.SubPduSessLog.Warnf("the modification could not be delivered to the UE; reverting it and leaving the session on its previous parameters")
-
-		// Reported, not assumed. Putting the user plane back can itself fail, and revertModification
-		// then marks the session for release because it is running parameters the UE was never told
-		// about. Answering "reverted" there would have the caller move it to Active and erase that.
-		reverted = revertModification(smContext, "n1n2_transfer_failure_indication", gen)
-		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent, Body: nil}
-
-		return true, reverted, nil
-	}
 
 	var httpResponse *httpwrapper.Response
 
@@ -1012,7 +988,7 @@ func HandlePduSessN1N2TransFailInd(eventData any) (modification, reverted bool, 
 			for _, DLPDR := range ANUPF.DownLinkTunnel.PDR {
 				if DLPDR == nil {
 					smContext.SubPduSessLog.Errorln("AN Release Error")
-					return false, false, fmt.Errorf("AN Release Error")
+					return fmt.Errorf("AN Release Error")
 				} else {
 					DLPDR.FAR.ApplyAction = smf_context.ApplyAction{Buff: false, Drop: true, Dupl: false, Forw: false, Nocp: false}
 					DLPDR.FAR.State = smf_context.RULE_UPDATE
@@ -1060,7 +1036,7 @@ func HandlePduSessN1N2TransFailInd(eventData any) (modification, reverted bool, 
 		smContext.SubPduSessLog.Infoln("no PFCP modification was sent, answering the notification without waiting")
 		txn.Rsp = &httpwrapper.Response{Status: http.StatusNoContent}
 
-		return false, false, nil
+		return nil
 	}
 
 	// Listening PFCP modification response.
@@ -1068,7 +1044,7 @@ func HandlePduSessN1N2TransFailInd(eventData any) (modification, reverted bool, 
 
 	httpResponse = HandlePFCPResponse(smContext, PFCPResponseStatus)
 	txn.Rsp = httpResponse
-	return false, false, nil
+	return nil
 }
 
 // abandonPendingModify undoes the bookkeeping for a modification that failed, whatever the

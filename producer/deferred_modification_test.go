@@ -313,10 +313,7 @@ func TestAHeldDecisionWaitsForTheRevertBeforeIt(t *testing.T) {
 		return nil
 	}
 
-	txn := &transaction.Transaction{Ctxt: s.sm}
-	if _, _, err := HandlePduSessN1N2TransFailInd(txn); err != nil {
-		t.Fatalf("handling the failure indication: %v", err)
-	}
+	revertModification(s.sm, s.sm.NwModificationGen)
 
 	s.waitForSend(t, "the revert")
 	s.waitForSend(t, "the held decision, after the revert")

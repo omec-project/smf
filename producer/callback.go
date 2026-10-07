@@ -684,7 +684,7 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 		// The user plane was programmed before this. Leaving it there would have the session
 		// enforcing parameters the UE was never told about, which is the divergence this whole
 		// path exists to avoid.
-		revertModification(smContext, "n1n2_transfer_failed", gen)
+		revertModification(smContext, gen)
 		return err
 	}
 
@@ -832,10 +832,9 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 	}
 
 	// Stop the timer, not only drop its handle, and leave the session settled so a later
-	// modification of the same session can be attempted. Dropping the handle left the timer
-	// running after a delivery failure, the one abandonment that reaches here with it still armed:
-	// it went on retransmitting into the currency check and then abandoning nothing, for the
-	// whole retransmission sequence.
+	// modification of the same session can be attempted. A timer whose handle is dropped while it is
+	// still armed goes on retransmitting into the currency check and then abandons nothing, for the
+	// whole retransmission sequence; stopping it here keeps that from resting on every caller.
 	smContext.StopT3591()
 
 	smContext.ChangeState(smfContext.SmStateActive)
@@ -893,18 +892,18 @@ func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause s
 // that were in force. Nothing is snapshotted and nothing is copied.
 //
 // The path is always "delivery_failure": that is what reverting means, as distinct from a
-// modification abandoned because the UE did not answer or the radio refused it. Only the cause
-// varies, by how the delivery failed.
+// modification abandoned because the UE did not answer or the radio refused it. The one delivery
+// failure that reaches here is a transfer that failed outright, "n1n2_transfer_failed".
 // revertModification reports whether the user plane went back. A false answer means the session is
 // running parameters the UE was never told about and the caller must not describe it as recovered.
 //
 // gen is the modification the caller is reverting, read under SMLock when it saw that modification
 // pending. The check that it still is, and the abandonment, happen in one hold of the lock: the
-// failure indication reads the session in one hold and reverts in another, and T3591 can abandon the
-// modification in between and a held decision then start, which the revert would otherwise discard
-// as though it were the one whose delivery failed.
-func revertModification(smContext *smfContext.SMContext, cause string, gen uint64) bool {
-	const path = "delivery_failure"
+// caller reads gen in one hold and reverts in a later one, having released the lock for the PFCP
+// exchange and the transfer, and a revert must not discard a modification started since as though it
+// were the one whose delivery failed.
+func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
+	const path, cause = "delivery_failure", "n1n2_transfer_failed"
 
 	smContext.SMLock.Lock()
 	if !smContext.NwModificationPending || smContext.NwModificationGen != gen {
