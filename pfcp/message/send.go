@@ -490,11 +490,15 @@ func sendPfcpSessionModificationRequest(
 
 		return err
 	}
-	nodeIDtoIP := upNodeID.ResolveNodeIdToIp().String()
 	upaddr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: int(upfPort),
 	}
+
+	// The local SEID is taken from the context validated above, not re-indexed by a freshly resolved
+	// IP: for an FQDN UPF the periodic DNS refresh can move the address between resolutions, and
+	// PFCPContext keyed by the new address returns nil -- dereferencing it for LocalSEID would panic.
+	localSEID := pfcpContext.LocalSEID
 
 	if factory.SmfConfig.Configuration.EnableUpfAdapter {
 		if rsp, err := SendPfcpMsgToAdapter(upNodeID, pfcpMsg, upaddr, nil, UPFAdapterURL); err != nil {
@@ -511,7 +515,7 @@ func sendPfcpSessionModificationRequest(
 			}()
 			logger.PfcpLog.Debugf("send pfcp session modify response [%v]", rsp)
 
-			if err := handleAdapterModificationResponse(rsp, ctx.PFCPContext[nodeIDtoIP].LocalSEID); err != nil {
+			if err := handleAdapterModificationResponse(rsp, localSEID); err != nil {
 				// The adapter accepted the POST but rejected the status/body/message or could not
 				// dispatch the response, so this N4 exchange failed with no response coming. Counted
 				// here, as the heartbeat/association adapter paths count their reply failures.
@@ -521,7 +525,7 @@ func sendPfcpSessionModificationRequest(
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[nodeIDtoIP].LocalSEID, ErrHandler: sessionSendErrorHandler(ctx.PFCPContext[nodeIDtoIP].LocalSEID, awaited)}
+		eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: sessionSendErrorHandler(localSEID, awaited)}
 		if err := udp.SendPfcp(pfcpMsg, upaddr, eventData); err != nil {
 			// Reported here, not just logged: a synchronous send failure never reaches
 			// startTxLifeCycle, so nothing else counts it as a failure or refreshes the DNS cache.

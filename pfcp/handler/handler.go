@@ -656,11 +656,14 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 	if causeValue == ie.CauseRequestAccepted {
 		smContext.SubPduSessLog.Infoln("PFCP Modification Response Accept")
 		if smContext.SMContextState == smf_context.SmStatePfcpModify {
-			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
-			upfIP := upfNodeID.ResolveNodeIdToIp().String()
+			// The dispatch-time PFCPContext key (recovered from the response's local SEID), not a
+			// re-resolution of the NodeID: an FQDN UPF's address can move under the DNS refresh while
+			// the modification is in flight, and a re-resolved key would miss PendingUPF and leave the
+			// awaited modify blocked on SBIPFCPCommunicationChan. An absent entry is nothing to drain.
+			upfKey, known := smContext.GetPFCPContextKeyByLocalSEID(SEID)
 			// DeletePendingUPF: see SMContext.PendingUPFLock's declaration.
-			pendingEmpty := smContext.DeletePendingUPF(upfIP)
-			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
+			pendingEmpty := known && smContext.DeletePendingUPF(upfKey)
+			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF [%s]", upfKey)
 
 			if pendingEmpty {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionUpdateSuccess
@@ -684,10 +687,9 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		}
 	}
 
-	smContext.SubCtxLog.Debugln("PFCP Session Context")
-	for _, ctx := range smContext.PFCPContext {
-		smContext.SubCtxLog.Debugln(ctx.String())
-	}
+	// No debug dump of PFCPContext here: this handler does not hold SMLock, so iterating the map
+	// would race -- fatally -- a concurrent AllocateLocalSEIDForDataPath insert (e.g. a PSA/ULCL
+	// branch activation). See SMContext.seidToPFCPCtx.
 }
 
 func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
@@ -728,12 +730,15 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 
 	if causeValue == ie.CauseRequestAccepted {
 		if smContext.SMContextState == smf_context.SmStatePfcpRelease {
-			upfNodeID := smContext.GetNodeIDByLocalSEID(SEID)
-			upfIP := upfNodeID.ResolveNodeIdToIp().String()
+			// The dispatch-time PFCPContext key (recovered from the response's local SEID), not a
+			// re-resolution of the NodeID: an FQDN UPF's address can move under the DNS refresh while
+			// the deletion is in flight, and a re-resolved key would miss PendingUPF and leave the
+			// awaited release blocked on SBIPFCPCommunicationChan. An absent entry is nothing to drain.
+			upfKey, known := smContext.GetPFCPContextKeyByLocalSEID(SEID)
 			// DeletePendingUPF: releaseTunnel rebuilds this same map under SMLock, which this
 			// handler cannot take (see SMContext.PendingUPFLock's declaration).
-			pendingEmpty := smContext.DeletePendingUPF(upfIP)
-			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF IP [%s]", upfIP)
+			pendingEmpty := known && smContext.DeletePendingUPF(upfKey)
+			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF [%s]", upfKey)
 
 			if pendingEmpty && !smContext.LocalPurged.Load() {
 				smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess

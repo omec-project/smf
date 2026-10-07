@@ -34,6 +34,7 @@ const (
 	NodeInDBCol       = "smf.data.nodeInDB"
 	RefSeidCol        = "smf.data.refToSeid"
 	refFilterKey      = "ref"
+	seidFilterKey     = "seid"
 )
 
 func SetupSmfCollection() {
@@ -58,7 +59,7 @@ func SetupSmfCollection() {
 	}
 
 	// SEID Table
-	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, "seid")
+	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, seidFilterKey)
 	if err != nil {
 		logger.DataRepoLog.Errorln("create index failed on TxnId field")
 	}
@@ -186,6 +187,9 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 			logger.DataRepoLog.Errorf("remoteSEID unmarshal error: %v", err)
 		}
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
+		// Rebuild the local-SEID index alongside PFCPContext so the SEID-keyed lookups work on a
+		// restored context without iterating the map (see SMContext.seidToPFCPCtx).
+		smContext.recordPFCPCtxRef(localSeid, key, pfcpCtxInDB.NodeID)
 	}
 
 	var dataPathInDBIf any
@@ -419,7 +423,7 @@ func StoreSeidContextInDB(seidUint uint64, smContext *SMContext) {
 		Seid: seid,
 	}
 	itemBsonA := ToBsonMSeidRef(item)
-	filter := bson.M{"seid": seid}
+	filter := bson.M{seidFilterKey: seid}
 	logger.DataRepoLog.Debugf("StoreSeidContextInDB filter: %+v", filter)
 
 	_, postErr := mongoapi.CommonDBClient.RestfulAPIPost(SeidSmContextCol, filter, itemBsonA)
@@ -477,7 +481,7 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 	seid := SeidConv(seidUint)
 	filter := bson.M{}
-	filter["seid"] = seid
+	filter[seidFilterKey] = seid
 
 	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
 	if getOneErr != nil {
@@ -499,7 +503,7 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 func DeleteSmContextInDBBySEID(seidUint uint64) {
 	seid := SeidConv(seidUint)
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
-	filter := bson.M{"seid": seid}
+	filter := bson.M{seidFilterKey: seid}
 	logger.DataRepoLog.Infof("filter: %+v", filter)
 
 	result, getOneErr := mongoapi.CommonDBClient.RestfulAPIGetOne(SeidSmContextCol, filter)
