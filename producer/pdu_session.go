@@ -143,7 +143,7 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 	return nil
 }
 
-func HandlePDUSessionSMContextCreate(eventData interface{}) error {
+func HandlePDUSessionSMContextCreate(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.PostSmContextsRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
@@ -447,7 +447,7 @@ func HandlePDUSessionSMContextCreate(eventData interface{}) error {
 	// TODO: UECM registration
 }
 
-func HandlePDUSessionSMContextUpdate(eventData interface{}) error {
+func HandlePDUSessionSMContextUpdate(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 
@@ -651,7 +651,7 @@ func makePduCtxtModifyErrRsp(smContext *smf_context.SMContext, errStr string) *h
 		smf_context.RemoveSMContext(smContext.Ref)
 	}
 */
-func HandlePDUSessionSMContextRelease(eventData interface{}) error {
+func HandlePDUSessionSMContextRelease(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	body := txn.Req.(models.ReleaseSmContextRequest)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
@@ -944,7 +944,7 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	return nil
 }
 
-func HandlePduSessN1N2TransFailInd(eventData interface{}) error {
+func HandlePduSessN1N2TransFailInd(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
 

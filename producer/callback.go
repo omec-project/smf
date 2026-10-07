@@ -28,7 +28,7 @@ var (
 	SendRemoveSubscription              = consumer.SendRemoveSubscription
 )
 
-func HandleSMPolicyUpdateNotify(eventData interface{}) error {
+func HandleSMPolicyUpdateNotify(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.SmPolicyNotification)
 	smContext := txn.Ctxt.(*smfContext.SMContext)

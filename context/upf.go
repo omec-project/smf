@@ -335,7 +335,7 @@ func (upf *UPF) PFCPAddr() *net.UDPAddr {
 // *** add unit test ***//
 func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 	var targetUPF *UPF = nil
-	upfPool.Range(func(key, value interface{}) bool {
+	upfPool.Range(func(key, value any) bool {
 		curUPF := value.(*UPF)
 		if curUPF.NodeID.NodeIdType != nodeID.NodeIdType &&
 			(curUPF.NodeID.NodeIdType == NodeIdTypeFqdn || nodeID.NodeIdType == NodeIdTypeFqdn) {
@@ -359,7 +359,7 @@ func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 // *** add unit test ***//
 func RemoveUPFNodeByNodeID(nodeID NodeID) bool {
 	upfID := ""
-	upfPool.Range(func(key, value interface{}) bool {
+	upfPool.Range(func(key, value any) bool {
 		upfID = key.(string)
 		upf := value.(*UPF)
 		if upf.NodeID.NodeIdType != nodeID.NodeIdType &&

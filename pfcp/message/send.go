@@ -1051,7 +1051,7 @@ func GetLocalIP() string {
 }
 
 // SendPfcpMsgToAdapter send pfcp msg to upf-adapter in http/json encoded format
-func SendPfcpMsgToAdapter(upNodeID smf_context.NodeID, msg message.Message, addr *net.UDPAddr, eventData interface{}, url string) (*http.Response, error) {
+func SendPfcpMsgToAdapter(upNodeID smf_context.NodeID, msg message.Message, addr *net.UDPAddr, eventData any, url string) (*http.Response, error) {
 	// get IP
 	ip_str := GetLocalIP()
 
