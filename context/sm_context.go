@@ -179,6 +179,19 @@ type SMContext struct {
 	PendingUPFLock sync.Mutex `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
+	// seidToPFCPCtx indexes PFCPContext by each entry's local SEID, giving the entry's stable key
+	// (the UPF address resolved when it was allocated) and NodeID without iterating PFCPContext.
+	// GetPFCPContextKeyByLocalSEID/GetNodeIDByLocalSEID read it, and they run from handlers that do
+	// NOT hold SMLock -- the establishment send-error handler on the transaction goroutine, and the
+	// modification/deletion response handlers -- while AllocateLocalSEIDForDataPath inserts
+	// PFCPContext entries under SMLock (e.g. a PSA/ULCL branch activation reached from a response
+	// handler). Iterating the live PFCPContext map concurrently with that insertion is not just a
+	// race but a process-crashing fatal error ("concurrent map iteration and map write"), so those
+	// lookups read this index under seidToPFCPCtxLock instead. Taking SMLock in them would deadlock
+	// the establishment response handler, which already holds it. Rebuilt wherever PFCPContext is
+	// (AllocateLocalSEIDForDataPath and the DB restore path), exactly as PendingUPF is.
+	seidToPFCPCtx     map[uint64]seidPFCPRef `json:"-" yaml:"-" bson:"-"`
+	seidToPFCPCtxLock sync.RWMutex           `json:"-" yaml:"-" bson:"-"`
 	// TxnBus per subscriber
 	TxnBus transaction.TxnBus `json:"-" yaml:"txnBus" bson:"-"` // ignore
 	// SMTxnBusLock sync.Mutex         `json:"smTxnBusLock,omitempty" yaml:"smTxnBusLock" bson:"smTxnBusLock,omitempty"` // ignore
@@ -783,14 +796,50 @@ func (smContext *SMContext) PCFSelection() error {
 	return nil
 }
 
-func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
-	for _, pfcpCtx := range smContext.PFCPContext {
-		if pfcpCtx.LocalSEID == seid {
-			nodeID = pfcpCtx.NodeID
-		}
-	}
+// seidPFCPRef is a PFCPContext entry's stable identity: its map key (the UPF address resolved when
+// the entry was allocated) and NodeID. Held in SMContext.seidToPFCPCtx so a local SEID can be
+// resolved to either without iterating PFCPContext. See that field's comment.
+type seidPFCPRef struct {
+	key    string
+	nodeID NodeID
+}
 
-	return
+// recordPFCPCtxRef indexes the PFCPContext entry at key (local SEID localSEID, UPF nodeID) so the
+// SEID-keyed lookups below find it without iterating PFCPContext. Called wherever a PFCPContext entry
+// is created (AllocateLocalSEIDForDataPath and the DB restore path), under seidToPFCPCtxLock so it is
+// safe against the unlocked response/send-error handlers that read the index.
+func (smContext *SMContext) recordPFCPCtxRef(localSEID uint64, key string, nodeID NodeID) {
+	smContext.seidToPFCPCtxLock.Lock()
+	defer smContext.seidToPFCPCtxLock.Unlock()
+	if smContext.seidToPFCPCtx == nil {
+		smContext.seidToPFCPCtx = make(map[uint64]seidPFCPRef)
+	}
+	smContext.seidToPFCPCtx[localSEID] = seidPFCPRef{key: key, nodeID: nodeID}
+}
+
+func (smContext *SMContext) GetNodeIDByLocalSEID(seid uint64) (nodeID NodeID) {
+	smContext.seidToPFCPCtxLock.RLock()
+	defer smContext.seidToPFCPCtxLock.RUnlock()
+	return smContext.seidToPFCPCtx[seid].nodeID
+}
+
+// GetPFCPContextKeyByLocalSEID returns the PFCPContext map key for the session whose local SEID is
+// seid, and whether such an entry exists. The key is the UPF address resolved once when the session
+// was allocated (AllocateLocalSEIDForDataPath) -- the same string the send paths look the PFCPContext
+// entry up by and that SendPFCPRules/AddPendingUPF record in PendingUPF. A PFCP response or send
+// failure must correlate back to PendingUPF through this stored key rather than by re-resolving the
+// NodeID: for an FQDN UPF the periodic DNS refresh (see ResolveNodeIdToIp) can move the address while
+// a request is in flight, and a re-resolved key would miss PendingUPF, leaving the awaited batch
+// pending forever and the create/modify/release FSM blocked on SBIPFCPCommunicationChan.
+//
+// Reads the seidToPFCPCtx index under seidToPFCPCtxLock rather than iterating PFCPContext: it is
+// called from handlers that do not hold SMLock, and a concurrent insert into PFCPContext would make
+// a live iteration a process-crashing fatal error. See seidToPFCPCtx's declaration.
+func (smContext *SMContext) GetPFCPContextKeyByLocalSEID(seid uint64) (key string, ok bool) {
+	smContext.seidToPFCPCtxLock.RLock()
+	defer smContext.seidToPFCPCtxLock.RUnlock()
+	ref, ok := smContext.seidToPFCPCtx[seid]
+	return ref.key, ok
 }
 
 // RemoteSEIDByLocalSEID returns the SEID the user-plane function assigned to the session
@@ -826,6 +875,9 @@ func (smContext *SMContext) AllocateLocalSEIDForDataPath(dataPath *DataPath) {
 				NodeID:    curDataPathNode.UPF.NodeID,
 				LocalSEID: allocatedSEID,
 			}
+			// Index the new entry by its local SEID so the SEID-keyed lookups need not iterate
+			// PFCPContext (seidToPFCPCtx's declaration explains why that iteration is unsafe).
+			smContext.recordPFCPCtxRef(allocatedSEID, NodeIDtoIP, curDataPathNode.UPF.NodeID)
 
 			seidSMContextMap.Store(allocatedSEID, smContext)
 
