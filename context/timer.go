@@ -99,10 +99,7 @@ func (t *Timer) ExpireTimes() int32 {
 // — the callback can still run after Stop returns in that case, same as the race this function
 // exists to close, but only as the fallout of a caller bug rather than as a permanent deadlock.
 func (t *Timer) Stop() {
-	t.stopOnce.Do(func() {
-		t.done <- true
-		close(t.done)
-	})
+	t.Cancel()
 
 	done := make(chan struct{})
 	go func() {
@@ -115,4 +112,16 @@ func (t *Timer) Stop() {
 		logger.CtxLog.Errorf("Timer.Stop: timed out after %s waiting for a racing callback; "+
 			"the caller likely holds a lock expiredFunc/cancelFunc also needs", stopWaitTimeout)
 	}
+}
+
+// Cancel turns off the timer without waiting for its goroutine, so a callback already in flight can
+// still run after Cancel returns. It is for the callers Stop rules out: one that holds a lock the
+// callbacks take, or one running inside a callback. Such a caller must have its callbacks check,
+// under that same lock, that the timer is still the one it is using, and do nothing if not. Safe
+// to call more than once, and together with Stop.
+func (t *Timer) Cancel() {
+	t.stopOnce.Do(func() {
+		t.done <- true
+		close(t.done)
+	})
 }
