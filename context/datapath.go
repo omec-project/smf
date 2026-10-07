@@ -696,8 +696,17 @@ func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER,
 		}
 
 		ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
+		// One CHOOSE ID across the tunnel's PDRs, so the UPF gives them one F-TEID (TS 29.244
+		// clause 5.5.3). The RAN is told a single uplink TEID for the PDU session, and a PDR on a
+		// TEID of its own matches no packet: without this, which rule's TEID the RAN was told
+		// followed map order, and uplink the told rule did not match was dropped. V4 because
+		// clause 8.2.3 requires V4 or V6 even with CHOOSE, and the SMF builds IPv4-only sessions:
+		// the PDN type is IPv4 and the F-TEID the UPF assigns is read back as IPv4.
 		ULPDR.PDI.LocalFTeid = &FTEID{
-			Ch: true,
+			V4:       true,
+			Ch:       true,
+			Chid:     true,
+			ChooseId: uplinkTunnelChooseId,
 		}
 		ULPDR.PDI.UEIPAddress = &ueIpAddr
 		ULPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)

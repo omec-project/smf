@@ -484,6 +484,14 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
 			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
+
+			// Before the release, not after. Releasing first puts the old address back in
+			// the pool, and another session can take it while this report is in flight --
+			// leaving the PCF holding that address as this session's binding key at the
+			// moment it becomes another subscriber's, which is the collision this reports
+			// to prevent.
+			consumer.ReportUeIpChange(smContext, ueIPAddress)
+
 			// Release previous locally allocated UE IP-Addr
 			err := smContext.ReleaseUeIpAddr()
 			if err != nil {
@@ -502,6 +510,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			return
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		if err := ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
+			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
+				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
+		}
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {

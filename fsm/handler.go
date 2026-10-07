@@ -32,7 +32,7 @@ const (
 )
 
 type SmEventData struct {
-	Txn interface{}
+	Txn any
 }
 
 // Define FSM Func Point Struct here

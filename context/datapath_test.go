@@ -69,6 +69,50 @@ func TestActivateUpLinkPdr(t *testing.T) {
 	}
 }
 
+// The RAN is told one uplink TEID per PDU session, so every uplink PDR of the tunnel has to ask for
+// the same F-TEID. A PDR left to a TEID of its own matches no packet, and with two PCC rules that
+// lost all uplink the told rule did not match on about half the sessions.
+func TestEveryUplinkPdrOfATunnelAsksForOneFTEID(t *testing.T) {
+	smContext := &context.SMContext{
+		PDUAddress: &context.UeIpAddr{Ip: net.IPv4(192, 168, 1, 1)},
+		Dnn:        testDnn,
+	}
+	dpNode := &context.DataPathNode{
+		UPF: &context.UPF{},
+		UpLinkTunnel: &context.GTPTunnel{
+			PDR: map[string]*context.PDR{
+				"ALLOW-ALL": {FAR: &context.FAR{}},
+				"CIR-TEST":  {FAR: &context.FAR{}},
+			},
+		},
+	}
+
+	if err := dpNode.ActivateUpLinkPdr(smContext, &context.QER{}, 10); err != nil {
+		t.Fatalf("ActivateUpLinkPdr: %v", err)
+	}
+
+	var chooseID *uint8
+	for name, pdr := range dpNode.UpLinkTunnel.PDR {
+		fteid := pdr.PDI.LocalFTeid
+		if fteid == nil {
+			t.Fatalf("PDR %q has no local F-TEID", name)
+		}
+		if !fteid.Ch || !fteid.Chid {
+			t.Errorf("PDR %q: CH=%v CHID=%v, want both: the UPF assigns a PDR without CHOOSE ID a TEID "+
+				"of its own", name, fteid.Ch, fteid.Chid)
+		}
+		// TS 29.244 clause 8.2.3: at least one of V4 and V6, CHOOSE included.
+		if !fteid.V4 {
+			t.Errorf("PDR %q: V4 unset, so the CHOOSE names no address family", name)
+		}
+		if chooseID == nil {
+			chooseID = &fteid.ChooseId
+		} else if fteid.ChooseId != *chooseID {
+			t.Errorf("PDR %q: CHOOSE ID %d, another PDR of the tunnel has %d", name, fteid.ChooseId, *chooseID)
+		}
+	}
+}
+
 func TestActivateDlLinkPdr(t *testing.T) {
 	smContext := &context.SMContext{
 		PDUAddress: &context.UeIpAddr{

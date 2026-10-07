@@ -9,8 +9,10 @@ import (
 	"net"
 	"sync"
 
+	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/pfcp/ies"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -277,6 +279,14 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
 			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
+
+			// Before the release, not after. Releasing first puts the old address back in
+			// the pool, and another session can take it while this report is in flight --
+			// leaving the PCF holding that address as this session's binding key at the
+			// moment it becomes another subscriber's, which is the collision this reports
+			// to prevent.
+			consumer.ReportUeIpChange(smContext, ueIPAddress)
+
 			// Release previous locally allocated UE IP-Addr
 			err := smContext.ReleaseUeIpAddr()
 			if err != nil {
@@ -294,6 +304,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			return fmt.Errorf("failed to parse TEID IE: %+v", err)
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
+		if err := ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
+			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
+				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
+		}
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {

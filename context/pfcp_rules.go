@@ -61,6 +61,14 @@ type FTEID struct {
 	ChooseId    uint8
 }
 
+// uplinkTunnelChooseId is the CHOOSE ID every uplink PDR of a tunnel carries, so that the UPF
+// assigns them one F-TEID. A CHOOSE ID groups PDRs within one PFCP message only (TS 29.244 clause
+// 5.5.3), and SendPFCPRules sends one message per UPF. Its uplink PDRs belong to the one tunnel the
+// session has on that UPF: a generated data path visits a UPF once, and where two activated paths
+// share their access UPF (ULCL), EstablishRANTunnelInfo gives both that tunnel's TEID. So a single
+// value serves every tunnel.
+const uplinkTunnelChooseId uint8 = 1
+
 type UEIPAddress struct {
 	Ipv4Address              net.IP
 	Ipv6Address              net.IP

@@ -38,7 +38,7 @@ const (
 
 func SetupSmfCollection() {
 	dbName := "sdcore_smf"
-	dbUrl := "mongodb://mongodb-arbiter-headless"
+	dbUrl := "mongodb://mongodb-headless:27017/?replicaSet=rs0"
 
 	if factory.SmfConfig.Configuration.Mongodb.Url != "" {
 		dbUrl = factory.SmfConfig.Configuration.Mongodb.Url
@@ -86,8 +86,8 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 
 	dataPathPoolInDBVal := make(map[int64]*DataPathInDB)
 
-	var dataPathInDBIf interface{}
-	var FirstDPNodeIf interface{}
+	var dataPathInDBIf any
+	var FirstDPNodeIf any
 
 	var upTunnelVal UPTunnelInDB
 	if smContext.Tunnel != nil {
@@ -188,8 +188,8 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
 	}
 
-	var dataPathInDBIf interface{}
-	var FirstDPNodeIf interface{}
+	var dataPathInDBIf any
+	var FirstDPNodeIf any
 	smContext.Tunnel = &UPTunnel{}
 	if !reflect.DeepEqual(aux.Tunnel, UPTunnelInDB{}) {
 		smContext.Tunnel.ANInformation = aux.Tunnel.ANInformation
@@ -565,7 +565,7 @@ func DeleteSmContextInDBByRef(ref string) {
 	logger.DataRepoLog.Errorf("delete SMContext In DB w ref %v failed after %d attempts, giving up: %v", ref, maxAttempts, err)
 }
 
-func mapToByte(data map[string]interface{}) (ret []byte) {
+func mapToByte(data map[string]any) (ret []byte) {
 	ret, err := gojson.Marshal(data)
 	if err != nil {
 		logger.DataRepoLog.Errorf("map to byte error: %v", err)
