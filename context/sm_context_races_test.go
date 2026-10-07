@@ -150,3 +150,111 @@ func TestSerializationDoesNotRaceConcurrentPendingUPFMutation(t *testing.T) {
 
 	wg.Wait()
 }
+
+// AggregateEstablishmentResponse is the only correct way the establishment response handlers touch
+// PendingUPF and the EstablishmentFailed latch: it runs the whole check/delete/empty/latch sequence
+// under PendingUPFLock. Those handlers can run concurrently for different UPFs of one session, so a
+// direct map access would be a concurrent read/write -- a process-crashing fatal error for Go maps,
+// not just a race report. Run under -race. Exactly the response that drains the last pending UPF
+// signals the verdict, no matter which goroutine that turns out to be.
+func TestAggregateEstablishmentResponseIsRaceFree(t *testing.T) {
+	const upfs = 64
+	smContext := &SMContext{PendingUPF: make(PendingUPF)}
+	for i := range upfs {
+		smContext.AddPendingUPF(fmt.Sprintf("10.0.0.%d", i))
+	}
+
+	var wg sync.WaitGroup
+	var signals atomic.Int64
+	for i := range upfs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, signal, _ := smContext.AggregateEstablishmentResponse(fmt.Sprintf("10.0.0.%d", i), true); signal {
+				signals.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if got := signals.Load(); got != 1 {
+		t.Errorf("responses that signalled a verdict = %d, want exactly 1 (the one that empties the batch)", got)
+	}
+	if !smContext.PendingUPFIsEmpty() {
+		t.Errorf("PendingUPF not empty after every UPF responded")
+	}
+}
+
+// AggregateEstablishmentResponse decides the single create verdict from the whole batch of UPF
+// responses: success only if every tracked UPF accepted, failure if any rejected (latched so the
+// order responses arrive in cannot change the outcome), and a response from a UPF outside the batch
+// changes nothing.
+func TestAggregateEstablishmentResponseVerdict(t *testing.T) {
+	t.Run("all accepted yields success once the batch empties", func(t *testing.T) {
+		smContext := &SMContext{PendingUPF: PendingUPF{"a": true, "b": true}}
+		if tracked, signal, _ := smContext.AggregateEstablishmentResponse("a", true); !tracked || signal {
+			t.Fatalf("first of two responses: tracked=%v signal=%v, want tracked=true signal=false", tracked, signal)
+		}
+		tracked, signal, verdict := smContext.AggregateEstablishmentResponse("b", true)
+		if !tracked || !signal || verdict != SessionEstablishSuccess {
+			t.Fatalf("second response: tracked=%v signal=%v verdict=%v, want true/true/SessionEstablishSuccess", tracked, signal, verdict)
+		}
+	})
+
+	t.Run("a rejection is latched across a later acceptance", func(t *testing.T) {
+		smContext := &SMContext{PendingUPF: PendingUPF{"a": true, "b": true}}
+		// The first UPF rejects; the second accepts. The latch must outlast the acceptance so the
+		// batch verdict is failure, not whichever response happened to arrive last.
+		smContext.AggregateEstablishmentResponse("a", false)
+		_, signal, verdict := smContext.AggregateEstablishmentResponse("b", true)
+		if !signal || verdict != SessionEstablishFailed {
+			t.Fatalf("verdict after one rejection: signal=%v verdict=%v, want signal=true SessionEstablishFailed", signal, verdict)
+		}
+		// Cleared once the verdict is produced, so the next batch on this context starts clean.
+		if smContext.EstablishmentFailed {
+			t.Errorf("EstablishmentFailed still set after the verdict was produced")
+		}
+	})
+
+	t.Run("a response from outside the batch changes nothing", func(t *testing.T) {
+		smContext := &SMContext{PendingUPF: PendingUPF{"a": true}}
+		tracked, signal, _ := smContext.AggregateEstablishmentResponse("not-pending", false)
+		if tracked || signal {
+			t.Fatalf("untracked response: tracked=%v signal=%v, want both false", tracked, signal)
+		}
+		if smContext.EstablishmentFailed {
+			t.Errorf("an untracked rejection must not latch EstablishmentFailed")
+		}
+		if smContext.PendingUPFIsEmpty() {
+			t.Errorf("an untracked response must not drain the pending batch")
+		}
+	})
+}
+
+// ResetPendingUPF starts a new response batch. A prior batch that recorded a rejection but was
+// abandoned before draining to a verdict (e.g. another request failed synchronously and woke the
+// create waiter) leaves EstablishmentFailed latched; without clearing it here, an all-accepted retry
+// would still be reported as failed. The latch must be reset together with the map, under the lock.
+func TestResetPendingUPFClearsEstablishmentFailedLatch(t *testing.T) {
+	smContext := &SMContext{PendingUPF: PendingUPF{"a": true, "b": true}}
+
+	// First batch: one UPF rejects, the batch is abandoned before the second responds, so the latch
+	// is left set.
+	smContext.AggregateEstablishmentResponse("a", false)
+	if !smContext.EstablishmentFailed {
+		t.Fatal("precondition: a rejection should have latched EstablishmentFailed")
+	}
+
+	// A retry replaces the batch.
+	smContext.ResetPendingUPF(PendingUPF{"a": true, "b": true})
+	if smContext.EstablishmentFailed {
+		t.Fatal("ResetPendingUPF did not clear the stale EstablishmentFailed latch")
+	}
+
+	// The all-accepted retry must now produce success, not the stale failure.
+	smContext.AggregateEstablishmentResponse("a", true)
+	_, signal, verdict := smContext.AggregateEstablishmentResponse("b", true)
+	if !signal || verdict != SessionEstablishSuccess {
+		t.Fatalf("all-accepted retry: signal=%v verdict=%v, want signal=true SessionEstablishSuccess", signal, verdict)
+	}
+}
