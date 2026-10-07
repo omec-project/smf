@@ -133,6 +133,16 @@ func TestAPolicyUpdateTheUserPlaneDidNotApplyLeavesTheSessionActive(t *testing.T
 		t.Run(verdict.String(), func(t *testing.T) {
 			smContext := sessionTheUserPlaneAnswers(t, verdict)
 
+			// The send records the user plane it waits on, as the real one does for an active path
+			// (BuildPfcpParam resets the map first). An entry left behind is waited on by the next
+			// modification, which would then wait for an answer to this one.
+			sendModificationRequest = func(smf_context.NodeID, *smf_context.SMContext, []*smf_context.PDR, []*smf_context.FAR,
+				[]*smf_context.BAR, []*smf_context.QER, []*smf_context.PDR, []*smf_context.FAR, []*smf_context.QER, uint16,
+			) error {
+				smContext.PendingUPF["127.0.0.1"] = true
+				return nil
+			}
+
 			txn := &transaction.Transaction{Req: models.SmPolicyNotification{}, Ctxt: smContext}
 
 			awaitHandler(t, func() {
@@ -147,6 +157,10 @@ func TestAPolicyUpdateTheUserPlaneDidNotApplyLeavesTheSessionActive(t *testing.T
 
 			if got := smContext.SMContextState; got != smf_context.SmStateActive {
 				t.Errorf("state = %s, want SmStateActive: no FSM handler accepts an event in any other state this can leave", got)
+			}
+
+			if len(smContext.PendingUPF) != 0 {
+				t.Errorf("pending user planes = %v after the modification ended; the next one would wait for an answer to this", smContext.PendingUPF)
 			}
 		})
 	}

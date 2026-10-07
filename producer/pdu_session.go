@@ -560,6 +560,20 @@ func HandlePDUSessionSMContextUpdate(eventData any) error {
 			}
 		}
 
+		// Neither flag set means nothing on this path had PFCP work to do, and the message has
+		// already been handled where it belongs -- the UE's acknowledgement of a network-requested
+		// modification arriving while the transfer that carried it is still in flight is the case
+		// that brought this here. Without an answer built for it the transaction ends with no
+		// response at all, which the API layer turns into a 500: the SMF telling the AMF the
+		// opposite of what it just did.
+		if httpResponse == nil {
+			smContext.SubPduSessLog.Infoln("no PFCP work for this update while a modification is in flight; answering the AMF that it was accepted")
+			httpResponse = &httpwrapper.Response{
+				Status: http.StatusOK,
+				Body:   response,
+			}
+		}
+
 	case smf_context.SmStateModify:
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, ctxt in Modification Pending")
 		smContext.ChangeState(smf_context.SmStateActive)
@@ -944,6 +958,12 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 	return nil
 }
 
+// HandlePduSessN1N2TransFailInd answers the AMF's report that a transfer could not reach the UE.
+//
+// The AMF reports only a transfer that asked for it, and the only one that does is the downlink data
+// paging transfer. A modification's Command does not, so this is never its delivery failure, even
+// when a modification is pending: a Command that arrives while the AMF is paging can end that paging
+// and fails the paging transfer. A Command that never reaches the UE is left to T3591.
 func HandlePduSessN1N2TransFailInd(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)
