@@ -9,13 +9,13 @@ require (
 	github.com/omec-project/nas/v2 v2.2.6
 	github.com/omec-project/ngap/v2 v2.1.8
 	github.com/omec-project/openapi/v2 v2.2.5
-	github.com/omec-project/util v1.8.13
+	github.com/omec-project/util v1.9.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/segmentio/kafka-go v0.4.51
 	github.com/urfave/cli/v3 v3.14.0
 	github.com/wmnsk/go-pfcp v0.0.24
-	go.mongodb.org/mongo-driver/v2 v2.9.1
+	go.mongodb.org/mongo-driver/v2 v2.9.2
 	go.uber.org/zap v1.28.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
