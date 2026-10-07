@@ -14,10 +14,10 @@ import (
 type Message struct {
 	RemoteAddr  *net.UDPAddr
 	PfcpMessage message.Message
-	EventData   interface{}
+	EventData   any
 }
 
-func NewMessage(remoteAddr *net.UDPAddr, pfcpMessage message.Message, eventData interface{}) (msg Message) {
+func NewMessage(remoteAddr *net.UDPAddr, pfcpMessage message.Message, eventData any) (msg Message) {
 	msg = Message{}
 	msg.RemoteAddr = remoteAddr
 	msg.PfcpMessage = pfcpMessage

@@ -163,7 +163,7 @@ func WaitForServer() error {
 // this package, not pfcp/message, precisely so a caller in any package can satisfy this contract
 // without an import cycle. The counting was kept out of this function so the two failure paths
 // (synchronous at the caller, asynchronous in the goroutine) are each reported exactly once.
-func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) error {
+func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData any) error {
 	server := GetServer()
 	if server == nil {
 		return fmt.Errorf("PFCP server is not initialized")
@@ -201,7 +201,7 @@ func WaitForAllTransactions() {
 	txWG.Wait()
 }
 
-func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, interface{}, error) {
+func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, any, error) {
 	if server == nil {
 		return nil, nil, nil, fmt.Errorf("PFCP server is not initialized")
 	}
@@ -221,7 +221,7 @@ func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, interfa
 		return addr, nil, nil, err
 	}
 
-	var eventData interface{}
+	var eventData any
 	if IsRequest(msg) {
 		// Todo: Implement SendingResponse type of reliable delivery
 		tx, err := findTransaction(server, msg, addr)

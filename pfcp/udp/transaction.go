@@ -117,14 +117,14 @@ type Transaction struct {
 	DestAddr       *net.UDPAddr
 	ConsumerAddr   string
 	ErrHandler     func(*message.Message, error)
-	EventData      interface{}
+	EventData      any
 	SendMsg        []byte
 	SequenceNumber uint32
 	MessageType    uint8
 	TxType         TransactionType
 }
 
-func NewTransaction(pfcpMSG message.Message, binaryMSG []byte, Conn *net.UDPConn, DestAddr *net.UDPAddr, eventData interface{}) *Transaction {
+func NewTransaction(pfcpMSG message.Message, binaryMSG []byte, Conn *net.UDPConn, DestAddr *net.UDPAddr, eventData any) *Transaction {
 	tx := &Transaction{
 		SendMsg:        binaryMSG,
 		SequenceNumber: pfcpMSG.Sequence(),
