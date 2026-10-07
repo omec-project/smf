@@ -177,6 +177,9 @@ type SMContext struct {
 	// methods below rather than the field directly - a lock only some accessors take does not
 	// prevent the concurrent map access the others still cause.
 	PendingUPFLock sync.Mutex `json:"-" yaml:"-" bson:"-"` // ignore
+	// EstablishmentFailed latches a rejection seen from any UPF while PendingUPF is drained, so the
+	// verdict queued once it empties reflects every response gathered, not only the last one.
+	EstablishmentFailed bool `json:"-" yaml:"-" bson:"-"` // ignore
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	// seidToPFCPCtx indexes PFCPContext by each entry's local SEID, giving the entry's stable key
@@ -305,6 +308,12 @@ func (smContext *SMContext) ResetPendingUPF(entries PendingUPF) {
 	smContext.PendingUPFLock.Lock()
 	defer smContext.PendingUPFLock.Unlock()
 	smContext.PendingUPF = entries
+	// A fresh batch starts clean. AggregateEstablishmentResponse clears EstablishmentFailed only when
+	// it drains the batch to empty and produces a verdict; a batch abandoned before that (e.g. another
+	// request fails synchronously and wakes the create waiter, then a retry replaces PendingUPF) would
+	// otherwise carry a stale rejection into the new batch and report an all-accepted retry as failed.
+	// Reset under the same lock as the map so the latch and the batch it tracks never disagree.
+	smContext.EstablishmentFailed = false
 }
 
 // AddPendingUPF marks nodeIP as awaiting a PFCP response, creating PendingUPF first if nil.
@@ -356,6 +365,46 @@ func (smContext *SMContext) PendingUPFIsEmpty() bool {
 	smContext.PendingUPFLock.Lock()
 	defer smContext.PendingUPFLock.Unlock()
 	return smContext.PendingUPF.IsEmpty()
+}
+
+// AggregateEstablishmentResponse folds one UPF's establishment verdict into the batch the create
+// procedure waits on, as a single atomic operation under PendingUPFLock. The establishment response
+// handlers hold SMLock, but the modification and deletion response handlers mutate PendingUPF
+// without it, so SMLock does not serialize all accesses -- only PendingUPFLock does. The map and the
+// EstablishmentFailed latch it drains alongside must therefore be touched only through this (and the
+// sibling PendingUPF helpers), never the field directly.
+//
+// upfIP is the UPF that just responded and accepted is its verdict. tracked reports whether that
+// UPF belonged to the pending batch; only those responses count toward the create verdict, so a
+// response from an unrelated PSA/ULCL branch addition (BPManager.PendingUPF, a separate map)
+// returns tracked=false and changes nothing. When the response was tracked and draining it empties
+// the batch, signal is true and verdict carries the aggregate: SessionEstablishFailed if any UPF in
+// the batch rejected, SessionEstablishSuccess otherwise. EstablishmentFailed latches a rejection
+// across responses and is cleared once the verdict is produced, so the next batch starts clean.
+//
+// The channel send that delivers the verdict is deliberately left to the caller: PendingUPFLock is
+// never held across a blocking channel operation, so the caller performs the (non-blocking) send
+// after this returns.
+func (smContext *SMContext) AggregateEstablishmentResponse(upfIP string, accepted bool) (tracked, signal bool, verdict PFCPSessionResponseStatus) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+
+	if _, pending := smContext.PendingUPF[upfIP]; !pending {
+		return false, false, verdict
+	}
+	delete(smContext.PendingUPF, upfIP)
+	if !accepted {
+		smContext.EstablishmentFailed = true
+	}
+	if !smContext.PendingUPF.IsEmpty() {
+		return true, false, verdict
+	}
+	verdict = SessionEstablishSuccess
+	if smContext.EstablishmentFailed {
+		verdict = SessionEstablishFailed
+	}
+	smContext.EstablishmentFailed = false
+	return true, true, verdict
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {
