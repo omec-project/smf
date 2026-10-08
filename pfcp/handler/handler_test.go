@@ -139,7 +139,10 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 			10: &context.DataPath{
 				IsDefaultPath: true,
 				FirstDPNode: &context.DataPathNode{
-					UPF: &context.UPF{},
+					// The access node carries the responding UPF's NodeID, as a real default path does:
+					// the handler now applies the F-TEID to the node that matches the response rather
+					// than to the access node unconditionally.
+					UPF: &context.UPF{NodeID: *nodeID},
 					UpLinkTunnel: &context.GTPTunnel{
 						TEID: 0,
 					},
@@ -193,6 +196,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
 		ie.NewRecoveryTimeStamp(recoveryTimestamp),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 		),
@@ -370,6 +374,11 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				t.Fatal("failed to allocate a local SEID for the test SMContext")
 			}
 
+			// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment
+			// request went out to before a response can arrive; simulated here since this test drives
+			// the handler directly.
+			smContext.PendingUPF = context.PendingUPF{nodeID.ResolveNodeIdToIp().String(): true}
+
 			seq := uint32(localSEID)
 			pfcp_message.InsertPfcpTxn(seq, nodeID)
 
@@ -382,6 +391,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID("1.1.1.1", "", ""),
 				ie.NewRecoveryTimeStamp(time.Now()),
+				ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 			)
 
 			udpMessage := udp.Message{
@@ -461,6 +471,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.2", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.2"), nil),
 	)
 
 	done := make(chan struct{})
@@ -482,6 +493,355 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 
 	if len(smContext.SBIPFCPCommunicationChan) != 1 {
 		t.Errorf("channel holds %d verdicts, want the one the create procedure will read", len(smContext.SBIPFCPCommunicationChan))
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse covers a response from a
+// UPF this handler is not actually waiting on as part of the create batch -- e.g. a PSA/ULCL branch
+// addition, which tracks its own responses in BPManager.PendingUPF rather than smContext.PendingUPF,
+// but can still be in flight while the context is create-pending. Counting such a response toward
+// smContext.EstablishmentFailed or treating an unrelated, already-empty smContext.PendingUPF as "no
+// more to wait for" would let it poison or preempt the verdict for a batch it was never part of.
+func TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.11")
+	smContext := context.NewSMContext("imsi-100000000000009", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+			},
+		},
+	}
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{
+		FirstDPNode: &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+	})
+
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+
+	// Nothing is pending for the initial create: a prior batch already completed (or, as here,
+	// this UPF's establishment belongs to a PSA/ULCL addition tracked in BPManager.PendingUPF
+	// instead).
+	smContext.PendingUPF = context.PendingUPF{}
+
+	seq := uint32(localSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// A rejected response: on the old, ungated logic this would still set EstablishmentFailed and,
+	// finding smContext.PendingUPF empty, queue a stale SessionEstablishFailed.
+	rsp := message.NewSessionEstablishmentResponse(
+		0, 0, localSEID, seq, 0,
+		ie.NewCause(ie.CauseRequestRejected),
+		ie.NewNodeID("1.1.1.11", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.11"), Port: 8809},
+		PfcpMessage: rsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("expected no verdict for a response outside the tracked batch, got %v", status)
+	default:
+	}
+
+	if smContext.EstablishmentFailed {
+		t.Error("EstablishmentFailed latched by a response that was never part of the tracked batch")
+	}
+}
+
+// The two user planes the aggregation fixture's session is anchored on: an access-side UPF carrying
+// the default path, and a secondary UPF. Distinct from the addresses the other handler tests use so
+// a -count run cannot carry UPF-pool or SEID state between them.
+const (
+	accessUpf    = "1.1.2.1"
+	secondaryUpf = "1.1.2.2"
+
+	// verdictAccept and verdictReject name which tracked UPF answers in the conflicting-verdict test:
+	// "accept" is the access side, "reject" the secondary.
+	verdictAccept = "accept"
+	verdictReject = "reject"
+)
+
+// twoTrackedCreateBatch builds a create-pending session whose data path runs through the access-side
+// and secondary UPFs, both registered in the create batch's PendingUPF, mirroring what SendPFCPRules
+// populates before any establishment request goes out. It returns the context and the two UPFs' local
+// SEIDs, which the responses below are addressed to.
+func twoTrackedCreateBatch(t *testing.T, imsi string) (sm *context.SMContext, accessSEID, secondarySEID uint64) {
+	t.Helper()
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	smContext := context.NewSMContext(imsi, 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.Tunnel = context.NewUPTunnel()
+
+	for _, upfIP := range []string{accessUpf, secondaryUpf} {
+		node := context.NewDataPathNode()
+		node.UPF = context.NewUPF(context.NewNodeID(upfIP), nil)
+		path := context.NewDataPath()
+		path.FirstDPNode = node
+		path.IsDefaultPath = upfIP == accessUpf
+		smContext.Tunnel.AddDataPath(path)
+		smContext.AllocateLocalSEIDForDataPath(path)
+	}
+
+	smContext.PendingUPF = context.PendingUPF{accessUpf: true, secondaryUpf: true}
+
+	return smContext, smContext.PFCPContext[accessUpf].LocalSEID, smContext.PFCPContext[secondaryUpf].LocalSEID
+}
+
+// TestHandlePfcpSessionEstablishmentResponseAggregatesConflictingTrackedUPFs drives the native handler
+// through a create batch whose two tracked UPFs disagree: the access-side UPF accepts and the secondary
+// UPF rejects. The aggregate verdict must be a single failure regardless of which response arrives
+// first -- an acceptance from the access side must not override a rejection from the secondary, and the
+// handler must not restore an access-side-only gate that would miss the secondary's rejection. The
+// single-UPF acceptance, untracked-rejection, and failure-helper tests cannot catch that regression
+// because none of them has two tracked UPFs disagreeing.
+func TestHandlePfcpSessionEstablishmentResponseAggregatesConflictingTrackedUPFs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		imsi  string
+		first string // which UPF answers first: "accept" (access) or "reject" (secondary)
+	}{
+		{"access accepts before the secondary rejects", "imsi-100000000000010", verdictAccept},
+		{"secondary rejects before the access accepts", "imsi-100000000000011", verdictReject},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			smContext, accessSEID, secondarySEID := twoTrackedCreateBatch(t, tc.imsi)
+
+			deliver := map[string]func(){
+				verdictAccept: func() {
+					pfcp_message.InsertPfcpTxn(uint32(accessSEID), context.NewNodeID(accessUpf))
+					handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+						RemoteAddr: &net.UDPAddr{IP: net.ParseIP(accessUpf), Port: 8809},
+						PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, accessSEID, uint32(accessSEID), 0,
+							ie.NewCause(ie.CauseRequestAccepted),
+							ie.NewNodeID(accessUpf, "", ""),
+							ie.NewRecoveryTimeStamp(time.Now()),
+							ie.NewFSEID(0xABCD, net.ParseIP(accessUpf), nil),
+						),
+					})
+				},
+				verdictReject: func() {
+					pfcp_message.InsertPfcpTxn(uint32(secondarySEID), context.NewNodeID(secondaryUpf))
+					handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+						RemoteAddr: &net.UDPAddr{IP: net.ParseIP(secondaryUpf), Port: 8809},
+						PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, secondarySEID, uint32(secondarySEID), 0,
+							ie.NewCause(ie.CauseRequestRejected),
+							ie.NewNodeID(secondaryUpf, "", ""),
+							ie.NewRecoveryTimeStamp(time.Now()),
+						),
+					})
+				},
+			}
+
+			second := verdictReject
+			if tc.first == verdictReject {
+				second = verdictAccept
+			}
+
+			// The first UPF's response drains its own entry but leaves the batch pending, so the create
+			// procedure must not yet see a verdict -- whichever UPF answered first.
+			deliver[tc.first]()
+			if n := len(smContext.SBIPFCPCommunicationChan); n != 0 {
+				t.Fatalf("a verdict was queued after only the first of two tracked UPFs answered: %d queued", n)
+			}
+
+			// The second response empties the batch. One UPF rejected, so the aggregate verdict is a
+			// single failure: the access-side acceptance must not override it.
+			deliver[second]()
+			select {
+			case v := <-smContext.SBIPFCPCommunicationChan:
+				if v != context.SessionEstablishFailed {
+					t.Fatalf("aggregate verdict = %v, want SessionEstablishFailed", v)
+				}
+			default:
+				t.Fatal("no verdict queued after both tracked UPFs answered; the create FSM would block forever")
+			}
+			if n := len(smContext.SBIPFCPCommunicationChan); n != 0 {
+				t.Errorf("more than one verdict queued: %d still waiting", n)
+			}
+		})
+	}
+}
+
+// twoNodeDefaultPath builds a create-pending session whose single default data path chains an access
+// UPF (FirstDPNode, the one advertised to the RAN) to a secondary UPF behind it, both tracked in the
+// create batch. The UPFs are registered in the pool so the response handler's RetrieveUPFNodeByNodeID
+// finds them, and removed on cleanup so a -count run does not accumulate duplicates under the same
+// NodeID. It returns the context and each node's local SEID.
+func twoNodeDefaultPath(t *testing.T, imsi, accessUpfIP, secondaryUpfIP string) (sm *context.SMContext, accessSEID, secondarySEID uint64) {
+	t.Helper()
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	accessNodeID := context.NewNodeID(accessUpfIP)
+	secondaryNodeID := context.NewNodeID(secondaryUpfIP)
+	accessNode := context.NewDataPathNode()
+	accessNode.UPF = context.NewUPF(accessNodeID, nil)
+	secondaryNode := context.NewDataPathNode()
+	secondaryNode.UPF = context.NewUPF(secondaryNodeID, nil)
+	t.Cleanup(func() {
+		context.RemoveUPFNodeByNodeID(*accessNodeID)
+		context.RemoveUPFNodeByNodeID(*secondaryNodeID)
+	})
+
+	// access -> secondary, so FindNode walks both from FirstDPNode and the secondary is genuinely on
+	// the default path (not a separate one), which is the topology the TEID-overwrite bug needs.
+	accessNode.AddNext(secondaryNode)
+	secondaryNode.AddPrev(accessNode)
+
+	path := context.NewDataPath()
+	path.FirstDPNode = accessNode
+	path.IsDefaultPath = true
+
+	smContext := context.NewSMContext(imsi, 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+	smContext.Tunnel = context.NewUPTunnel()
+	smContext.Tunnel.AddDataPath(path)
+	smContext.AllocateLocalSEIDForDataPath(path)
+
+	smContext.PendingUPF = context.PendingUPF{accessUpfIP: true, secondaryUpfIP: true}
+
+	return smContext, smContext.PFCPContext[accessUpfIP].LocalSEID, smContext.PFCPContext[secondaryUpfIP].LocalSEID
+}
+
+// TestHandlePfcpSessionEstablishmentResponseKeepsAccessTunnelTEID drives a create whose default data
+// path runs through two UPFs that both accept with distinct F-TEIDs. The access tunnel TEID advertised
+// to the RAN must come from the access UPF's own response; the secondary UPF's F-TEID must land on the
+// secondary node and never overwrite the access node's. Both arrival orders are covered because the
+// create now waits for every UPF, so a secondary acceptance can be handled after the access one and
+// before N1N2 setup reads the access tunnel -- the window in which a blind assignment corrupts it.
+func TestHandlePfcpSessionEstablishmentResponseKeepsAccessTunnelTEID(t *testing.T) {
+	const (
+		accessTEID    = uint32(0x1111)
+		secondaryTEID = uint32(0x2222)
+
+		accessFTEIDIP    = "192.168.1.1"
+		secondaryFTEIDIP = "192.168.9.2"
+
+		// Dedicated UPF node IPs, distinct from the other handler tests', so this test owns the only
+		// pool entries under them and RetrieveUPFNodeByNodeID returns the very nodes it set up (one UPF
+		// per IP, as in production) rather than a leftover duplicate from an earlier test.
+		accessUpfIP    = "1.1.3.1"
+		secondaryUpfIP = "1.1.3.2"
+	)
+	for _, tc := range []struct {
+		name        string
+		imsi        string
+		accessFirst bool
+	}{
+		{"access UPF answers first", "imsi-100000000000012", true},
+		{"secondary UPF answers first", "imsi-100000000000013", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			smContext, accessSEID, secondarySEID := twoNodeDefaultPath(t, tc.imsi, accessUpfIP, secondaryUpfIP)
+
+			answerAccess := func() {
+				pfcp_message.InsertPfcpTxn(uint32(accessSEID), context.NewNodeID(accessUpfIP))
+				handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+					RemoteAddr: &net.UDPAddr{IP: net.ParseIP(accessUpfIP), Port: 8809},
+					PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, accessSEID, uint32(accessSEID), 0,
+						ie.NewCause(ie.CauseRequestAccepted),
+						ie.NewNodeID(accessUpfIP, "", ""),
+						ie.NewRecoveryTimeStamp(time.Now()),
+						ie.NewFSEID(0xA, net.ParseIP(accessUpfIP), nil),
+						// Flag 0x01 sets the V4 bit so the IPv4 endpoint is actually encoded (and parsed back).
+						ie.NewCreatedPDR(ie.NewFTEID(0x01, accessTEID, net.ParseIP(accessFTEIDIP), nil, 0)),
+					),
+				})
+			}
+			answerSecondary := func() {
+				pfcp_message.InsertPfcpTxn(uint32(secondarySEID), context.NewNodeID(secondaryUpfIP))
+				handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+					RemoteAddr: &net.UDPAddr{IP: net.ParseIP(secondaryUpfIP), Port: 8809},
+					PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, secondarySEID, uint32(secondarySEID), 0,
+						ie.NewCause(ie.CauseRequestAccepted),
+						ie.NewNodeID(secondaryUpfIP, "", ""),
+						ie.NewRecoveryTimeStamp(time.Now()),
+						ie.NewFSEID(0xB, net.ParseIP(secondaryUpfIP), nil),
+						ie.NewCreatedPDR(ie.NewFTEID(0x01, secondaryTEID, net.ParseIP(secondaryFTEIDIP), nil, 0)),
+					),
+				})
+			}
+
+			first, second := answerAccess, answerSecondary
+			if !tc.accessFirst {
+				first, second = answerSecondary, answerAccess
+			}
+			first()
+			second()
+
+			// Both accepted, so the create succeeds.
+			select {
+			case v := <-smContext.SBIPFCPCommunicationChan:
+				if v != context.SessionEstablishSuccess {
+					t.Fatalf("aggregate verdict = %v, want SessionEstablishSuccess", v)
+				}
+			default:
+				t.Fatal("no aggregate verdict queued after both UPFs accepted")
+			}
+
+			defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
+			accessNode := defaultPath.FirstDPNode
+			secondaryNode := accessNode.Next()
+
+			// The access tunnel carries the access UPF's own TEID, never the secondary's -- this is the
+			// TEID BuildPDUSessionResourceSetupRequestTransfer advertises to the RAN.
+			if got := accessNode.UpLinkTunnel.TEID; got != accessTEID {
+				t.Errorf("access tunnel TEID = %#x, want the access UPF's own %#x (secondary UPF's is %#x)", got, accessTEID, secondaryTEID)
+			}
+			// The secondary UPF's F-TEID lands on its own node.
+			if got := secondaryNode.UpLinkTunnel.TEID; got != secondaryTEID {
+				t.Errorf("secondary node tunnel TEID = %#x, want %#x", got, secondaryTEID)
+			}
+
+			// The advertised access address pairs with the access TEID: the handler records the F-TEID's
+			// IPv4 as the access UPF's N3 endpoint, which the NGAP builder reads alongside the access TEID.
+			accessNode.UPF.UpfLock.RLock()
+			n3 := accessNode.UPF.N3Interfaces
+			accessNode.UPF.UpfLock.RUnlock()
+			if len(n3) == 0 || len(n3[0].IPv4EndPointAddresses) == 0 {
+				t.Fatal("the access UPF has no N3 endpoint recorded")
+			}
+			if got := n3[0].IPv4EndPointAddresses[0]; !got.Equal(net.ParseIP(accessFTEIDIP)) {
+				t.Errorf("advertised access N3 address = %v, want %v (the access UPF's own F-TEID address)", got, accessFTEIDIP)
+			}
+		})
 	}
 }
 

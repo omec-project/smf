@@ -284,6 +284,7 @@ func SendPfcpAssociationReleaseResponse(upNodeID smf_context.NodeID, cause uint8
 func SendPfcpSessionEstablishmentRequest(
 	upNodeID smf_context.NodeID,
 	ctx *smf_context.SMContext,
+	pendingKey string,
 	pdrList []*smf_context.PDR,
 	farList []*smf_context.FAR,
 	barList []*smf_context.BAR,
@@ -292,10 +293,31 @@ func SendPfcpSessionEstablishmentRequest(
 ) (err error) {
 	// The request either goes out -- in which case a response handler answers the session -- or it
 	// does not, and nothing else will. The caller waits on the session's PFCP channel whatever this
-	// returns, so every failing exit answers it here. Registered before the first of them, which is
+	// returns, so every failing exit is answered here. Registered before the first of them, which is
 	// the guard below: a deferred call does not run for a return that precedes it.
+	//
+	// For a create, this UPF is one entry of a PendingUPF batch, so a failure is folded into that
+	// batch and the SessionEstablishFailed verdict queued only once the batch drains -- never
+	// immediately. A synchronous failure on one UPF of a multi-UPF create must not roll the whole
+	// create back while the other establishment requests are still in flight: an accepted branch
+	// would then be stranded, its UPF session never deleted. This mirrors establishmentSendErrorHandler,
+	// which folds an asynchronous (transaction-timeout) failure into the same batch.
+	//
+	// Before the local SEID is known -- the PFCPContext lookup below failed -- the failure cannot be
+	// keyed by SEID, but SendPFCPRules added this UPF to PendingUPF under the same missing-context
+	// condition, so the batch entry is drained by pendingKey (the exact key the caller registered)
+	// instead. Only if that key is in no batch (a lone create-pending session, or a restoration that
+	// never populated PendingUPF) is the waiter answered directly, so a missing-context failure can no
+	// longer wake the create FSM before the rest of the batch completes.
+	var localSEID uint64
+	var haveLocalSEID bool
 	defer func() {
-		if err != nil {
+		if err == nil {
+			return
+		}
+		if haveLocalSEID {
+			foldEstablishmentFailureIntoBatch(ctx, localSEID)
+		} else if !foldEstablishmentFailureByKey(ctx, pendingKey) {
 			answerTheWaitingSession(ctx, awaitingEstablishment, smf_context.SessionEstablishFailed)
 		}
 	}()
@@ -305,6 +327,8 @@ func SendPfcpSessionEstablishmentRequest(
 	if !ok {
 		return fmt.Errorf("PFCP Context not found for NodeID[%v]", upNodeID)
 	}
+	localSEID = pfcpContext.LocalSEID
+	haveLocalSEID = true
 
 	nodeIDIPAddress := smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp()
 
@@ -377,7 +401,7 @@ func SendPfcpSessionEstablishmentRequest(
 					reportSendFailure(pfcpMsg, err)
 					return err
 				}
-				eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
+				eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: HandlePfcpSendError}
 				if err = adapter.HandleAdapterPfcpRsp(pfcpRspMsg, &eventData); err != nil {
 					// Dispatching is what puts the verdict on the session's PFCP channel, so a
 					// dispatch that failed is a request with no answer coming. Returned, and the
@@ -399,7 +423,13 @@ func SendPfcpSessionEstablishmentRequest(
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		eventData := udp.PfcpEventData{LSEID: ctx.PFCPContext[ip.String()].LocalSEID, ErrHandler: HandlePfcpSendError}
+		// Bound to this session's local SEID so an asynchronous establishment failure (a transaction
+		// timeout) can drain this UPF from the create's PendingUPF batch -- the request header SEID is 0,
+		// so nothing else can identify the session on timeout. See establishmentSendErrorHandler. Taken
+		// from the context validated at function entry, not re-indexed by a freshly resolved IP: for an
+		// FQDN UPF the periodic DNS refresh can move the address between resolutions, and PFCPContext
+		// keyed by the new address returns nil -- dereferencing it for LocalSEID would panic.
+		eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: establishmentSendErrorHandler(localSEID)}
 		err := udp.SendPfcp(pfcpMsg, upaddr, eventData)
 		if err != nil {
 			// Counted here: a synchronous send failure never reaches startTxLifeCycle, so nothing
@@ -733,17 +763,139 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 // exchange waiting on the session's channel was never answered, and a user plane that stopped
 // responding left that modification or release waiting for good.
 //
-// Establishment is deliberately not bound. Its handler, once it can find a session, sends the UE a
-// reject and removes the context. That is right for a create that failed and wrong for
-// restoration, which reissues establishments for sessions already running -- and for a create the
-// procedure's own failure path already does both, so the handler would do them twice. Which of
-// those an establishment failure should do is a question for a change of its own.
 // sessionSendErrorHandler binds a failed request to its session. awaited says whether the request's
 // sender waits on the session's channel for its verdict; a deletion always is.
 func sessionSendErrorHandler(localSEID uint64, awaited bool) func(message.Message, error) {
 	return func(msg message.Message, err error) {
 		handlePfcpSendError(msg, err, localSEID, true, awaited)
 	}
+}
+
+// establishmentSendErrorHandler binds a create's establishment request to its session by the SMF's
+// own local SEID, so an asynchronous send failure -- a transaction timeout, or a write that failed on
+// the transaction goroutine -- can be folded into the create's PendingUPF batch as this UPF's failed
+// verdict. BuildPfcpSessionEstablishmentRequest sets the header SEID to 0, so the request carries no
+// session identity of its own (this is why establishment cannot use sessionSendErrorHandler, which
+// finds a modification/deletion by that header SEID); without the bound local SEID the handler could
+// not find the context, and without feeding the batch, the entry SendPFCPRules added for this UPF
+// would never clear and the create FSM's blocking receive on SBIPFCPCommunicationChan would hang
+// forever if this UPF stopped responding.
+//
+// It reports the N4 Out/Failure metric (and DNS refresh) through reportSendFailure, then aggregates a
+// failed response for this UPF and, when that drains the batch, queues the SessionEstablishFailed
+// verdict. It deliberately does not reject the UE or remove the context: once the verdict is read the
+// create procedure's own failure path (the FSM's create-failure handler) does both, and doing them
+// here too would double them -- the reason establishment was previously left unbound. For a
+// restoration establishment, which reuses this send path for a session already running and is not
+// tracked in PendingUPF, AggregateEstablishmentResponse returns tracked=false, so this reports the
+// failure and changes no batch or channel state.
+//
+// It also consumes the seq->NodeID entry InsertPfcpTxn added for this request, exactly as the
+// synchronous failure path in SendPfcpSessionEstablishmentRequest does. The UDP transaction has
+// already been removed by the time this asynchronous handler runs, so no later response will arrive
+// to consume the entry through FetchPfcpTxn; without this, every establishment to an unreachable UPF
+// would leak one PfcpTxns entry.
+func establishmentSendErrorHandler(localSEID uint64) func(message.Message, error) {
+	return func(msg message.Message, err error) {
+		reportSendFailure(msg, err)
+
+		// The response that would have consumed this entry is never coming on a send timeout.
+		FetchPfcpTxn(msg.Sequence())
+
+		smContext := smf_context.GetSMContextBySEID(localSEID)
+		if smContext == nil {
+			logger.PfcpLog.Errorf("SMContext not found for failed establishment (local SEID[%v])", localSEID)
+			return
+		}
+		smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", err.Error())
+
+		// This handler runs on the UDP transaction goroutine, which holds no SMLock, and the fold
+		// reads SMContextState to decide whether a create batch is this failure's to drain. A
+		// restoration establishment reuses this send path for a session that is already running, and
+		// an awaited modification on that session -- a policy update (producer/callback.go) -- runs
+		// ChangeState under SMLock concurrently. Without SMLock here the state read races that write.
+		// The lock is taken around the fold specifically, not inside foldEstablishmentFailureByKey:
+		// the synchronous establishment path reaches that helper from restoration with SMLock already
+		// held (SendPFCPRules sends under the lock), and SMLock is not reentrant, so locking the shared
+		// helper would deadlock that caller.
+		smContext.SMLock.Lock()
+		foldEstablishmentFailureIntoBatch(smContext, localSEID)
+		smContext.SMLock.Unlock()
+	}
+}
+
+// foldEstablishmentFailureIntoBatch records one UPF's establishment failure in the create's PendingUPF
+// batch and queues the aggregate SessionEstablishFailed verdict only once that drains the batch. Both
+// an asynchronous failure (establishmentSendErrorHandler, on a transaction timeout) and a synchronous
+// one (the deferred failure path of SendPfcpSessionEstablishmentRequest) fold through here, so a
+// failure on one UPF of a multi-UPF create never answers -- and rolls back -- the create while the
+// other establishment requests are still in flight. The N4 Out/Failure metric and DNS refresh are
+// reported by the caller's reportSendFailure, not here.
+//
+// It deliberately does not reject the UE or remove the context: once the verdict is read the create
+// procedure's own failure path (the FSM's create-failure handler) does both, and doing them here too
+// would double them.
+func foldEstablishmentFailureIntoBatch(smContext *smf_context.SMContext, localSEID uint64) {
+	// The stable key this UPF is tracked by in PendingUPF, recovered from the bound local SEID rather
+	// than by re-resolving the NodeID: reportSendFailure may have refreshed the DNS cache, so an FQDN
+	// UPF can now resolve to a different address than the one SendPFCPRules recorded in PendingUPF at
+	// dispatch, and a re-resolved key would miss the batch and leave the create waiting forever. An
+	// absent entry (e.g. a restoration establishment, not tracked) is nothing to drain.
+	upfKey, known := smContext.GetPFCPContextKeyByLocalSEID(localSEID)
+	if !known {
+		return
+	}
+
+	foldEstablishmentFailureByKey(smContext, upfKey)
+}
+
+// foldEstablishmentFailureByKey is the shared tail of both fold paths: it drains the UPF tracked by
+// upfKey from the create's PendingUPF batch as a failed verdict and, once that empties the batch,
+// queues the aggregate SessionEstablishFailed on the session's PFCP channel. It returns whether the
+// UPF belonged to the batch (tracked), so a caller holding a dispatch-time key the batch never
+// recorded can answer its lone waiter directly instead.
+//
+// upfKey is the dispatch-time PendingUPF key: the local SEID-derived key when the failure handler
+// had one (foldEstablishmentFailureIntoBatch), or the key the caller registered in PendingUPF
+// otherwise (the deferred failure path of SendPfcpSessionEstablishmentRequest). Either way it is the
+// key PendingUPF was keyed by, never a fresh NodeID re-resolution that the periodic DNS refresh
+// could have moved off the batch.
+func foldEstablishmentFailureByKey(smContext *smf_context.SMContext, upfKey string) (tracked bool) {
+	// Only a create waits on PendingUPF as an establishment batch. Gate on that state before touching
+	// the map, exactly as the response handler and its failPendingEstablishment sibling do: PendingUPF
+	// is shared with the awaited modification and release flows, so draining a UPF here for a
+	// restoration establishment (which reuses this send path for a session already running, outside any
+	// create) could corrupt a modify/release batch that happens to track the same UPF.
+	if upfKey == "" || smContext.SMContextState != smf_context.SmStatePfcpCreatePending {
+		return false
+	}
+
+	// This helper does not take SMLock itself. The batch mutation below is serialized by its own
+	// PendingUPFLock (AggregateEstablishmentResponse takes it), but the SMContextState read above is
+	// not, so a caller whose session's state can change under it must hold SMLock before calling: the
+	// asynchronous timeout handler (establishmentSendErrorHandler) and restoration's synchronous reissue
+	// both do, because an awaited modification can run ChangeState concurrently. The helper must not
+	// acquire SMLock itself -- restoration already holds it (SendPFCPRules sends under the lock) and
+	// SMLock is not reentrant, so locking here would deadlock that path. The initial-create synchronous
+	// path reaches this without SMLock, but runs inside the session's serialized create transaction,
+	// where no other goroutine changes the state.
+	//
+	// A tracked response that drains the batch belongs to the initial create by definition, so the
+	// verdict is written straight to the channel, exactly as the response handler and
+	// failPendingEstablishment do -- not routed through awaitingEstablishment, which additionally
+	// returns false while BPManager is AddingPSA. A PSA/ULCL branch addition can overlap a
+	// still-create-pending context; if the last initial-batch result is a send failure during that
+	// overlap, gating the send on awaitingEstablishment here would suppress the only verdict and block
+	// the create FSM forever. The non-blocking send keeps the sender off a channel nobody reads.
+	tracked, signal, verdict := smContext.AggregateEstablishmentResponse(upfKey, false)
+	if tracked && signal {
+		select {
+		case smContext.SBIPFCPCommunicationChan <- verdict:
+		default:
+			smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
+		}
+	}
+	return tracked
 }
 
 // answerTheWaitingSession puts a verdict on the session's PFCP channel when the request was not

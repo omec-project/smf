@@ -220,6 +220,35 @@ func TestSessionsAnchoredOnSkipsASessionTheRestartedNodeAcknowledged(t *testing.
 	}
 }
 
+// A session whose initial create has not finished is being set up, not recovered from this restart,
+// even when the restarted node has already acknowledged its own leg of a multi-UPF create: the
+// create completes only once every UPF on the path answers, and another may still be outstanding or
+// may have rejected. Offering it for restoration lets reissue reset the in-flight PendingUPF batch
+// (SendPFCPRules does so while SmStatePfcpCreatePending) and clear the rejection latch, which can
+// turn a create one UPF rejected into a false success. It is excluded and counted as still
+// establishing instead, so a caller does not read the node as empty.
+func TestSessionsAnchoredOnSkipsASessionStillFinishingItsCreate(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.55")
+	// anchor records a non-zero RemoteSEID, so the restarted node has acknowledged this leg; only the
+	// overall create state keeps the session out of restoration.
+	creating := anchor(t, "imsi-208930000000055", 10, "10.20.0.55")
+	creating.SMLock.Lock()
+	creating.SMContextState = context.SmStatePfcpCreatePending
+	creating.SMLock.Unlock()
+
+	anchored, _, stillEstablishing := context.SessionsAnchoredOn(node, time.Time{})
+	for _, s := range anchored {
+		if s == creating {
+			t.Errorf("a session still finishing its initial create was offered for restoration; " +
+				"reissuing over it resets the in-flight create batch and can mask a UPF's rejection")
+		}
+	}
+	if stillEstablishing == 0 {
+		t.Errorf("a session still finishing its create was not counted as still establishing; " +
+			"a caller may wrongly read the node as empty")
+	}
+}
+
 func mustAnchoredAt(node context.NodeID, recovery time.Time) []*context.SMContext {
 	anchored, _, _ := context.SessionsAnchoredOn(node, recovery)
 	return anchored
