@@ -29,10 +29,6 @@ func (f *Flag) setBit(position uint8) {
 	*f |= 1 << (position - 1)
 }
 
-func boolPointer(b bool) *bool {
-	return &b
-}
-
 func TestFindUEIPAddressNoAddressInCreatedPDR(t *testing.T) {
 	sessionEstablishmentResponse := message.NewSessionEstablishmentResponse(
 		0,
@@ -80,7 +76,7 @@ func TestFindUEIPAddressNoUEIPAddressInCreatedPDR(t *testing.T) {
 
 func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 	kafkaInfo := factory.KafkaInfo{
-		EnableKafka: boolPointer(false),
+		EnableKafka: new(false),
 	}
 	configuration := &factory.Configuration{
 		KafkaInfo:        kafkaInfo,
@@ -234,7 +230,7 @@ func TestHandlePfcpSessionEstablishmentResponseNilTunnel(t *testing.T) {
 	if factory.SmfConfig.Configuration == nil {
 		factory.SmfConfig = factory.Config{
 			Configuration: &factory.Configuration{
-				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
 				EnableUpfAdapter: false,
 			},
 		}
@@ -336,7 +332,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 			if factory.SmfConfig.Configuration == nil {
 				factory.SmfConfig = factory.Config{
 					Configuration: &factory.Configuration{
-						KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+						KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
 						EnableUpfAdapter: false,
 					},
 				}
@@ -422,7 +418,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 	if factory.SmfConfig.Configuration == nil {
 		factory.SmfConfig = factory.Config{
 			Configuration: &factory.Configuration{
-				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
 				EnableUpfAdapter: false,
 			},
 		}
@@ -500,7 +496,7 @@ func TestHandlePfcpSessionModificationResponseNoSMContext(t *testing.T) {
 	if factory.SmfConfig.Configuration == nil {
 		factory.SmfConfig = factory.Config{
 			Configuration: &factory.Configuration{
-				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
 				EnableUpfAdapter: false,
 			},
 		}
