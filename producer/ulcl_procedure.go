@@ -145,8 +145,11 @@ func EstablishPSA2(smContext *context.SMContext) {
 
 			curDPNodeIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
+			// This PSA addition tracks its UPFs in bpMGR.PendingUPF, not smContext.PendingUPF, so the
+			// dispatch key is folded against no create batch (tracked=false) and never signals the create
+			// channel -- the key is passed only for symmetry with the create path's missing-context drain.
 			err := message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDataPathNode.UPF.Port)
+				curDataPathNode.UPF.NodeID, smContext, curDPNodeIP, pdrList, farList, barList, qerList, curDataPathNode.UPF.Port)
 			if err != nil {
 				logger.PduSessLog.Errorf("send pfcp session establishment request failed: %v for UPF[%v, %v]: ", err, curDataPathNode.UPF.NodeID, curDataPathNode.UPF.NodeID.ResolveNodeIdToIp())
 			}

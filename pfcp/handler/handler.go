@@ -412,6 +412,38 @@ func HandlePfcpSessionSetDeletionResponse(msg *udp.Message) {
 	logger.PfcpLog.Warnln("PFCP Session Set Deletion Response handling is not implemented")
 }
 
+// failPendingEstablishment folds an unusable establishment response (missing/garbled Cause, missing
+// or unparsable NodeID, a broken tunnel, etc.) from the UPF at upfKey into the create's PendingUPF
+// batch as that UPF's failed verdict, and emits the aggregate verdict if it drains the batch. Every
+// early return in HandlePfcpSessionEstablishmentResponse past the point FetchPfcpTxn consumes the
+// transaction must call this: the UPF is already in the batch SendPFCPRules built, so returning
+// without it leaves an entry no later response or timeout can clear, and the create FSM's blocking
+// receive on SBIPFCPCommunicationChan never completes.
+//
+// upfKey is the stable PFCPContext key for this response's session (GetPFCPContextKeyByLocalSEID),
+// not a re-resolution of the NodeID: PendingUPF records that key, and an FQDN whose address the DNS
+// refresh moved while the request was in flight would make a re-resolved key miss the batch. An empty
+// key (no PFCPContext entry, e.g. the branch was already torn down) is nothing to drain.
+//
+// It gates on SmStatePfcpCreatePending because smContext.PendingUPF is shared with the awaited
+// modification and the release flows: a stale establishment response arriving outside a create must
+// not delete an entry those operations own. Within a create, AggregateEstablishmentResponse's own
+// tracked guard makes a response from a UPF outside the batch (a restoration or PSA/ULCL branch
+// establishment) a no-op.
+func failPendingEstablishment(smContext *smf_context.SMContext, upfKey string) {
+	if upfKey == "" || smContext.SMContextState != smf_context.SmStatePfcpCreatePending {
+		return
+	}
+	tracked, signal, verdict := smContext.AggregateEstablishmentResponse(upfKey, false)
+	if tracked && signal {
+		select {
+		case smContext.SBIPFCPCommunicationChan <- verdict:
+		default:
+			smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
+		}
+	}
+}
+
 func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	rsp, ok := msg.PfcpMessage.(*message.SessionEstablishmentResponse)
 	if !ok {
@@ -436,6 +468,13 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
+	// The stable key this response's UPF is tracked by in PendingUPF/PFCPContext, recovered from the
+	// response's local SEID rather than by re-resolving the NodeID: an FQDN UPF's address can move
+	// under the periodic DNS refresh while the request is in flight, and a re-resolved key would miss
+	// the create batch and strand it. Used for every PendingUPF correlation and PFCPContext lookup
+	// below.
+	upfKey, _ := smContext.GetPFCPContextKeyByLocalSEID(SEID)
+
 	// If Tunnel is nil (e.g. a stale Establishment Response arrives after
 	// releaseTunnel nilled it), discard the response. Consume any pending
 	// txn entry on this path too so it can't be leaked if reached without
@@ -454,17 +493,45 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		return
 	}
 
-	if rsp.UPFSEID != nil {
-		// NodeIDtoIP := rsp.NodeID.ResolveNodeIdToIp().String()
-		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
-		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
-		rspUPFseid, err := rsp.UPFSEID.FSEID()
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to parse FSEID IE: %+v", err)
+	if rsp.Cause == nil {
+		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing Cause")
+		failPendingEstablishment(smContext, upfKey)
+		return
+	}
+	causeValue, causeErr := rsp.Cause.Cause()
+	if causeErr != nil {
+		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", causeErr)
+		failPendingEstablishment(smContext, upfKey)
+		return
+	}
+	// F-SEID only matters for an accepted response, so it is parsed only for one. A parse failure
+	// leaves rspUPFseid nil, which records no RemoteSEID below (the session stays not-yet-established).
+	var rspUPFseid *ie.FSEIDFields
+	if causeValue == ie.CauseRequestAccepted && rsp.UPFSEID != nil {
+		var fseidErr error
+		if rspUPFseid, fseidErr = rsp.UPFSEID.FSEID(); fseidErr != nil {
+			logger.PfcpLog.Errorf("failed to parse FSEID IE: %+v", fseidErr)
+			rspUPFseid = nil
+		}
+	}
+	accepted := causeValue == ie.CauseRequestAccepted
+
+	if accepted {
+		pfcpSessionCtx := smContext.PFCPContext[upfKey]
+		if pfcpSessionCtx == nil {
+			// The PFCP session this acceptance belongs to is already gone (upfKey empty, or its entry
+			// removed). A PSA/ULCL branch addition that another UPF's rejection (or a branch send
+			// failure) aborted removes the branch tail's PFCPContext before this late acceptance lands,
+			// so there is nothing to record the RemoteSEID on. Fold the UPF out of any pending create
+			// batch and stop rather than dereference a nil entry.
+			logger.PfcpLog.Warnf("PFCP Session Establishment accepted for UPF[%s] but its PFCP context is gone (branch aborted or session released); dropping", nodeID.ResolveNodeIdToIp().String())
+			failPendingEstablishment(smContext, upfKey)
 			return
 		}
-		pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
-		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
+		if rspUPFseid != nil {
+			pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
+			smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
+		}
 		// Which incarnation of the node acknowledged it, so a restoration after a restart can tell a
 		// session the restarted node lost from one it already holds. See AcknowledgedAtRecovery.
 		if upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID); upf != nil {
@@ -476,11 +543,12 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 	defaultPath := smContext.Tunnel.DataPathPool.GetDefaultPath()
 	if defaultPath == nil {
 		logger.PfcpLog.Errorln("failed to get default path")
+		failPendingEstablishment(smContext, upfKey)
 		return
 	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-	if rsp.CreatedPDR != nil {
+	if accepted && rsp.CreatedPDR != nil {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
 			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
@@ -507,6 +575,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		fteid, err := FindFTEID(rsp.CreatedPDR)
 		if err != nil {
 			logger.PfcpLog.Errorf("failed to parse TEID IE: %+v", err)
+			failPendingEstablishment(smContext, upfKey)
 			return
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
@@ -518,6 +587,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+			failPendingEstablishment(smContext, upfKey)
 			return
 		}
 		n3Interface := smf_context.UPFInterfaceInfo{}
@@ -530,74 +600,80 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 
 	if rsp.NodeID == nil {
 		logger.PfcpLog.Errorln("PFCP Session Establishment Response missing NodeID")
+		failPendingEstablishment(smContext, upfKey)
 		return
 	}
 	rspNodeIDStr, err := rsp.NodeID.NodeID()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse NodeID IE: %+v", err)
+		failPendingEstablishment(smContext, upfKey)
 		return
 	}
 	rspNodeID := smf_context.NewNodeID(rspNodeIDStr)
 
 	if ANUPF.UPF == nil {
 		logger.PfcpLog.Errorln("failed to get UPF from default path")
+		failPendingEstablishment(smContext, upfKey)
 		return
 	}
 
-	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
-		// UPF Accept
-		if rsp.Cause == nil {
-			logger.PfcpLog.Errorln("PFCP Session Establishment Response missing Cause")
-			return
+	// Gated on the state, like the modification and release handlers below. Restoration issues
+	// an establishment without waiting on this channel, so an unconditional send here would leave
+	// a stale value for whichever unrelated modification or release next waits on it.
+	awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
+
+	if !accepted {
+		smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
+		if causeValue == ie.CauseNoEstablishedPFCPAssociation {
+			SetUpfInactive(*rspNodeID, msg.PfcpMessage.MessageTypeName())
 		}
-		causeValue, err := rsp.Cause.Cause()
-		if err != nil {
-			logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
-			return
-		}
-		// Gated on the state, like the modification and release handlers below. Restoration issues
-		// an establishment without waiting on this channel, so an unconditional send here would leave
-		// a stale value for whichever unrelated modification or release next waits on it.
-		awaited := smContext.SMContextState == smf_context.SmStatePfcpCreatePending
-		if causeValue == ie.CauseRequestAccepted {
-			if awaited {
-				// Not a blocking send. A data path through several user planes establishes one
-				// session on each, and every response lands here while the channel holds one
-				// verdict and is read once. In adapter mode the response is dispatched inline, on the
-				// goroutine that reads the channel afterwards -- so a second blocking write parked it
-				// on its own channel, and two user planes that both accepted wedged the session.
-				// The first verdict stands and later ones are dropped; which one should stand when
-				// the user planes disagree is a separate question, and this does not answer it.
-				select {
-				case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishSuccess:
-				default:
-					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishSuccess)
-				}
-			}
-			smContext.SubPfcpLog.Infoln("PFCP Session Establishment accepted")
-		} else {
-			if awaited {
-				// Not a blocking send. A data path through several user planes establishes one
-				// session on each, and every response lands here while the channel holds one
-				// verdict and is read once. In adapter mode the response is dispatched inline, on the
-				// goroutine that reads the channel afterwards -- so a second blocking write parked it
-				// on its own channel, and two user planes that both accepted wedged the session.
-				// The first verdict stands and later ones are dropped; which one should stand when
-				// the user planes disagree is a separate question, and this does not answer it.
-				select {
-				case smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed:
-				default:
-					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", smf_context.SessionEstablishFailed)
-				}
-			}
-			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
-			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
-				SetUpfInactive(*rspNodeID, msg.PfcpMessage.MessageTypeName())
+	} else {
+		smContext.SubPfcpLog.Infoln("PFCP Session Establishment accepted")
+	}
+
+	if awaited {
+		// A branching data path sends an establishment request to every UPF on it (SendPFCPRules,
+		// producer/datapath.go), which populates PendingUPF with all of them before any request goes
+		// out. The single verdict the create procedure reads must reflect every one of those
+		// responses, not just whichever UPF this handler happens to be invoked for first -- an
+		// unordered map iteration decides that order, so the AN UPF's acceptance must not be able to
+		// win a race against a secondary UPF's rejection merely by being visited first.
+		// EstablishmentFailed latches a rejection seen from any UPF until the verdict is queued, so a
+		// failure from one UPF is never erased by a later acceptance from another.
+		//
+		// A PSA/ULCL branch addition (BPManager.PendingUPF, a separate map) can establish further
+		// sessions while this context is still create-pending, and its responses reach this same
+		// handler. Only a response found in this map belongs to the batch the create verdict tracks;
+		// aggregating and emitting on any other response would let it poison or preempt that verdict.
+		//
+		// The map and the EstablishmentFailed latch are read and mutated through
+		// AggregateEstablishmentResponse, which takes PendingUPFLock. This handler holds SMLock, but
+		// the modification and deletion response handlers mutate PendingUPF without it (see
+		// SMContext.PendingUPFLock's declaration), so SMLock here does not serialize against them --
+		// only the shared PendingUPFLock does. A direct map access here would be the concurrent
+		// read/write that lock exists to prevent.
+		//
+		// upfKey is the dispatch-time PFCPContext key, not a re-resolution of the NodeID: for an FQDN
+		// UPF the DNS refresh can change the resolved address while the request is in flight, and a
+		// re-resolved key would miss PendingUPF and leave the batch pending forever.
+		tracked, signal, verdict := smContext.AggregateEstablishmentResponse(upfKey, accepted)
+		if !tracked {
+			smContext.SubPfcpLog.Warnf("PFCP Session Establishment Response from UPF[%s] was not pending; not counted toward the establishment verdict", nodeID.ResolveNodeIdToIp().String())
+		} else if signal {
+			// Not a blocking send, and made outside PendingUPFLock. In adapter mode the response is
+			// dispatched inline, on the goroutine that reads the channel afterwards -- so a blocking
+			// write here would park the sender behind its own reader. The first verdict stands and a
+			// later, stale one (e.g. a response this call was not actually waiting for) is dropped
+			// rather than queued behind it.
+			select {
+			case smContext.SBIPFCPCommunicationChan <- verdict:
+			default:
+				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
 			}
 		}
 	}
 
-	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
+	if accepted && smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {
 			smContext.SubPfcpLog.Infoln("keep Adding PSAndULCL")
 			producer.AddPDUSessionAnchorAndULCL(smContext, *rspNodeID)

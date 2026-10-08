@@ -66,11 +66,38 @@ func SendPFCPRules(smContext *context.SMContext) {
 			}
 		}
 	}
+	// Every UPF an establishment request goes out to here is one the response handlers must hear
+	// back from before the single create verdict is queued: see PendingUPF on SMContext. Built as a
+	// complete set before any request is sent -- and before PendingUPF is touched -- rather than
+	// grown one entry at a time alongside the sends below: a synchronous dispatch (e.g. the adapter)
+	// can deliver the first UPF's response before a later UPF in this loop has been added, and an
+	// incomplete map would let that response see itself as the last one pending and queue a verdict
+	// early.
+	pendingEstablish := make(context.PendingUPF)
+	for ip := range pfcpPool {
+		sessionContext, exist := smContext.PFCPContext[ip]
+		if !exist || sessionContext.RemoteSEID == 0 {
+			pendingEstablish[ip] = true
+		}
+	}
+	// PendingUPF is also read by an awaited modification (SmStatePfcpModify); restoration can call
+	// this function to reissue rules while one is in flight (see pfcp/message/send.go), a supported
+	// overlap. Replacing the map here unconditionally would discard that modification's own
+	// bookkeeping, so only the create-pending procedure that actually consumes establishment
+	// verdicts owns it. Assigned through ResetPendingUPF, not the field directly: the PFCP response
+	// handlers delete from this same map without SMLock, so a direct write races them (see
+	// SMContext.PendingUPFLock's declaration).
+	if smContext.SMContextState == context.SmStatePfcpCreatePending {
+		smContext.ResetPendingUPF(pendingEstablish)
+	}
 	for ip, pfcp := range pfcpPool {
 		sessionContext, exist := smContext.PFCPContext[ip]
 		if !exist || sessionContext.RemoteSEID == 0 {
+			// ip is the exact key this UPF was registered under in PendingUPF above, handed to the send
+			// so a missing-context synchronous failure drains its own batch entry rather than waking
+			// the create FSM while the rest of the batch is still in flight.
 			err := message.SendPfcpSessionEstablishmentRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
+				pfcp.nodeID, smContext, ip, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
 			if err != nil {
 				logger.PduSessLog.Errorf("send pfcp session establishment request failed: %v for UPF[%v, %v]: ", err, pfcp.nodeID, pfcp.nodeID.ResolveNodeIdToIp())
 			}

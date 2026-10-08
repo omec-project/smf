@@ -161,7 +161,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		Conn: conn,
 	})
 
-	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8803)
+	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeIDStr, pdrList, farList, barList, qerList, 8803)
 	if err != nil {
 		t.Errorf("error sending PFCP Session Establishment Request: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 		Conn: conn,
 	})
 
-	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8804)
+	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeIDStr, pdrList, farList, barList, qerList, 8804)
 	if err == nil {
 		t.Errorf("expected error sending PFCP Session Establishment Request")
 	}
@@ -732,7 +732,7 @@ func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
 	// No server, so udp.SendPfcp refuses after the entry has been made.
 	setTestServer(t, nil)
 
-	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, nil, nil, nil, nil, 8808); err == nil {
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, "127.0.0.78", nil, nil, nil, nil, 8808); err == nil {
 		t.Fatal("an establishment the socket refused was reported as sent")
 	}
 
@@ -756,5 +756,36 @@ func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
 
 	if n := pendingRequestsFor(upNodeID); n != 0 {
 		t.Errorf("%d pending entries after a failed association setup, want 0", n)
+	}
+}
+
+// An establishment that goes out but the user plane never answers takes back its bookkeeping entry
+// too. TestARequestThatNeverWentOutLeavesNoPendingEntry covers the synchronous refusal, where the
+// send never left the SMF; this covers the send that did leave and then timed out. That timeout is
+// reported asynchronously, by establishmentSendErrorHandler, after the UDP transaction is already
+// gone -- so no response will ever arrive to consume the seq->NodeID entry. Each unanswered
+// establishment to an unreachable user plane leaked one until the handler took it back itself.
+func TestAnEstablishmentTheUserPlaneNeverAnswersLeavesNoPendingEntry(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpCreatePending)
+
+	before := pendingRequestsFor(upNodeID)
+
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, "127.0.0.1",
+		nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	// The send succeeds and the transaction times out asynchronously; wait for
+	// establishmentSendErrorHandler to run and take its entry back.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if pendingRequestsFor(upNodeID) == before {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d pending entries remain after an unanswered establishment, want %d",
+				pendingRequestsFor(upNodeID), before)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

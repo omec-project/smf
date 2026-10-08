@@ -193,6 +193,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
 		ie.NewRecoveryTimeStamp(recoveryTimestamp),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 		),
@@ -370,6 +371,11 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				t.Fatal("failed to allocate a local SEID for the test SMContext")
 			}
 
+			// SendPFCPRules (producer/datapath.go) populates this with every UPF an establishment
+			// request went out to before a response can arrive; simulated here since this test drives
+			// the handler directly.
+			smContext.PendingUPF = context.PendingUPF{nodeID.ResolveNodeIdToIp().String(): true}
+
 			seq := uint32(localSEID)
 			pfcp_message.InsertPfcpTxn(seq, nodeID)
 
@@ -382,6 +388,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID("1.1.1.1", "", ""),
 				ie.NewRecoveryTimeStamp(time.Now()),
+				ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 			)
 
 			udpMessage := udp.Message{
@@ -461,6 +468,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.2", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.2"), nil),
 	)
 
 	done := make(chan struct{})
@@ -482,6 +490,81 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 
 	if len(smContext.SBIPFCPCommunicationChan) != 1 {
 		t.Errorf("channel holds %d verdicts, want the one the create procedure will read", len(smContext.SBIPFCPCommunicationChan))
+	}
+}
+
+// TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse covers a response from a
+// UPF this handler is not actually waiting on as part of the create batch -- e.g. a PSA/ULCL branch
+// addition, which tracks its own responses in BPManager.PendingUPF rather than smContext.PendingUPF,
+// but can still be in flight while the context is create-pending. Counting such a response toward
+// smContext.EstablishmentFailed or treating an unrelated, already-empty smContext.PendingUPF as "no
+// more to wait for" would let it poison or preempt the verdict for a batch it was never part of.
+func TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse(t *testing.T) {
+	if factory.SmfConfig.Configuration == nil {
+		factory.SmfConfig = factory.Config{
+			Configuration: &factory.Configuration{
+				KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+				EnableUpfAdapter: false,
+			},
+		}
+	}
+
+	nodeID := context.NewNodeID("1.1.1.11")
+	smContext := context.NewSMContext("imsi-100000000000009", 10)
+	smContext.SMContextState = context.SmStatePfcpCreatePending
+
+	smContext.Tunnel = &context.UPTunnel{
+		DataPathPool: context.DataPathPool{
+			10: &context.DataPath{
+				IsDefaultPath: true,
+				FirstDPNode:   &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+			},
+		},
+	}
+	smContext.AllocateLocalSEIDForDataPath(&context.DataPath{
+		FirstDPNode: &context.DataPathNode{UPF: &context.UPF{NodeID: *nodeID}},
+	})
+
+	var localSEID uint64
+	for _, pfcpCtx := range smContext.PFCPContext {
+		if pfcpCtx.LocalSEID != 0 {
+			localSEID = pfcpCtx.LocalSEID
+		}
+	}
+	if localSEID == 0 {
+		t.Fatal("failed to allocate a local SEID for the test SMContext")
+	}
+
+	// Nothing is pending for the initial create: a prior batch already completed (or, as here,
+	// this UPF's establishment belongs to a PSA/ULCL addition tracked in BPManager.PendingUPF
+	// instead).
+	smContext.PendingUPF = context.PendingUPF{}
+
+	seq := uint32(localSEID)
+	pfcp_message.InsertPfcpTxn(seq, nodeID)
+
+	// A rejected response: on the old, ungated logic this would still set EstablishmentFailed and,
+	// finding smContext.PendingUPF empty, queue a stale SessionEstablishFailed.
+	rsp := message.NewSessionEstablishmentResponse(
+		0, 0, localSEID, seq, 0,
+		ie.NewCause(ie.CauseRequestRejected),
+		ie.NewNodeID("1.1.1.11", "", ""),
+		ie.NewRecoveryTimeStamp(time.Now()),
+	)
+
+	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.11"), Port: 8809},
+		PfcpMessage: rsp,
+	})
+
+	select {
+	case status := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("expected no verdict for a response outside the tracked batch, got %v", status)
+	default:
+	}
+
+	if smContext.EstablishmentFailed {
+		t.Error("EstablishmentFailed latched by a response that was never part of the tracked batch")
 	}
 }
 
