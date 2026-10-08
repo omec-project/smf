@@ -336,7 +336,18 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
 				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
 		}
-		ANUPF.UpLinkTunnel.TEID = fteid.TEID
+		// The CreatedPDR F-TEID is the responding UPF's own uplink endpoint, so it belongs on that
+		// UPF's data path node -- not unconditionally on the access node (ANUPF). Now that the create
+		// verdict waits for every UPF, a secondary UPF's acceptance reaches this handler before N1N2
+		// setup, so a blind write to ANUPF.UpLinkTunnel.TEID would pair the access UPF's N3 address
+		// with the secondary UPF's TEID in the RAN's UL tunnel info
+		// (BuildPDUSessionResourceSetupRequestTransfer reads GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID),
+		// breaking uplink despite an aggregate success. Apply it to the node that actually responded.
+		if respNode := defaultPath.FindNode(*nodeID); respNode != nil {
+			respNode.UpLinkTunnel.TEID = fteid.TEID
+		} else {
+			smContext.SubPfcpLog.Warnf("establishment F-TEID from UPF[%s] matches no node on the default path; not applied", nodeID.ResolveNodeIdToIp().String())
+		}
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
 			return fmt.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())

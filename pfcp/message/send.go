@@ -809,7 +809,18 @@ func establishmentSendErrorHandler(localSEID uint64) func(message.Message, error
 		}
 		smContext.SubPfcpLog.Errorf("PFCP Session Establishment send failure, %v", err.Error())
 
+		// This handler runs on the UDP transaction goroutine, which holds no SMLock, and the fold
+		// reads SMContextState to decide whether a create batch is this failure's to drain. A
+		// restoration establishment reuses this send path for a session that is already running, and
+		// an awaited modification on that session -- a policy update (producer/callback.go) -- runs
+		// ChangeState under SMLock concurrently. Without SMLock here the state read races that write.
+		// The lock is taken around the fold specifically, not inside foldEstablishmentFailureByKey:
+		// the synchronous establishment path reaches that helper from restoration with SMLock already
+		// held (SendPFCPRules sends under the lock), and SMLock is not reentrant, so locking the shared
+		// helper would deadlock that caller.
+		smContext.SMLock.Lock()
 		foldEstablishmentFailureIntoBatch(smContext, localSEID)
+		smContext.SMLock.Unlock()
 	}
 }
 
@@ -859,9 +870,15 @@ func foldEstablishmentFailureByKey(smContext *smf_context.SMContext, upfKey stri
 		return false
 	}
 
-	// Not under SMLock: PendingUPF is serialized by its own PendingUPFLock (AggregateEstablishmentResponse
-	// takes it), and the state read above follows the same lock-free convention the deferred failure
-	// handler in SendPfcpSessionEstablishmentRequest already uses.
+	// This helper does not take SMLock itself. The batch mutation below is serialized by its own
+	// PendingUPFLock (AggregateEstablishmentResponse takes it), but the SMContextState read above is
+	// not, so a caller whose session's state can change under it must hold SMLock before calling: the
+	// asynchronous timeout handler (establishmentSendErrorHandler) and restoration's synchronous reissue
+	// both do, because an awaited modification can run ChangeState concurrently. The helper must not
+	// acquire SMLock itself -- restoration already holds it (SendPFCPRules sends under the lock) and
+	// SMLock is not reentrant, so locking here would deadlock that path. The initial-create synchronous
+	// path reaches this without SMLock, but runs inside the session's serialized create transaction,
+	// where no other goroutine changes the state.
 	//
 	// A tracked response that drains the batch belongs to the initial create by definition, so the
 	// verdict is written straight to the channel, exactly as the response handler and

@@ -555,6 +555,36 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 		// not the time, is what identifies the incarnation.
 		acknowledgedByRestarted := onThisNode && !neverAcknowledged && !recovery.IsZero() &&
 			pfcpContext.AcknowledgedAtRecovery.Unix() == recovery.Unix()
+		// A session still finishing its initial create is being set up, not recovered from this
+		// restart, even when the restarted node has already acknowledged its own leg: a create whose
+		// data path spans several UPFs only completes once every one of them has answered, and the
+		// others may still be outstanding (or one may have rejected). Reissuing over it is worse than
+		// the neverAcknowledged case above -- SendPFCPRules resets PendingUPF while the context is
+		// SmStatePfcpCreatePending, so restoration would clear the in-flight create batch and the
+		// rejection latch, turning a create that one UPF rejected into a false success. So the create
+		// is left to finish and this sweep skips the session.
+		//
+		// KNOWN LIMITATION: if a UPF that has already accepted its leg restarts while the create is
+		// still pending on another UPF, this exclusion skips the restarted node's now-lost session,
+		// and no later sweep restores it either -- re-association has already recorded the new recovery
+		// timestamp, so the unchanged heartbeats that follow do not trigger another sweep, and the
+		// create can still complete as a success once the remaining UPF answers. Removing the exclusion
+		// is not the fix (it reintroduces the batch-reset above); the fix is to defer a restoration
+		// candidate until the create finishes, or to fail the affected create so its cleanup runs. That
+		// is tracked as follow-up alongside the create-rollback work (see the follow-up noted in
+		// HandlePfcpSessionEstablishmentResponse for releasing the UPF sessions a failed aggregate
+		// create already established).
+		//
+		// This read holds SMLock, but ChangeState writes SMContextState without it (see fsm/handler.go
+		// and the state-read-vs-write notes in pfcp/message/send.go), so SMLock does not serialize the
+		// sweep against the create's own completion transition -- the read is best-effort against a
+		// concurrent, lockless write. That is tolerable here and deliberately not widened in this change:
+		// the worst case is a stale enum read either way, which only skips the session (the KNOWN
+		// LIMITATION above) or lets the normal acknowledged/neverAcknowledged handling run, never a torn
+		// verdict. Serializing every FSM transition under SMLock is a codebase-wide change -- many
+		// ChangeState callers already hold SMLock, so locking inside it would deadlock -- and belongs to
+		// the same create-rollback follow-up.
+		createStillPending := onThisNode && smContext.SMContextState == SmStatePfcpCreatePending
 		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
 		if !onThisNode {
 			for key := range smContext.PFCPContext {
@@ -566,7 +596,7 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 		if !onThisNode {
 			return true
 		}
-		if neverAcknowledged {
+		if neverAcknowledged || createStillPending {
 			establishing++
 			return true
 		}
