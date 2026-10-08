@@ -24,10 +24,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func boolPointer(b bool) *bool {
-	return &b
-}
-
 var initTestSmfConfigOnce sync.Once
 
 func initTestSmfConfig() {
@@ -35,7 +31,7 @@ func initTestSmfConfig() {
 		factory.SmfConfig = factory.Config{
 			Configuration: &factory.Configuration{
 				KafkaInfo: factory.KafkaInfo{
-					EnableKafka: boolPointer(false),
+					EnableKafka: new(false),
 				},
 				EnableUpfAdapter: false,
 			},

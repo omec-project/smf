@@ -31,7 +31,7 @@ func restartsObserved(t *testing.T) *[]context.NodeID {
 func configured() {
 	factory.SmfConfig = factory.Config{
 		Configuration: &factory.Configuration{
-			KafkaInfo:        factory.KafkaInfo{EnableKafka: boolPointer(false)},
+			KafkaInfo:        factory.KafkaInfo{EnableKafka: new(false)},
 			EnableUpfAdapter: false,
 		},
 	}
