@@ -18,6 +18,7 @@ import (
 	"github.com/omec-project/nas/v2/nasType"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/nasconv"
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 )
@@ -26,7 +27,7 @@ const (
 	PTI uint8 = 0 // indicates that the request is initiated by the core network.
 )
 
-// sessionAmbrForNas encodes a session AMBR for the UE. nasConvert.ModelsToSessionAMBR reads each
+// sessionAmbrForNas encodes a session AMBR for the UE. nasconv.ModelsToSessionAMBR reads each
 // direction's unit from the second token without looking, so a rate with no unit -- "10", which a
 // policy can carry -- indexed past the end and took the SMF down building the UE's establishment
 // accept or modification command: the defect this change fixed in the user plane's converter and
@@ -47,7 +48,7 @@ func sessionAmbrForNas(ambr *models.Ambr) nasType.SessionAMBR {
 		readable.Downlink = "0 Kbps"
 	}
 
-	return nasConvert.ModelsToSessionAMBR(&readable)
+	return nasconv.ModelsToSessionAMBR(&readable)
 }
 
 func BuildGSMPDUSessionEstablishmentAccept(smContext *SMContext) ([]byte, error) {

@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/omec-project/nas/v2/nasConvert"
 	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/openapi/v2/Namf_Communication"
 	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
@@ -29,6 +28,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/nasconv"
 	"github.com/omec-project/smf/qos"
 	errors "github.com/omec-project/smf/smferrors"
 	"github.com/omec-project/smf/transaction"
@@ -1002,39 +1002,39 @@ func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint
 	}
 
 	smContext.EstAcceptCause5gSMValue = 0
-	switch nasConvert.PDUSessionTypeToModels(requestedPDUSessionType) {
+	switch nasconv.PDUSessionTypeToModels(requestedPDUSessionType) {
 	case models.PDUSESSIONTYPE_IPV4:
 		if allowIPv4 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
 		} else {
 			return fmt.Errorf("PduSessionType_IPV4 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
 	case models.PDUSESSIONTYPE_IPV6:
 		if allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
 		} else {
 			return fmt.Errorf("PduSessionType_IPV6 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
 	case models.PDUSESSIONTYPE_IPV4_V6:
 		if allowIPv4 && allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4_V6)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4_V6)
 		} else if allowIPv4 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV4)
 			smContext.EstAcceptCause5gSMValue = nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed
 		} else if allowIPv6 {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_IPV6)
 			smContext.EstAcceptCause5gSMValue = nasMessage.Cause5GSMPDUSessionTypeIPv6OnlyAllowed
 		} else {
 			return fmt.Errorf("PduSessionType_IPV4_V6 is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
 	case models.PDUSESSIONTYPE_ETHERNET:
 		if allowEthernet {
-			smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_ETHERNET)
+			smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_ETHERNET)
 		} else {
 			return fmt.Errorf("PduSessionType_ETHERNET is not allowed in DNN[%s] configuration", smContext.Dnn)
 		}
 	case models.PDUSESSIONTYPE_UNSTRUCTURED:
-		smContext.SelectedPDUSessionType = nasConvert.ModelsToPDUSessionType(models.PDUSESSIONTYPE_UNSTRUCTURED)
+		smContext.SelectedPDUSessionType = nasconv.ModelsToPDUSessionType(models.PDUSESSIONTYPE_UNSTRUCTURED)
 		return fmt.Errorf("unstructured PDU Session type")
 	default:
 		return fmt.Errorf("requested PDU Sesstion type[%d] is not supported", requestedPDUSessionType)
