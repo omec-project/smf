@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/omec-project/nas/v2/nasConvert"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/nasconv"
 )
 
 // SendSMPolicyAssociationCreate create the session management association to the PCF
@@ -27,7 +27,7 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 		return nil, httpRspStatusCode, fmt.Errorf("smContext not selected PCF")
 	}
 
-	pduSessionType := nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
+	pduSessionType := nasconv.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
 	if !pduSessionType.IsValid() {
 		return nil, http.StatusBadRequest, fmt.Errorf("invalid selected PDU session type %d for PCF policy association", smContext.SelectedPDUSessionType)
 	}
