@@ -340,8 +340,19 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 			NodeIdValue: []byte(ip),
 		}
 
-		upNode.UPF = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
-		upNode.UPF.Port = upNode.Port
+		// A UPF that left the configuration and is coming back keeps its record.
+		// PFCP responses, heartbeats and session reports find a UPF by NodeID
+		// in the pool, so a second record for the same node lets them update
+		// one while this node uses the other.
+		upf := findUPFByNodeID(upNode.NodeID)
+		reused := upf != nil
+		if reused {
+			logger.CtxLog.Infof("UPF node %s returns to the configuration; keeping its record", name)
+		} else {
+			upf = NewUPF(&upNode.NodeID, node.InterfaceUpfInfoList)
+		}
+		upNode.UPF = upf
+
 		snssaiInfos := make([]SnssaiUPFInfo, 0)
 		for _, snssaiInfoConfig := range node.SNssaiInfos {
 			snssaiInfo := SnssaiUPFInfo{
@@ -362,19 +373,35 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 			snssaiInfos = append(snssaiInfos, snssaiInfo)
 		}
 
-		upNode.UPF.SNssaiInfos = snssaiInfos
-		upNode.UPF.N3Interfaces = make([]UPFInterfaceInfo, 0)
-		upNode.UPF.N9Interfaces = make([]UPFInterfaceInfo, 0)
-
+		n3Interfaces := make([]UPFInterfaceInfo, 0)
+		n9Interfaces := make([]UPFInterfaceInfo, 0)
 		for _, iface := range node.InterfaceUpfInfoList {
 			upIface := NewUPFInterfaceInfo(&iface)
 
 			switch iface.InterfaceType {
 			case models.UPINTERFACETYPE_N3:
-				upNode.UPF.N3Interfaces = append(upNode.UPF.N3Interfaces, *upIface)
+				n3Interfaces = append(n3Interfaces, *upIface)
 			case models.UPINTERFACETYPE_N9:
-				upNode.UPF.N9Interfaces = append(upNode.UPF.N9Interfaces, *upIface)
+				n9Interfaces = append(n9Interfaces, *upIface)
 			}
+		}
+
+		upf.Port = upNode.Port
+		upf.SNssaiInfos = snssaiInfos
+		upf.N9Interfaces = n9Interfaces
+		if !reused {
+			upf.N3Interfaces = n3Interfaces
+		} else {
+			// A returning UPF keeps the N3 address it reported in its last
+			// session establishment: that is the address the RAN was given,
+			// and the configured one would replace it until the next
+			// establishment. N3 is written by the PFCP handlers under UpfLock;
+			// none of them takes the context lock, so taking it here is safe.
+			upf.UpfLock.Lock()
+			if len(upf.N3Interfaces) == 0 {
+				upf.N3Interfaces = n3Interfaces
+			}
+			upf.UpfLock.Unlock()
 		}
 
 		existing.UPFs[name] = upNode
