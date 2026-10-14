@@ -356,6 +356,21 @@ func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 	return targetUPF
 }
 
+// findUPFByNodeID returns the UPF registered under exactly this NodeID, or nil.
+// Unlike RetrieveUPFNodeByNodeID it never resolves names: it is called while the
+// SMF context lock is held.
+func findUPFByNodeID(nodeID NodeID) *UPF {
+	var found *UPF
+	upfPool.Range(func(_, value any) bool {
+		if upf := value.(*UPF); upf.NodeID.Equal(nodeID) {
+			found = upf
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // *** add unit test ***//
 func RemoveUPFNodeByNodeID(nodeID NodeID) bool {
 	upfID := ""
