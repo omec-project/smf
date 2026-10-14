@@ -275,7 +275,16 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					id, smContext.PDUSessionID)
 				break
 			}
-			if smContext.NwModificationPending && smContext.NwModificationUnsent {
+			// A Complete with nothing pending commits nothing, so it is left to run. A reject with
+			// nothing pending would still report an abandonment and put the session back to Active: it
+			// answers a copy of a Command whose procedure has already ended, typically in the quiet
+			// interval after a retransmission.
+			if !smContext.NwModificationPending {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, a Modification Command Reject, 5GSM cause %d, arrived with no modification pending; it answers a Command whose procedure has ended, ignoring it",
+					m.PDUSessionModificationCommandReject.GetCauseValue())
+				break
+			}
+			if smContext.NwModificationUnsent {
 				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, a Modification Command Reject arrived before this modification's Command was sent; it answers an earlier one, ignoring it")
 				break
 			}

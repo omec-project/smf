@@ -511,6 +511,33 @@ func TestADecisionArrivingWhileACopyCanStillBeAnsweredIsHeld(t *testing.T) {
 	s.waitUntilArmed(t, 2)
 }
 
+// A Command Reject answering a copy in the quiet interval after a retransmission finds nothing
+// pending and changes nothing. Taken as an answer, it abandoned a procedure that had already ended:
+// it was counted as an abandonment, and the session was put back to Active from whatever it had
+// moved on to.
+func TestALateRejectForAnEndedProcedureChangesNothing(t *testing.T) {
+	// Longer than its neighbours': nothing here waits the interval out, and the reject must arrive
+	// inside it, however slowly the runner gets there.
+	const interval = 2 * time.Second
+
+	s := newDeferralSession(t)
+	s.retransmitOnce(t, interval)
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+
+	// The session has moved on meanwhile: it is being released.
+	s.sm.SMLock.Lock()
+	s.sm.SMContextState = smf_context.SmStateInActivePending
+	s.sm.SMLock.Unlock()
+
+	s.answer(t, nas.MsgTypePDUSessionModificationCommandReject)
+
+	s.sm.SMLock.Lock()
+	defer s.sm.SMLock.Unlock()
+	if s.sm.SMContextState != smf_context.SmStateInActivePending {
+		t.Errorf("a late Command Reject moved the session to %s; it answers a procedure that has already ended", s.sm.SMContextState)
+	}
+}
+
 // An answer carrying another PDU session's identity is ignored, not taken as this session's: TS
 // 24.501 subclause 7.3.2 d). Taken, a Complete committed this session's pending update and a
 // Command Reject abandoned it, and either stopped its T3591.
