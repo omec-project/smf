@@ -37,8 +37,13 @@ func TestARetransmissionForAnEndedModificationIsNotSent(t *testing.T) {
 // acknowledged the command and the timer has been stopped. The retransmission it triggers asks
 // whether its own timer is still the session's T3591, which stays true while the procedure runs and
 // turns false once the timer is stopped: that is what keeps a late tick from resending the command.
+//
+// The retransmission is held until the assertions are made. Returning at once, it let the timer run
+// on, and a runner that delayed the test by a few expiries saw T3591 abandon the procedure first: the
+// check then read false while the timer should still have been running.
 func TestAT3591ExpiryRetransmitsOnlyWhileItsTimerIsCurrent(t *testing.T) {
 	stillCurrent := make(chan func() bool, 1)
+	release := make(chan struct{})
 
 	original := retransmitModificationCommand
 	retransmitModificationCommand = func(_ *smf_context.SMContext, current func() bool) error {
@@ -46,6 +51,7 @@ func TestAT3591ExpiryRetransmitsOnlyWhileItsTimerIsCurrent(t *testing.T) {
 		case stillCurrent <- current:
 		default:
 		}
+		<-release
 
 		return nil
 	}
@@ -61,11 +67,20 @@ func TestAT3591ExpiryRetransmitsOnlyWhileItsTimerIsCurrent(t *testing.T) {
 
 	smContext.SMLock.Lock()
 	startT3591Locked(smContext, 4)
+	timer := smContext.T3591
 	smContext.SMLock.Unlock()
+	// Registered after the stub's restoration, so it runs first: the timer's goroutine is done with
+	// the stub before the stub is put back.
 	t.Cleanup(func() {
 		smContext.SMLock.Lock()
 		smContext.StopT3591()
 		smContext.SMLock.Unlock()
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		timer.Stop()
 	})
 
 	var current func() bool
@@ -80,6 +95,7 @@ func TestAT3591ExpiryRetransmitsOnlyWhileItsTimerIsCurrent(t *testing.T) {
 	smContext.StopT3591()
 	stopped := current()
 	smContext.SMLock.Unlock()
+	close(release)
 
 	if !running {
 		t.Error("the retransmission was told its procedure had ended while its timer was still running")
