@@ -243,6 +243,14 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 					id, smContext.PDUSessionID)
 				break
 			}
+			// Nor does an answer to a procedure the network is not running. Every Command it sends carries
+			// the core-initiated PTI, and TS 24.501 subclause 7.3.1 a) has an answer whose PTI matches no
+			// PTI in use refused with 5GSM STATUS cause 47, which this SMF has no message path for.
+			if pti := m.PDUSessionModificationComplete.GetPTI(); pti != context.PTI {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Complete carries PTI %d, not the Command's %d; ignoring it",
+					pti, context.PTI)
+				break
+			}
 			// Nor may a late answer to an earlier Command end a procedure whose own Command has not
 			// gone out: the UE has nothing of this one to answer yet.
 			if smContext.NwModificationPending && smContext.NwModificationUnsent {
@@ -269,10 +277,16 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			startDeferredModificationLocked(smContext)
 
 		case nas.MsgTypePDUSessionModificationCommandReject:
-			// As for the Complete above: another session's reject must not abandon this procedure.
+			// As for the Complete above: another session's reject, or one to a procedure the network is not
+			// running, must not abandon this procedure.
 			if id := int32(m.PDUSessionModificationCommandReject.GetPDUSessionID()); id != smContext.PDUSessionID {
 				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Command Reject carries PDU session ID %d, not this session's %d; ignoring it",
 					id, smContext.PDUSessionID)
+				break
+			}
+			if pti := m.PDUSessionModificationCommandReject.GetPTI(); pti != context.PTI {
+				smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, the Modification Command Reject carries PTI %d, not the Command's %d; ignoring it",
+					pti, context.PTI)
 				break
 			}
 			// A Complete with nothing pending commits nothing, so it is left to run. A reject with

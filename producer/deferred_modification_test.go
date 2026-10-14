@@ -147,8 +147,20 @@ func (s *deferralSession) startAndHold(t *testing.T) {
 	s.expectNoSend(t, "a decision arriving while the first modification waits for the UE")
 }
 
+// modificationAnswers are the UE's two answers to a Command, by name.
+var modificationAnswers = map[string]uint8{
+	"Complete":       nas.MsgTypePDUSessionModificationComplete,
+	"Command Reject": nas.MsgTypePDUSessionModificationCommandReject,
+}
+
 // encodeModificationAnswerFor encodes the UE's answer to a Command, as carrying pduSessionID.
 func encodeModificationAnswerFor(t *testing.T, messageType, pduSessionID uint8) []byte {
+	t.Helper()
+	return encodeModificationAnswer(t, messageType, pduSessionID, smf_context.PTI)
+}
+
+// encodeModificationAnswer encodes the UE's answer to a Command, as carrying pduSessionID and pti.
+func encodeModificationAnswer(t *testing.T, messageType, pduSessionID, pti uint8) []byte {
 	t.Helper()
 
 	m := nas.NewMessage()
@@ -161,12 +173,14 @@ func encodeModificationAnswerFor(t *testing.T, messageType, pduSessionID uint8) 
 		msg.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
 		msg.SetMessageType(messageType)
 		msg.SetPDUSessionID(pduSessionID)
+		msg.SetPTI(pti)
 		m.PDUSessionModificationComplete = msg
 	case nas.MsgTypePDUSessionModificationCommandReject:
 		msg := nasMessage.NewPDUSessionModificationCommandReject(0)
 		msg.SetExtendedProtocolDiscriminator(nasMessage.Epd5GSSessionManagementMessage)
 		msg.SetMessageType(messageType)
 		msg.SetPDUSessionID(pduSessionID)
+		msg.SetPTI(pti)
 		msg.SetCauseValue(nasMessage.Cause5GSMRequestRejectedUnspecified)
 		m.PDUSessionModificationCommandReject = msg
 	default:
@@ -191,10 +205,16 @@ func (s *deferralSession) answer(t *testing.T, messageType uint8) {
 // answerAs delivers the UE's answer as carrying pduSessionID, to this session's context.
 func (s *deferralSession) answerAs(t *testing.T, messageType, pduSessionID uint8) {
 	t.Helper()
+	s.deliver(t, encodeModificationAnswerFor(t, messageType, pduSessionID))
+}
+
+// deliver hands an encoded 5GSM message to this session's context.
+func (s *deferralSession) deliver(t *testing.T, payload []byte) {
+	t.Helper()
 
 	request := models.UpdateSmContextRequest{}
 	request.SetJsonData(models.SmContextUpdateData{})
-	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeModificationAnswerFor(t, messageType, pduSessionID)))
+	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, payload))
 
 	txn := transaction.NewTransaction(request, nil, svcmsgtypes.UpdateSmContext)
 	txn.Ctxt = s.sm
@@ -542,10 +562,7 @@ func TestALateRejectForAnEndedProcedureChangesNothing(t *testing.T) {
 // 24.501 subclause 7.3.2 d). Taken, a Complete committed this session's pending update and a
 // Command Reject abandoned it, and either stopped its T3591.
 func TestAnAnswerForAnotherSessionLeavesThisOneAlone(t *testing.T) {
-	for name, messageType := range map[string]uint8{
-		"Complete":       nas.MsgTypePDUSessionModificationComplete,
-		"Command Reject": nas.MsgTypePDUSessionModificationCommandReject,
-	} {
+	for name, messageType := range modificationAnswers {
 		t.Run(name, func(t *testing.T) {
 			s := newDeferralSession(t)
 			s.notify(t)
@@ -569,6 +586,36 @@ func TestAnAnswerForAnotherSessionLeavesThisOneAlone(t *testing.T) {
 	}
 }
 
+// An answer whose PTI is not the one the Command carried is ignored too: it answers no procedure the
+// network is running (TS 24.501 subclause 7.3.1 a). Taken, a Complete committed this session's
+// pending update and a Command Reject abandoned it.
+func TestAnAnswerWithAnotherPTILeavesTheProcedureAlone(t *testing.T) {
+	const otherPTI = 5
+
+	for name, messageType := range modificationAnswers {
+		t.Run(name, func(t *testing.T) {
+			s := newDeferralSession(t)
+			s.notify(t)
+			s.waitForSend(t, "the decision")
+
+			s.sm.SMLock.Lock()
+			timer, pending := s.sm.T3591, s.sm.SmPolicyUpdates[0]
+			s.sm.SMLock.Unlock()
+
+			s.deliver(t, encodeModificationAnswer(t, messageType, deferralPduSessionID, otherPTI))
+
+			s.sm.SMLock.Lock()
+			defer s.sm.SMLock.Unlock()
+			if !s.sm.NwModificationPending || s.sm.T3591 != timer {
+				t.Error("an answer with another PTI ended the procedure")
+			}
+			if len(s.sm.SmPolicyUpdates) != 1 || s.sm.SmPolicyUpdates[0] != pending {
+				t.Error("an answer with another PTI committed or discarded the pending update")
+			}
+		})
+	}
+}
+
 // commandHandedToTheAMF stands in for the Command's transfer in tests: it records the Command as
 // handed to the AMF, as the transfer does, and sends nothing.
 func commandHandedToTheAMF(sm *smf_context.SMContext) error {
@@ -584,10 +631,7 @@ func commandHandedToTheAMF(sm *smf_context.SMContext) error {
 // nothing of the new modification to answer, and taken as its answer the Complete would commit an
 // update the UE was never sent.
 func TestAnAnswerBeforeTheCommandIsSentIsIgnored(t *testing.T) {
-	for name, late := range map[string]uint8{
-		"Complete":       nas.MsgTypePDUSessionModificationComplete,
-		"Command Reject": nas.MsgTypePDUSessionModificationCommandReject,
-	} {
+	for name, late := range modificationAnswers {
 		t.Run(name, func(t *testing.T) {
 			s := newDeferralSession(t)
 			s.startAndHold(t)
