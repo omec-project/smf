@@ -204,7 +204,7 @@ func (smf *SMF) Start() {
 					logger.PollConfigLog.Errorf("SMF context update failed: %v", err)
 					continue
 				}
-				logger.PollConfigLog.Debugln("SMF context updated from WebConsole config")
+				logger.PollConfigLog.Infof("SMF context updated from WebConsole config with %d slice(s)", len(cfg))
 				smfContext.AllocateUPFID()
 				logger.AppLog.Debugf("UserPlaneInformation: %+v", smfSelf.UserPlaneInformation)
 				if smfSelf.UserPlaneInformation != nil && smfSelf.UserPlaneInformation.UPFs != nil {
