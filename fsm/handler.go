@@ -185,6 +185,20 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 		smCtxt.SubFsmLog.Errorf("error while processing HandlePduSessN1N2TransferFailureIndication, %v ", err.Error())
 		return smf_context.SmStateInit, err
 	}
+
+	// A paging failure does not end a network-requested modification. The AMF reports it when its
+	// paging gives up, which says nothing about a Command already sent: T3591 retransmits it, and the
+	// UE's answer can still come. That answer is handled only in an update-capable state, so in
+	// SmStateInit it was dropped while T3591 ran on, and the modification was abandoned although the
+	// UE had applied it. A paging failure that started a release (SmStatePfcpRelease), or one with no
+	// modification pending, still ends in SmStateInit, as it did before.
+	smCtxt.SMLock.Lock()
+	modifying := smCtxt.NwModificationPending && smCtxt.SMContextState == smf_context.SmStateActive
+	smCtxt.SMLock.Unlock()
+	if modifying {
+		return smf_context.SmStateActive, nil
+	}
+
 	return smf_context.SmStateInit, nil
 }
 

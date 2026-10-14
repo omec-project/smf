@@ -962,8 +962,7 @@ func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) err
 //
 // The AMF reports only a transfer that asked for it, and the only one that does is the downlink data
 // paging transfer. A modification's Command does not, so this is never its delivery failure, even
-// when a modification is pending: a Command that arrives while the AMF is paging can end that paging
-// and fails the paging transfer. A Command that never reaches the UE is left to T3591.
+// when a modification is pending. A Command that never reaches the UE is left to T3591.
 func HandlePduSessN1N2TransFailInd(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	smContext := txn.Ctxt.(*smf_context.SMContext)

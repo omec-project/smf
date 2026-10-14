@@ -244,9 +244,8 @@ func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
 }
 
 // The AMF's failure notification is never a modification's: only the downlink data paging transfer
-// asks for one, and a Command arriving while the AMF pages can end that paging and fail the paging
-// transfer. Taken as the Command's delivery failure, it reverted a modification that was on its way
-// to the UE.
+// asks for one. Taken as the Command's delivery failure, it reverted a modification whose Command the
+// UE could still answer.
 func TestAPagingFailureLeavesAPendingModificationAlone(t *testing.T) {
 	original := sendPfcpSessionModifyReq
 	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
