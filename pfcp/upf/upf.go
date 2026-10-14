@@ -28,23 +28,30 @@ func InitPfcpHeartbeatRequest() {
 	// Iterate through all UPFs and send heartbeat to active UPFs
 	for {
 		time.Sleep(maxHeartbeatInterval * time.Second)
-		userplane := context.SMF_Self().UserPlaneInformation
-		if userplane == nil {
-			continue
-		}
-		for _, upf := range userplane.UPFs {
-			heartbeatUpf(upf)
-		}
+		heartbeatAll()
+	}
+}
+
+// heartbeatAll is one round of the heartbeat loop. It covers every UPF the SMF holds a record
+// for, not only the configured ones: TS 29.244 clause 5.8.2 has the CP function check a UP
+// function's responsiveness for as long as their association is established, and leaving the
+// configuration does not end the association. A UPF that hears nothing from the SMF drops the
+// association after its own read timeout, together with every session on it, so going quiet
+// while the configuration is empty, or omits the UPF, loses state it may be about to use again.
+// heartbeatUpf skips records that are not associated.
+func heartbeatAll() {
+	for _, upf := range context.RegisteredUPFs() {
+		heartbeatUpf(upf)
 	}
 }
 
 // heartbeatUpf is one heartbeat for one user plane, split out of the loop as probeUpf is so that
 // what it counts can be tested.
-func heartbeatUpf(upf *context.UPNode) {
-	upf.UPF.UpfLock.Lock()
-	defer upf.UPF.UpfLock.Unlock()
+func heartbeatUpf(upf *context.UPF) {
+	upf.UpfLock.Lock()
+	defer upf.UpfLock.Unlock()
 
-	if (upf.UPF.UPFStatus == context.AssociatedSetUpSuccess) && upf.UPF.NHeartBeat < maxHeartbeatRetry {
+	if (upf.UPFStatus == context.AssociatedSetUpSuccess) && upf.NHeartBeat < maxHeartbeatRetry {
 		err := message.SendHeartbeatRequest(upf.NodeID, upf.Port) // needs lock in sync rsp(adapter mode)
 		if err != nil {
 			logger.PfcpLog.Errorf("send pfcp heartbeat request failed: %v for UPF[%v, %v]: ", err, upf.NodeID, upf.NodeID.ResolveNodeIdToIp())
@@ -55,8 +62,8 @@ func heartbeatUpf(upf *context.UPNode) {
 		// be delivered is one it has not answered. Counting only successful sends meant a user
 		// plane behind an adapter that was down, or refusing, never reached the limit, and was
 		// never declared lost however long it stayed unreachable.
-		upf.UPF.NHeartBeat++
-	} else if upf.UPF.NHeartBeat == maxHeartbeatRetry {
+		upf.NHeartBeat++
+	} else if upf.NHeartBeat == maxHeartbeatRetry {
 		// No N4 "Out/Failure" is counted here: this branch sends nothing, and each heartbeat that
 		// actually failed to send -- synchronously (reportSendFailure) or asynchronously (the
 		// startTxLifeCycle fallback) -- is already counted once by the layer that sent it. Counting
@@ -64,7 +71,7 @@ func heartbeatUpf(upf *context.UPNode) {
 		// heartbeats. The UPF is still declared lost; that transition is an association-state change,
 		// not a send, so it is logged rather than booked against the send-failure metric.
 		logger.PfcpLog.Errorf("pfcp heartbeat failure for UPF: [%v]", upf.NodeID)
-		upf.UPF.UPFStatus = context.NotAssociated
+		upf.UPFStatus = context.NotAssociated
 	}
 }
 
