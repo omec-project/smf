@@ -738,12 +738,11 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 
 	// The abandonment closure checks that it is still the session's timer before acting.
 	//
-	// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's
-	// own goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing
-	// most likely to be holding it is the acknowledgement that just arrived and superseded this
-	// procedure. Without this check the queued abort resumes afterwards and discards whatever
-	// modification is pending by then, which after a partial rejection is the corrective one that
-	// was started in the meantime.
+	// Stopping a timer cannot recall an expiry already in flight. The abandonment is queued as a
+	// session task and runs when it reaches the front of the session's queue -- behind, most likely,
+	// the acknowledgement that just arrived and superseded this procedure. Without this check it
+	// resumes afterwards and discards whatever modification is pending by then, which after a partial
+	// rejection is the corrective one that was started in the meantime.
 	//
 	// The window is narrow and it is exactly the satellite case: a UE that acknowledges at the
 	// fifth expiry, after a fade almost long enough to abandon the procedure.
@@ -790,7 +789,14 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			}
 		},
 		func() {
-			abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
+			// Queued rather than run on the timer's goroutine. The abandonment puts the session back to
+			// Active, and a transaction in the session's slot can be waiting for the user plane's answer
+			// in SmStatePfcpModify -- a paging failure's own modification, say. That answer is delivered
+			// only in SmStatePfcpModify, so the transaction, and everything queued behind it, would wait
+			// for good.
+			queueSessionTask(smContext, func() {
+				abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
+			})
 		})
 	smContext.T3591 = timer
 	// StopT3591 above cleared it; the procedure is still running.
@@ -844,14 +850,14 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 
 // abandonIfCurrent abandons the modification only if the expiring timer is still the session's.
 //
-// Stopping a timer cannot recall an expiry already in flight. The abort runs on the timer's own
-// goroutine and takes SMLock, so it queues behind whatever holds the lock — and the thing most
-// likely to be holding it is the acknowledgement that just arrived and superseded this procedure.
-// Resuming afterwards, it would discard whatever modification is pending by then, which after a
-// partial rejection is the corrective one started in the meantime.
+// Stopping a timer cannot recall an expiry already in flight. The abort is queued as a session task
+// and runs when it reaches the front of the session's transaction queue -- behind, most likely, the
+// acknowledgement that just arrived and superseded this procedure. Resuming then, it would discard
+// whatever modification is pending by then, which after a partial rejection is the corrective one
+// started in the meantime.
 func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
-	// The timer goroutine holds no lock, so this takes it -- and keeps it across the check and
-	// the abandonment. Releasing in between put the two on either side of a lock acquisition, so
+	// This starts holding no lock, so it takes SMLock -- and keeps it across the check and the
+	// abandonment. Releasing in between put the two on either side of a lock acquisition, so
 	// an acknowledgement arriving in the gap could commit and start the next procedure, and this
 	// would then discard that newer one on the strength of a check that no longer held.
 	smContext.SMLock.Lock()

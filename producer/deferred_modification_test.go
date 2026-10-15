@@ -616,6 +616,46 @@ func TestAnAnswerWithAnotherPTILeavesTheProcedureAlone(t *testing.T) {
 	}
 }
 
+// T3591's last expiry abandons in the session's transaction slot, not on the timer's goroutine. Run
+// there, it put the session back to Active while a transaction in the slot could be waiting for the
+// user plane's answer in SmStatePfcpModify -- a paging failure's own modification, say -- and that
+// answer, delivered only in SmStatePfcpModify, never reached it.
+func TestT3591AbandonsInTheSessionSlot(t *testing.T) {
+	s := newDeferralSession(t)
+
+	originalQueue, originalRetransmit := queueSessionTask, retransmitModificationCommand
+	t.Cleanup(func() { queueSessionTask, retransmitModificationCommand = originalQueue, originalRetransmit })
+	retransmitModificationCommand = func(*smf_context.SMContext, func() bool) error { return nil }
+	queued := make(chan func(), 1)
+	queueSessionTask = func(_ *smf_context.SMContext, task func()) { queued <- task }
+
+	s.sm.T3591Value = 5 * time.Millisecond
+	s.notify(t)
+	s.waitForSend(t, "the decision")
+
+	var task func()
+	select {
+	case task = <-queued:
+	case <-time.After(queuedWorkTimeout):
+		t.Fatal("T3591 ran out without queueing its abandonment")
+	}
+
+	s.sm.SMLock.Lock()
+	pending := s.sm.NwModificationPending
+	s.sm.SMLock.Unlock()
+	if !pending {
+		t.Fatal("T3591 abandoned the modification on its own goroutine, outside the session's slot")
+	}
+
+	task()
+
+	s.sm.SMLock.Lock()
+	defer s.sm.SMLock.Unlock()
+	if s.sm.NwModificationPending {
+		t.Error("the queued abandonment did not abandon the modification")
+	}
+}
+
 // commandHandedToTheAMF stands in for the Command's transfer in tests: it records the Command as
 // handed to the AMF, as the transfer does, and sends nothing.
 func commandHandedToTheAMF(sm *smf_context.SMContext) error {

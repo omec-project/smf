@@ -63,8 +63,8 @@ func TestAbandonModificationTwiceIsSafe(t *testing.T) {
 
 // A T3591 expiry belonging to a finished modification must not abandon the one now in progress.
 //
-// Stopping a timer cannot recall an expiry already in flight. The abort takes SMLock, so it queues
-// behind whatever holds it — most likely the acknowledgement that just superseded the procedure.
+// Stopping a timer cannot recall an expiry already in flight. The abort is queued in the session's
+// slot, behind whatever holds it — most likely the acknowledgement that just superseded the procedure.
 // After a partial rejection the corrective modification starts in that same window, so the queued
 // abort would discard it: the session keeps the flows the radio refused, the UE has been told they
 // are gone, and nothing repairs the difference. The window is exactly the satellite case, a UE
