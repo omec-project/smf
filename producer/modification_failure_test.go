@@ -36,6 +36,13 @@ func modifyingSession() *smf_context.SMContext {
 	return sm
 }
 
+// withTunnel gives a modifying session the tunnel an established session has. ApplyModification
+// leaves a session without one alone, as it is being released.
+func withTunnel(sm *smf_context.SMContext) *smf_context.SMContext {
+	sm.Tunnel = &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{}}
+	return sm
+}
+
 // The user plane is programmed before the UE is signalled. If the signalling then fails, leaving
 // it programmed would have the session enforcing parameters the UE was never told about.
 func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
@@ -99,7 +106,7 @@ func TestAnUndeliverableModificationIsNotLeftPending(t *testing.T) {
 	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
 	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
 
-	sm := modifyingSession()
+	sm := withTunnel(modifyingSession())
 
 	if err := ApplyModification(sm, &qos.PolicyUpdate{}); err == nil {
 		t.Fatal("a modification that could not be delivered must be reported")
@@ -138,7 +145,7 @@ func TestTheUeIsNotToldWhenTheUserPlaneCannotBeProgrammed(t *testing.T) {
 		return nil
 	}
 
-	sm := modifyingSession()
+	sm := withTunnel(modifyingSession())
 
 	err := ApplyModification(sm, &qos.PolicyUpdate{})
 
@@ -165,7 +172,7 @@ func TestTheUeIsNotToldWhenTheUserPlaneCannotBeProgrammed(t *testing.T) {
 // an operator policy change could reach it; the corrective modification after a partial rejection
 // reaches it too.
 func TestAFailedUserPlaneProgrammingLeavesTheSessionAsItWasFound(t *testing.T) {
-	smContext := modifyingSession()
+	smContext := withTunnel(modifyingSession())
 	smContext.ChangeState(smf_context.SmStateActive)
 
 	originalSend := sendPfcpSessionModifyReq

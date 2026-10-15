@@ -641,10 +641,28 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 //
 // The caller must not hold SMLock. This blocks on the user plane's answer, and doing that under
 // the session lock is what wedges a session.
+//
+// A session on its way out is not modified. The check is made under the hold that starts the
+// modification, as runDeferredModification checks held work: the corrective modification is
+// queued, a release can reach the session first, and starting on a session with no tunnel would
+// set PfcpModify, program nothing, and have the failure path set the session back to Active. The
+// procedure the caller reserved is released with it, since nothing will run it now.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	smContext.SMLock.Lock()
+	if state := smContext.SMContextState; smContext.Tunnel == nil ||
+		(state != smfContext.SmStateActive && state != smfContext.SmStatePfcpModify) {
+		smContext.NwModificationPending = false
+		smContext.NwModificationUnsent = false
+		smContext.SMLock.Unlock()
+
+		return fmt.Errorf("%w: the session is %s", errSessionNotModifiable, state.String())
+	}
+
 	return applyModificationLocked(smContext, update)
 }
+
+// errSessionNotModifiable is ApplyModification refusing a session that is being released.
+var errSessionNotModifiable = errors.New("session not modifiable")
 
 // applyModificationLocked is ApplyModification for a caller that holds SMLock and has just checked
 // that no modification is pending. It releases the lock: what follows blocks on the user plane.

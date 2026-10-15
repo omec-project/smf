@@ -4,6 +4,8 @@
 package producer
 
 import (
+	"errors"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -214,5 +216,52 @@ func TestACorrectionWaitsOutTheCorrectedCommandsCopies(t *testing.T) {
 	case <-corrected:
 	case <-time.After(queuedWorkTimeout):
 		t.Fatal("the correction never started")
+	}
+}
+
+// The correction is queued, and a release can reach the session first. A correction that then
+// finds the session released is dropped, and gives back the procedure it reserved: starting it
+// would set PfcpModify on a session with no tunnel, and its failure path would set it to Active.
+func TestACorrectionForAReleasedSessionIsDropped(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	programmed := make(chan struct{}, 1)
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		programmed <- struct{}{}
+		return errors.New("no user plane for a released session")
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("not reached") }
+
+	sm := activeSmContext(10)
+	sm.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP("192.168.100.19")}
+	sm.SMContextState = smf_context.SmStateInit
+	sm.Tunnel = nil
+	// Reserved by the UE's completion, before the release ran.
+	sm.NwModificationPending = true
+	sm.NwModificationUnsent = true
+
+	done := make(chan struct{})
+	go func() {
+		correct(sm, &qos.PolicyUpdate{}, []int64{2})()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(queuedWorkTimeout):
+		t.Fatal("the correction did not return")
+	}
+
+	select {
+	case <-programmed:
+		t.Error("the correction was sent to the user plane for a released session")
+	default:
+	}
+	sm.SMLock.Lock()
+	defer sm.SMLock.Unlock()
+	if sm.SMContextState != smf_context.SmStateInit {
+		t.Errorf("state = %s, want Init: a released session must not be moved", sm.SMContextState.String())
+	}
+	if sm.NwModificationPending || sm.NwModificationUnsent {
+		t.Error("the reservation was left standing for a correction that will never run")
 	}
 }

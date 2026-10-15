@@ -6,6 +6,7 @@
 package producer
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1143,6 +1144,10 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 func correct(smContext *context.SMContext, corrective *qos.PolicyUpdate, refused []int64) func() {
 	return func() {
 		if err := applyModification(smContext, corrective); err != nil {
+			if errors.Is(err, errSessionNotModifiable) {
+				smContext.SubPduSessLog.Infof("not withdrawing the refused flows %v: %v", refused, err)
+				return
+			}
 			smContext.SubPduSessLog.Errorf("withdrawing the refused flows %v failed: %v; the UE still believes they exist and downlink traffic matching them will be dropped",
 				refused, err)
 			metrics.IncrementModificationAbandonedStats("realignment", "ue_not_corrected")
