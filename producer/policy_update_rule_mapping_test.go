@@ -116,7 +116,7 @@ func newTwoRuleSession(t *testing.T, restored bool) *twoRuleSession {
 	s.sm.SmPolicyData.SmCtxtQosData.QosData[allowQosID] = &allowQos
 	s.sm.SmPolicyData.SmCtxtQosData.QosData[cirQosID] = &cirQos
 	s.sm.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		AuthSessAmbr: &models.Ambr{Uplink: "100 Mbps", Downlink: "200 Mbps"},
+		AuthSessAmbr: &models.Ambr{Uplink: "150 Mbps", Downlink: "200 Mbps"},
 	}
 
 	return s
@@ -608,7 +608,11 @@ func TestAWithdrawnRuleLeavesTheSession(t *testing.T) {
 
 	s := newTwoRuleSession(t, false)
 	s.withPfcpContext()
-	t.Cleanup(func() { s.sm.StopT3591() })
+	t.Cleanup(func() {
+		s.sm.SMLock.Lock()
+		s.sm.StopT3591()
+		s.sm.SMLock.Unlock()
+	})
 
 	// Every PDR identifier the UPF has left is taken, so the only ones that can be handed out
 	// afterwards are the ones the withdrawal gives back.
@@ -804,7 +808,11 @@ func TestAModificationWaitsForTheRevertBeforeIt(t *testing.T) {
 	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
 
 	s := programmedRateChange(t)
-	t.Cleanup(func() { s.sm.StopT3591() })
+	t.Cleanup(func() {
+		s.sm.SMLock.Lock()
+		s.sm.StopT3591()
+		s.sm.SMLock.Unlock()
+	})
 	// A running timer, as abandonment finds one: abandoning stops it.
 	timer := smf_context.NewTimer(time.Hour, 4, func(int32) {}, func() {})
 	s.sm.T3591 = timer
@@ -892,5 +900,83 @@ func TestDisablingAFlowClosesItsGateOnTheUserPlane(t *testing.T) {
 		if !closed {
 			t.Errorf("%s: the disabled rule's flow QER is not closed", dir)
 		}
+	}
+}
+
+// T3591's last expiry abandons the modification and reverts the user plane. That work is queued in
+// the session's transaction slot, not run on the timer's goroutine, where it could overtake a
+// transaction that had already checked for an owed revert and was on its way to its own exchange.
+func TestT3591ExpiryQueuesItsAbandonment(t *testing.T) {
+	originalQueue, originalN1N2, originalRetransmit := queueSessionTask, sendQosN1N2TransferMsg, retransmitModificationCommand
+	t.Cleanup(func() {
+		queueSessionTask, sendQosN1N2TransferMsg, retransmitModificationCommand = originalQueue, originalN1N2, originalRetransmit
+	})
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+	retransmitModificationCommand = func(*smf_context.SMContext, func() bool) error { return nil }
+
+	queued := make(chan func(), 1)
+	queueSessionTask = func(_ *smf_context.SMContext, task func()) { queued <- task }
+
+	s := programmedRateChange(t)
+	s.sm.T3591Value = 5 * time.Millisecond
+	t.Cleanup(func() {
+		s.sm.SMLock.Lock()
+		s.sm.StopT3591()
+		s.sm.SMLock.Unlock()
+	})
+	s.sm.SMLock.Lock()
+	startT3591Locked(s.sm, 1)
+	s.sm.SMLock.Unlock()
+
+	select {
+	case task := <-queued:
+		if !s.sm.NwModificationPending {
+			t.Fatal("the modification was abandoned before the queued work ran")
+		}
+		original := sendPfcpSessionModifyReq
+		t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+		var reverted bool
+		sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+			reverted = true
+			return nil
+		}
+		task()
+		if s.sm.NwModificationPending || !reverted {
+			t.Errorf("the queued work did not abandon and revert (pending %v, reverted %v)", s.sm.NwModificationPending, reverted)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("T3591 ran out without queueing its abandonment")
+	}
+}
+
+// The correction after a partial rejection is a modification, and one that cannot be delivered is
+// reverted. It is queued in the session's slot for the same reason T3591's abandonment is: started
+// on a goroutine of its own, its revert would set the owed-revert marker behind a transaction that
+// had already checked for it.
+func TestTheRealignmentIsQueuedInTheSessionSlot(t *testing.T) {
+	originalQueue, originalApply := queueSessionTask, applyModification
+	t.Cleanup(func() { queueSessionTask, applyModification = originalQueue, originalApply })
+
+	var queued func()
+	queueSessionTask = func(_ *smf_context.SMContext, task func()) { queued = task }
+	var applied *qos.PolicyUpdate
+	applyModification = func(_ *smf_context.SMContext, u *qos.PolicyUpdate) error {
+		applied = u
+		return nil
+	}
+
+	s := newTwoRuleSession(t, false)
+	corrective := &qos.PolicyUpdate{}
+	realignSession(s.sm, &smf_context.PendingRealignment{RefusedQFIs: []int64{1}}, corrective)
+
+	if queued == nil {
+		t.Fatal("the correction was not queued in the session's slot")
+	}
+	if applied != nil {
+		t.Fatal("the correction ran before its queued turn")
+	}
+	queued()
+	if applied != corrective {
+		t.Error("the queued work did not apply the correction")
 	}
 }
