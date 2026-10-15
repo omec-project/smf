@@ -149,12 +149,8 @@ func TestAModificationWithNoTunnelReturnsAnError(t *testing.T) {
 	}
 }
 
-// A policy notification for a session whose tunnel is gone is refused, and refused without leaving
-// the session locked. BuildPfcpParam reads through the tunnel without looking, so the notification
-// took the SMF down in the builder while it held SMLock; the unlock there is not deferred, and the
-// transaction lifecycle's recover catches the panic without releasing the lock, so every later
-// operation on the session waited on it for good. A guard in the send was never reached: the
-// builder had already dereferenced nil.
+// A policy notification for a session whose tunnel is gone is refused before anything is recorded
+// for it, and refused without leaving the session locked: the unlock on that path is not deferred.
 func TestAPolicyUpdateForASessionWithNoTunnelIsRefusedAndLeavesItUnlocked(t *testing.T) {
 	smContext := &smf_context.SMContext{
 		Supi:           "imsi-208930000000045",

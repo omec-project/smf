@@ -67,6 +67,8 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		// Pre-loaded- No action
 	case svcmsgtypes.N1N2MessageTransferFailureNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
+	case svcmsgtypes.SessionTask:
+		// Pre-loaded- No action
 	default:
 		txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], unknown msgtype [%v]",
 			transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), txn.MsgType)
@@ -97,7 +99,10 @@ func (SmfTxnFsm) TxnCtxtPost(txn *transaction.Transaction) (transaction.TxnEvent
 		return transaction.TxnEventQueue, nil
 	}
 
-	// No other Txn running, lets proceed with current Txn
+	// No other Txn running, lets proceed with current Txn. It takes the slot here, in the same hold of
+	// the lock as the check: taken only in TxnCtxtRun, two transactions arriving together could both
+	// find it free and run at once.
+	smContext.ActiveTxn = txn
 
 	return transaction.TxnEventRun, nil
 }
@@ -110,7 +115,7 @@ func (SmfTxnFsm) TxnCtxtRun(txn *transaction.Transaction) (transaction.TxnEvent,
 	smContext.SMTxnBusLock.Lock()
 	defer smContext.SMTxnBusLock.Unlock()
 
-	if smContext.ActiveTxn != nil {
+	if smContext.ActiveTxn != nil && smContext.ActiveTxn != txn {
 		logger.TxnFsmLog.Errorf("active transaction [%v] not completed", smContext.ActiveTxn)
 	}
 
@@ -124,6 +129,13 @@ func (SmfTxnFsm) TxnProcess(txn *transaction.Transaction) (transaction.TxnEvent,
 	if smContext == nil {
 		txn.TxnFsmLog.Errorf("event[%v], next-event[%v], SM context invalid", transaction.TxnEventProcess.String(), transaction.TxnEventFailure.String())
 		return transaction.TxnEventFailure, fmt.Errorf("TxnProcess, invalid SM Ctxt")
+	}
+
+	// Work the SMF queued for the session itself: it runs here, in the session's slot, and needs no
+	// state machine -- what it does is decided by the session as it finds it.
+	if txn.MsgType == svcmsgtypes.SessionTask {
+		txn.Req.(func())()
+		return transaction.TxnEventSuccess, nil
 	}
 
 	var event SmEvent
@@ -291,6 +303,9 @@ func (SmfTxnFsm) TxnEnd(txn *transaction.Transaction) (transaction.TxnEvent, err
 	// Active Txn is over, now Pull out head Txn and Run it
 	if len(smContext.TxnBus) > 0 {
 		nextTxn, smContext.TxnBus = smContext.TxnBus.PopTxn()
+		// The slot passes straight to it. Left free until it reaches TxnCtxtRun, a transaction
+		// arriving meanwhile would find it free and run alongside it.
+		smContext.ActiveTxn = nextTxn
 		txn.NextTxn = nextTxn
 		return transaction.TxnEventRun, nil
 	}
