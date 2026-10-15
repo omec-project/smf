@@ -926,11 +926,20 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		return nil
 	}
 
+	// The answer lists only the flows the modification added or modified. Flows it released are not
+	// in it, and refusing every listed flow does not undo their release: the radio has let their
+	// bearers go. Abandoning would put them back on the record, so a modification that also released
+	// flows is pruned and corrected like a partial one, which keeps the releases.
 	switch {
-	case result.WhollyRejected():
+	case result.WhollyRejected() && !smContext.ReleasesQosFlows():
 		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
 		smContext.StopT3591()
 		abandonModificationUnderLock(smContext, "ran_whole_rejection", "no_flow_established")
+
+	case result.WhollyRejected():
+		smContext.SubPduSessLog.Warnf("radio access network established none of the added or modified flows %v, but the modification also released flows; keeping the releases and realigning the UE",
+			result.RejectedQFIs)
+		realignAfterPartialRejection(smContext, result)
 
 	case result.PartiallyRejected():
 		smContext.SubPduSessLog.Warnf("radio access network established flows %v and refused %v; realigning the UE",

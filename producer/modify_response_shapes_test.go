@@ -256,3 +256,40 @@ func TestModifyResponseArrivingForNoModificationIsIgnored(t *testing.T) {
 		t.Error("a stale response stopped the timer of whatever procedure is running now")
 	}
 }
+
+// A response lists only the flows a modification added or modified. One that refuses all of them
+// but belongs to a modification that also released a flow is not a whole rejection: the radio
+// released that flow's bearer, and abandoning would put the flow back on the record. It is
+// realigned like a partial rejection, which commits the release and withdraws the refused flows.
+func TestARefusalOfEveryListedFlowKeepsTheReleases(t *testing.T) {
+	smContext := modifyingSmContext(t)
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
+		QosFlowUpdate: qos.GetQosFlowDescUpdate(
+			map[string]models.QosData{
+				"1": {QosId: "1", Var5qi: openapi.PtrInt32(9)},
+				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+				// A decision withdraws a flow with an empty entry under its key.
+				"3": {},
+			},
+			map[string]*models.QosData{"3": {QosId: "3", Var5qi: openapi.PtrInt32(1)}},
+		),
+	}}
+	if !smContext.ReleasesQosFlows() {
+		t.Fatal("the update does not release flow 3; the test is not exercising what it claims")
+	}
+
+	deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, nil, []int64{1, 2}))
+
+	if len(smContext.SmPolicyUpdates) == 0 {
+		t.Fatal("the modification was abandoned: the released flow goes back on the record after its bearer has gone")
+	}
+	if smContext.Realign == nil {
+		t.Fatal("no realignment recorded; the UE keeps believing the refused flows exist")
+	}
+	if len(smContext.Realign.RefusedQFIs) != 2 {
+		t.Errorf("refused = %v, want [1 2]", smContext.Realign.RefusedQFIs)
+	}
+	if !smContext.NwModificationPending || smContext.T3591 == nil {
+		t.Error("the procedure was ended early; it ends when the UE answers, which is what commits the release")
+	}
+}
