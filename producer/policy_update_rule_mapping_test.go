@@ -38,12 +38,14 @@ const (
 	cirRuleID   = "cir"
 	allowQosID  = "9"
 	cirQosID    = "1"
+	// upfNodeIP is the two-rule session's UPF, and the key of its PFCP context.
+	upfNodeIP = "10.0.0.7"
 )
 
 func newTwoRuleSession(t *testing.T, restored bool) *twoRuleSession {
 	t.Helper()
 
-	upf := smf_context.NewUPF(smf_context.NewNodeID("10.0.0.7"), nil)
+	upf := smf_context.NewUPF(smf_context.NewNodeID(upfNodeIP), nil)
 	upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 	t.Cleanup(func() { smf_context.RemoveUPFNodeByNodeID(upf.NodeID) })
 
@@ -243,7 +245,7 @@ func TestAnAddedRuleIsProgrammedAndTheEstablishedOnesAreNotTouched(t *testing.T)
 		s := newTwoRuleSession(t, false)
 		// The tunnels put what they build into the session's PFCP context.
 		s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{
-			"10.0.0.7": {PDRs: map[uint16]*smf_context.PDR{}},
+			upfNodeIP: {PDRs: map[uint16]*smf_context.PDR{}},
 		}
 
 		decision := s.rateChange()
@@ -589,7 +591,7 @@ func (s *twoRuleSession) withPfcpContext() {
 	for _, pdr := range []*smf_context.PDR{s.allowUL, s.allowDL, s.cirUL, s.cirDL} {
 		pdrs[pdr.PDRID] = pdr
 	}
-	s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{"10.0.0.7": {PDRs: pdrs}}
+	s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{upfNodeIP: {PDRs: pdrs}}
 }
 
 // A rule the user plane has accepted withdrawing is no longer the session's. Left in the tunnels,
@@ -651,7 +653,7 @@ func TestAWithdrawnRuleLeavesTheSession(t *testing.T) {
 	if _, ok := node.DownLinkTunnel.PDR[cirRuleID]; ok {
 		t.Error("the withdrawn rule's downlink PDR is still in the session's tunnel")
 	}
-	pdrs := s.sm.PFCPContext["10.0.0.7"].PDRs
+	pdrs := s.sm.PFCPContext[upfNodeIP].PDRs
 	if pdrs[s.cirUL.PDRID] != nil || pdrs[s.cirDL.PDRID] != nil {
 		t.Error("the withdrawn rule's PDRs are still in the session's PFCP context")
 	}
@@ -978,5 +980,75 @@ func TestTheRealignmentIsQueuedInTheSessionSlot(t *testing.T) {
 	queued()
 	if applied != corrective {
 		t.Error("the queued work did not apply the correction")
+	}
+}
+
+// The correction after a partial rejection carries the original decision, refused flows included,
+// because RemoveFlows keeps it for the NAS and NGAP builders. Only what the update adds or changes
+// is read from it, and a correction adds and changes nothing, so the refused flow's QoS must not
+// come back as a QER: the correction withdraws the rule's PDRs and programs nothing else.
+func TestACorrectionProgramsNothingForTheFlowItWithdraws(t *testing.T) {
+	const appRuleID, appQosID = "app", "2"
+
+	for range 40 {
+		s := newTwoRuleSession(t, false)
+		s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{
+			upfNodeIP: {PDRs: map[uint16]*smf_context.PDR{}},
+		}
+
+		decision := s.rateChange()
+		(*decision.QosDecs)[cirQosID] = s.cirQosSent
+		decision = roundTrip(decision)
+		(*decision.QosDecs)[appQosID] = models.QosData{
+			QosId: appQosID, Var5qi: openapi.PtrInt32(2),
+			MaxbrUl: *openapi.NewNullableString(openapi.PtrString("2 Mbps")),
+			MaxbrDl: *openapi.NewNullableString(openapi.PtrString("4 Mbps")),
+		}
+		decision.PccRules[appRuleID] = models.PccRule{
+			PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
+			FlowInfos: []models.FlowInformation{{
+				FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
+				PackFiltId:      openapi.PtrString("7"),
+			}},
+		}
+
+		// The modification adding the rule is programmed, and the radio then refuses its flow.
+		update := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{update}
+		BuildPfcpParam(s.sm)
+		node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+		appUL, appDL := node.UpLinkTunnel.PDR[appRuleID], node.DownLinkTunnel.PDR[appRuleID]
+		if appUL == nil || appDL == nil {
+			t.Fatalf("the added rule's PDRs were not built (UL %v, DL %v)", appUL != nil, appDL != nil)
+		}
+		corrective := update.RemoveFlows(qos.RefusedFlowSet([]int64{2}))
+		if corrective == nil {
+			t.Fatal("no correction for a refused addition")
+		}
+		if err := qos.CommitSmPolicyDecision(&s.sm.SmPolicyData, update); err != nil {
+			t.Fatalf("committing the pruned update: %v", err)
+		}
+
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{corrective}
+		param := BuildPfcpParam(s.sm)
+
+		if len(param.qerList) != 0 {
+			for _, qer := range param.qerList {
+				t.Errorf("the correction creates QER %d for QFI %d; it withdraws flows and creates nothing", qer.QERID, qer.QFI.QFI)
+			}
+		}
+		if len(param.pdrList) != 0 {
+			t.Errorf("the correction programs %d PDRs; it only withdraws the refused rule's", len(param.pdrList))
+		}
+		removed := map[*smf_context.PDR]bool{}
+		for _, pdr := range param.removePDR {
+			removed[pdr] = true
+		}
+		if !removed[appUL] || !removed[appDL] {
+			t.Errorf("the refused rule's PDRs were not withdrawn (UL %v, DL %v)", removed[appUL], removed[appDL])
+		}
+		if t.Failed() {
+			return
+		}
 	}
 }
