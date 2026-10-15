@@ -954,7 +954,10 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			// Active, and a transaction in the session's slot can be waiting for the user plane's answer
 			// in SmStatePfcpModify -- a paging failure's own modification, say. That answer is delivered
 			// only in SmStatePfcpModify, so the transaction, and everything queued behind it, would wait
-			// for good.
+			// for good. And the revert that follows waits on the session's one PFCP response channel,
+			// which carries no correlation, so it must not be in flight beside any other exchange for the
+			// session -- and a transaction that has already passed its wait for an owed revert, but not
+			// yet sent, is one the timer could otherwise overtake.
 			queueSessionTask(smContext, func() { abandonIfCurrent(smContext, timer) })
 		})
 	smContext.T3591 = timer
@@ -1094,9 +1097,9 @@ func (p *pfcpParam) empty() bool {
 // update that was abandoned, and programs the committed rules back. A modification built before it
 // had finished would be programmed first and then undone -- the revert restores the committed
 // rules over whatever the new one had just set -- and the two would wait on the session's one
-// response channel at once. The revert runs on its own goroutine from T3591's expiry and from the
-// NAS and NGAP handlers, outside the transaction queue that orders everything else, so this is
-// where the order is kept.
+// response channel at once. Every transaction waits for an owed revert before processing; this is
+// the same wait for ApplyModification, which the realignment reaches as a queued task and the
+// delivery-failure paths reach from inside a transaction that is already past that point.
 func lockAfterRevert(smContext *smfContext.SMContext) {
 	for {
 		smContext.SMLock.Lock()
@@ -1265,7 +1268,9 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 // usually a transaction whose state machine has not finished: HandleEvent applies the handler's
 // returned state after the handler has released the lock, and a modification started in between
 // moved the session to SmStatePfcpModify only for that to put it back to Active -- after which the
-// user plane's answer, delivered only in SmStatePfcpModify, never reached it.
+// user plane's answer, delivered only in SmStatePfcpModify, never reached it. And in the queue for a
+// second reason: a modification whose delivery fails reverts it, and a revert is owed only from
+// inside the queue.
 func startDeferredModificationLocked(smContext *smfContext.SMContext) {
 	if modificationInProgressLocked(smContext) {
 		return
