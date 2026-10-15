@@ -993,8 +993,16 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 	// plane. Withdrawing all of them puts the session where the abandonment would have put it.
 	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
 		smContext.CommittedBeforeRanAnswer = nil
-		correctCommittedModification(smContext, committed,
-			context.ModifyResponse{RejectedQFIs: flowsCarriedBy(committed)})
+		flows := flowsCarriedBy(committed)
+		if len(flows) == 0 {
+			// A modification that only released flows or changed session-level parameters has no
+			// flow to withdraw, and putting those back would take the record from before it, which
+			// the committed update does not carry. Said here rather than reported as an acceptance.
+			smContext.SubPduSessLog.Warnf("radio access network refused a modification the UE had already completed, which added or changed no flow; nothing is withdrawn, and what it released or changed for the session stays in force")
+
+			return nil
+		}
+		correctCommittedModification(smContext, committed, context.ModifyResponse{RejectedQFIs: flows})
 
 		return nil
 	}
