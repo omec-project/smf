@@ -219,3 +219,58 @@ func TestRemoveFlowsReadsTheIdentifierTheRequestWasBuiltFrom(t *testing.T) {
 		t.Error("a refused flow must not be recorded as established")
 	}
 }
+
+// The radio refusing a change to an established flow keeps the flow on its previous parameters.
+// The change must not reach the record, and the flow must not be withdrawn: it still has its
+// bearer, and the rules that refer to it -- changed or not -- still need it.
+func TestRemoveFlowsLeavesAnEstablishedFlowWhoseChangeWasRefused(t *testing.T) {
+	u := &PolicyUpdate{
+		QosFlowUpdate: &QosFlowsUpdate{
+			add: map[string]*models.QosData{"3": {QosId: "3"}},
+			mod: map[string]*models.QosData{"2": {QosId: "2"}},
+		},
+		PccRuleUpdate: &PccRulesUpdate{
+			add: map[string]*models.PccRule{"r3": {PccRuleId: "r3", RefQosData: []string{"3"}}},
+			mod: map[string]*models.PccRule{"r2": {PccRuleId: "r2", RefQosData: []string{"2"}}},
+		},
+	}
+
+	corrective := u.RemoveFlows(RefusedFlowSet([]int64{2, 3}))
+
+	if _, still := u.QosFlowUpdate.mod["2"]; still {
+		t.Error("a refused change must not reach the record; the radio kept the previous parameters")
+	}
+	if corrective == nil {
+		t.Fatal("the refused addition must still come back as a deletion")
+	}
+	if corrective.QosFlowUpdate.del["2"] != nil {
+		t.Error("an established flow whose change was refused must not be withdrawn; its bearer still exists")
+	}
+	if corrective.QosFlowUpdate.del["3"] == nil {
+		t.Error("the refused addition must be withdrawn")
+	}
+	if corrective.PccRuleUpdate.del["r2"] != nil {
+		t.Error("a rule on an established flow must not be withdrawn because the flow's change was refused")
+	}
+	if _, ok := u.PccRuleUpdate.mod["r2"]; !ok {
+		t.Error("a rule on an established flow is not the radio's to refuse and must be kept")
+	}
+	if corrective.PccRuleUpdate.del["r3"] == nil {
+		t.Error("the rule on the refused addition must be withdrawn with it")
+	}
+}
+
+// With only changes refused, there is nothing to withdraw.
+func TestRemoveFlowsHasNothingToWithdrawWhenOnlyChangesWereRefused(t *testing.T) {
+	u := &PolicyUpdate{QosFlowUpdate: &QosFlowsUpdate{
+		add: map[string]*models.QosData{},
+		mod: map[string]*models.QosData{"2": {QosId: "2"}},
+	}}
+
+	if corrective := u.RemoveFlows(RefusedFlowSet([]int64{2})); corrective != nil {
+		t.Errorf("corrective = %+v, want nil: no refused flow was one the update added", corrective.QosFlowUpdate)
+	}
+	if _, still := u.QosFlowUpdate.mod["2"]; still {
+		t.Error("the refused change must still be dropped from the update")
+	}
+}

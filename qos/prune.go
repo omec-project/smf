@@ -19,9 +19,17 @@ import (
 // Rules are dropped alongside their flows deliberately. A PCC rule whose referenced QoS data was
 // never established would be recorded as active while nothing enforces it, which is the same
 // class of divergence in a different place.
-// It returns a delete-only update describing what it removed, or nil if it removed nothing. That
-// is what the corrective modification is built from: the UE was told these flows were authorized
-// and has to be told they are not, and their identities are only available here.
+//
+// A refused change to an established flow is not a refused flow. The radio keeps the flow on the
+// parameters it had, so the change is dropped from the update and the flow is left in place:
+// withdrawing it would take away a flow whose bearer still exists, and with it every unchanged rule
+// that refers to it. The UE and the user plane keep the parameters they were given until a later
+// modification replaces them. Putting the previous ones back would need the record from before
+// the update, which the update does not carry.
+//
+// It returns a delete-only update describing the refused additions it removed, or nil if there
+// were none. That is what the corrective modification is built from: the UE was told these flows
+// were authorized and has to be told they are not, and their identities are only available here.
 func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 	if u == nil || len(refused) == 0 {
 		return nil
@@ -32,8 +40,11 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 	removedRules := make(map[string]*models.PccRule)
 
 	if u.QosFlowUpdate != nil {
-		for _, flows := range []map[string]*models.QosData{u.QosFlowUpdate.add, u.QosFlowUpdate.mod} {
-			for qosID, flow := range flows {
+		for _, flows := range []struct {
+			entries map[string]*models.QosData
+			added   bool
+		}{{u.QosFlowUpdate.add, true}, {u.QosFlowUpdate.mod, false}} {
+			for qosID, flow := range flows.entries {
 				// Read from the same field the modify request was built from, and parse it the
 				// same way. QosDecs is specified to be keyed by the qosId of its entry -- the
 				// openapi model says so and the PCF this core ships writes it that way -- so for
@@ -47,11 +58,18 @@ func (u *PolicyUpdate) RemoveFlows(refused map[uint8]bool) *PolicyUpdate {
 					continue
 				}
 
-				if refused[flowID] {
-					removedQosIDs[qosID] = true
-					removedFlows[qosID] = flow
-					delete(flows, qosID)
+				if !refused[flowID] {
+					continue
 				}
+
+				delete(flows.entries, qosID)
+				if !flows.added {
+					logger.QosLog.Warnf("the radio access network refused the change to established QoS flow %d; it keeps the flow on its previous parameters, while the UE and the user plane keep the changed ones until a later modification",
+						flowID)
+					continue
+				}
+				removedQosIDs[qosID] = true
+				removedFlows[qosID] = flow
 			}
 		}
 	}

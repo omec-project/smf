@@ -1085,10 +1085,11 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 		realign.EstablishedQFIs, realign.RefusedQFIs)
 
 	if corrective == nil {
-		// Nothing to delete: the refused flows were not in the update being committed, so the
-		// record and the UE already agree. Worth saying, because the alternative reading is that
-		// the correction was skipped.
-		smContext.SubPduSessLog.Infof("no flows to withdraw; the UE's view already matches the session")
+		// Nothing to delete: no refused flow was one the update added. Either the refused flows were
+		// not in the update being committed, or the radio refused only changes to established flows,
+		// which it keeps and RemoveFlows leaves in place. Worth saying, because the alternative
+		// reading is that the correction was skipped.
+		smContext.SubPduSessLog.Infof("no flows to withdraw; the radio refused no flow this modification added")
 		startDeferredModificationLocked(smContext)
 		return
 	}
