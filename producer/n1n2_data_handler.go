@@ -898,10 +898,10 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 	// held behind it then starts. A correction this answer calls for goes first: it marks the
 	// session pending, and the decision waits for the correction to end.
 	//
-	// Nothing waits for this answer itself. The UE's completion starts a held decision whether or
-	// not the radio has answered, as a notification arriving then would, because an answer that
-	// never comes would otherwise hold every later decision for good. A late answer meeting the
-	// newer modification is the case ranAnswerIsExpectedLocked already cannot separate.
+	// A held decision also waits for this answer once the UE has completed, but only for one T3591
+	// interval (armRanAnswerGuardLocked), since an answer that never comes would otherwise hold every
+	// later decision for good. A late answer meeting the newer modification is the case
+	// ranAnswerIsExpectedLocked already cannot separate.
 	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
@@ -990,7 +990,8 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 	// has already completed was committed whole, and the abandonment below has nothing to discard:
 	// the pending update it would have dropped was popped by that commit. Refusing the modification
 	// outright therefore left every flow of it in force, on the record, on the UE and in the user
-	// plane. Withdrawing all of them puts the session where the abandonment would have put it.
+	// plane. Withdrawing the flows it added takes those back out; the flows it changed are left as
+	// they are, as RemoveFlows leaves them on any refusal.
 	if committed := smContext.CommittedBeforeRanAnswer; committed != nil {
 		smContext.CommittedBeforeRanAnswer = nil
 		flows := flowsCarriedBy(committed)
@@ -1050,21 +1051,24 @@ func flowsCarriedBy(update *qos.PolicyUpdate) []int64 {
 // only in where the deletions come from, which is the update the completion committed.
 //
 // A whole rejection is corrected the same way. The pending update is what the abandonment path
-// discards, and by now there is none; withdrawing every flow leaves the session on the parameters
-// it had before the modification, which is where an abandonment would have left it.
+// discards, and by now there is none; withdrawing the flows it added takes them back out. Flows it
+// changed stay on the changed parameters on the UE and in the user plane.
 func correctCommittedModification(smContext *context.SMContext, committed *qos.PolicyUpdate, result context.ModifyResponse) {
 	if len(result.RejectedQFIs) == 0 {
 		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)
 		return
 	}
 
-	smContext.SubPduSessLog.Warnf("radio access network refused flows %v for a modification the UE had already completed; withdrawing them from the session, the UE and the user plane",
-		result.RejectedQFIs)
+	corrective := committed.RemoveFlows(qos.RefusedFlowSet(result.RejectedQFIs))
+	if corrective != nil {
+		smContext.SubPduSessLog.Warnf("radio access network refused flows %v for a modification the UE had already completed; withdrawing the ones it added from the session, the UE and the user plane",
+			result.RejectedQFIs)
+	}
 
 	realignSession(smContext, &context.PendingRealignment{
 		EstablishedQFIs: result.AcceptedQFIs,
 		RefusedQFIs:     result.RejectedQFIs,
-	}, committed.RemoveFlows(qos.RefusedFlowSet(result.RejectedQFIs)))
+	}, corrective)
 }
 
 // realignAfterPartialRejection records that the UE's view of the session is wider than what the
