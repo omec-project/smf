@@ -22,6 +22,9 @@ func activeSmContext(pduSessionID int32) *smf_context.SMContext {
 	return &smf_context.SMContext{
 		PDUSessionID:   pduSessionID,
 		SMContextState: smf_context.SmStateActive,
+		// An active session has a tunnel, and a policy update refuses one without it as a session
+		// being released. Empty: the tests that send stub the PFCP send, so no path is read.
+		Tunnel:         &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{}},
 		SubPduSessLog:  zap.NewNop().Sugar(),
 		SubCtxLog:      zap.NewNop().Sugar(),
 		SubGsmLog:      zap.NewNop().Sugar(),

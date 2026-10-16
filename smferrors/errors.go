@@ -181,4 +181,9 @@ var ErrorCause = map[string]uint8{
 	"AMFDiscoveryFailure":           nasMessage.Cause5GSMRequestRejectedUnspecified,
 	"PDUSessionTypeIPv4OnlyAllowed": nasMessage.Cause5GSMPDUSessionTypeIPv4OnlyAllowed,
 	"InvalidPDUSessionIdentity":     nasMessage.Cause5GSMInvalidPDUSessionIdentity,
+	// Refusing a UE-requested PDU session modification. #32 is chosen over a generic rejection
+	// because TS 24.501 subclause 6.4.2.4.3 item a makes the UE back off on its own for #32 and
+	// #33 — with its configured SM Retry Timer, or 12 minutes by default — so the UE stops
+	// retransmitting until T3581 and then retrying. A generic cause leaves it retrying.
+	"ModificationNotSupported": nasMessage.Cause5GSMServiceOptionNotSupported,
 }
