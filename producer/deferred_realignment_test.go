@@ -17,7 +17,9 @@ import (
 	"github.com/omec-project/smf/qos"
 )
 
-// The radio refusing the whole modification ends it, and the decision held behind it starts.
+// The radio refusing the whole modification ends it, and the decision held behind it starts. The
+// radio has not passed the Command to the UE (TS 38.413 subclause 8.2.3.2), so no answer to it is
+// coming.
 func TestARadioRefusingTheModificationStartsTheHeldDecision(t *testing.T) {
 	s := newDeferralSession(t)
 	s.startAndHold(t)
@@ -25,8 +27,60 @@ func TestARadioRefusingTheModificationStartsTheHeldDecision(t *testing.T) {
 	s.sm.RanAnswerPending = true // the radio has not answered yet
 	s.sm.SMLock.Unlock()
 
-	deliverModifyResponse(t, s.sm, craftModifyResponseTransfer(t, nil, []int64{1}))
+	deliverModifyFailure(t, s.sm)
 	s.waitForSend(t, "the held decision, once the radio refused the first modification")
+	s.waitUntilArmed(t, 2)
+}
+
+// A response refusing every listed flow is not that refusal. The session is in the response, so the
+// radio has passed the Command to the UE, and the modification waits for the UE's answer with the
+// held decision behind it. Started at once, the held decision's Command would have been answered by
+// the UE's late Complete to the first one, which carries the same PDU session ID and PTI.
+func TestAResponseRefusingEveryFlowWaitsForTheUE(t *testing.T) {
+	s := newDeferralSession(t)
+	s.startAndHold(t)
+	s.sm.SMLock.Lock()
+	s.sm.RanAnswerPending = true // the radio has not answered yet
+	s.sm.SMLock.Unlock()
+
+	deliverModifyResponse(t, s.sm, craftModifyResponseTransfer(t, nil, []int64{1}))
+	s.expectNoSend(t, "the held decision, while the UE has yet to answer the Command the radio passed on")
+
+	s.sm.SMLock.Lock()
+	pending, realign := s.sm.NwModificationPending, s.sm.Realign
+	s.sm.SMLock.Unlock()
+	if !pending || realign == nil {
+		t.Fatalf("the first modification was not left waiting for the UE: pending %t, realignment %v", pending, realign)
+	}
+
+	s.answer(t, nas.MsgTypePDUSessionModificationComplete)
+	s.waitForSend(t, "the held decision, once the UE answered the first modification")
+	s.waitUntilArmed(t, 2)
+}
+
+// The failure message abandons at once, and after a retransmission the held decision still waits
+// out the Command's copies. The radio sent one answer for the two requests it was sent and may have
+// passed the other copy on, and the UE answers every copy it receives, with the same PDU session
+// ID and PTI the held decision's Command would carry.
+func TestAFailureAfterARetransmissionWaitsOutTheCopies(t *testing.T) {
+	const interval = 500 * time.Millisecond
+
+	s := newDeferralSession(t)
+	s.retransmitOnce(t, interval)
+	s.notify(t)
+	s.expectNoSend(t, "a decision arriving while the first modification waits for the UE")
+	s.sm.SMLock.Lock()
+	s.sm.RanAnswerPending = true // the radio has not answered yet
+	s.sm.SMLock.Unlock()
+
+	deliverModifyFailure(t, s.sm)
+	select {
+	case <-s.pfcp:
+		t.Fatal("the held decision started while the UE could still answer a copy of the refused Command")
+	case <-time.After(interval / 2):
+	}
+
+	s.waitForSend(t, "the held decision, once the refused Command's copies have had their interval")
 	s.waitUntilArmed(t, 2)
 }
 

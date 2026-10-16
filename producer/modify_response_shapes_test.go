@@ -135,10 +135,10 @@ func deliverModifyResponse(t *testing.T, smContext *smf_context.SMContext, trans
 }
 
 // The radio access network's answer has three shapes and the network owes something different for
-// each. Establishing all the flows means carry on and wait for the UE. Establishing none means the
-// modification did not happen, so abandon it. Establishing some means the UE has been told about
-// flows that do not exist, which has to be corrected — and that last one is the case that is easy
-// to get wrong by treating it as either of the other two.
+// each. Establishing all the flows means carry on and wait for the UE. Establishing some or none
+// means the UE has been told about flows that do not exist, which has to be corrected. A response
+// establishing none is still a response: the session was modified and the radio passed the Command to
+// the UE (TS 38.413 subclause 8.2.3.2), so it is not the failure message that abandons.
 func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 	t.Run("all flows established: nothing is abandoned and the timer keeps running", func(t *testing.T) {
 		smContext := modifyingSmContext(t)
@@ -156,19 +156,16 @@ func TestModifyResponseShapesAreHandledDifferently(t *testing.T) {
 		}
 	})
 
-	t.Run("no flow established: the modification is abandoned", func(t *testing.T) {
+	t.Run("no flow established: a realignment is recorded, and the UE's answer is awaited", func(t *testing.T) {
 		smContext := modifyingSmContext(t)
 
 		deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, nil, []int64{1, 2}))
 
-		if smContext.T3591 != nil {
-			t.Error("T3591 is still armed for a modification that will never be acknowledged")
+		if smContext.Realign == nil || len(smContext.Realign.RefusedQFIs) != 2 {
+			t.Fatalf("realignment = %v, want flows 1 and 2 refused: the UE has the Command and will apply them", smContext.Realign)
 		}
-		if smContext.NwModificationPending {
-			t.Error("the session still looks as though a modification were running")
-		}
-		if len(smContext.SmPolicyUpdates) != 0 {
-			t.Error("the pending policy update was not discarded, so the record now describes flows that do not exist")
+		if smContext.T3591 == nil || !smContext.NwModificationPending {
+			t.Error("the procedure was ended early; the UE has the Command, and a late answer to it would be taken as the next one's")
 		}
 	})
 
@@ -258,9 +255,9 @@ func TestModifyResponseArrivingForNoModificationIsIgnored(t *testing.T) {
 }
 
 // A response lists only the flows a modification added or modified. One that refuses all of them
-// but belongs to a modification that also released a flow is not a whole rejection: the radio
-// released that flow's bearer, and abandoning would put the flow back on the record. It is
-// realigned like a partial rejection, which commits the release and withdraws the refused flows.
+// still leaves the releases done: the radio released those flows' bearers, and abandoning would put
+// the flows back on the record. It is realigned, which commits the release and withdraws the refused
+// flows.
 func TestARefusalOfEveryListedFlowKeepsTheReleases(t *testing.T) {
 	smContext := modifyingSmContext(t)
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
@@ -274,7 +271,7 @@ func TestARefusalOfEveryListedFlowKeepsTheReleases(t *testing.T) {
 			map[string]*models.QosData{"3": {QosId: "3", Var5qi: openapi.PtrInt32(1)}},
 		),
 	}}
-	if !smContext.ReleasesQosFlows() {
+	if len(smContext.SmPolicyUpdates[0].QosFlowUpdate.GetDeleted()) == 0 {
 		t.Fatal("the update does not release flow 3; the test is not exercising what it claims")
 	}
 

@@ -104,8 +104,8 @@ func TestModifyResponseClassification(t *testing.T) {
 	}
 }
 
-// A whole rejection and a partial rejection are handled differently, so they must not be
-// confusable. This pins the boundary between them.
+// A response establishing nothing and one establishing part of a modification are told apart in
+// what the SMF reports, so they must not be confusable. This pins the boundary between them.
 func TestWholeAndPartialRejectionAreDistinct(t *testing.T) {
 	ctx := &SMContext{SubPduSessLog: zap.NewNop().Sugar()}
 
@@ -121,10 +121,10 @@ func TestWholeAndPartialRejectionAreDistinct(t *testing.T) {
 	}
 
 	if whole.PartiallyRejected() {
-		t.Error("a response establishing nothing must not be treated as partial; it is abandoned, not realigned")
+		t.Error("a response establishing nothing must not be classed as partial")
 	}
 	if partial.WhollyRejected() {
-		t.Error("a response establishing something must not be treated as whole; part of it has to be kept")
+		t.Error("a response establishing something must not be classed as whole; part of it has to be kept")
 	}
 }
 

@@ -141,9 +141,9 @@ func TestARadioRefusalAfterTheUeCompletedStillWithdrawsTheRefusedFlow(t *testing
 	}
 }
 
-// A radio answer refusing everything, in the same order. The abandonment path discards the pending
-// update, and by this point there is none -- so without the correction a whole rejection after the
-// UE's acknowledgement leaves every flow of the modification in place.
+// A radio answer refusing everything, in the same order. By this point the commit has popped the
+// pending update, so without the correction a refusal of every flow after the UE's acknowledgement
+// leaves every flow of the modification in place.
 func TestARadioRefusingEverythingAfterTheUeCompletedWithdrawsEveryFlow(t *testing.T) {
 	original := applyModification
 	t.Cleanup(func() { applyModification = original })
@@ -239,7 +239,7 @@ func deliverModifyFailure(t *testing.T, smContext *smf_context.SMContext) {
 // naming every flow, and the two arrive at different handlers. In the order where the UE has
 // already completed, the abandonment that answers a refusal has nothing left to discard -- the
 // pending update it would drop was popped by the commit -- so the refused modification stayed in
-// force on the record, on the UE and in the user plane, exactly as it did on the response path.
+// force on the record, on the UE and in the user plane.
 func TestARadioFailureAfterTheUeCompletedWithdrawsTheModification(t *testing.T) {
 	original := applyModification
 	t.Cleanup(func() { applyModification = original })

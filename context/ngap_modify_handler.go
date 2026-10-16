@@ -11,10 +11,11 @@ import (
 // ModifyResponse is what the radio access network made of a modification: which QoS flows it
 // established and which it refused.
 //
-// The distinction between refusing some and refusing all is not cosmetic. A whole refusal means
-// the UE never received the authorized parameters, so the modification is abandoned. A partial
-// refusal means the UE was told about flows that were not established, and the network owes it a
-// further modification saying which are actually in force.
+// A response means the radio modified the session and passed the Command to the UE (TS 38.413
+// subclause 8.2.3.2), so a refusal of some flows or of all of them means the UE was told about flows
+// that were not established, and the network owes it a further modification saying which are
+// actually in force. A radio that refuses the whole modification answers with the failure message
+// instead, and that modification is abandoned.
 type ModifyResponse struct {
 	AcceptedQFIs []int64
 	RejectedQFIs []int64

@@ -851,13 +851,6 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	return nil
 }
 
-// handleModifyResponse acts on what the radio access network made of a modification.
-//
-// A whole refusal means the UE never received the authorized parameters, so the modification is
-// abandoned and the user plane is not left carrying it. A partial refusal means the UE was told
-// about flows that were not established, and it is owed a further modification saying which are
-// actually in force — a distinct procedure, not a retry, because the parameters it carries
-// describe what exists rather than what was attempted.
 // ranAnswerIsExpected reports whether this session is still waiting for the radio's answer to a
 // modification, and clears the wait if it is.
 //
@@ -888,15 +881,20 @@ func ranAnswerTakenLocked(smContext *context.SMContext) {
 	smContext.RanAnswerPending = false
 }
 
+// handleModifyResponse acts on what the radio access network made of a modification. A response
+// means the radio passed the Command to the UE, so a refusal of some or all of the flows means the UE
+// was told about flows that were not established, and it is owed a further modification saying
+// which are actually in force — a distinct procedure, not a retry, because the parameters it carries
+// describe what exists rather than what was attempted.
 func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
 	if !ranAnswerIsExpectedLocked(smContext) {
 		smContext.SubPduSessLog.Warnln("a modify response arrived for a modification this session is not waiting on; ignoring it")
 		return nil
 	}
 
-	// The radio's answer can end the modification, by refusing all of it, and a policy decision
-	// held behind it then starts. A correction this answer calls for goes first: it marks the
-	// session pending, and the decision waits for the correction to end.
+	// The radio's answer can end the modification, when the UE has already completed it, and a
+	// policy decision held behind it then starts. A correction this answer calls for goes first: it
+	// marks the session pending, and the decision waits for the correction to end.
 	//
 	// A held decision also waits for this answer once the UE has completed, but only for one T3591
 	// interval (armRanAnswerGuardLocked), since an answer that never comes would otherwise hold every
@@ -927,18 +925,19 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		return nil
 	}
 
-	// The answer lists only the flows the modification added or modified. Flows it released are not
-	// in it, and refusing every listed flow does not undo their release: the radio has let their
-	// bearers go. Abandoning would put them back on the record, so a modification that also released
-	// flows is pruned and corrected like a partial one, which keeps the releases.
+	// A response says the session was modified. TS 38.413 subclause 8.2.3.2 has the radio pass the
+	// Command to the UE only if at least one request in the transfer succeeded, which is what puts
+	// the session in the response rather than in the failed list, and a request for an added or
+	// changed flow also carries the session AMBR. TS 23.502 clause 4.3.3.2 step 7 draws the same line:
+	// the SMF assumes the Command was not forwarded only when no part of the request succeeded. So a
+	// response refusing every listed flow still means the UE has the Command and will answer it. It is realigned like a partial refusal and
+	// waits for that answer, and the releases, which the answer does not list, are committed with the
+	// rest. Abandoning instead left the UE on flows the session no longer had, and let a held decision
+	// start whose Command a late answer to this one would then have answered. Only the failure
+	// message, for which the radio does not pass the Command on, abandons (handleModifyFailure).
 	switch {
-	case result.WhollyRejected() && !smContext.ReleasesQosFlows():
-		smContext.SubPduSessLog.Warnf("radio access network established none of the modified flows %v", result.RejectedQFIs)
-		smContext.StopT3591()
-		abandonModificationUnderLock(smContext, "ran_whole_rejection", "no_flow_established")
-
 	case result.WhollyRejected():
-		smContext.SubPduSessLog.Warnf("radio access network established none of the added or modified flows %v, but the modification also released flows; keeping the releases and realigning the UE",
+		smContext.SubPduSessLog.Warnf("radio access network established none of the added or modified flows %v; realigning the UE once it answers",
 			result.RejectedQFIs)
 		realignAfterPartialRejection(smContext, result)
 
@@ -955,14 +954,17 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 }
 
 // handleModifyFailure acts on the radio access network refusing a modification outright, which
-// it reports as a failure rather than as a response with an empty accepted list.
+// it reports as a failure rather than as a response. Then the radio does not pass the Command to the
+// UE (TS 38.413 subclause 8.2.3.2), so unless the UE has already completed the modification, it is
+// abandoned: the UE has nothing of it to answer, beyond a copy T3591 retransmitted, whose late answer
+// the quiet interval after a retransmission already waits out.
 func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmContextRequest) error {
 	if !ranAnswerIsExpectedLocked(smContext) {
 		smContext.SubPduSessLog.Warnln("a modify failure arrived for a modification this session is not waiting on; ignoring it")
 		return nil
 	}
 
-	// As in handleModifyResponse: refusing the modification ends it, and a held decision starts.
+	// Refusing the modification ends it, and a held decision starts.
 	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
@@ -1050,9 +1052,9 @@ func flowsCarriedBy(update *qos.PolicyUpdate) []int64 {
 // its own result is what takes those flows off the record -- so this differs from the pruning path
 // only in where the deletions come from, which is the update the completion committed.
 //
-// A whole rejection is corrected the same way. The pending update is what the abandonment path
-// discards, and by now there is none; withdrawing the flows it added takes them back out. Flows it
-// changed stay on the changed parameters on the UE and in the user plane.
+// A response refusing every flow is corrected the same way, as it is in the other order;
+// withdrawing the flows the modification added takes them back out. Flows it changed stay on the
+// changed parameters on the UE and in the user plane.
 func correctCommittedModification(smContext *context.SMContext, committed *qos.PolicyUpdate, result context.ModifyResponse) {
 	if len(result.RejectedQFIs) == 0 {
 		smContext.SubPduSessLog.Infof("radio access network established all modified flows %v", result.AcceptedQFIs)

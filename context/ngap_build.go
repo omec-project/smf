@@ -886,14 +886,6 @@ func buildQosFlowAddOrModifyIE(flows []ngapType.QosFlowAddOrModifyRequestItem) n
 	}
 }
 
-// ReleasesQosFlows reports whether the pending update asks the radio to release any QoS flow. The
-// radio's answer lists only the flows a modification added or modified, so this is what says that
-// an answer establishing none of them still left part of the modification done. It reads the list
-// the request is built from, so the two cannot disagree. The caller holds SMLock.
-func (ctx *SMContext) ReleasesQosFlows() bool {
-	return len(releasedQosFlowItems(ctx)) > 0
-}
-
 // releasedQosFlowItems names the QoS flows the pending update withdraws, for the radio to release.
 //
 // The cause is a NAS normal release, matching the release-only path above: the flow is going away
