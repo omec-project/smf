@@ -125,7 +125,7 @@ func (s *deferralSession) expectNoSend(t *testing.T, what string) {
 	select {
 	case <-s.pfcp:
 		t.Fatalf("%s: a PFCP modification was sent", what)
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 	}
 }
 
@@ -326,7 +326,7 @@ func TestAHeldDecisionWaitsForTheRevertBeforeIt(t *testing.T) {
 			overlapped.Store(1)
 		}
 		mu.Lock()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 		mu.Unlock()
 		inFlight.Add(-1)
 		s.pfcp <- struct{}{}
@@ -494,7 +494,7 @@ func (s *deferralSession) retransmitOnce(t *testing.T, interval time.Duration) {
 // first, the network-side counterpart of the PTI the UE keeps for T3591 (TS 24.501 subclause
 // 6.3.2.3 NOTE 5).
 func TestAHeldDecisionWaitsOutTheRetransmittedCommandsAnswers(t *testing.T) {
-	const interval = 500 * time.Millisecond
+	const interval = 150 * time.Millisecond
 
 	s := newDeferralSession(t)
 	s.retransmitOnce(t, interval)
@@ -514,7 +514,7 @@ func TestAHeldDecisionWaitsOutTheRetransmittedCommandsAnswers(t *testing.T) {
 
 // A decision that arrives in that interval is held too, and applied once it is over.
 func TestADecisionArrivingWhileACopyCanStillBeAnsweredIsHeld(t *testing.T) {
-	const interval = 500 * time.Millisecond
+	const interval = 150 * time.Millisecond
 
 	s := newDeferralSession(t)
 	s.retransmitOnce(t, interval)
@@ -538,7 +538,7 @@ func TestADecisionArrivingWhileACopyCanStillBeAnsweredIsHeld(t *testing.T) {
 func TestALateRejectForAnEndedProcedureChangesNothing(t *testing.T) {
 	// Longer than its neighbours': nothing here waits the interval out, and the reject must arrive
 	// inside it, however slowly the runner gets there.
-	const interval = 2 * time.Second
+	const interval = 300 * time.Millisecond
 
 	s := newDeferralSession(t)
 	s.retransmitOnce(t, interval)

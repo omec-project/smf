@@ -259,34 +259,40 @@ func TestNfRegistrationService_WhenConfigChanged_ThenRegisterNFSuccessAndStartTi
 }
 
 func TestNfRegistrationService_ConfigChanged_RetryIfRegisterNFFails(t *testing.T) {
-	orig := consumer.SendRegisterNFInstance
+	originalSendRegisterNFInstance := consumer.SendRegisterNFInstance
+	originalRetryTime := retryTime
+	retryTime = 20 * time.Millisecond
 	ch := make(chan []nfConfigApi.SessionManagement, 1)
 	cancel, done := startRegistrationServiceForTest(t, ch)
-	var attempts atomic.Int32
-	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
-		attempts.Add(1)
-		profile := models.NewNFProfileWithDefaults()
-		profile.SetHeartBeatTimer(60)
-		return profile, "", errors.New("mock error")
-	}
 	defer func() {
 		cancel()
 		<-done
-		consumer.SendRegisterNFInstance = orig
+		consumer.SendRegisterNFInstance = originalSendRegisterNFInstance
+		registerCtxMutex.Lock()
+		retryTime = originalRetryTime
+		registerCtxMutex.Unlock()
 		withKeepAliveTimerLock(func() {
 			stopKeepAliveTimer()
 		})
 	}()
 
+	var called atomic.Int32
+	consumer.SendRegisterNFInstance = func(_ []nfConfigApi.SessionManagement) (*models.NFProfile, string, error) {
+		profile := models.NewNFProfileWithDefaults()
+		profile.SetHeartBeatTimer(60)
+		called.Add(1)
+		return profile, "", errors.New("mock error")
+	}
 	ch <- []nfConfigApi.SessionManagement{sessionConfigOne}
 
 	waitForCondition(t, retryTime+3*time.Second, func() bool {
-		return attempts.Load() >= 2
+		return called.Load() >= 2
 	}, "expected to retry register to NRF")
 
-	if attempts.Load() < 2 {
-		t.Errorf("expected at least 2 retry attempts, got %d", attempts.Load())
+	if called.Load() < 2 {
+		t.Errorf("expected at least 2 retry attempts, got %d", called.Load())
 	}
+	t.Logf("Tried %v times", called.Load())
 }
 
 func TestNfRegistrationService_WhenConfigChanged_ThenRegistrationIsCancelled_IfConfigUsedInNFProfileIsUpdated_OtherwiseSameRegistrationUsed(t *testing.T) {
