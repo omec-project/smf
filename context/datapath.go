@@ -553,10 +553,13 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	// The default QoS flow comes from the pending update where there is one and from committed
 	// state otherwise. The user plane is also rebuilt with nothing pending -- reverting an
 	// undelivered modification discards the update first -- and indexing there took the SMF down.
+	// A pending decision need not repeat a default flow it leaves unchanged, and then the committed
+	// one is the session's.
 	var defQosData *models.QosData
 	if len(smContext.SmPolicyUpdates) > 0 {
 		defQosData = qos.GetDefaultQoSDataFromPolicyDecision(smContext.SmPolicyUpdates[0].SmPolicyDecision)
-	} else {
+	}
+	if defQosData == nil {
 		defQosData = qos.GetCommittedDefaultQosData(&smContext.SmPolicyData)
 	}
 
