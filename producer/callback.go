@@ -82,13 +82,13 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 		return err
 	}
 
-	// Nor is a session whose user plane could not be put back after an abandoned modification: it
-	// needs releasing, and a modification built on it would program on top of the parameters the
-	// failed revert left in place.
+	// Nor is a session whose user plane could not be put back after an abandoned modification: a
+	// modification built on it would program on top of the parameters the failed revert left in
+	// place.
 	if smContext.RevertFailed {
 		smContext.SMLock.Unlock()
 
-		err := fmt.Errorf("SMContext[%s-%02d] could not have its user plane put back: it needs releasing", smContext.Supi, smContext.PDUSessionID)
+		err := fmt.Errorf("SMContext[%s-%02d] could not have its user plane put back", smContext.Supi, smContext.PDUSessionID)
 		logger.PduSessLog.Warnf("policy update notification refused: %v", err)
 		txn.Err = err
 		txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
@@ -383,15 +383,17 @@ func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
 }
 
 // requalifiedPccRules names the established rules whose QoS data or traffic control data the pending
-// update changes, or which it changes themselves, with the QoS data each refers to. The established
-// rules are the committed ones as the decision leaves them: a decision changing a rule's QoS data
-// or traffic control data need not repeat the rule, and one it leaves out still refers to them. Traffic control
+// update changes, or which it changes themselves, with the QoS data each refers to. Traffic control
 // is where a rule's gate comes from -- CreatePccRuleQer closes the QER for a disabled flow -- so a
-// decision that only disables or re-enables a flow reaches the user plane through here too. The second matters when a rule is
-// re-pointed at QoS data that already exists: nothing about the QoS data changes, only which of it
-// the rule uses -- and undoing a re-pointing is exactly that case. A rule on the default QoS flow is
-// included: establishment builds its flow QER from its QoS data like any other rule's, so a change
-// to that data has to reach it too.
+// decision that only disables or re-enables a flow reaches the user plane through here too. The
+// second matters when a rule is re-pointed at QoS data that already exists: nothing about the QoS
+// data changes, only which of it the rule uses -- and undoing a re-pointing is exactly that case. A
+// rule on the default QoS flow is included: establishment builds its flow QER from its QoS data like
+// any other rule's, so a change to that data has to reach it too.
+//
+// The established rules are the committed ones as the decision leaves them: a decision changing a
+// rule's QoS data or traffic control data need not repeat the rule, and a rule it leaves out still
+// refers to them.
 func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil {
 		return nil
@@ -832,7 +834,7 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 // queued, a release can reach the session first, and starting on a session with no tunnel would
 // set PfcpModify, program nothing, and have the failure path set the session back to Active. The
 // procedure the caller reserved is released with it, since nothing will run it now. Nor is a session
-// whose user plane a failed revert left divergent: it needs releasing, whatever its state now says.
+// whose user plane a failed revert left divergent, whatever its state now says.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	lockAfterRevert(smContext)
 	if state := smContext.SMContextState; smContext.Tunnel == nil || smContext.RevertFailed ||
@@ -1310,9 +1312,11 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		// consuming another transaction's response to clean up after a rare double failure, which
 		// is a worse outcome than the divergence it repairs.
 		//
-		// So this marks and reports, and does not pretend to have released. The state is a label
-		// nothing acts on; the metric is what makes the session findable.
-		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about and needs releasing, which this path deliberately does not attempt", err)
+		// So this marks and reports, and does not release. The state keeps modifications off the
+		// session, but it has no state-machine handler, so a release the UE or the AMF asks for is
+		// dropped while it holds; and the transaction that started this can set it back to Active.
+		// RevertFailed is the mark that holds. The metric is what makes the session findable.
+		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about, and is not released here", err)
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)
@@ -1401,8 +1405,8 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 	}
 
 	// A session on its way out takes its held decisions with it, as a notification arriving now
-	// would be refused; so does one a failed revert left divergent. PfcpModify is a session whose UE answered before the transfer returned, and
-	// it is settling back to Active.
+	// would be refused; so does one a failed revert left divergent. PfcpModify is a session whose UE
+	// answered before the transfer returned, and it is settling back to Active.
 	if smContext.Tunnel == nil || smContext.RevertFailed ||
 		(smContext.SMContextState != smfContext.SmStateActive && smContext.SMContextState != smfContext.SmStatePfcpModify) {
 		smContext.SubPduSessLog.Warnf("dropping %d held policy decisions: the session is %s and will not be modified",
