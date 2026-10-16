@@ -82,6 +82,20 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 		return err
 	}
 
+	// Nor is a session whose user plane could not be put back after an abandoned modification: it
+	// needs releasing, and a modification built on it would program on top of the parameters the
+	// failed revert left in place.
+	if smContext.RevertFailed {
+		smContext.SMLock.Unlock()
+
+		err := fmt.Errorf("SMContext[%s-%02d] could not have its user plane put back: it needs releasing", smContext.Supi, smContext.PDUSessionID)
+		logger.PduSessLog.Warnf("policy update notification refused: %v", err)
+		txn.Err = err
+		txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
+
+		return err
+	}
+
 	if smContext.SMContextState != smfContext.SmStateActive {
 		logger.PduSessLog.Warnf("SMContext[%s-%02d] should be SmStateActive, but actual %s",
 			smContext.Supi, smContext.PDUSessionID, smContext.SMContextState.String())
@@ -778,15 +792,20 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 // modification, as runDeferredModification checks held work: the corrective modification is
 // queued, a release can reach the session first, and starting on a session with no tunnel would
 // set PfcpModify, program nothing, and have the failure path set the session back to Active. The
-// procedure the caller reserved is released with it, since nothing will run it now.
+// procedure the caller reserved is released with it, since nothing will run it now. Nor is a session
+// whose user plane a failed revert left divergent: it needs releasing, whatever its state now says.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
 	lockAfterRevert(smContext)
-	if state := smContext.SMContextState; smContext.Tunnel == nil ||
+	if state := smContext.SMContextState; smContext.Tunnel == nil || smContext.RevertFailed ||
 		(state != smfContext.SmStateActive && state != smfContext.SmStatePfcpModify) {
 		smContext.NwModificationPending = false
 		smContext.NwModificationUnsent = false
+		failed := smContext.RevertFailed
 		smContext.SMLock.Unlock()
 
+		if failed {
+			return fmt.Errorf("%w: its user plane could not be put back", errSessionNotModifiable)
+		}
 		return fmt.Errorf("%w: the session is %s", errSessionNotModifiable, state.String())
 	}
 
@@ -1258,6 +1277,9 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
 		smContext.SMLock.Lock()
 		smContext.ChangeState(smfContext.SmStatePfcpRelease)
+		// The mark that holds: the state above can be set back to Active by the transaction that
+		// started this, once its handler returns.
+		smContext.RevertFailed = true
 		smContext.SMLock.Unlock()
 
 		return false
@@ -1340,9 +1362,9 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 	}
 
 	// A session on its way out takes its held decisions with it, as a notification arriving now
-	// would be refused. PfcpModify is a session whose UE answered before the transfer returned, and
+	// would be refused; so does one a failed revert left divergent. PfcpModify is a session whose UE answered before the transfer returned, and
 	// it is settling back to Active.
-	if smContext.Tunnel == nil ||
+	if smContext.Tunnel == nil || smContext.RevertFailed ||
 		(smContext.SMContextState != smfContext.SmStateActive && smContext.SMContextState != smfContext.SmStatePfcpModify) {
 		smContext.SubPduSessLog.Warnf("dropping %d held policy decisions: the session is %s and will not be modified",
 			len(smContext.DeferredPolicyDecisions), smContext.SMContextState.String())

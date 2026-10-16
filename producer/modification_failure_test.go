@@ -88,6 +88,63 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 	}
 }
 
+// A revert started by a NAS or NGAP handler runs beside the transaction that started it, and that
+// transaction's state machine sets the state it returns once the handler is done -- Active, over
+// the release mark of a revert that has already failed. Nothing may start on the session then:
+// built on the parameters the failed revert left in place, a modification would program on top of
+// them, and the session would go on as though it had been put back.
+func TestAFailedRevertHoldsOffModificationsThoughItsStateIsSetBack(t *testing.T) {
+	original, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = original, originalN1N2 })
+	// Reached only if a modification starts anyway, which the PFCP stub below already reports.
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	failedRevert := func(t *testing.T) *twoRuleSession {
+		t.Helper()
+		sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+			return errors.New("upf unreachable")
+		}
+		s := programmedRateChange(t)
+		revertModification(s.sm, s.sm.NwModificationGen)
+		// What HandleEvent does with the handler's returned state, after the revert has failed.
+		s.sm.ChangeState(smf_context.SmStateActive)
+
+		sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+			t.Error("a modification was programmed on a session whose user plane could not be put back")
+			return nil
+		}
+		return s
+	}
+
+	t.Run("ApplyModification", func(t *testing.T) {
+		s := failedRevert(t)
+		err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange()))
+		if !errors.Is(err, errSessionNotModifiable) {
+			t.Errorf("ApplyModification = %v, want it refused as not modifiable", err)
+		}
+	})
+
+	t.Run("a held decision", func(t *testing.T) {
+		s := failedRevert(t)
+		s.sm.DeferredPolicyDecisions = []*models.SmPolicyDecision{s.rateChange()}
+		runDeferredModification(s.sm)
+		if len(s.sm.DeferredPolicyDecisions) != 0 {
+			t.Errorf("%d held decisions kept for a session that will not be modified", len(s.sm.DeferredPolicyDecisions))
+		}
+	})
+
+	t.Run("a policy notification", func(t *testing.T) {
+		s := failedRevert(t)
+		txn := &transaction.Transaction{
+			Req:  models.SmPolicyNotification{SmPolicyDecision: s.rateChange()},
+			Ctxt: s.sm,
+		}
+		if err := HandleSMPolicyUpdateNotify(txn); err == nil {
+			t.Error("the notification was accepted for a session whose user plane could not be put back")
+		}
+	})
+}
+
 // A realignment is a modification like any other. If its command cannot be sent, the corrective
 // update must not be left pending, or a later commit would apply it silently.
 // A modification that could not be delivered to the UE must not be left pending.
