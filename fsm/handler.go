@@ -190,10 +190,14 @@ func HandleStateActiveEventPduSessN1N2TransFailInd(event SmEvent, eventData *SmE
 	// paging gives up, which says nothing about a Command already sent: T3591 retransmits it, and the
 	// UE's answer can still come. That answer is handled only in an update-capable state, so in
 	// SmStateInit it was dropped while T3591 ran on, and the modification was abandoned although the
-	// UE had applied it. A paging failure that started a release (SmStatePfcpRelease), or one with no
-	// modification pending, still ends in SmStateInit, as it did before.
+	// UE had applied it. The same holds once the UE has completed and the radio has not answered
+	// (RanAnswerPending): its answer comes on the same update path, and in SmStateInit a refusal would
+	// go uncorrected and a held decision be dropped. A paging failure that started a release
+	// (SmStatePfcpRelease), or one with no modification pending, still ends in SmStateInit, as it did
+	// before.
 	smCtxt.SMLock.Lock()
-	modifying := smCtxt.NwModificationPending && smCtxt.SMContextState == smf_context.SmStateActive
+	modifying := (smCtxt.NwModificationPending || smCtxt.RanAnswerPending) &&
+		smCtxt.SMContextState == smf_context.SmStateActive
 	smCtxt.SMLock.Unlock()
 	if modifying {
 		return smf_context.SmStateActive, nil

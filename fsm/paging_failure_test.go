@@ -16,7 +16,7 @@ import (
 // pagingFailure delivers the AMF's transfer failure notification to an active session through the
 // state machine, as the transaction that carries it does. The session has no tunnel, so the
 // paging failure sends the user plane nothing.
-func pagingFailure(t *testing.T, modificationPending bool) *smf_context.SMContext {
+func pagingFailure(t *testing.T, modificationPending, ranAnswerPending bool) *smf_context.SMContext {
 	t.Helper()
 
 	// Leaving SmStateActive publishes the session, which reads the Kafka switch.
@@ -34,6 +34,7 @@ func pagingFailure(t *testing.T, modificationPending bool) *smf_context.SMContex
 	}
 	sm.SMContextState = smf_context.SmStateActive
 	sm.NwModificationPending = modificationPending
+	sm.RanAnswerPending = ranAnswerPending
 
 	txn := transaction.NewTransaction(nil, nil, svcmsgtypes.N1N2MessageTransferFailureNotification)
 	txn.Ctxt = sm
@@ -48,16 +49,26 @@ func pagingFailure(t *testing.T, modificationPending bool) *smf_context.SMContex
 // answer to the Command is handled. In SmStateInit the Complete met EmptyEventHandler, and T3591
 // went on to abandon a modification the UE had applied.
 func TestAPagingFailureLeavesAPendingModificationAnswerable(t *testing.T) {
-	sm := pagingFailure(t, true)
+	sm := pagingFailure(t, true, false)
 
 	if sm.SMContextState != smf_context.SmStateActive {
 		t.Errorf("a paging failure during a modification left the session in %s, where the UE's answer is not handled", sm.SMContextState)
 	}
 }
 
+// Nor once the UE has completed and the radio has not answered. The modification is still running:
+// the radio's answer arrives as an update too, and in SmStateInit a refusal would go uncorrected.
+func TestAPagingFailureLeavesAModificationWaitingForTheRadioAnswerable(t *testing.T) {
+	sm := pagingFailure(t, false, true)
+
+	if sm.SMContextState != smf_context.SmStateActive {
+		t.Errorf("a paging failure while the radio's answer was awaited left the session in %s, where that answer is not handled", sm.SMContextState)
+	}
+}
+
 // Without a modification in flight, a paging failure ends as it always has.
 func TestAPagingFailureWithNothingPendingEndsAsBefore(t *testing.T) {
-	if sm := pagingFailure(t, false); sm.SMContextState != smf_context.SmStateInit {
+	if sm := pagingFailure(t, false, false); sm.SMContextState != smf_context.SmStateInit {
 		t.Errorf("a paging failure left the session in %s, want %s", sm.SMContextState, smf_context.SmStateInit)
 	}
 }
