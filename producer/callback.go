@@ -244,8 +244,11 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// carry the session QER yet, so it would empty the intersection this is.
 		sessQERs := sessionQERs(ANUPF)
 
-		// Only activate tunnels if not release-only
-		if !shouldSendReleaseOnly {
+		// Only activate tunnels if not release-only, and only for rules the update adds: the tunnel
+		// build makes PDRs for those and nothing else, and with no PCC rule in the update -- a
+		// decision changing only QoS data or traffic control data -- it allocated a "default" PDR
+		// over whatever rule went by that name.
+		if !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 {
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
 			}
@@ -356,7 +359,9 @@ func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
 }
 
 // requalifiedPccRules names the established rules whose QoS data or traffic control data the pending
-// update changes, or which it changes themselves, with the QoS data each refers to. Traffic control
+// update changes, or which it changes themselves, with the QoS data each refers to. The established
+// rules are the committed ones as the decision leaves them: a decision changing a rule's QoS data
+// or traffic control data need not repeat the rule, and one it leaves out still refers to them. Traffic control
 // is where a rule's gate comes from -- CreatePccRuleQer closes the QER for a disabled flow -- so a
 // decision that only disables or re-enables a flow reaches the user plane through here too. The second matters when a rule is
 // re-pointed at QoS data that already exists: nothing about the QoS data changes, only which of it
@@ -373,8 +378,17 @@ func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 	changed := update.QosFlowUpdate.GetModified()
 	requalified := make(map[string]string)
 
-	for name, rule := range update.SmPolicyDecision.GetPccRules() {
-		if name == "" || rule.GetPccRuleId() == "" || added[name] != nil || len(rule.RefQosData) == 0 {
+	names := make(map[string]bool)
+	for name := range update.SmPolicyDecision.GetPccRules() {
+		names[name] = true
+	}
+	for name := range smContext.SmPolicyData.SmCtxtPccRules.PccRules {
+		names[name] = true
+	}
+
+	for name := range names {
+		rule := qos.DecidedPccRule(update.SmPolicyDecision, &smContext.SmPolicyData, name)
+		if name == "" || rule == nil || added[name] != nil || len(rule.RefQosData) == 0 {
 			continue
 		}
 
@@ -509,7 +523,8 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
 ) {
 	tcRef := ""
-	if rule, ok := smContext.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules()[name]; ok && len(rule.RefTcData) > 0 {
+	if rule := qos.DecidedPccRule(smContext.SmPolicyUpdates[0].SmPolicyDecision, &smContext.SmPolicyData, name); rule != nil &&
+		len(rule.RefTcData) > 0 {
 		tcRef = rule.RefTcData[0]
 	}
 
