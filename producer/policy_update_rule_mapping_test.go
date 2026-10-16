@@ -1168,3 +1168,112 @@ func TestARuleReinstatedByARevertForwardsDownlink(t *testing.T) {
 		t.Errorf("the reinstated rule's downlink FAR is %+v, not forwarding to the radio", dl.FAR.ApplyAction)
 	}
 }
+
+// flowQERAfter is the flow QER a reprogrammed PDR carries: the one that is not the session's.
+func (s *twoRuleSession) flowQERAfter(param *pfcpParam, pdr *smf_context.PDR) *smf_context.QER {
+	if !param.touches(pdr) {
+		return nil
+	}
+	for _, qer := range pdr.QER {
+		if qer.QERID != s.sessQER.QERID && queued(param.qerList, qer) {
+			return qer
+		}
+	}
+	return nil
+}
+
+// A decision is a change to the policy in force, so one that changes a flow's rates need not repeat
+// the rule that refers to them (TS 29.512 subclause 4.2.6.1). The rule's PDRs used to be found only
+// among the rules the decision carries, so they kept the old rates while the new ones were
+// committed. And with no rule in the update, the tunnel build allocated a "default" PDR over
+// whatever rule went by that name.
+func TestARateChangeThatDoesNotRepeatItsRuleReachesTheRule(t *testing.T) {
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	changed := (*s.rateChange().QosDecs)[cirQosID]
+	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(s.sm)
+
+	if param.touches(s.allowUL) || param.touches(s.allowDL) {
+		t.Error("the catch-all was reprogrammed for a change to another rule's rates")
+	}
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		qer := s.flowQERAfter(param, pdr)
+		if qer == nil || qer.MBR == nil || qer.MBR.ULMBR != 5000 || qer.MBR.DLMBR != 8000 {
+			t.Errorf("%s: the rule's PDR does not carry a new flow QER at the changed rates (%+v)", dir, qer)
+		}
+	}
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	for dir, tunnel := range map[string]*smf_context.GTPTunnel{"UL": node.UpLinkTunnel, "DL": node.DownLinkTunnel} {
+		if len(tunnel.PDR) != 2 {
+			t.Errorf("%s: the tunnel holds %d PDRs after a rate change, want the two rules' own", dir, len(tunnel.PDR))
+		}
+	}
+}
+
+// A decision closing a flow's gate need not repeat the QoS data the flow's rule refers to. The QER
+// was built from the decision alone, so it found no QoS data and was not built: the flow went on
+// forwarding.
+func TestAGateChangeThatLeavesOutTheQosDataClosesTheGate(t *testing.T) {
+	const tcID = "tc-cir"
+	enabled, disabled := models.FLOWSTATUS_ENABLED, models.FLOWSTATUS_DISABLED
+
+	s := newTwoRuleSession(t, false)
+	s.cirRule.RefTcData = []string{tcID}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &enabled}
+
+	decision := roundTrip(&models.SmPolicyDecision{
+		PccRules:      map[string]models.PccRule{cirRuleID: s.cirRule},
+		TraffContDecs: &map[string]models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}},
+	})
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(s.sm)
+
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		qer := s.flowQERAfter(param, pdr)
+		if qer == nil || qer.GateStatus == nil ||
+			qer.GateStatus.ULGate != smf_context.GateClose || qer.GateStatus.DLGate != smf_context.GateClose {
+			t.Errorf("%s: the rule's PDR does not carry a closed flow QER (%+v)", dir, qer)
+			continue
+		}
+		if qer.MBR == nil || qer.MBR.ULMBR != 3000 || qer.MBR.DLMBR != 6000 {
+			t.Errorf("%s: the closed flow QER is not at the committed rates (%+v)", dir, qer.MBR)
+		}
+	}
+}
+
+// The other way round: a decision changing a disabled flow's rates need not repeat the traffic
+// control data that disables it, nor the rule that refers to it. Built from the decision alone, the
+// new QER found neither and opened the gate.
+func TestARateChangeKeepsADisabledFlowClosed(t *testing.T) {
+	const tcID = "tc-cir"
+	disabled := models.FLOWSTATUS_DISABLED
+
+	s := newTwoRuleSession(t, false)
+	s.cirRule.RefTcData = []string{tcID}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &disabled}
+
+	changed := (*s.rateChange().QosDecs)[cirQosID]
+	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(s.sm)
+
+	for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+		qer := s.flowQERAfter(param, pdr)
+		if qer == nil || qer.MBR == nil || qer.MBR.ULMBR != 5000 {
+			t.Errorf("%s: the rule's PDR does not carry a new flow QER at the changed rates (%+v)", dir, qer)
+			continue
+		}
+		if qer.GateStatus == nil || qer.GateStatus.ULGate != smf_context.GateClose || qer.GateStatus.DLGate != smf_context.GateClose {
+			t.Errorf("%s: the disabled flow's new QER has its gate open (%+v)", dir, qer.GateStatus)
+		}
+	}
+}

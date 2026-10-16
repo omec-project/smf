@@ -533,9 +533,12 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 	if len(smContext.SmPolicyUpdates) == 0 {
 		return nil, fmt.Errorf("no pending SM policy update for UE [%s]: the rule's QER cannot be built", smContext.Supi)
 	}
+	// Read as the session will have them once the update is applied, not from the decision alone:
+	// a decision that repeats a rule can leave out QoS data or traffic control data it does not
+	// change, and a QER built without them failed for the one or opened a closed gate for the other.
 	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
-	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
-	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
+	refQos := qos.DecidedQosData(smPolicyDec, &smContext.SmPolicyData, qosData)
+	tc := qos.DecidedTcData(smPolicyDec, &smContext.SmPolicyData, tcData)
 	if refQos == nil {
 		return nil, fmt.Errorf("missing QoS data reference %q", qosData)
 	}
