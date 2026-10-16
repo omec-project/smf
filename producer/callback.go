@@ -244,6 +244,20 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// carry the session QER yet, so it would empty the intersection this is.
 		sessQERs := sessionQERs(ANUPF)
 
+		// The session QER is found on the PDRs that carry it, so a node whose every rule has been
+		// withdrawn has none to find it on, and rules added there -- a revert of that withdrawal
+		// among them -- came back without the session AMBR. They get a new one, built as
+		// establishment builds it; the old one is left as the withdrawal left it, referred to by
+		// nothing, until the session's release removes it.
+		if len(sessQERs) == 0 && !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 && !hasPDRs(ANUPF) {
+			if sessQER, err := ANUPF.CreateSessRuleQer(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("the rules added to UPF %s carry no session AMBR: %v", ANUPF.GetNodeIP(), err)
+			} else {
+				sessQERs = map[uint32]*smfContext.QER{sessQER.QERID: sessQER}
+				pfcpParam.qerList = append(pfcpParam.qerList, sessQER)
+			}
+		}
+
 		// Only activate tunnels if not release-only, and only for rules the update adds: the tunnel
 		// build makes PDRs for those and nothing else, and with no PCC rule in the update -- a
 		// decision changing only QoS data or traffic control data -- it allocated a "default" PDR
@@ -345,6 +359,16 @@ func sessionQERs(node *smfContext.DataPathNode) map[uint32]*smfContext.QER {
 	}
 
 	return shared
+}
+
+// hasPDRs reports whether any rule is left on the node.
+func hasPDRs(node *smfContext.DataPathNode) bool {
+	for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+		if tunnel != nil && len(tunnel.PDR) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // addedPccRules names the rules the pending update adds. Their PDRs are built by

@@ -1277,3 +1277,127 @@ func TestARateChangeKeepsADisabledFlowClosed(t *testing.T) {
 		}
 	}
 }
+
+// A withdrawal of every rule the user plane accepts leaves the node no PDR to find the session QER
+// on. When the UE cannot be told and the withdrawal is reverted, the rules came back with their flow
+// QERs only, and the revert reported the user plane put back without the session AMBR.
+func TestRevertingAWithdrawalOfEveryRuleRestoresTheSessionAmbr(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	for name, rule := range map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: &s.cirRule} {
+		packFiltID := map[string]string{allowRuleID: "5", cirRuleID: "6"}[name]
+		rule.FlowInfos = []models.FlowInformation{{
+			FlowDescription: openapi.PtrString("permit out ip from any to assigned"),
+			PackFiltId:      openapi.PtrString(packFiltID),
+		}}
+		committed := *rule
+		s.sm.SmPolicyData.SmCtxtPccRules.PccRules[name] = &committed
+	}
+
+	withdrawAll := roundTrip(&models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{allowRuleID: {}, cirRuleID: {}},
+		QosDecs:  &map[string]models.QosData{allowQosID: {}, cirQosID: {}},
+	})
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, withdrawAll)); err == nil {
+		t.Fatal("the undeliverable modification was reported as delivered")
+	}
+
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	for _, name := range []string{allowRuleID, cirRuleID} {
+		for dir, tunnel := range map[string]*smf_context.GTPTunnel{"UL": node.UpLinkTunnel, "DL": node.DownLinkTunnel} {
+			pdr := tunnel.PDR[name]
+			if pdr == nil || !sent.touches(pdr) {
+				t.Errorf("%s %s: the withdrawn rule was not re-created", name, dir)
+				continue
+			}
+			var sessionAmbr bool
+			for _, qer := range pdr.QER {
+				if qer.MBR != nil && qer.MBR.ULMBR == 150000 && qer.MBR.DLMBR == 200000 && queued(sent.qerList, qer) {
+					sessionAmbr = true
+				}
+			}
+			if !sessionAmbr {
+				t.Errorf("%s %s: the re-created rule carries no session-AMBR QER", name, dir)
+			}
+		}
+	}
+}
+
+// emptyNode leaves the fixture's node as an accepted withdrawal of every rule does: no PDR left.
+func (s *twoRuleSession) emptyNode() {
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	node.UpLinkTunnel.PDR = map[string]*smf_context.PDR{}
+	node.DownLinkTunnel.PDR = map[string]*smf_context.PDR{}
+}
+
+// sessionAmbrQERs is the session QERs queued for creation: at the session AMBR, on the default flow.
+// A flow QER can be at the session AMBR too, when its QoS data names no rate, but not on that flow.
+func sessionAmbrQERs(param *pfcpParam) int {
+	n := 0
+	for _, qer := range param.qerList {
+		if qer.MBR != nil && qer.MBR.ULMBR == 150000 && qer.MBR.DLMBR == 200000 &&
+			qer.QFI.QFI == qos.GetQosFlowIdFromQosId(allowQosID) {
+			n++
+		}
+	}
+	return n
+}
+
+// A session QER is built for rules added to an emptied node, and only there. A decision adding a
+// rule need not repeat the default flow it leaves unchanged; the session QER is built from the
+// committed one then. An update adding nothing builds none, and a node that still has rules is not
+// emptied, whatever its PDRs share.
+func TestASessionQERIsBuiltOnlyForRulesAddedToAnEmptiedNode(t *testing.T) {
+	t.Run("an added rule on an emptied node, the default flow left out", func(t *testing.T) {
+		s := newTwoRuleSession(t, false)
+		s.withPfcpContext()
+		s.emptyNode()
+		decision := s.addAppRule()
+		delete(decision.PccRules, allowRuleID)
+		delete(decision.PccRules, cirRuleID)
+		delete(*decision.QosDecs, allowQosID)
+		delete(*decision.QosDecs, cirQosID)
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+		param := BuildPfcpParam(s.sm)
+
+		if n := sessionAmbrQERs(param); n != 1 {
+			t.Fatalf("%d session QERs built for the rule added to an emptied node, want 1", n)
+		}
+	})
+
+	t.Run("nothing added to an emptied node", func(t *testing.T) {
+		s := newTwoRuleSession(t, false)
+		s.withPfcpContext()
+		s.emptyNode()
+		changed := (*s.rateChange().QosDecs)[cirQosID]
+		decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+		if param := BuildPfcpParam(s.sm); len(param.qerList) != 0 {
+			t.Errorf("%d QERs built for an update that adds no rule", len(param.qerList))
+		}
+	})
+
+	t.Run("a node with rules that share no QER", func(t *testing.T) {
+		s := newTwoRuleSession(t, false)
+		s.withPfcpContext()
+		for _, pdr := range []*smf_context.PDR{s.allowUL, s.allowDL, s.cirUL, s.cirDL} {
+			pdr.QER = pdr.QER[:1]
+		}
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.addAppRule())}
+
+		if n := sessionAmbrQERs(BuildPfcpParam(s.sm)); n != 0 {
+			t.Errorf("%d session QERs built beside rules that are still on the node", n)
+		}
+	})
+}
