@@ -519,18 +519,14 @@ func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurren
 	if ngapErr != nil {
 		smContext.SubPduSessLog.Errorf("build PDUSessionResourceModifyRequestTransfer failed: %s", ngapErr.Error())
 		return ngapErr
-	} else {
-		tmpFile, err1 := util.CreatePayloadTempFile(n2Pdu)
-		if err1 != nil {
-			smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err1.Error())
-			return err1
-		} else {
-			n1n2Request.SetBinaryDataN2Information(tmpFile)
-			jsonData := n1n2Request.GetJsonData()
-			jsonData.SetN2InfoContainer(*n2InfoContainer)
-			n1n2Request.SetJsonData(jsonData)
-		}
 	}
+	// Attached in the hold that sends, below, if the radio is to have it, and removed either way.
+	n2File, err := util.CreatePayloadTempFile(n2Pdu)
+	if err != nil {
+		smContext.SubPduSessLog.Errorf("error creating temp file (%s)", err.Error())
+		return err
+	}
+	defer util.CleanupMultipartTempFiles(n2File)
 
 	smContext.SubPduSessLog.Infoln("QoS N1N2 transfer initiated")
 	// Hold SMLock across the transfer so AMF re-discovery's mutation of
@@ -540,6 +536,20 @@ func buildAndSendQosN1N2TransferMsg(smContext *smfContext.SMContext, stillCurren
 		smContext.SMLock.Unlock()
 
 		return errModificationSuperseded
+	}
+	// T3591 retransmits the Command to the UE (TS 24.501 subclause 6.3.2.5), and the radio's part
+	// goes with it only while the radio has not answered. Its answer is taken once, so the answer to
+	// a second request would be ignored, and that request could establish a flow the first answer
+	// refused: the correction would then withdraw the flow from the UE and the record and leave it on
+	// the radio. Decided in the hold that sends, since the answer is taken under this lock. An answer
+	// still on its way here when a retransmission goes out is not seen.
+	if smContext.RanAnswerPending {
+		n1n2Request.SetBinaryDataN2Information(n2File)
+		jsonData := n1n2Request.GetJsonData()
+		jsonData.SetN2InfoContainer(*n2InfoContainer)
+		n1n2Request.SetJsonData(jsonData)
+	} else {
+		smContext.SubPduSessLog.Infoln("the radio has answered this modification; sending the UE its Command without the radio's part")
 	}
 	rspData, sends, err := sendModificationTransfer(context.Background(), smContext, n1n2Request)
 	// Handed to the AMF, if anything was sent at all; from here the UE can answer it. Cleared in
@@ -713,6 +723,7 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
 	// expectation set discards it as belonging to no modification -- losing a partial rejection
 	// that had a realignment waiting on it. Cleared on every path that gives the modification up.
+	// The transfer reads it too, and asks the radio only while its answer is expected.
 	smContext.SMLock.Lock()
 	smContext.RanAnswerPending = true
 	smContext.SMLock.Unlock()

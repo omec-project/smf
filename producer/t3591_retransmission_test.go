@@ -12,6 +12,7 @@ import (
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/qos"
 	"go.uber.org/zap"
 )
 
@@ -212,5 +213,148 @@ func TestATransferThatWasNeverSentLeavesNoQuietInterval(t *testing.T) {
 	defer smContext.SMLock.Unlock()
 	if smContext.NwModificationQuietFor != 0 {
 		t.Errorf("quiet interval = %s, want none: nothing was sent", smContext.NwModificationQuietFor)
+	}
+}
+
+// sentTransfers replaces the transfer the Command goes out on with one that keeps what it is handed.
+func sentTransfers(t *testing.T) *[]*models.N1N2MessageTransferRequest {
+	t.Helper()
+
+	var sent []*models.N1N2MessageTransferRequest
+	original := sendModificationTransfer
+	t.Cleanup(func() { sendModificationTransfer = original })
+	sendModificationTransfer = func(_ context.Context, _ *smf_context.SMContext, request *models.N1N2MessageTransferRequest) (*models.N1N2MessageTransferRspData, int, error) {
+		sent = append(sent, request)
+		return models.NewN1N2MessageTransferRspData(models.N1N2MESSAGETRANSFERCAUSE_N1_N2_TRANSFER_INITIATED), 1, nil
+	}
+
+	return &sent
+}
+
+// carriesRadioRequest reports whether a transfer carries the radio's part, and fails the test if it
+// does not carry the UE's.
+func carriesRadioRequest(t *testing.T, request *models.N1N2MessageTransferRequest) bool {
+	t.Helper()
+
+	jsonData := request.GetJsonData()
+	if request.GetBinaryDataN1Message() == nil || !jsonData.HasN1MessageContainer() {
+		t.Fatal("the transfer does not carry the UE's Command")
+	}
+	_, withContainer := jsonData.GetN2InfoContainerOk()
+	withPayload := request.GetBinaryDataN2Information() != nil
+	if withContainer != withPayload {
+		t.Fatalf("the transfer's N2 container (%t) and N2 payload (%t) disagree", withContainer, withPayload)
+	}
+
+	return withPayload
+}
+
+// A retransmission goes to the radio as well while the radio has not answered: its first request
+// may never have reached it.
+func TestARetransmissionBeforeTheRadioAnswersCarriesTheRadioRequest(t *testing.T) {
+	sent := sentTransfers(t)
+	smContext := commandBuildingSession()
+	smContext.RanAnswerPending = true
+
+	if err := buildAndSendQosN1N2TransferMsg(smContext, func() bool { return true }); err != nil {
+		t.Fatalf("retransmitting the command: %v", err)
+	}
+
+	if len(*sent) != 1 || !carriesRadioRequest(t, (*sent)[0]) {
+		t.Error("a retransmission before the radio answered did not carry the radio's part")
+	}
+}
+
+// Once the radio has answered, a retransmission is the UE's Command alone. The radio accepts flow 2
+// and refuses flow 3, and T3591 then expires before the UE completes. A second radio request could
+// establish flow 3, and its answer would be ignored, as the first has been taken; the correction
+// the UE's completion starts would then withdraw flow 3 from the UE and the record and leave it on
+// the radio.
+func TestARetransmissionAfterThePartialRadioAnswerIsTheUEsCommandAlone(t *testing.T) {
+	smContext := commandBuildingSession()
+	smContext.SMContextState = smf_context.SmStateActive
+	smContext.RanAnswerPending = true
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
+		QosFlowUpdate: qos.GetQosFlowDescUpdate(
+			map[string]models.QosData{
+				"1": *smContext.SmPolicyData.SmCtxtQosData.QosData["1"],
+				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+				"3": {QosId: "3", Var5qi: openapi.PtrInt32(1)},
+			},
+			smContext.SmPolicyData.SmCtxtQosData.QosData,
+		),
+	}}
+
+	deliverModifyResponse(t, smContext, craftModifyResponseTransfer(t, []int64{2}, []int64{3}))
+	if smContext.Realign == nil || smContext.RanAnswerPending {
+		t.Fatalf("the partial answer was not taken: realign %v, still waiting for the radio %t", smContext.Realign, smContext.RanAnswerPending)
+	}
+
+	sent := sentTransfers(t)
+	if err := buildAndSendQosN1N2TransferMsg(smContext, func() bool { return true }); err != nil {
+		t.Fatalf("retransmitting the command: %v", err)
+	}
+
+	if len(*sent) != 1 || carriesRadioRequest(t, (*sent)[0]) {
+		t.Error("a retransmission after the radio's answer asked the radio again, whose answer would be ignored")
+	}
+}
+
+// And the question is asked in the hold that sends, as the radio's answer is taken under that lock:
+// an answer taken while the Command is built still keeps the radio's part off it.
+func TestARadioAnswerTakenWhileTheRetransmissionIsBuiltKeepsTheRadioRequestOff(t *testing.T) {
+	sent := sentTransfers(t)
+	smContext := commandBuildingSession()
+	smContext.RanAnswerPending = true
+
+	checks := 0
+	err := buildAndSendQosN1N2TransferMsg(smContext, func() bool {
+		checks++
+		if checks == 2 { // the hold that sends, with the answer taken since the build
+			smContext.RanAnswerPending = false
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatalf("retransmitting the command: %v", err)
+	}
+
+	if len(*sent) != 1 || carriesRadioRequest(t, (*sent)[0]) {
+		t.Error("the radio's part went out although its answer had been taken before the send")
+	}
+}
+
+// The first Command asks the radio too, which needs ApplyModification to expect the radio's answer
+// before it sends: the transfer reads that expectation to decide whether the radio is asked.
+func TestTheFirstCommandIsSentExpectingTheRadioAnswer(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	var sent, expected bool
+	sendQosN1N2TransferMsg = func(sm *smf_context.SMContext) error {
+		sm.SMLock.Lock()
+		defer sm.SMLock.Unlock()
+		sent, expected = true, sm.RanAnswerPending
+
+		return nil
+	}
+
+	smContext := withTunnel(modifyingSession())
+	smContext.ChangeState(smf_context.SmStateActive)
+	smContext.T3591Value = 16 * time.Second
+	t.Cleanup(func() {
+		smContext.SMLock.Lock()
+		smContext.StopT3591()
+		smContext.SMLock.Unlock()
+	})
+
+	if err := ApplyModification(smContext, &qos.PolicyUpdate{}); err != nil {
+		t.Fatalf("applying the modification: %v", err)
+	}
+	if !sent {
+		t.Fatal("the Command was not sent")
+	}
+	if !expected {
+		t.Error("the Command was sent before the radio's answer was expected, so it went without the radio's part")
 	}
 }
