@@ -426,10 +426,22 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
 		dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
 
-		// Configure FAR for downlink traffic
+		// Configure FAR for downlink traffic. While the access connection is up, the rule forwards
+		// to the radio's end of the session's tunnel, as every other downlink rule does: nothing
+		// later switches a buffering FAR over for an active connection, since a setup response comes
+		// only on activation and a downlink report is acted on only for a deactivated one. Buffered,
+		// the rule's downlink was held for good -- an added rule's and a reinstated one's alike. A
+		// deactivated connection buffers and reports, so the downlink pages the UE, and the setup
+		// response re-points every downlink rule.
 		if dlFAR := dlPDR.FAR; dlFAR != nil {
-			dlFAR.ApplyAction = smfContext.ApplyAction{
-				Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
+			if smContext.UpCnxState == models.UPCNXSTATE_ACTIVATED &&
+				smContext.Tunnel != nil && smContext.Tunnel.ANInformation.IPAddress != nil {
+				dlFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
+				dlFAR.ForwardingParameters = buildAccessForwardingParameters(smContext, dlFAR.ForwardingParameters)
+			} else {
+				dlFAR.ApplyAction = smfContext.ApplyAction{
+					Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
+				}
 			}
 			pfcpParam.farList = append(pfcpParam.farList, dlFAR)
 		} else {
