@@ -95,7 +95,7 @@ func TestChangeStateDeletesTheExactMetricSeriesRecordedOnActivation(t *testing.T
 
 	smContext := NewSMContext("imsi-208930000099999", 5)
 	smContext.PDUAddress = &UeIpAddr{Ip: net.ParseIP("10.60.0.7")}
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.Tunnel = &UPTunnel{
 		DataPathPool: DataPathPool{
 			1: &DataPath{
@@ -258,7 +258,7 @@ func TestChangeStatePublishesReleaseAsDisconnectedDel(t *testing.T) {
 	events := capturePublishedEvents(t)
 
 	smContext := NewSMContext("imsi-208930000099996", 5)
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.SMContextState = SmStateActive
 
 	smContext.ChangeState(SmStateRelease)
@@ -283,7 +283,7 @@ func TestChangeStateSkipsDuplicateNoOpTransition(t *testing.T) {
 	events := capturePublishedEvents(t)
 
 	smContext := NewSMContext("imsi-208930000099995", 5)
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.SMContextState = SmStateActive
 
 	smContext.ChangeState(SmStatePfcpRelease)
@@ -327,7 +327,7 @@ func TestChangeStateReleaseSequencePublishesExactlyOneDel(t *testing.T) {
 	events := capturePublishedEvents(t)
 
 	smContext := NewSMContext("imsi-208930000099993", 5)
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.SMContextState = SmStateActive
 
 	smContext.ChangeState(SmStatePfcpRelease) // HandlePDUSessionSMContextRelease
@@ -362,7 +362,7 @@ func TestChangeStateIsTerminalAfterRelease(t *testing.T) {
 	events := capturePublishedEvents(t)
 
 	smContext := NewSMContext("imsi-208930000099994", 5)
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.SMContextState = SmStateActive
 
 	smContext.ChangeState(SmStateRelease)

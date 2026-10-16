@@ -7,22 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 )
 
 func amfProfileWithNamfComm(apiPrefix string) models.NFProfileDiscovery {
-	commService := models.NFService{
-		ServiceInstanceId: "namf-comm",
-		ServiceName:       models.SERVICENAME_NAMF_COMM,
-		ApiPrefix:         openapi.PtrString(apiPrefix),
-	}
-	return models.NFProfileDiscovery{
-		NfInstanceId:  "amf-instance-1",
-		NfType:        models.NFTYPE_AMF,
-		NfStatus:      models.NFSTATUS_REGISTERED,
-		NfServiceList: &map[string]models.NFService{commService.ServiceInstanceId: commService},
-	}
+	var commService models.NFService
+	commService.SetServiceInstanceId("namf-comm")
+	commService.SetServiceName(models.SERVICENAME_NAMF_COMM)
+	commService.SetApiPrefix(apiPrefix)
+	var prof models.NFProfileDiscovery
+	prof.SetNfInstanceId("amf-instance-1")
+	prof.SetNfType(models.NFTYPE_AMF)
+	prof.SetNfStatus(models.NFSTATUS_REGISTERED)
+	prof.SetNfServiceList(map[string]models.NFService{commService.GetServiceInstanceId(): commService})
+	return prof
 }
 
 func TestRebuildCommunicationClient_WithNamfComm_BuildsClientAndSetsApiRoot(t *testing.T) {
@@ -62,16 +60,17 @@ func TestRebuildCommunicationClient_NoServices_LeavesClientNil(t *testing.T) {
 }
 
 func TestRebuildCommunicationClient_NoNamfComm_LeavesClientNil(t *testing.T) {
-	apiPrefix := "http://10.42.0.42:29518"
 	smCtx := &SMContext{}
-	smCtx.AMFProfile = models.NFProfileDiscovery{
-		NfInstanceId: "amf-instance-2",
-		NfType:       models.NFTYPE_AMF,
-		NfStatus:     models.NFSTATUS_REGISTERED,
-		NfServiceList: &map[string]models.NFService{
-			"namf-evts": {ServiceInstanceId: "namf-evts", ServiceName: models.SERVICENAME_NAMF_EVTS, ApiPrefix: openapi.PtrString(apiPrefix)},
-		},
-	}
+	var nfService models.NFService
+	nfService.SetServiceInstanceId("namf-evts")
+	nfService.SetServiceName(models.SERVICENAME_NAMF_EVTS)
+	nfService.SetApiPrefix("http://10.42.0.42:29518")
+	var prof models.NFProfileDiscovery
+	prof.SetNfInstanceId("amf-instance-2")
+	prof.SetNfType(models.NFTYPE_AMF)
+	prof.SetNfStatus(models.NFSTATUS_REGISTERED)
+	prof.SetNfServiceList(map[string]models.NFService{"namf-evts": nfService})
+	smCtx.AMFProfile = prof
 
 	smCtx.RebuildCommunicationClient()
 

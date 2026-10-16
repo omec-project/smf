@@ -10,7 +10,6 @@ import (
 	"net"
 	"reflect"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	"github.com/omec-project/smf/factory"
@@ -74,7 +73,7 @@ func convertSnssaiInfoToModel(snssaiInfo SnssaiUPFInfo) models.SnssaiUpfInfoItem
 	return models.SnssaiUpfInfoItem{
 		SNssai: models.Snssai{
 			Sst: snssaiInfo.SNssai.Sst,
-			Sd:  openapi.PtrString(snssaiInfo.SNssai.Sd),
+			Sd:  new(snssaiInfo.SNssai.Sd),
 		},
 		DnnUpfInfoList: convertDnnUpfInfoToModel(snssaiInfo.DnnList),
 	}

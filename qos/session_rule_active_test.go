@@ -37,14 +37,10 @@ const (
 // one of these wiped it, and everything afterwards that needed the session AMBR from committed
 // state found nothing.
 func TestCommittingAnUpdateThatDoesNotTouchTheActiveRuleKeepsIt(t *testing.T) {
-	established := &models.SessionRule{
-		SessRuleId:   establishedRuleID,
-		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
-	}
-	other := &models.SessionRule{
-		SessRuleId:   testRuleID2,
-		AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
-	}
+	established := models.NewSessionRule(establishedRuleID)
+	established.SetAuthSessAmbr(*models.NewAmbr(ambrBefore, ambrBefore))
+	other := models.NewSessionRule(testRuleID2)
+	other.SetAuthSessAmbr(*models.NewAmbr(ambrAfter, ambrAfter))
 
 	polData := &SmCtxtPolicyData{}
 	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{
@@ -82,7 +78,7 @@ func TestCommittingAnUpdateThatDoesNotTouchTheActiveRuleKeepsIt(t *testing.T) {
 // When an update does name an active rule — establishment, or a genuine change of session rule —
 // it replaces the old one.
 func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
-	old := &models.SessionRule{SessRuleId: establishedRuleID}
+	old := models.NewSessionRule(establishedRuleID)
 	polData := &SmCtxtPolicyData{}
 	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{}
 	polData.SmCtxtSessionRules.ActiveRule = old
@@ -91,7 +87,7 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 	update := GetSessionRulesUpdate(
 		map[string]models.SessionRule{testRuleID2: {
 			SessRuleId:   testRuleID2,
-			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
+			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}},
 		polData.SmCtxtSessionRules.SessionRules,
 		polData.SmCtxtSessionRules.ActiveRuleName,
@@ -114,8 +110,8 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 func TestCommittingADeletionOfTheActiveRuleLeavesNoneActive(t *testing.T) {
 	committed := &SmCtxtPolicyData{}
 	committed.Initialize()
-	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = &models.SessionRule{SessRuleId: establishedRuleID}
-	committed.SmCtxtSessionRules.ActiveRule = &models.SessionRule{SessRuleId: establishedRuleID}
+	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = models.NewSessionRule(establishedRuleID)
+	committed.SmCtxtSessionRules.ActiveRule = models.NewSessionRule(establishedRuleID)
 	committed.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	// A rule with no identity is how the decision expresses a deletion.
@@ -137,17 +133,15 @@ func TestCommittingADeletionOfTheActiveRuleLeavesNoneActive(t *testing.T) {
 func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
 	committed := &SmCtxtPolicyData{}
 	committed.Initialize()
-	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = &models.SessionRule{
-		SessRuleId:   establishedRuleID,
-		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
-	}
+	committed.SmCtxtSessionRules.SessionRules[establishedRuleID] = models.NewSessionRule(establishedRuleID)
+	committed.SmCtxtSessionRules.SessionRules[establishedRuleID].SetAuthSessAmbr(*models.NewAmbr(ambrBefore, ambrBefore))
 	committed.SmCtxtSessionRules.ActiveRule = committed.SmCtxtSessionRules.SessionRules[establishedRuleID]
 	committed.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
 		map[string]models.SessionRule{establishedRuleID: {
 			SessRuleId:   establishedRuleID,
-			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
+			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}}, committed.SmCtxtSessionRules.SessionRules, committed.SmCtxtSessionRules.ActiveRuleName))
 
 	active := committed.SmCtxtSessionRules.ActiveRule
@@ -166,10 +160,8 @@ func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
 // rate and never tell the UE about it -- the two then disagree about what the session is allowed,
 // which is the divergence the whole procedure exists to avoid.
 func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
-	established := &models.SessionRule{
-		SessRuleId:   establishedRuleID,
-		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
-	}
+	established := models.NewSessionRule(establishedRuleID)
+	established.SetAuthSessAmbr(*models.NewAmbr(ambrBefore, ambrBefore))
 
 	polData := &SmCtxtPolicyData{}
 	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{establishedRuleID: established}
@@ -179,7 +171,7 @@ func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
 	update := GetSessionRulesUpdate(
 		map[string]models.SessionRule{establishedRuleID: {
 			SessRuleId:   establishedRuleID,
-			AuthSessAmbr: &models.Ambr{Uplink: ambrAfter, Downlink: ambrAfter},
+			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}},
 		polData.SmCtxtSessionRules.SessionRules,
 		polData.SmCtxtSessionRules.ActiveRuleName,
@@ -201,10 +193,8 @@ func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
 // modification command for a notification that altered nothing, and has the rest of the SMF treat
 // an unrelated update as a change to the rule in force.
 func TestRepeatingTheActiveRuleUnchangedNamesNothing(t *testing.T) {
-	established := &models.SessionRule{
-		SessRuleId:   establishedRuleID,
-		AuthSessAmbr: &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore},
-	}
+	established := models.NewSessionRule(establishedRuleID)
+	established.SetAuthSessAmbr(*models.NewAmbr(ambrBefore, ambrBefore))
 
 	polData := &SmCtxtPolicyData{}
 	polData.SmCtxtSessionRules.SessionRules = map[string]*models.SessionRule{establishedRuleID: established}
@@ -216,7 +206,7 @@ func TestRepeatingTheActiveRuleUnchangedNamesNothing(t *testing.T) {
 	// Comparing the structs directly would find the two pointers different and call that a change;
 	// what this pins is that the comparison reaches the rates.
 	repeated := *established
-	repeated.AuthSessAmbr = &models.Ambr{Uplink: ambrBefore, Downlink: ambrBefore}
+	repeated.AuthSessAmbr = models.NewAmbr(ambrBefore, ambrBefore)
 
 	update := GetSessionRulesUpdate(
 		map[string]models.SessionRule{establishedRuleID: repeated},

@@ -8,7 +8,6 @@ import (
 	"net"
 	"testing"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/util"
@@ -46,7 +45,7 @@ func TestAOneDirectionalGuaranteeIsHonoured(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			qos := &models.QosData{QosId: "2"}
+			qos := models.NewQosData("2")
 			if tc.gbrUl != "" {
 				qos.SetGbrUl(tc.gbrUl)
 			}
@@ -87,10 +86,10 @@ func qerCapableUPF() *UPF {
 // guarantee under test has no such fallback, but the fallback is read on the same path.
 func withSessionAmbr(smContext *SMContext) {
 	const sessionAmbr = "50 Mbps"
-
-	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		AuthSessAmbr: &models.Ambr{Uplink: sessionAmbr, Downlink: sessionAmbr},
-	}
+	ambr := models.NewAmbr(sessionAmbr, sessionAmbr)
+	sessionRule := models.NewSessionRuleWithDefaults()
+	sessionRule.SetAuthSessAmbr(*ambr)
+	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = sessionRule
 }
 
 // The establishment path has to program the guarantee too, and this is the test that says so.
@@ -103,18 +102,17 @@ func withSessionAmbr(smContext *SMContext) {
 func TestCreatePccRuleQerProgramsTheGuaranteedRate(t *testing.T) {
 	const qosID = "1"
 	node := &DataPathNode{UPF: qerCapableUPF()}
+	smPolicyDecision := models.NewSmPolicyDecision()
+	qosData := models.NewQosData(qosID)
+	qosData.SetMaxbrUl("100 Mbps")
+	qosData.SetMaxbrDl("200 Mbps")
+	qosData.SetGbrUl("10 Mbps")
+	qosData.SetGbrDl("20 Mbps")
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{qosID: *qosData})
 	smContext := &SMContext{
 		Supi: "imsi-208930000000001",
 		SmPolicyUpdates: []*qos.PolicyUpdate{{
-			SmPolicyDecision: &models.SmPolicyDecision{
-				QosDecs: &map[string]models.QosData{qosID: {
-					QosId:   qosID,
-					MaxbrUl: *openapi.NewNullableString(openapi.PtrString("100 Mbps")),
-					MaxbrDl: *openapi.NewNullableString(openapi.PtrString("200 Mbps")),
-					GbrUl:   *openapi.NewNullableString(openapi.PtrString("10 Mbps")),
-					GbrDl:   *openapi.NewNullableString(openapi.PtrString("20 Mbps")),
-				}},
-			},
+			SmPolicyDecision: smPolicyDecision,
 		}},
 	}
 	// A committed session rule, because the maximum rate falls back to the session AMBR when the
@@ -151,16 +149,15 @@ func TestCreatePccRuleQerProgramsTheGuaranteedRate(t *testing.T) {
 func TestCreatePccRuleQerLeavesAnUnconfiguredGuaranteeUnset(t *testing.T) {
 	const qosID = "1"
 	node := &DataPathNode{UPF: qerCapableUPF()}
+	smPolicyDecision := models.NewSmPolicyDecision()
+	qosData := models.NewQosData(qosID)
+	qosData.SetMaxbrUl("100 Mbps")
+	qosData.SetMaxbrDl("200 Mbps")
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{qosID: *qosData})
 	smContext := &SMContext{
 		Supi: "imsi-208930000000001",
 		SmPolicyUpdates: []*qos.PolicyUpdate{{
-			SmPolicyDecision: &models.SmPolicyDecision{
-				QosDecs: &map[string]models.QosData{qosID: {
-					QosId:   qosID,
-					MaxbrUl: *openapi.NewNullableString(openapi.PtrString("100 Mbps")),
-					MaxbrDl: *openapi.NewNullableString(openapi.PtrString("200 Mbps")),
-				}},
-			},
+			SmPolicyDecision: smPolicyDecision,
 		}},
 	}
 	withSessionAmbr(smContext)
@@ -298,9 +295,10 @@ func TestAUnitlessSessionAmbrTakesNoPathDown(t *testing.T) {
 			1: &DataPath{IsDefaultPath: true, FirstDPNode: node},
 		}},
 	}
-	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		AuthSessAmbr: &models.Ambr{Uplink: "10", Downlink: "10"},
-	}
+	ambr := models.NewAmbr("10", "10")
+	sessionRule := models.NewSessionRuleWithDefaults()
+	sessionRule.SetAuthSessAmbr(*ambr)
+	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = sessionRule
 
 	// The transfer is refused later for want of an N3 interface in this fixture; what is under
 	// test is that it gets past the AMBR at all.
@@ -309,7 +307,7 @@ func TestAUnitlessSessionAmbrTakesNoPathDown(t *testing.T) {
 	}
 
 	// And the modification transfer, which reads the same AMBR for the radio.
-	defQos := &models.QosData{QosId: "1"}
+	defQos := models.NewQosData("1")
 	defQos.SetDefQosFlowIndication(true)
 	smContext.SmPolicyData.SmCtxtQosData.QosData = map[string]*models.QosData{"1": defQos}
 	smContext.SubPduSessLog = zap.NewNop().Sugar()
@@ -322,7 +320,7 @@ func TestAUnitlessSessionAmbrTakesNoPathDown(t *testing.T) {
 	// session is accepted it has an address, which the accept reads after the AMBR.
 	smContext.SubGsmLog = zap.NewNop().Sugar()
 	smContext.PDUAddress = &UeIpAddr{Ip: net.ParseIP("10.1.0.12")}
-	smContext.Snssai = &models.Snssai{Sst: 1}
+	smContext.Snssai = models.NewSnssai(1)
 	smContext.ProtocolConfigurationOptions = &ProtocolConfigurationOptions{}
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{}}
 
@@ -344,7 +342,7 @@ func TestAUnitlessSessionAmbrTakesNoPathDown(t *testing.T) {
 // the gNB are given for the same string, and what the NAS converter already encodes for a rate it
 // cannot read.
 func TestAUnitlessDirectionIsEncodedForTheUeAsZero(t *testing.T) {
-	encoded := sessionAmbrForNas(&models.Ambr{Uplink: "10", Downlink: "20 Mbps"})
+	encoded := sessionAmbrForNas(models.NewAmbr("10", "20 Mbps"))
 
 	if got := encoded.GetSessionAMBRForUplink(); got != [2]byte{} {
 		t.Errorf("uplink encoded as %v, want zero: the user plane and the gNB are given zero for a rate with no unit", got)

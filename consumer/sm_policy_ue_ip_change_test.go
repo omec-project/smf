@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/omec-project/nas/v2/nasMessage"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/Npcf_SMPolicyControl"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
@@ -217,7 +216,9 @@ func TestCreateRecordsTheAddressItToldThePCFAbout(t *testing.T) {
 	smContext.PolicyReportedIpv4 = ""
 	smContext.PDUAddress = &smf_context.UeIpAddr{Ip: net.ParseIP(testSmfAllocatedIpv4)}
 	smContext.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
-	smContext.Snssai = &models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")}
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+	smContext.Snssai = snssai
 	smContext.DnnConfiguration = models.DnnConfiguration{}
 
 	if _, _, err := SendSMPolicyAssociationCreate(smContext); err != nil {

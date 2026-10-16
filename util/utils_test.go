@@ -16,7 +16,8 @@ import (
 const svcA = "svc-a"
 
 func TestHandleOpenAPIErrorExtractsProblemDetailsSafely(t *testing.T) {
-	problem := models.ProblemDetails{Detail: openapi.PtrString("problem")}
+	var problem models.ProblemDetails
+	problem.SetDetail("problem")
 	extracted, err := HandleOpenAPIError(openapi.GenericOpenAPIError{RawModel: problem})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -171,15 +172,27 @@ func TestSetNFProfileServicesPopulatesBothFields(t *testing.T) {
 }
 
 func TestFindServiceByNamePicksLexicographicallySmallestKeyOnDuplicateNames(t *testing.T) {
+	var nfService1 models.NFService
+	nfService1.SetServiceInstanceId("svc-z")
+	nfService1.SetServiceName(models.SERVICENAME_NAMF_COMM)
+	nfService1.SetApiPrefix("z")
+	var nfService2 models.NFService
+	nfService2.SetServiceInstanceId("svc-a")
+	nfService2.SetServiceName(models.SERVICENAME_NAMF_COMM)
+	nfService2.SetApiPrefix("a")
+	var nfService3 models.NFService
+	nfService3.SetServiceInstanceId("svc-m")
+	nfService3.SetServiceName(models.SERVICENAME_NUDM_SDM)
+	nfService3.SetApiPrefix("m")
 	services := map[string]models.NFService{
-		"svc-z": {ServiceInstanceId: "svc-z", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString("z")},
-		"svc-a": {ServiceInstanceId: "svc-a", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString("a")},
-		"svc-m": {ServiceInstanceId: "svc-m", ServiceName: models.SERVICENAME_NUDM_SDM, ApiPrefix: openapi.PtrString("m")},
+		"svc-z": nfService1,
+		"svc-a": nfService2,
+		"svc-m": nfService3,
 	}
 
 	// Run several times: map iteration order is randomized per-process, so a
 	// non-deterministic implementation would be expected to disagree across runs.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		svc, ok := FindServiceByName(services, models.SERVICENAME_NAMF_COMM)
 		if !ok || svc.GetApiPrefix() != "a" {
 			t.Fatalf("expected deterministic selection of svc-a, got %+v (ok=%v)", svc, ok)

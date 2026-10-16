@@ -65,7 +65,7 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 		case <-pollingIntervalAfter(interval):
 			newSessionManagementConfig, err := fetchSessionManagementConfig(&poller, pollingEndpoint)
 			if err != nil {
-				interval = minDuration(interval*time.Duration(pollingBackoffFactor), pollingMaxBackoff)
+				interval = min(interval*time.Duration(pollingBackoffFactor), pollingMaxBackoff)
 				logger.PollConfigLog.Errorf("Polling error. Retrying in %v: %+v", interval, err)
 				continue
 			}
@@ -143,11 +143,4 @@ func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([
 	default:
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-}
-
-func minDuration(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
 }

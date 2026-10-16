@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 )
@@ -189,7 +188,9 @@ func TestRetrieveDnnInformationFallsBackToSstOnlyWhenSdMissing(t *testing.T) {
 		t.Fatalf("expected Sst-only fallback to return configured DNN info, got %#v", got)
 	}
 
-	requested := models.Snssai{Sst: 1, Sd: openapi.PtrString("FFFFFF")}
+	var requested models.Snssai
+	requested.SetSst(1)
+	requested.SetSd("FFFFFF")
 	if got := RetrieveDnnInformation(requested, "internet"); got != nil {
 		t.Fatalf("expected no fallback when request includes Sd, got %#v", got)
 	}
