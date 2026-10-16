@@ -189,6 +189,14 @@ type SMContext struct {
 	// answer arriving then is the revert's.
 	RevertOwed atomic.Bool `json:"-" yaml:"-" bson:"-"`
 
+	// RevertFailed is set, for good, when a revert could not put the user plane back: the session
+	// enforces parameters its UE was never told about, and no modification is started on it again.
+	// The failure also marks the session SmStatePfcpRelease, but that mark cannot be relied on: a
+	// revert started by a NAS or NGAP handler runs beside the transaction that started it, whose
+	// state machine sets the state it returns after the handler, and so can set Active over the mark.
+	// Read and written under SMLock; not persisted.
+	RevertFailed bool `json:"-" yaml:"-" bson:"-"`
+
 	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
 	// response or failure is acted on, or until the modification is abandoned. It is what tells a
 	// stale answer from the one this session is waiting for; NwModificationPending cannot, because
