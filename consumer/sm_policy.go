@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
@@ -36,26 +35,28 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 		return nil, http.StatusBadRequest, fmt.Errorf("missing S-NSSAI for PCF policy association")
 	}
 
-	smPolicyData := models.SmPolicyContextData{
-		Supi:         smContext.Supi,
-		PduSessionId: smContext.PDUSessionID,
-		NotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/sm-policies/%s",
-			smf_context.SMF_Self().URIScheme,
-			smf_context.SMF_Self().RegisterIPv4,
-			smf_context.SMF_Self().SBIPort,
-			smContext.Ref,
-		),
-		Dnn:            smContext.Dnn,
-		PduSessionType: pduSessionType,
-		AccessType:     smContext.AnType.Ptr(),
-		RatType:        smContext.RatType.Ptr(),
-		Ipv4Address:    openapi.PtrString(smContext.PDUAddress.Ip.To4().String()),
-		SubsSessAmbr:   smContext.DnnConfiguration.SessionAmbr,
-		SubsDefQos:     smContext.DnnConfiguration.Var5gQosProfile,
-		SliceInfo:      *smContext.Snssai,
-		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
-		SuppFeat:       openapi.PtrString("F"),
-	}
+	var plmnIdNid models.PlmnIdNid
+	plmnIdNid.SetMcc(smContext.ServingNetwork.GetMcc())
+	plmnIdNid.SetMnc(smContext.ServingNetwork.GetMnc())
+	var smPolicyData models.SmPolicyContextData
+	smPolicyData.SetSupi(smContext.Supi)
+	smPolicyData.SetPduSessionId(smContext.PDUSessionID)
+	smPolicyData.SetNotificationUri(fmt.Sprintf("%s://%s:%d/nsmf-callback/sm-policies/%s",
+		smf_context.SMF_Self().URIScheme,
+		smf_context.SMF_Self().RegisterIPv4,
+		smf_context.SMF_Self().SBIPort,
+		smContext.Ref,
+	))
+	smPolicyData.SetDnn(smContext.Dnn)
+	smPolicyData.SetPduSessionType(pduSessionType)
+	smPolicyData.SetAccessType(smContext.AnType)
+	smPolicyData.SetRatType(smContext.RatType)
+	smPolicyData.SetIpv4Address(smContext.PDUAddress.Ip.To4().String())
+	smPolicyData.SetSubsSessAmbr(smContext.DnnConfiguration.GetSessionAmbr())
+	smPolicyData.SetSubsDefQos(smContext.DnnConfiguration.GetVar5gQosProfile())
+	smPolicyData.SetSliceInfo(*smContext.Snssai)
+	smPolicyData.SetServingNetwork(plmnIdNid)
+	smPolicyData.SetSuppFeat("F")
 
 	var smPolicyDecision *models.SmPolicyDecision
 	apiCreateSMPolicyRequest := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicy(context.Background())
@@ -155,16 +156,15 @@ func SendSMPolicyAssociationUpdateUeIpChange(smContext *smf_context.SMContext, n
 		return http.StatusInternalServerError, fmt.Errorf("smContext not selected PCF")
 	}
 
-	smPolicyUpdateData := models.SmPolicyUpdateContextData{
-		RepPolicyCtrlReqTriggers: []models.PolicyControlRequestTrigger{
-			models.POLICYCONTROLREQUESTTRIGGER_UE_IP_CH,
-		},
-		Ipv4Address: openapi.PtrString(newIpv4),
-	}
+	var smPolicyUpdateData models.SmPolicyUpdateContextData
+	smPolicyUpdateData.SetRepPolicyCtrlReqTriggers([]models.PolicyControlRequestTrigger{
+		models.POLICYCONTROLREQUESTTRIGGER_UE_IP_CH,
+	})
+	smPolicyUpdateData.SetIpv4Address(newIpv4)
 	// Only when there is one, and only when it is not the address being reported: releasing the
 	// address in the same breath as claiming it would have the PCF clear the binding it just set.
 	if released := releasedIpv4(smContext); released != "" && released != newIpv4 {
-		smPolicyUpdateData.RelIpv4Address = openapi.PtrString(released)
+		smPolicyUpdateData.SetRelIpv4Address(released)
 	}
 
 	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)
@@ -215,7 +215,7 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	}
 
 	smPolicyDelData := models.SmPolicyDeleteData{
-		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
+		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.GetMcc(), smContext.ServingNetwork.GetMnc()),
 	}
 
 	// User location info
@@ -227,7 +227,7 @@ func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *m
 	}
 
 	// UE Time Zone
-	if jd.GetUeTimeZone() != "" {
+	if jd.HasUeTimeZone() {
 		smPolicyDelData.SetUeTimeZone(jd.GetUeTimeZone())
 	}
 

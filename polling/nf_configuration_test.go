@@ -319,7 +319,7 @@ func TestStartPollingService_UpdateOnDifferentConfig(t *testing.T) {
 	contextCount := 0
 	timeout := time.After(2 * time.Second)
 	// 4 updates are expected in total
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		select {
 		case config := <-registrationChan:
 			if reflect.DeepEqual(config, []nfConfigApi.SessionManagement{sessionConfigOne}) {

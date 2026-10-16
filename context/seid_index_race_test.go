@@ -24,22 +24,18 @@ func TestSeidKeyedLookupsAreRaceFreeAgainstPFCPContextInserts(t *testing.T) {
 
 	// One writer mimics AllocateLocalSEIDForDataPath: it grows PFCPContext and records the index
 	// entry for each new local SEID, exactly as that function does for a new branch.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := 1; i <= inserts; i++ {
 			seid := uint64(i)
 			key := fmt.Sprintf("10.0.0.%d", i)
 			smContext.PFCPContext[key] = &PFCPSessionContext{LocalSEID: seid, NodeID: *NewNodeID(key)}
 			smContext.recordPFCPCtxRef(seid, key, *NewNodeID(key))
 		}
-	}()
+	})
 
 	// Readers hammer both SEID-keyed lookups without SMLock, as the unlocked handlers do.
-	for r := 0; r < 4; r++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			for i := 1; i <= inserts; i++ {
 				seid := uint64(i)
 				if key, ok := smContext.GetPFCPContextKeyByLocalSEID(seid); ok && key == "" {
@@ -47,7 +43,7 @@ func TestSeidKeyedLookupsAreRaceFreeAgainstPFCPContextInserts(t *testing.T) {
 				}
 				_ = smContext.GetNodeIDByLocalSEID(seid)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

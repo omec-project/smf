@@ -119,20 +119,20 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 		}
 	}
 	nfServiceList := make(map[string]models.NFService, len(serviceNames))
+	apiPrefix := fmt.Sprintf("%s://%s:%d", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort)
+	var nfServiceVersion models.NFServiceVersion
+	nfServiceVersion.ApiVersionInUri = "v1"
+	nfServiceVersion.ApiFullVersion = fmt.Sprintf("%s/nsmf-pdusession/v1", apiPrefix)
+	var svc models.NFService
+	svc.SetScheme(smfCtx.URIScheme)
+	svc.SetNfServiceStatus(models.NFSERVICESTATUS_REGISTERED)
+	svc.SetApiPrefix(apiPrefix)
+	svc.SetVersions([]models.NFServiceVersion{nfServiceVersion})
+	svc.SetAllowedPlmns(plmnList)
 	for _, serviceName := range serviceNames {
-		svc := models.NFService{
-			ServiceInstanceId: smfCtx.NfInstanceID + "-" + serviceName,
-			ServiceName:       models.ServiceName(serviceName),
-			Scheme:            smfCtx.URIScheme,
-			NfServiceStatus:   models.NFSERVICESTATUS_REGISTERED,
-			ApiPrefix:         openapi.PtrString(fmt.Sprintf("%s://%s:%d", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort)),
-			Versions: []models.NFServiceVersion{{
-				ApiVersionInUri: "v1",
-				ApiFullVersion:  fmt.Sprintf("%s://%s:%d/nsmf-pdusession/v1", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort),
-			}},
-			AllowedPlmns: plmnList,
-		}
-		nfServiceList[svc.ServiceInstanceId] = svc
+		svc.SetServiceInstanceId(smfCtx.NfInstanceID + "-" + serviceName)
+		svc.SetServiceName(models.ServiceName(serviceName))
+		nfServiceList[svc.GetServiceInstanceId()] = svc
 	}
 
 	profile.SetNfInstanceId(smfCtx.NfInstanceID)
@@ -149,7 +149,7 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 }
 
 func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
-	snssaiSmfInfoList := []models.SnssaiSmfInfoItem{}
+	var snssaiSmfInfoList []models.SnssaiSmfInfoItem
 	for _, sessionCfg := range sessionCfgs {
 		snssai := models.Snssai{
 			Sst: sessionCfg.Snssai.GetSst(),
@@ -160,24 +160,26 @@ func buildSmfInfo(sessionCfgs []nfConfigApi.SessionManagement) models.SmfInfo {
 		item := models.SnssaiSmfInfoItem{
 			SNssai: snssai,
 		}
-		dnnList := []models.DnnSmfInfoItem{}
-		for _, ipdomain := range sessionCfg.IpDomain {
-			if ipdomain.DnnName != "" {
-				dnnList = append(dnnList, models.DnnSmfInfoItem{Dnn: ipdomain.DnnName})
+		var dnnList []models.DnnSmfInfoItem
+		for _, ipdomain := range sessionCfg.GetIpDomain() {
+			if ipdomain.GetDnnName() != "" {
+				dnnList = append(dnnList, models.DnnSmfInfoItem{Dnn: ipdomain.GetDnnName()})
 			}
 		}
 
 		if len(dnnList) > 0 {
-			item.DnnSmfInfoList = dnnList
+			item.SetDnnSmfInfoList(dnnList)
 		}
 		snssaiSmfInfoList = append(snssaiSmfInfoList, item)
 	}
 
-	return models.SmfInfo{SNssaiSmfInfoList: snssaiSmfInfoList}
+	var smfInfo models.SmfInfo
+	smfInfo.SetSNssaiSmfInfoList(snssaiSmfInfoList)
+	return smfInfo
 }
 
 func buildPlmnList(sessionCfgs []nfConfigApi.SessionManagement) []models.PlmnId {
-	plmns := []models.PlmnId{}
+	var plmns []models.PlmnId
 	for _, sessionCfg := range sessionCfgs {
 		plmns = append(plmns, models.PlmnId{
 			Mcc: sessionCfg.PlmnId.GetMcc(),
@@ -188,7 +190,7 @@ func buildPlmnList(sessionCfgs []nfConfigApi.SessionManagement) []models.PlmnId 
 }
 
 func buildSNssais(sessionCfgs []nfConfigApi.SessionManagement) []models.Snssai {
-	snssais := []models.Snssai{}
+	var snssais []models.Snssai
 	for _, sessionCfg := range sessionCfgs {
 		snssai := models.Snssai{
 			Sst: sessionCfg.Snssai.GetSst(),
@@ -406,7 +408,7 @@ func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requ
 }
 
 func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
-	localVarOptionals := Nnrf_NFDiscovery.ApiSearchNFInstancesRequest{}
+	var localVarOptionals Nnrf_NFDiscovery.ApiSearchNFInstancesRequest
 
 	var result *models.SearchResult
 	var localErr error
@@ -458,7 +460,7 @@ func SendNFDiscoveryUDM() (*models.ProblemDetails, error) {
 }
 
 func SendNFDiscoveryServingAMF(smContext *smfContext.SMContext) (*models.ProblemDetails, error) {
-	localVarOptionals := Nnrf_NFDiscovery.ApiSearchNFInstancesRequest{}
+	var localVarOptionals Nnrf_NFDiscovery.ApiSearchNFInstancesRequest
 
 	localVarOptionals = localVarOptionals.TargetNfInstanceId(smContext.ServingNfId)
 

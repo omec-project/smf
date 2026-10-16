@@ -11,7 +11,6 @@ import (
 
 	"github.com/omec-project/nas/v2"
 	"github.com/omec-project/nas/v2/nasMessage"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
@@ -146,16 +145,15 @@ func TestEstablishmentRejectEchoesRequestPti(t *testing.T) {
 	// A context that has never handled a request: Pti is the zero value, exactly as it is when an
 	// establishment is refused before HandlePDUSessionEstablishmentRequest runs.
 	smContext := smf_context.NewSMContext("imsi-208930100007488", pduSessionID)
-
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+	var smCtxCreateData models.SmContextCreateData
+	smCtxCreateData.SetSupi("imsi-208930100007488")
+	smCtxCreateData.SetPduSessionId(int32(pduSessionID))
+	smCtxCreateData.SetDnn(unservedDnn)
+	smCtxCreateData.SetSNssai(*snssai)
 	request := models.NewPostSmContextsRequest()
-	request.SetJsonData(models.SmContextCreateData{
-		Supi:         openapi.PtrString("imsi-208930100007488"),
-		PduSessionId: openapi.PtrInt32(pduSessionID),
-		Dnn:          openapi.PtrString(unservedDnn),
-		// SNssai must be set: the refusal logs createData.SNssai.Sst before building the
-		// rejection, so a nil S-NSSAI panics before the message under test exists.
-		SNssai: &models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
-	})
+	request.SetJsonData(smCtxCreateData)
 	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeEstablishmentRequest(t, pduSessionID, requestPti)))
 
 	txn := transaction.NewTransaction(*request, nil, svcmsgtypes.CreateSmContext)
@@ -202,7 +200,7 @@ func TestReleaseRejectEchoesRequestPti(t *testing.T) {
 	// either state is active, which a context with no allocated address cannot satisfy.
 	smContext := smf_context.NewSMContext("imsi-208930100007488", contextPduSessionID)
 
-	request := models.UpdateSmContextRequest{}
+	var request models.UpdateSmContextRequest
 	request.SetJsonData(models.SmContextUpdateData{})
 	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeReleaseRequest(t, requestedPduSessionID, requestPti)))
 

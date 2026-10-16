@@ -36,10 +36,9 @@ func TestSelectedSessionRuleIsNilWhenNothingSuppliesOne(t *testing.T) {
 
 // And when one is supplied, it is returned.
 func TestSelectedSessionRuleReturnsTheCommittedRule(t *testing.T) {
-	rule := &models.SessionRule{
-		SessRuleId:   "rule-1",
-		AuthSessAmbr: &models.Ambr{Uplink: "50 Mbps", Downlink: "50 Mbps"},
-	}
+	ambr := models.NewAmbr("50 Mbps", "50 Mbps")
+	rule := models.NewSessionRule("rule-1")
+	rule.SetAuthSessAmbr(*ambr)
 	smContext := &SMContext{SubCtxLog: zap.NewNop().Sugar()}
 	smContext.SmPolicyData.SmCtxtSessionRules.ActiveRule = rule
 

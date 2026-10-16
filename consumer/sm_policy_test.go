@@ -18,7 +18,7 @@ import (
 func TestSendSMPolicyAssociationDeleteWithNoPCFIsANoOp(t *testing.T) {
 	smContext := &smf_context.SMContext{}
 
-	status, err := SendSMPolicyAssociationDelete(smContext, &models.ReleaseSmContextRequest{})
+	status, err := SendSMPolicyAssociationDelete(smContext, models.NewReleaseSmContextRequest())
 	if err != nil {
 		t.Fatalf("SendSMPolicyAssociationDelete returned %v, want nil", err)
 	}

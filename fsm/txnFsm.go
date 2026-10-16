@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -240,17 +239,16 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		if txn.Ctxt == nil {
 			logger.PduSessLog.Warnf("PDUSessionSMContextRelease [%s] is not found", txn.CtxtKey)
 
+			problemDetails := models.NewProblemDetails()
+			problemDetails.SetType("Resource Not Found")
+			problemDetails.SetTitle("SMContext Ref is not found")
+			problemDetails.SetStatus(int32(http.StatusNotFound))
 			// 4xx/5xx Error not defined in spec 29502 for Release SM ctxt error
 			// Send Not Found
 			httpResponse := &httpwrapper.Response{
 				Header: nil,
 				Status: http.StatusNotFound,
-
-				Body: &models.ProblemDetails{
-					Type:   openapi.PtrString("Resource Not Found"),
-					Title:  openapi.PtrString("SMContext Ref is not found"),
-					Status: openapi.PtrInt32(http.StatusNotFound),
-				},
+				Body:   problemDetails,
 			}
 			txn.Rsp = httpResponse
 		}

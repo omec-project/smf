@@ -8,7 +8,6 @@ import (
 
 	"github.com/omec-project/ngap/v2/aper"
 	"github.com/omec-project/ngap/v2/ngapType"
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/qos"
 	"go.uber.org/zap"
@@ -32,14 +31,16 @@ func modifyingContext(t *testing.T, added map[string]*models.QosData) *SMContext
 		SubPduSessLog: zap.NewNop().Sugar(),
 		SubCtxLog:     zap.NewNop().Sugar(),
 	}
-	ctx.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
-		SessRuleId:   testRuleID1,
-		AuthSessAmbr: &models.Ambr{Uplink: testSessionAmbr, Downlink: testSessionAmbr},
-		AuthDefQos:   &models.AuthorizedDefaultQos{Var5qi: openapi.PtrInt32(9)},
-	}
+	sessionRule := models.NewSessionRule(testRuleID1)
+	sessionRule.SetAuthSessAmbr(*models.NewAmbr(testSessionAmbr, testSessionAmbr))
+	authDefQos := models.NewAuthorizedDefaultQos()
+	authDefQos.SetVar5qi(9)
+	sessionRule.SetAuthDefQos(*authDefQos)
+	ctx.SmPolicyData.SmCtxtSessionRules.ActiveRule = sessionRule
 	// A default flow exists, so the old behaviour had something to fall back on. If the list is
 	// still built from it, the assertions below catch that rather than passing on an empty session.
-	defQos := &models.QosData{QosId: "1", Var5qi: openapi.PtrInt32(9)}
+	defQos := models.NewQosData("1")
+	defQos.SetVar5qi(9)
 	defQos.SetDefQosFlowIndication(true)
 	ctx.SmPolicyData.SmCtxtQosData.QosData = map[string]*models.QosData{"1": defQos}
 
@@ -79,9 +80,13 @@ func decodeModifyRequest(t *testing.T, encoded []byte) *ngapType.QosFlowAddOrMod
 // realignment procedure exists to repair — manufactured in the request itself. Observed on a
 // cluster as NAS rules for QFI 2 and QFI 3 with the gNB asked about QFI 2 alone.
 func TestModifyRequestCarriesEveryFlowTheModificationConcerns(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData("3")
+	qosData2.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+		"2": qosData1,
+		"3": qosData2,
 	})
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -141,9 +146,13 @@ func TestModifyRequestFallsBackToTheDefaultFlowWhenNoFlowsAreNamed(t *testing.T)
 // reconfiguration per partial rejection to re-assert a flow nobody asked about, which on a
 // constrained air interface is exactly the cost the rest of this work is careful about.
 func TestCorrectiveModificationDoesNotAskTheRadioAboutTheDefaultFlow(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData("3")
+	qosData2.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+		"2": qosData1,
+		"3": qosData2,
 	})
 
 	// The radio refused flow 3; RemoveFlows prunes the pending update to what was established and
@@ -177,9 +186,13 @@ func TestCorrectiveModificationDoesNotAskTheRadioAboutTheDefaultFlow(t *testing.
 // gives the assignable range as 1 to 63, so 0 in the request is malformed. RefusedFlowSet already
 // drops out-of-range identifiers coming the other way; this is the same rule applied outbound.
 func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData(testUnparsableQosID)
+	qosData2.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2":                 {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
+		"2":                 qosData1,
+		testUnparsableQosID: qosData2,
 	})
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -206,8 +219,10 @@ func TestModifyRequestDropsUnusableQosFlowIdentifiers(t *testing.T) {
 // it here would ask the radio about a flow the modification does not concern while saying nothing
 // about the ones it does - the divergence this builder was fixed to stop producing.
 func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
+	qosData := models.NewQosData(testUnparsableQosID)
+	qosData.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		testUnparsableQosID: {QosId: testUnparsableQosID, Var5qi: openapi.PtrInt32(2)},
+		testUnparsableQosID: qosData,
 	})
 
 	if _, err := BuildPDUSessionResourceModifyRequestTransfer(ctx); err == nil {
@@ -221,9 +236,13 @@ func TestModifyRequestFailsWhenNoNamedFlowIsIdentifiable(t *testing.T) {
 // reaches the request as QFI 1 -- an identifier that is very likely to exist on the session and
 // belongs to a different flow. The radio would then be asked to modify that one.
 func TestModifyRequestSkipsAnIdentifierThatIsNotAQosFlowIdentifier(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData("257")
+	qosData2.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2":   {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"257": {QosId: "257", Var5qi: openapi.PtrInt32(2)},
+		"2":   qosData1,
+		"257": qosData2,
 	})
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -265,19 +284,28 @@ func decodeReleaseList(t *testing.T, encoded []byte) *ngapType.QosFlowListWithCa
 // A flow an ordinary deletion withdraws has to be named for release, or the radio keeps a bearer
 // for a flow the SMF and the UE have both dropped and the uplink still has somewhere to arrive.
 func TestModifyRequestNamesTheFlowsAnOrdinaryDeletionWithdraws(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData("3")
+	qosData2.SetVar5qi(2)
+
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+		"2": qosData1,
+		"3": qosData2,
 	})
 	// What the PCF sends when it withdraws a rule: flow 3 is established on the session and absent
 	// from the decision, so the delta deletes it. Built through the same delta function production
 	// uses, and it is not the realignment RemoveFlows produces.
-	ctx.SmPolicyData.SmCtxtQosData.QosData["3"] = &models.QosData{QosId: "3", Var5qi: openapi.PtrInt32(2)}
+	qosData3 := models.NewQosData("3")
+	qosData3.SetVar5qi(2)
+	ctx.SmPolicyData.SmCtxtQosData.QosData["3"] = qosData3
 	// A withdrawn flow arrives as an entry with no QosId, which is how the PCF says "deleted" and
 	// what GetQosFlowDescUpdate reads as a deletion -- the identifier is the key.
+	qosData4 := models.NewQosData("2")
+	qosData4.SetVar5qi(1)
 	remaining := map[string]models.QosData{
 		"1": *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
-		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
+		"2": *qosData4,
 		"3": {},
 	}
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(remaining, ctx.SmPolicyData.SmCtxtQosData.QosData)
@@ -304,9 +332,13 @@ func TestModifyRequestNamesTheFlowsAnOrdinaryDeletionWithdraws(t *testing.T) {
 // they were never established there: asking for their release would name a QFI the radio has no
 // record of, for a realignment whose whole purpose is to stop claiming they exist.
 func TestCorrectiveModificationAsksForNoRelease(t *testing.T) {
+	qosData1 := models.NewQosData("2")
+	qosData1.SetVar5qi(1)
+	qosData2 := models.NewQosData("3")
+	qosData2.SetVar5qi(2)
 	ctx := modifyingContext(t, map[string]*models.QosData{
-		"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
-		"3": {QosId: "3", Var5qi: openapi.PtrInt32(2)},
+		"2": qosData1,
+		"3": qosData2,
 	})
 
 	corrective := ctx.SmPolicyUpdates[0].RemoveFlows(qos.RefusedFlowSet([]int64{3}))
@@ -337,7 +369,8 @@ func TestModifyRequestDoesNotReleaseAFlowAnIdentifierOnlyNarrowsInto(t *testing.
 		"257": {},
 		"3":   {},
 	}
-	decision := &models.SmPolicyDecision{QosDecs: &qosDecs}
+	decision := models.NewSmPolicyDecision()
+	decision.SetQosDecs(qosDecs)
 	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&ctx.SmPolicyData, decision)}
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -377,10 +410,9 @@ func TestModifyRequestReleasesAFlowNamedByAReferenceRatherThanItsIdentifier(t *t
 	)
 
 	// What the session has in force: the flow, under the name the policy uses for it.
-	ctx.SmPolicyData.SmCtxtQosData.QosData[reference] = &models.QosData{
-		QosId:  flowID,
-		Var5qi: openapi.PtrInt32(9),
-	}
+	qosData := models.NewQosData(flowID)
+	qosData.SetVar5qi(9)
+	ctx.SmPolicyData.SmCtxtQosData.QosData[reference] = qosData
 
 	// And the decision that withdraws it. A deletion is an entry the policy sends empty under the
 	// name the flow is filed under -- not an entry it leaves out -- so the name is all the
@@ -410,14 +442,15 @@ func TestReleaseOnlyAlsoReleasesTheFlowsTheDecisionWithdraws(t *testing.T) {
 	ctx := modifyingContext(t, nil)
 
 	// A flow this session holds, withdrawn by the decision under the name it was committed under.
-	ctx.SmPolicyData.SmCtxtQosData.QosData["QosData7"] = &models.QosData{QosId: "7"}
+	ctx.SmPolicyData.SmCtxtQosData.QosData["QosData7"] = models.NewQosData("7")
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(
 		map[string]models.QosData{"QosData7": {}},
 		ctx.SmPolicyData.SmCtxtQosData.QosData,
 	)
 
 	// And a PCC rule with no identity, which is what puts this decision on the release-only path.
-	decision := &models.SmPolicyDecision{PccRules: map[string]models.PccRule{"": {}}}
+	decision := models.NewSmPolicyDecision()
+	decision.SetPccRules(map[string]models.PccRule{"": {}})
 	ctx.SmPolicyUpdates[0].SmPolicyDecision = decision
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)

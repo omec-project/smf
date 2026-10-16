@@ -31,7 +31,7 @@ func TestPDUSessionTypeConversions(t *testing.T) {
 }
 
 func TestModelsToSessionAMBR(t *testing.T) {
-	got := ModelsToSessionAMBR(&models.Ambr{Uplink: "10 Mbps", Downlink: "20 Kbps"})
+	got := ModelsToSessionAMBR(models.NewAmbr("10 Mbps", "20 Kbps"))
 	if rate := got.GetSessionAMBRForUplink(); rate != [2]byte{0, 10} {
 		t.Fatalf("uplink rate = %v, want [0 10]", rate)
 	}

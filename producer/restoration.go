@@ -859,7 +859,7 @@ func deleteSmPolicy(smContext *context.SMContext) error {
 	}
 	defer smContext.SMLock.Unlock()
 
-	_, err := consumer.SendSMPolicyAssociationDelete(smContext, &models.ReleaseSmContextRequest{})
+	_, err := consumer.SendSMPolicyAssociationDelete(smContext, models.NewReleaseSmContextRequest())
 	return err
 }
 

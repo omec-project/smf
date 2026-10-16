@@ -49,15 +49,18 @@ func TestShouldRediscoverAMF(t *testing.T) {
 }
 
 func amfDiscoveryProfile(nfInstanceId, apiPrefix string) models.NFProfileDiscovery {
-	svc := models.NFService{ServiceInstanceId: "namf-comm", ServiceName: models.SERVICENAME_NAMF_COMM, ApiPrefix: openapi.PtrString(apiPrefix)}
-	return models.NFProfileDiscovery{
-		NfInstanceId: nfInstanceId,
-		NfType:       models.NFTYPE_AMF,
-		NfStatus:     models.NFSTATUS_REGISTERED,
-		NfServiceList: &map[string]models.NFService{
-			svc.ServiceInstanceId: svc,
-		},
-	}
+	var svc models.NFService
+	svc.SetServiceInstanceId("namf-comm")
+	svc.SetServiceName(models.SERVICENAME_NAMF_COMM)
+	svc.SetApiPrefix(apiPrefix)
+	var prof models.NFProfileDiscovery
+	prof.SetNfInstanceId(nfInstanceId)
+	prof.SetNfType(models.NFTYPE_AMF)
+	prof.SetNfStatus(models.NFSTATUS_REGISTERED)
+	prof.SetNfServiceList(map[string]models.NFService{
+		svc.GetServiceInstanceId(): svc,
+	})
+	return prof
 }
 
 func ids(profiles []models.NFProfileDiscovery) []string {

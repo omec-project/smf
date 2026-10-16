@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/qos"
 )
@@ -39,27 +38,10 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 }
 
 func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) {
-	var maxbrUl openapi.NullableString
-	var maxbrDl openapi.NullableString
-	var gbrUl openapi.NullableString
-	var gbrDl openapi.NullableString
-
-	maxbrUl.Set(nil)
-	maxbrDl.Set(nil)
-	gbrUl.Set(nil)
-	gbrDl.Set(nil)
-
+	qosData := models.NewQosData("5")
+	qosData.SetVar5qi(5)
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{
-		"null-rates": {
-			QosId:   "5",
-			Var5qi:  openapi.PtrInt32(5),
-			MaxbrUl: maxbrUl,
-			MaxbrDl: maxbrDl,
-			GbrUl:   gbrUl,
-			GbrDl:   gbrDl,
-		},
-	})
+	smPolicyDecision.SetQosDecs(map[string]models.QosData{"null-rates": *qosData})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -78,20 +60,13 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 // parameter that real UEs reject (5GSM cause 0x22), so it must be omitted even
 // though the NullableString is set and non-empty.
 func TestBuildAuthorizedQosFlowDescriptionsSkipsZeroRates(t *testing.T) {
-	var maxbrUl openapi.NullableString
-	var maxbrDl openapi.NullableString
-
-	maxbrUl.Set(openapi.PtrString("0 Mbps"))
-	maxbrDl.Set(openapi.PtrString("0 Mbps"))
-
+	qosData := models.NewQosData("9")
+	qosData.SetVar5qi(9)
+	qosData.SetMaxbrUl("0 Mbps")
+	qosData.SetMaxbrDl("0 Mbps")
 	smPolicyDecision := models.NewSmPolicyDecision()
 	smPolicyDecision.SetQosDecs(map[string]models.QosData{
-		"zero-rates": {
-			QosId:   "9",
-			Var5qi:  openapi.PtrInt32(9),
-			MaxbrUl: maxbrUl,
-			MaxbrDl: maxbrDl,
-		},
+		"zero-rates": *qosData,
 	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
@@ -113,22 +88,14 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsZeroRates(t *testing.T) {
 // overflows the 16-bit rate field. All would otherwise reintroduce the invalid
 // rate parameter that this guard prevents.
 func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
-	var maxbrUl openapi.NullableString
-	var maxbrDl openapi.NullableString
-	var gbrUl openapi.NullableString
-
-	maxbrUl.Set(openapi.PtrString("10"))      // missing unit -> GetBitRate yields 0
-	maxbrDl.Set(openapi.PtrString("-1 Mbps")) // negative -> rejected by ParseUint
+	qosData := models.NewQosData("9")
+	qosData.SetVar5qi(9)
+	qosData.SetMaxbrUl("10")      // missing unit -> GetBitRate yields 0
+	qosData.SetMaxbrDl("-1 Mbps") // negative -> rejected by ParseUint
 
 	smPolicyDecision := models.NewSmPolicyDecision()
 	smPolicyDecision.SetQosDecs(map[string]models.QosData{
-		"malformed-rates": {
-			QosId:   "9",
-			Var5qi:  openapi.PtrInt32(9),
-			MaxbrUl: maxbrUl,
-			MaxbrDl: maxbrDl,
-			GbrUl:   gbrUl,
-		},
+		"malformed-rates": *qosData,
 	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}

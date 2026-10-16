@@ -131,7 +131,8 @@ func TestGetSMContext_DoesNotResurrectAfterDeleteFailed(t *testing.T) {
 // recovers via SMContext.UnmarshalJSON exactly as GetSMContextByRefInDB does, so a future encoder
 // swap that silently drops or reshapes persisted fields fails here instead of in production.
 func TestSMContextDBRoundTrip_PreservesFieldsAcrossSerializerMigration(t *testing.T) {
-	sd := "0a0b0c"
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("0a0b0c")
 	defaultSessionType := models.PDUSESSIONTYPE_IPV4
 	const nodeAddr = "10.1.1.1"
 	original := &SMContext{
@@ -142,7 +143,7 @@ func TestSMContextDBRoundTrip_PreservesFieldsAcrossSerializerMigration(t *testin
 		PDUSessionID:   5,
 		AnType:         models.ACCESSTYPE__3_GPP_ACCESS,
 		SMContextState: SmStateActive,
-		Snssai:         &models.Snssai{Sst: 1, Sd: &sd},
+		Snssai:         snssai,
 		// NfStatus and SscModes.DefaultSscMode have custom UnmarshalJSON that reject "": real
 		// values are required here, since the zero-value structs would otherwise fail to
 		// unmarshal and make this a vacuous, unrepresentative round trip.
