@@ -6,6 +6,7 @@ package producer
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -1050,5 +1051,120 @@ func TestACorrectionProgramsNothingForTheFlowItWithdraws(t *testing.T) {
 		if t.Failed() {
 			return
 		}
+	}
+}
+
+// The radio's end of the session's tunnel, as the setup response at establishment records it.
+var (
+	gnbN3IP   = net.ParseIP("192.0.2.10")
+	gnbN3TEID = uint32(0x2a)
+)
+
+// withConnection gives the fixture an access connection: up, with the radio's end of the tunnel
+// known, or released to idle.
+func (s *twoRuleSession) withConnection(activated bool) {
+	s.sm.Tunnel.ANInformation.IPAddress = gnbN3IP
+	s.sm.Tunnel.ANInformation.TEID = gnbN3TEID
+	s.sm.UpCnxState = models.UPCNXSTATE_DEACTIVATED
+	if activated {
+		s.sm.UpCnxState = models.UPCNXSTATE_ACTIVATED
+	}
+}
+
+// addAppRule is a decision adding one rule, with its own QoS data, beside the two established.
+func (s *twoRuleSession) addAppRule() *models.SmPolicyDecision {
+	const appRuleID, appQosID = "app", "2"
+
+	return roundTrip(&models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{
+			allowRuleID: s.allowRule, cirRuleID: s.cirRule,
+			appRuleID: {
+				PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
+				FlowInfos: []models.FlowInformation{{
+					FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
+					PackFiltId:      openapi.PtrString("7"),
+				}},
+			},
+		},
+		QosDecs: &map[string]models.QosData{
+			allowQosID: s.allowQos, cirQosID: s.cirQosSent,
+			appQosID: {QosId: appQosID, Var5qi: openapi.PtrInt32(2)},
+		},
+	})
+}
+
+// forwardsToTheRadio reports whether a downlink FAR, as sent, forwards to the radio's end of the
+// session's tunnel.
+func forwardsToTheRadio(param *pfcpParam, far *smf_context.FAR) bool {
+	sent := false
+	for _, f := range param.farList {
+		sent = sent || f == far
+	}
+	ohc := far.ForwardingParameters
+	return sent && far.ApplyAction.Forw && !far.ApplyAction.Buff && ohc != nil && ohc.OuterHeaderCreation != nil &&
+		ohc.DestinationInterface.InterfaceValue == smf_context.DestinationInterfaceAccess &&
+		ohc.OuterHeaderCreation.Teid == gnbN3TEID && ohc.OuterHeaderCreation.Ipv4Address.Equal(gnbN3IP)
+}
+
+// A rule added to a session whose access connection is up forwards its downlink to the radio.
+// It used to be created buffering, as at establishment, and nothing switched it over: the setup
+// response that re-points downlink rules comes only when a connection is activated, and a downlink
+// report is acted on only for a deactivated one. So the added rule's downlink was held for good.
+// With the connection released to idle it still buffers and reports, so its downlink pages the UE.
+func TestAnAddedRuleForwardsDownlinkWhileTheConnectionIsUp(t *testing.T) {
+	for _, activated := range []bool{true, false} {
+		s := newTwoRuleSession(t, false)
+		s.withPfcpContext()
+		s.withConnection(activated)
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.addAppRule())}
+
+		param := BuildPfcpParam(s.sm)
+
+		dl := s.sm.Tunnel.DataPathPool[1].FirstDPNode.DownLinkTunnel.PDR["app"]
+		if dl == nil || dl.FAR == nil {
+			t.Fatal("the added rule has no downlink PDR and FAR")
+		}
+		if activated && !forwardsToTheRadio(param, dl.FAR) {
+			t.Errorf("connection up: the added rule's downlink FAR is %+v, not forwarding to the radio", dl.FAR.ApplyAction)
+		}
+		if !activated && (!dl.FAR.ApplyAction.Buff || !dl.FAR.ApplyAction.Nocp || dl.FAR.ApplyAction.Forw) {
+			t.Errorf("connection released: the added rule's downlink FAR is %+v, want buffering and reporting", dl.FAR.ApplyAction)
+		}
+	}
+}
+
+// A withdrawal the UE was never told about is reverted by re-creating the rule, which goes through
+// the same builder as an added one. With the connection up, its downlink forwards again: buffered,
+// the revert reported the user plane restored while the rule's downlink went nowhere.
+func TestARuleReinstatedByARevertForwardsDownlink(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	var sent *pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sent = p
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	s.withConnection(true)
+	s.cirRule.FlowInfos = []models.FlowInformation{{
+		FlowDescription: openapi.PtrString("permit out ip from 192.168.250.1/32 to assigned"),
+		PackFiltId:      openapi.PtrString("5"),
+	}}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.deleteDedicatedRule())); err == nil {
+		t.Fatal("the undeliverable modification was reported as delivered")
+	}
+
+	dl := s.sm.Tunnel.DataPathPool[1].FirstDPNode.DownLinkTunnel.PDR[cirRuleID]
+	if dl == nil || !sent.touches(dl) {
+		t.Fatal("the withdrawn rule's downlink PDR was not re-created")
+	}
+	if !forwardsToTheRadio(sent, dl.FAR) {
+		t.Errorf("the reinstated rule's downlink FAR is %+v, not forwarding to the radio", dl.FAR.ApplyAction)
 	}
 }
