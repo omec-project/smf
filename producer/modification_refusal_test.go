@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -488,6 +489,57 @@ func TestN1HandlersDoNotRetakeTheSessionLock(t *testing.T) {
 			case <-done:
 			case <-time.After(5 * time.Second):
 				t.Fatal("the handler did not return with SMLock held: it deadlocked, which wedges the session and never answers the AMF")
+			}
+		})
+	}
+}
+
+// A refusal the SMF cannot write must not go out as a 200 carrying no answer: the AMF would take
+// the update as handled and the UE would be left retrying into silence, as before the refusal
+// existed. The handler returns the error with no response set, which the HTTP layer answers as a
+// system failure. Each arm is driven, since each passes the error on by itself.
+func TestARefusalThatCannotBeWrittenFailsTheUpdate(t *testing.T) {
+	tests := []struct {
+		name         string
+		requestedID  int32
+		contextState smf_context.SMContextState
+	}{
+		{"identity the context does not hold", 11, smf_context.SmStateActive},
+		{"session never established", 10, smf_context.SmStateInit},
+		{"modification not supported", 10, smf_context.SmStateActive},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			smContext := activeSmContext(10)
+			smContext.SMContextState = tc.contextState
+
+			file, err := os.CreateTemp(t.TempDir(), "n1sm")
+			if err != nil {
+				t.Fatalf("could not create the N1 payload file: %v", err)
+			}
+			if _, err := file.Write(craftModificationRequest(t, tc.requestedID, 3)); err != nil {
+				t.Fatalf("could not write the N1 payload: %v", err)
+			}
+			t.Cleanup(func() { _ = file.Close() })
+
+			// The reject's payload goes to a temporary file; with no temporary directory, writing
+			// it fails as it would on a full or unwritable one.
+			t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+
+			body := models.UpdateSmContextRequest{}
+			body.SetBinaryDataN1SmMessage(file)
+			response := models.NewUpdateSmContext200Response()
+			txn := &transaction.Transaction{Req: body, Ctxt: smContext}
+
+			if err := HandleUpdateN1Msg(txn, response, &pfcpAction{}); err == nil {
+				t.Fatal("HandleUpdateN1Msg returned nil: the update would be answered 200 with no N1 message")
+			}
+			if txn.Rsp != nil {
+				t.Errorf("a response was set (%v); the HTTP layer answers a system failure only when none is", txn.Rsp)
+			}
+			if response.GetBinaryDataN1SmMessage() != nil {
+				t.Error("the response carries an N1 SM message although the reject could not be written")
 			}
 		})
 	}

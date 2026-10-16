@@ -274,19 +274,23 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// another would make the log unusable for exactly the case worth investigating.
 			// Each arm passes its cause as a literal rather than assigning one variable, so that
 			// the error-key scan in smferrors can enumerate the keys this path uses.
+			var refusal error
 			switch {
 			case pduSessIDModReq != sessionID:
 				// An identity the SMF does not hold for this context.
-				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+				refusal = refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
 					"InvalidPDUSessionIdentity")
 			case state == context.SmStateInit, state == context.SmStateInActivePending:
 				// Established but on the way out, or never established. TS 24.501 subclause
 				// 6.4.2.6 item b: an inactive PDU session identity takes #43, not the refusal.
-				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+				refusal = refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
 					"InvalidPDUSessionIdentity")
 			default:
-				refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
+				refusal = refuseUeRequestedModification(smContext, response, pduSessIDModReq, pti, state,
 					"ModificationNotSupported")
+			}
+			if refusal != nil {
+				return refusal
 			}
 
 		case nas.MsgTypePDUSessionModificationComplete:
@@ -1230,28 +1234,30 @@ func correct(smContext *context.SMContext, corrective *qos.PolicyUpdate, refused
 // The cause arrives as a parameter rather than being computed at the builder call, which is what
 // lets the error-key scan in smferrors account for every key that reaches the tables: a key it
 // cannot enumerate would make it report the remaining literals as though the set were complete.
+//
+// A reject that cannot be built or written is returned as an error, with no response set, so the
+// AMF is answered with a system failure. Answering 200 with no N1 message would leave the request
+// as unanswered as it was before this refusal existed.
 func refuseUeRequestedModification(smContext *context.SMContext,
 	response *models.UpdateSmContext200Response, pduSessionID int32, pti uint8,
 	state context.SMContextState, cause string,
-) {
+) error {
 	smContext.SubPduSessLog.Warnf(
 		"PDUSessionSMContextUpdate, N1 Msg PDU Session Modification Request received for pdu session %d (pti %d), state %s; refusing with %s",
 		pduSessionID, pti, state.String(), cause)
 
 	buf, err := context.BuildGSMPDUSessionModificationRejectWithCause(pduSessionID, pti, cause)
 	if err != nil {
-		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionModificationReject failed: %+v", err)
-
-		return
+		return fmt.Errorf("build GSM PDUSessionModificationReject: %w", err)
 	}
 	tmpFile, err := util.CreatePayloadTempFile(buf)
 	if err != nil {
-		smContext.SubPduSessLog.Errorln(err)
-
-		return
+		return fmt.Errorf("write GSM PDUSessionModificationReject: %w", err)
 	}
 	response.SetBinaryDataN1SmMessage(tmpFile)
 	jsonData := response.GetJsonData()
 	jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionModificationReject"})
 	response.SetJsonData(jsonData)
+
+	return nil
 }
