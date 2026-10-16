@@ -1401,3 +1401,28 @@ func TestASessionQERIsBuiltOnlyForRulesAddedToAnEmptiedNode(t *testing.T) {
 		}
 	})
 }
+
+// A decision with no PCC rule in it -- here one changing only the session AMBR -- adds none, and
+// the tunnel build makes PDRs for added rules alone. Called with no rule in the update, it allocated
+// a "default" PDR and FAR and stored them over whatever rule went by that name.
+func TestADecisionWithNoPccRuleAllocatesNoPdr(t *testing.T) {
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	defaultRuleDL := s.allowDL
+	node.DownLinkTunnel.PDR = map[string]*smf_context.PDR{defaultPdrKey: defaultRuleDL, cirRuleID: s.cirDL}
+
+	decision := roundTrip(&models.SmPolicyDecision{SessRules: &map[string]models.SessionRule{
+		"session": {SessRuleId: "session", AuthSessAmbr: &models.Ambr{Uplink: "120 Mbps", Downlink: "300 Mbps"}},
+	}})
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	BuildPfcpParam(s.sm)
+
+	if got := node.DownLinkTunnel.PDR[defaultPdrKey]; got != defaultRuleDL {
+		t.Errorf("the rule named \"default\" now has PDR %v in place of its own", got)
+	}
+	if len(node.UpLinkTunnel.PDR) != 2 || len(node.DownLinkTunnel.PDR) != 2 {
+		t.Errorf("the tunnels hold %d and %d PDRs, want the two rules' own", len(node.UpLinkTunnel.PDR), len(node.DownLinkTunnel.PDR))
+	}
+}

@@ -155,16 +155,3 @@ func compareUpPathChgEvent(a, b *models.UpPathChgEvent) bool {
 		a.NotifCorreId == b.NotifCorreId &&
 		a.DnaiChgType == b.DnaiChgType
 }
-
-func GetTcDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, refTcData string) *models.TrafficControlData {
-	if smPolicyDecision == nil || !smPolicyDecision.HasTraffContDecs() {
-		return nil
-	}
-
-	traffContDecs := smPolicyDecision.GetTraffContDecs()
-	tcData, exists := traffContDecs[refTcData]
-	if !exists {
-		return nil
-	}
-	return &tcData
-}
