@@ -120,6 +120,49 @@ func TestGetNfProfile(t *testing.T) {
 	}
 }
 
+// Each configured NF service must own an independent Versions backing array,
+// so mutating one service's version (e.g. during hostname normalization) does
+// not leak into every other service sharing the same NF profile.
+func TestGetNfProfile_VersionsNotSharedBetweenServices(t *testing.T) {
+	validCtx := makeSMFContext()
+	originalCfg := factory.SmfConfig.Configuration
+	defer func() {
+		factory.SmfConfig.Configuration = originalCfg
+	}()
+	factory.SmfConfig.Configuration = &factory.Configuration{
+		ServiceNameList: []string{"nsmf-pdusession", "nsmf-event-exposure"},
+	}
+
+	profile, err := getNfProfile(validCtx, []nfConfigApi.SessionManagement{makeSessionCfg()})
+	if err != nil {
+		t.Fatalf("did not expect error, got: %v", err)
+	}
+
+	services := profile.GetNfServiceList()
+	if len(services) != 2 {
+		t.Fatalf("expected 2 services, got %d", len(services))
+	}
+
+	var mutatedKey string
+	for key, svc := range services {
+		versions := svc.GetVersions()
+		versions[0].SetApiFullVersion("mutated")
+		svc.SetVersions(versions)
+		services[key] = svc
+		mutatedKey = key
+		break
+	}
+
+	for key, svc := range services {
+		versions := svc.GetVersions()
+		wantMutated := key == mutatedKey
+		gotMutated := len(versions) > 0 && versions[0].GetApiFullVersion() == "mutated"
+		if gotMutated != wantMutated {
+			t.Errorf("service %q: mutation leaked across services (Versions slice is shared)", key)
+		}
+	}
+}
+
 func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
 	originalHTTPClientFactory := newNrfNFManagementHTTPClient
 	defer func() {

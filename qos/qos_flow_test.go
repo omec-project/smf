@@ -40,6 +40,10 @@ func TestBuildAuthorizedQosFlowDescriptions(t *testing.T) {
 func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) {
 	qosData := models.NewQosData("5")
 	qosData.SetVar5qi(5)
+	qosData.MaxbrUl.Set(nil)
+	qosData.MaxbrDl.Set(nil)
+	qosData.GbrUl.Set(nil)
+	qosData.GbrDl.Set(nil)
 	smPolicyDecision := models.NewSmPolicyDecision()
 	smPolicyDecision.SetQosDecs(map[string]models.QosData{"null-rates": *qosData})
 

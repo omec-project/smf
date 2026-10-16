@@ -120,16 +120,16 @@ func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.Sessi
 	}
 	nfServiceList := make(map[string]models.NFService, len(serviceNames))
 	apiPrefix := fmt.Sprintf("%s://%s:%d", smfCtx.URIScheme, advertisedRegisterIPv4, smfCtx.SBIPort)
-	var nfServiceVersion models.NFServiceVersion
-	nfServiceVersion.ApiVersionInUri = "v1"
-	nfServiceVersion.ApiFullVersion = fmt.Sprintf("%s/nsmf-pdusession/v1", apiPrefix)
 	var svc models.NFService
 	svc.SetScheme(smfCtx.URIScheme)
 	svc.SetNfServiceStatus(models.NFSERVICESTATUS_REGISTERED)
 	svc.SetApiPrefix(apiPrefix)
-	svc.SetVersions([]models.NFServiceVersion{nfServiceVersion})
 	svc.SetAllowedPlmns(plmnList)
 	for _, serviceName := range serviceNames {
+		var nfServiceVersion models.NFServiceVersion
+		nfServiceVersion.SetApiVersionInUri("v1")
+		nfServiceVersion.SetApiFullVersion(fmt.Sprintf("%s/nsmf-pdusession/v1", apiPrefix))
+		svc.SetVersions([]models.NFServiceVersion{nfServiceVersion})
 		svc.SetServiceInstanceId(smfCtx.NfInstanceID + "-" + serviceName)
 		svc.SetServiceName(models.ServiceName(serviceName))
 		nfServiceList[svc.GetServiceInstanceId()] = svc

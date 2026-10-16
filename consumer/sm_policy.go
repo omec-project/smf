@@ -52,8 +52,12 @@ func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.Sm
 	smPolicyData.SetAccessType(smContext.AnType)
 	smPolicyData.SetRatType(smContext.RatType)
 	smPolicyData.SetIpv4Address(smContext.PDUAddress.Ip.To4().String())
-	smPolicyData.SetSubsSessAmbr(smContext.DnnConfiguration.GetSessionAmbr())
-	smPolicyData.SetSubsDefQos(smContext.DnnConfiguration.GetVar5gQosProfile())
+	if smContext.DnnConfiguration.HasSessionAmbr() {
+		smPolicyData.SetSubsSessAmbr(smContext.DnnConfiguration.GetSessionAmbr())
+	}
+	if smContext.DnnConfiguration.HasVar5gQosProfile() {
+		smPolicyData.SetSubsDefQos(smContext.DnnConfiguration.GetVar5gQosProfile())
+	}
 	smPolicyData.SetSliceInfo(*smContext.Snssai)
 	smPolicyData.SetServingNetwork(plmnIdNid)
 	smPolicyData.SetSuppFeat("F")
