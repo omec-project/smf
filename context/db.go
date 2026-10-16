@@ -538,6 +538,10 @@ func IsSmContextDeleteFailed(ref string) bool {
 	return failed
 }
 
+// deleteRetryBackoff is how long DeleteSmContextInDBByRef waits between retry attempts. A var
+// rather than a const so a test can shrink it instead of waiting out the real backoff.
+var deleteRetryBackoff = 100 * time.Millisecond
+
 // DeleteSmContextInDBByRef deletes the by-ref SMContext document. Callers (RemoveSMContext) must
 // hold the SMContext's SMLock across this call, the same lock AsyncStoreSmContextInDB takes
 // before enqueueing a write, so a write for this ref can never be enqueued after this delete and
@@ -551,11 +555,6 @@ func IsSmContextDeleteFailed(ref string) bool {
 // same ref could miss the pool, read it back, and reinsert the context this call is meant to
 // remove. If every attempt fails, ref is tombstoned in smContextDeleteFailed so that risk stays
 // closed even though the document itself could not be removed.
-
-// deleteRetryBackoff is how long DeleteSmContextInDBByRef waits between retry attempts. A var
-// rather than a const so a test can shrink it instead of waiting out the real backoff.
-var deleteRetryBackoff = 100 * time.Millisecond
-
 func DeleteSmContextInDBByRef(ref string) {
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB w ref")
 	const maxAttempts = 3
