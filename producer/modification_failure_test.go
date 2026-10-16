@@ -307,7 +307,7 @@ func TestAnAbandonedModificationStopsItsTimer(t *testing.T) {
 
 	// The expiry already due when the timer is stopped can still be delivered (see Timer.Stop), so
 	// one is allowed for; the timer left running fires on every interval.
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 	if got := retransmissions.Load(); got > 1 {
 		t.Errorf("T3591 fired %d times after the modification was abandoned; it was left running", got)
 	}

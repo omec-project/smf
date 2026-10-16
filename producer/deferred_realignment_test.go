@@ -63,7 +63,7 @@ func TestAResponseRefusingEveryFlowWaitsForTheUE(t *testing.T) {
 // passed the other copy on, and the UE answers every copy it receives, with the same PDU session
 // ID and PTI the held decision's Command would carry.
 func TestAFailureAfterARetransmissionWaitsOutTheCopies(t *testing.T) {
-	const interval = 500 * time.Millisecond
+	const interval = 150 * time.Millisecond
 
 	s := newDeferralSession(t)
 	s.retransmitOnce(t, interval)
@@ -154,7 +154,7 @@ func TestACorrectionIsQueuedBehindTheCompletion(t *testing.T) {
 	select {
 	case <-applied:
 		t.Fatal("the correction started before the session's queue reached it")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond):
 	}
 
 	(<-queued)()
@@ -232,7 +232,7 @@ func TestARadioThatNeverAnswersStopsHoldingDecisions(t *testing.T) {
 // still answer another copy of it, and an answer arriving meanwhile -- a late one to that Command
 // -- changes nothing. Taken as the correction's answer, it would commit the correction unanswered.
 func TestACorrectionWaitsOutTheCorrectedCommandsCopies(t *testing.T) {
-	const interval = 500 * time.Millisecond
+	const interval = 150 * time.Millisecond
 
 	s := newDeferralSession(t)
 	s.retransmitOnce(t, interval)

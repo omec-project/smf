@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/omec-project/openapi/v2/Namf_Communication"
 	"github.com/omec-project/openapi/v2/Npcf_SMPolicyControl"
@@ -50,6 +51,10 @@ func withSmContextWriteWorkers(t *testing.T, fake *fakeDeleteOneDBClient, fn fun
 }
 
 func TestDeleteSmContextInDBByRef_RetriesUntilSuccess(t *testing.T) {
+	originalBackoff := deleteRetryBackoff
+	deleteRetryBackoff = time.Millisecond
+	t.Cleanup(func() { deleteRetryBackoff = originalBackoff })
+
 	fake := &fakeDeleteOneDBClient{failThenSucceed: 2}
 	ref := "some-ref-retries-until-success"
 	withSmContextWriteWorkers(t, fake, func() {
@@ -64,6 +69,10 @@ func TestDeleteSmContextInDBByRef_RetriesUntilSuccess(t *testing.T) {
 }
 
 func TestDeleteSmContextInDBByRef_GivesUpAfterMaxAttempts(t *testing.T) {
+	originalBackoff := deleteRetryBackoff
+	deleteRetryBackoff = time.Millisecond
+	t.Cleanup(func() { deleteRetryBackoff = originalBackoff })
+
 	fake := &fakeDeleteOneDBClient{failThenSucceed: 100}
 	ref := "some-ref-gives-up"
 	withSmContextWriteWorkers(t, fake, func() {
