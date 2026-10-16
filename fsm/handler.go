@@ -66,6 +66,13 @@ func InitFsm() {
 	// met EmptyEventHandler and was dropped, after which T3591 retransmitted a command the UE had
 	// already accepted and eventually abandoned a modification that had succeeded.
 	SmfFsmHandler[smf_context.SmStatePfcpModify][SmEventPduSessModify] = HandleStateActiveEventPduSessModify
+	// A UE-requested modification can also arrive for a context that was never established or is
+	// being torn down: TS 24.501 subclause 6.4.2.6 item b still requires the #43 reject. Before this,
+	// the event met EmptyEventHandler, HandleUpdateN1Msg's refusal was never reached, and the AMF got
+	// a bare 500 with no N1 answer. HandleStateActiveEventPduSessModify is not reused here because it
+	// returns SmStateActive on success, which would reactivate a session this refusal does not.
+	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
+	SmfFsmHandler[smf_context.SmStateInActivePending][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
@@ -164,6 +171,22 @@ func HandleStateActiveEventPduSessModify(event SmEvent, eventData *SmEventData) 
 		return smf_context.SmStateActive, err
 	}
 	return smf_context.SmStateActive, nil
+}
+
+// HandleInactiveStateEventPduSessModify runs the update pipeline for a context that is not active,
+// without assuming it becomes active on success: HandlePDUSessionSMContextUpdate's own
+// SmStateInit/SmStateInActivePending/SmStateRelease branch already answers 200 OK without changing
+// state, and leaves the next state at whatever the call left it (e.g. SmStateRelease if the N1
+// message it answered was a PDUSessionReleaseComplete).
+func HandleInactiveStateEventPduSessModify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
+	txn := eventData.Txn.(*transaction.Transaction)
+	smCtxt := txn.Ctxt.(*smf_context.SMContext)
+
+	if err := producer.HandlePDUSessionSMContextUpdate(eventData.Txn); err != nil {
+		smCtxt.SubFsmLog.Errorf("sm context update error, %v ", err.Error())
+		return smCtxt.SMContextState, err
+	}
+	return smCtxt.SMContextState, nil
 }
 
 func HandleStateActiveEventPduSessRelease(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {

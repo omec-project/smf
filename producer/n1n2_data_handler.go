@@ -440,6 +440,21 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 	return nil
 }
 
+// isSmContextInactive reports whether the SM context has no established (or surviving) user
+// plane: Init (never established), InActivePending (being torn down) and Release (just removed
+// by an earlier phase of this same update, e.g. an N1 PDUSessionReleaseComplete). UpCnxState,
+// HoState and the N2 PDU session resource setup responses handled below all assume an active
+// user plane per TS 23.502 clause 4.2.3/4.9; running them against one of these states can
+// reactivate a session mid-teardown or dereference a Tunnel releaseTunnel has already cleared.
+func isSmContextInactive(state context.SMContextState) bool {
+	switch state {
+	case context.SmStateInit, context.SmStateInActivePending, context.SmStateRelease:
+		return true
+	default:
+		return false
+	}
+}
+
 func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmContext200Response, pfcpAction *pfcpAction, pfcpParam *pfcpParam) error {
 	body := txn.Req.(models.UpdateSmContextRequest)
 	smContext := txn.Ctxt.(*context.SMContext)
@@ -447,6 +462,11 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 
 	switch smContextUpdateData.GetUpCnxState() {
 	case models.UPCNXSTATE_ACTIVATING:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring UP cnx state %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetUpCnxState(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.GetUpCnxState())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes SmStateActive again
@@ -475,6 +495,11 @@ func HandleUpCnxState(txn *transaction.Transaction, response *models.UpdateSmCon
 		}
 		response.SetBinaryDataN2SmInformation(tmpFile)
 	case models.UPCNXSTATE_DEACTIVATED:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring UP cnx state %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetUpCnxState(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, UP cnx state %v received", smContextUpdateData.GetUpCnxState())
 		if smContext.SMContextState != context.SmStateActive {
 			// Wait till the state becomes Active again
@@ -531,6 +556,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 
 	switch smContextUpdateData.GetHoState() {
 	case models.HOSTATE_PREPARING:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring Ho state %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetHoState(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_PREPARING")
 		if smContext.SMContextState != context.SmStateActive {
@@ -568,6 +598,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 		jd.SetHoState(models.HOSTATE_PREPARING)
 		response.SetJsonData(jd)
 	case models.HOSTATE_PREPARED:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring Ho state %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetHoState(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_PREPARED")
 		if smContext.SMContextState != context.SmStateActive {
@@ -618,6 +653,11 @@ func HandleUpdateHoState(txn *transaction.Transaction, response *models.UpdateSm
 			}
 		}
 	case models.HOSTATE_COMPLETED:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring Ho state %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetHoState(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, Ho state %v received", smContextUpdateData.GetHoState())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, in HoState_COMPLETED")
 		if smContext.SMContextState != context.SmStateActive {
@@ -643,6 +683,14 @@ func HandleUpdateCause(txn *transaction.Transaction, response *models.UpdateSmCo
 
 	switch smContextUpdateData.GetCause() {
 	case models.CAUSE_REL_DUE_TO_DUPLICATE_SESSION_ID:
+		if isSmContextInactive(smContext.SMContextState) {
+			// SendPfcpSessionReleaseReq always waits on SBIPFCPCommunicationChan after calling
+			// releaseTunnel; with no tunnel left to delete, releaseTunnel sends nothing and that
+			// wait never returns, hanging this update while it still holds smContext.SMLock.
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring update cause %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetCause(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, update cause %v received", smContextUpdateData.GetCause())
 		//* release PDU Session Here
 		if smContext.SMContextState != context.SmStateActive {
@@ -696,6 +744,11 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		return handleModifyFailure(smContext, body)
 
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_RSP:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring N2 SM info type %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetN2SmInfoType(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
@@ -749,6 +802,11 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.ChangeState(context.SmStatePfcpModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 	case models.N2SMINFOTYPE_PDU_RES_SETUP_FAIL:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring N2 SM info type %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetN2SmInfoType(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
 		fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
@@ -808,6 +866,11 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 		}
 	case models.N2SMINFOTYPE_PATH_SWITCH_REQ:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring N2 SM info type %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetN2SmInfoType(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, handle Path Switch Request")
@@ -870,6 +933,11 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 		smContext.ChangeState(context.SmStatePfcpModify)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 	case models.N2SMINFOTYPE_PATH_SWITCH_SETUP_FAIL:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring N2 SM info type %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetN2SmInfoType(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
@@ -889,6 +957,11 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			smContext.SubPduSessLog.Error()
 		}
 	case models.N2SMINFOTYPE_HANDOVER_REQUIRED:
+		if isSmContextInactive(smContext.SMContextState) {
+			smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring N2 SM info type %v: SM context state[%v] has no active user plane",
+				smContextUpdateData.GetN2SmInfoType(), smContext.SMContextState.String())
+			break
+		}
 		smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, N2 SM info type %v received",
 			smContextUpdateData.GetN2SmInfoType())
 		if smContext.SMContextState != context.SmStateActive {
