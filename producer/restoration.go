@@ -273,6 +273,14 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 		if establishing > 0 {
 			// Not an empty node. These are being set up right now and their own establishment owns
 			// them; restoration must not touch one, but nor should it report the node as bare.
+			//
+			// KNOWN LIMITATION: one of these may be a session this very node had already accepted
+			// before it restarted, now create-pending only because another UPF on the path has yet to
+			// answer. Its rules were lost to the restart, but it is excluded here (see
+			// SessionsAnchoredOn's createStillPending) and no later sweep picks it up, so the create
+			// can complete as a success over a leg this node no longer holds. Deferring a restoration
+			// candidate until the create finishes, or failing the affected create, is tracked as
+			// follow-up.
 			logger.PfcpLog.Infof("UPF[%s] restarted with no established sessions to restore; %d are "+
 				"still being set up and are left to the paths establishing them", nodeIP, establishing)
 		} else {

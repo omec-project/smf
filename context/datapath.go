@@ -383,6 +383,25 @@ func (dataPathPool DataPathPool) GetDefaultPath() (dataPath *DataPath) {
 	return
 }
 
+// FindNode returns the node on this data path whose UPF is configured with nodeID, or nil if none is.
+//
+// The match is on the configured NodeID (NodeID.Equal), not on a resolved address: a response's UPF
+// and the node describing it share the same configured NodeID, so comparing those identities
+// correlates them without resolving either -- even for an FQDN UPF whose address has drifted since
+// dispatch. An earlier version resolved both sides to an IP and compared the strings; a DNS refresh
+// landing between the caller's resolution and this one made the same configured UPF fail to match, so
+// its F-TEID update was skipped while its acceptance still counted -- and a successful create could
+// then advertise the access tunnel's old TEID. Used to apply an establishment response's F-TEID to the
+// node that actually sent it, instead of assuming it is the access node.
+func (dataPath *DataPath) FindNode(nodeID NodeID) *DataPathNode {
+	for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+		if node.UPF != nil && node.UPF.NodeID.Equal(nodeID) {
+			return node
+		}
+	}
+	return nil
+}
+
 func (dataPath *DataPath) String() string {
 	firstDPNode := dataPath.FirstDPNode
 

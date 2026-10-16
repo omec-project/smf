@@ -69,6 +69,9 @@ func TestAnEstablishmentWithMoreThanOneUplinkFTEIDIsReported(t *testing.T) {
 			ies := []*ie.IE{
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID(ip, "", ""),
+				// A successful establishment response carries the UP F-SEID (TS 29.244): without it the
+				// SMF treats the response as a rejection and never reaches the F-TEID check.
+				ie.NewFSEID(0xABCD, net.ParseIP(ip), nil),
 			}
 			for i, teid := range tc.teids {
 				ies = append(ies, ie.NewCreatedPDR(
