@@ -179,6 +179,21 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, SM Context State[%v] should be SmStateActive", smContext.SMContextState.String())
 			}
 			if pduSessIDRelReq == pduSessIDSmCxt {
+				if isSmContextInactive(smContext.SMContextState) {
+					// A retransmitted Release Request for a session with no active user plane
+					// (Tunnel already cleared by releaseTunnel in SmStateInActivePending, or never
+					// established in SmStateInit) must not be reprocessed: doing so would still
+					// reach the Tunnel == nil branch below, which leaves the context in
+					// SmStateModify, and HandlePDUSessionSMContextUpdate's final dispatch
+					// unconditionally promotes SmStateModify to SmStateActive -- reactivating a
+					// session whose user plane no longer exists instead of just acknowledging the
+					// retransmission. This guard only applies to a release request naming the
+					// session the context actually holds: a mismatched identity must still fall
+					// through to the reject branch below regardless of state.
+					smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring PDU Session Release Request: SM context state[%v] has no active user plane",
+						smContext.SMContextState.String())
+					break
+				}
 				smContext.HandlePDUSessionReleaseRequest(m.PDUSessionReleaseRequest)
 				if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
 					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
