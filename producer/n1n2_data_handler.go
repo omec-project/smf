@@ -37,6 +37,9 @@ type pfcpParam struct {
 	removePDR []*context.PDR // Add for teardown
 	removeFAR []*context.FAR
 	removeQER []*context.QER
+	// What BuildPfcpParam could not build. It logs and skips a rule it cannot program, so the
+	// lists above can be short of the update, or empty, with nothing in them saying so.
+	unbuilt []error
 }
 
 func buildAccessForwardingParameters(smContext *context.SMContext,

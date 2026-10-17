@@ -252,6 +252,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		if len(sessQERs) == 0 && !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 && !hasPDRs(ANUPF) {
 			if sessQER, err := ANUPF.CreateSessRuleQer(smContext); err != nil {
 				smContext.SubPduSessLog.Errorf("the rules added to UPF %s carry no session AMBR: %v", ANUPF.GetNodeIP(), err)
+				pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("session QER on UPF %s: %w", ANUPF.GetNodeIP(), err))
 			} else {
 				sessQERs = map[uint32]*smfContext.QER{sessQER.QERID: sessQER}
 				pfcpParam.qerList = append(pfcpParam.qerList, sessQER)
@@ -266,6 +267,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
 			}
+			pfcpParam.unbuilt = append(pfcpParam.unbuilt, unbuiltAddedRules(smContext, ANUPF)...)
 		}
 
 		// A rule the update deletes is withdrawn from the user plane here. The radio is told to
@@ -369,6 +371,27 @@ func hasPDRs(node *smfContext.DataPathNode) bool {
 		}
 	}
 	return false
+}
+
+// unbuiltAddedRules reports each rule the update adds that the tunnel build left without a PDR in
+// either direction, or with one carrying no flow QER although the rule names QoS data -- a rule
+// that names none has no flow QER at establishment either. The build logs and skips such a rule -- an
+// unassociated node or an exhausted ID pool among the causes -- and where it returns an error, it
+// has stopped before the downlink, so either way nothing else says the rule is missing from what
+// is sent.
+func unbuiltAddedRules(smContext *smfContext.SMContext, node *smfContext.DataPathNode) []error {
+	var unbuilt []error
+	for name, rule := range addedPccRules(smContext) {
+		for dir, tunnel := range map[string]*smfContext.GTPTunnel{"uplink": node.UpLinkTunnel, "downlink": node.DownLinkTunnel} {
+			switch pdr := tunnel.PDR[name]; {
+			case pdr == nil:
+				unbuilt = append(unbuilt, fmt.Errorf("PCC rule %s has no %s PDR", name, dir))
+			case len(pdr.QER) == 0 && len(rule.RefQosData) > 0:
+				unbuilt = append(unbuilt, fmt.Errorf("PCC rule %s has no %s flow QER", name, dir))
+			}
+		}
+	}
+	return unbuilt
 }
 
 // addedPccRules names the rules the pending update adds. Their PDRs are built by
@@ -479,7 +502,7 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		// Set PDI fields for core interface
 		dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
 		dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-		dlPDR.PDI.UEIPAddress = sessionUEAddress(smContext)
+		dlPDR.PDI.UEIPAddress = sessionUEAddress(smContext, pfcpParam)
 
 		// Configure FAR for downlink traffic. While the access connection is up, the rule forwards
 		// to the radio's end of the session's tunnel, as every other downlink rule does: nothing
@@ -518,7 +541,7 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
 		ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
 		ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-		ulPDR.PDI.UEIPAddress = sessionUEAddress(smContext)
+		ulPDR.PDI.UEIPAddress = sessionUEAddress(smContext, pfcpParam)
 		ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
 			OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
 		}
@@ -553,9 +576,11 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 // report one in.
 //
 // An address the session does not hold -- none, or the unspecified one its release leaves -- is
-// not named: the user plane reads either as any address too.
-func sessionUEAddress(smContext *smfContext.SMContext) *smfContext.UEIPAddress {
+// not named, since the user plane reads either as any address too, and the rule is recorded as
+// not built.
+func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *smfContext.UEIPAddress {
 	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil || smContext.PDUAddress.Ip.IsUnspecified() {
+		pfcpParam.unbuilt = append(pfcpParam.unbuilt, errors.New("the session holds no UE address to bind its rules to"))
 		return nil
 	}
 	return &smfContext.UEIPAddress{V4: true, Ipv4Address: smContext.PDUAddress.Ip.To4()}
@@ -584,6 +609,7 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		if err != nil {
 			// Left as it is rather than stripped: the old rates still bound the flow.
 			logger.PduSessLog.Errorf("PCC rule %s keeps its previous rates: %v", name, err)
+			pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("PCC rule %s: %w", name, err))
 			continue
 		}
 
@@ -1306,6 +1332,15 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	pfcpParam := BuildPfcpParam(smContext)
 	smContext.SmPolicyUpdates = pending
 
+	// Not sent when any of it could not be built: a partial revert matches neither policy, and an
+	// empty one is not the no-op below. Its parameters were never put back either way.
+	if err := errors.Join(pfcpParam.unbuilt...); err != nil {
+		smContext.SMLock.Unlock()
+		revertFailed(smContext, fmt.Errorf("building the revert: %w", err), "not_built")
+
+		return false
+	}
+
 	if pfcpParam.empty() {
 		smContext.SMLock.Unlock()
 		smContext.SubPduSessLog.Infof("the abandoned modification changed nothing the user plane carries; nothing to put back")
@@ -1322,28 +1357,7 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	smContext.SMLock.Unlock()
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		// The session is now genuinely divergent: the user plane still enforces the modification
-		// the UE was never told about, and putting it back has failed too. Releasing the session
-		// is the right answer and this is deliberately not the place that does it.
-		//
-		// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext
-		// plus notifying the AMF. That channel is a single-slot rendezvous with five existing
-		// readers, and this runs on a background goroutine — adding a sixth reader here would risk
-		// consuming another transaction's response to clean up after a rare double failure, which
-		// is a worse outcome than the divergence it repairs.
-		//
-		// So this marks and reports, and does not release. The state keeps modifications off the
-		// session, but it has no state-machine handler, so a release the UE or the AMF asks for is
-		// dropped while it holds; and the transaction that started this can set it back to Active.
-		// RevertFailed is the mark that holds. The metric is what makes the session findable.
-		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about, and is not released here", err)
-		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
-		smContext.SMLock.Lock()
-		smContext.ChangeState(smfContext.SmStatePfcpRelease)
-		// The mark that holds: the state above can be set back to Active by the transaction that
-		// started this, once its handler returns.
-		smContext.RevertFailed = true
-		smContext.SMLock.Unlock()
+		revertFailed(smContext, err, "upf_unreachable")
 
 		return false
 	}
@@ -1356,6 +1370,34 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
 
 	return true
+}
+
+// revertFailed marks a session whose user plane could not be put back. The caller must not hold
+// SMLock.
+//
+// The session is now genuinely divergent: the user plane still enforces the modification the UE
+// was never told about, and putting it back has failed too. Releasing the session is the right
+// answer and this is deliberately not the place that does it.
+//
+// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext plus
+// notifying the AMF. That channel is a single-slot rendezvous with five existing readers, and this
+// runs on a background goroutine — adding a sixth reader here would risk consuming another
+// transaction's response to clean up after a rare double failure, which is a worse outcome than the
+// divergence it repairs.
+//
+// So this marks and reports, and does not release. The state keeps modifications off the session,
+// but it has no state-machine handler, so a release the UE or the AMF asks for is dropped while it
+// holds; and the transaction that started this can set it back to Active. RevertFailed is the mark
+// that holds. The metric is what makes the session findable.
+func revertFailed(smContext *smfContext.SMContext, err error, cause string) {
+	smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about, and is not released here", err)
+	metrics.IncrementModificationAbandonedStats("revert_failure", cause)
+	smContext.SMLock.Lock()
+	smContext.ChangeState(smfContext.SmStatePfcpRelease)
+	// The mark that holds: the state above can be set back to Active by the transaction that
+	// started this, once its handler returns.
+	smContext.RevertFailed = true
+	smContext.SMLock.Unlock()
 }
 
 // startDeferredModificationLocked starts the oldest held policy decision once the modification
