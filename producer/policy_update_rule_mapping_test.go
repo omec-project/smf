@@ -1506,3 +1506,132 @@ func revertOfWithdrawal(t *testing.T, spoil func(*twoRuleSession)) (*twoRuleSess
 
 	return s, sends[1]
 }
+
+// A revert that cannot be built is a failed revert. A rule the builder cannot program is logged and
+// skipped, so an empty revert was reported as one with nothing to put back -- and the session was
+// left on parameters the UE was never told about, with nothing marking it -- and a partial one was
+// sent and reported as having put the user plane back. Whatever stops the build counts, and only
+// what does: a revert that builds nothing new is sent whatever state the node is in.
+func TestARevertThatCannotBeBuiltIsAFailedRevert(t *testing.T) {
+	failedRevert := func(t *testing.T, s *twoRuleSession, reverted *pfcpParam) {
+		t.Helper()
+		if reverted != nil {
+			t.Errorf("a revert that could not be built was sent: %d PDRs, %d QERs", len(reverted.pdrList), len(reverted.qerList))
+		}
+		if !s.sm.RevertFailed {
+			t.Error("the session is not marked as one whose user plane could not be put back")
+		}
+	}
+
+	t.Run("re-creating a rule on a node no longer associated", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) {
+			s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.UPFStatus = smf_context.NotAssociated
+		})
+		failedRevert(t, s, reverted)
+	})
+
+	t.Run("re-creating a rule with the node's PDR identifiers used up", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) {
+			upf := s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF
+			for {
+				if _, err := upf.AddPDR(); err != nil {
+					return
+				}
+			}
+		})
+		failedRevert(t, s, reverted)
+	})
+
+	t.Run("re-creating a rule for a session whose UE address is released", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) { s.sm.PDUAddress.Ip = net.IPv4zero })
+		failedRevert(t, s, reverted)
+	})
+
+	t.Run("re-creating a rule with no PFCP session to record it in", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) { s.sm.PFCPContext = nil })
+		failedRevert(t, s, reverted)
+	})
+
+	t.Run("re-creating rules with no session AMBR to give them", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) {
+			s.emptyNode()
+			s.sm.SmPolicyData.SmCtxtSessionRules.ActiveRule = nil
+		})
+		failedRevert(t, s, reverted)
+	})
+
+	t.Run("putting a rule's rates back on a node no longer associated", func(t *testing.T) {
+		original := sendPfcpSessionModifyReq
+		t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+		var reverted *pfcpParam
+		sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+			reverted = p
+			return nil
+		}
+
+		s := programmedRateChange(t)
+		s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.UPFStatus = smf_context.NotAssociated
+
+		if revertModification(s.sm, s.sm.NwModificationGen) {
+			t.Error("the revert reported the user plane put back")
+		}
+		failedRevert(t, s, reverted)
+	})
+}
+
+// A revert that needs nothing built is not refused because the node cannot build. A decision that
+// changes nothing the user plane carries is put back by doing nothing, on a node that is not
+// associated as on one that is; refused, the session would be marked for good as one whose user
+// plane could not be put back, and every later modification of it refused.
+func TestARevertThatBuildsNothingIsNotRefused(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+		t.Error("a revert that changes nothing was sent")
+		return nil
+	}
+
+	s := newTwoRuleSession(t, false)
+	unchanged := roundTrip(&models.SmPolicyDecision{
+		PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: s.cirRule},
+		QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+	})
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, unchanged)}
+	s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.UPFStatus = smf_context.NotAssociated
+
+	if !revertModification(s.sm, s.sm.NwModificationGen) {
+		t.Error("the revert reported failure")
+	}
+	if s.sm.RevertFailed {
+		t.Error("the session is marked as one whose user plane could not be put back")
+	}
+}
+
+// A rule that names no QoS data has no flow QER, at establishment as when a revert re-creates it,
+// and that is not a rule left unbuilt: the revert goes out with the session QER on its PDRs.
+func TestARevertReCreatesARuleThatNamesNoQosData(t *testing.T) {
+	s, reverted := revertOfWithdrawal(t, func(s *twoRuleSession) {
+		s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID].RefQosData = nil
+	})
+
+	if reverted == nil || !reverted.touches(s.sm.Tunnel.DataPathPool[1].FirstDPNode.DownLinkTunnel.PDR[cirRuleID]) {
+		t.Error("the withdrawn rule was not re-created")
+	}
+	if s.sm.RevertFailed {
+		t.Error("the session is marked as one whose user plane could not be put back")
+	}
+}
+
+// An added rule the tunnel build gives no flow QER is recorded as not built: the build logs and
+// skips the QER, and the rule's PDRs went out with the session QER alone.
+func TestAnAddedRuleWithoutItsFlowQERIsRecordedAsNotBuilt(t *testing.T) {
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	decision := s.addAppRule()
+	delete(*decision.QosDecs, "2")
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	if param := BuildPfcpParam(s.sm); len(param.unbuilt) != 2 {
+		t.Errorf("recorded as not built: %v, want the added rule's two flow QERs", param.unbuilt)
+	}
+}
