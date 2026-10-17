@@ -356,6 +356,32 @@ func RetrieveUPFNodeByNodeID(nodeID NodeID) *UPF {
 	return targetUPF
 }
 
+// RegisteredUPFs returns every UPF record the SMF holds, whether or not the current
+// configuration uses it.
+func RegisteredUPFs() []*UPF {
+	var upfs []*UPF
+	upfPool.Range(func(_, value any) bool {
+		upfs = append(upfs, value.(*UPF))
+		return true
+	})
+	return upfs
+}
+
+// findUPFByNodeID returns the UPF registered under exactly this NodeID, or nil.
+// Unlike RetrieveUPFNodeByNodeID it never resolves names: it is called while the
+// SMF context lock is held.
+func findUPFByNodeID(nodeID NodeID) *UPF {
+	var found *UPF
+	upfPool.Range(func(_, value any) bool {
+		if upf := value.(*UPF); upf.NodeID.Equal(nodeID) {
+			found = upf
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 // *** add unit test ***//
 func RemoveUPFNodeByNodeID(nodeID NodeID) bool {
 	upfID := ""

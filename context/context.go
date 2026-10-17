@@ -334,9 +334,16 @@ func GetUserPlaneInformation() *UserPlaneInformation {
 	return smfContext.UserPlaneInformation
 }
 
+// Clear discards the slice and user plane configuration. The caller must not
+// hold the context lock; a caller that does uses clearLocked.
 func (smfCtxt *SMFContext) Clear() {
-	smfContext.Lock()
-	defer smfContext.Unlock()
+	smfCtxt.Lock()
+	defer smfCtxt.Unlock()
+	smfCtxt.clearLocked()
+}
+
+// clearLocked is Clear for a caller that already holds the context write lock.
+func (smfCtxt *SMFContext) clearLocked() {
 	smfCtxt.SnssaiInfos = nil
 	if smfCtxt.UserPlaneInformation == nil {
 		smfCtxt.UserPlaneInformation = &UserPlaneInformation{}
@@ -396,8 +403,8 @@ func UpdateSmfContext(smContext *SMFContext, newConfig []nfConfigApi.SessionMana
 	defer smContext.Unlock()
 	logger.CtxLog.Infoln("processing config update from polling service")
 	if len(newConfig) == 0 {
-		logger.CtxLog.Warnln("received empty session management config, skipping update")
-		smContext.Clear()
+		logger.CtxLog.Warnln("received empty session management config, clearing slice and user plane configuration")
+		smContext.clearLocked()
 		return nil
 	}
 	updatedUserPlaneInfo := BuildUserPlaneInformationFromSessionManagement(smContext.UserPlaneInformation, newConfig)
