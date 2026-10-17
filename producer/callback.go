@@ -479,6 +479,7 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		// Set PDI fields for core interface
 		dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
 		dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		dlPDR.PDI.UEIPAddress = sessionUEAddress(smContext)
 
 		// Configure FAR for downlink traffic. While the access connection is up, the rule forwards
 		// to the radio's end of the session's tunnel, as every other downlink rule does: nothing
@@ -517,6 +518,7 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
 		ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
 		ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		ulPDR.PDI.UEIPAddress = sessionUEAddress(smContext)
 		ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
 			OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
 		}
@@ -539,6 +541,24 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		smContext.AddPendingUPF(node.GetNodeIP())
 		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ulPDR)
 	}
+}
+
+// sessionUEAddress is the UE's address as a rule added to an established session names it, in
+// either direction, as establishment names it on every rule. Without it the user plane reads the
+// flow description's "assigned" as any address, so the rule matched every subscriber's traffic
+// that fitted its filter: downlink delivered to this UE, and uplink -- whose CHOOSE F-TEID the user
+// plane leaves unallocated in a modification, so the PDR matches on any TEID -- metered and counted
+// as this UE's. Named outright whether the SMF or the user plane chose it at establishment: the
+// SMF holds it either way, and the user plane's answer to a modification has no Created PDR to
+// report one in.
+//
+// An address the session does not hold -- none, or the unspecified one its release leaves -- is
+// not named: the user plane reads either as any address too.
+func sessionUEAddress(smContext *smfContext.SMContext) *smfContext.UEIPAddress {
+	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil || smContext.PDUAddress.Ip.IsUnspecified() {
+		return nil
+	}
+	return &smfContext.UEIPAddress{V4: true, Ipv4Address: smContext.PDUAddress.Ip.To4()}
 }
 
 // requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
