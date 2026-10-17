@@ -1426,3 +1426,83 @@ func TestADecisionWithNoPccRuleAllocatesNoPdr(t *testing.T) {
 		t.Errorf("the tunnels hold %d and %d PDRs, want the two rules' own", len(node.UpLinkTunnel.PDR), len(node.DownLinkTunnel.PDR))
 	}
 }
+
+// An added rule's PDRs name the UE's address, as establishment's do. Without it the user plane
+// reads the flow description's "assigned" as any address, and the rule matched every subscriber's
+// traffic that fitted its filter: downlink, now forwarded, went to this UE. A rule re-created by a
+// revert is built the same way and is bound the same way.
+func TestAnAddedRuleMatchesOnlyItsOwnUEsTraffic(t *testing.T) {
+	boundToTheUE := func(t *testing.T, node *smf_context.DataPathNode, name string) {
+		t.Helper()
+		for dir, tunnel := range map[string]*smf_context.GTPTunnel{"UL": node.UpLinkTunnel, "DL": node.DownLinkTunnel} {
+			pdr := tunnel.PDR[name]
+			if pdr == nil {
+				t.Errorf("%s: no PDR for the rule", dir)
+				continue
+			}
+			addr := pdr.PDI.UEIPAddress
+			if addr == nil || !addr.V4 || addr.CHV4 || !addr.Ipv4Address.Equal(net.ParseIP("192.168.100.1")) {
+				t.Errorf("%s: the PDR names UE address %+v, want the session's own", dir, addr)
+			}
+		}
+	}
+
+	t.Run("added", func(t *testing.T) {
+		s := newTwoRuleSession(t, false)
+		s.withPfcpContext()
+		s.withConnection(true)
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.addAppRule())}
+
+		BuildPfcpParam(s.sm)
+
+		boundToTheUE(t, s.sm.Tunnel.DataPathPool[1].FirstDPNode, "app")
+	})
+
+	t.Run("re-created by a revert", func(t *testing.T) {
+		s, reverted := revertOfWithdrawal(t, func(*twoRuleSession) {})
+		if reverted == nil {
+			t.Fatal("nothing was sent to put the withdrawn rule back")
+		}
+
+		boundToTheUE(t, s.sm.Tunnel.DataPathPool[1].FirstDPNode, cirRuleID)
+	})
+}
+
+// revertOfWithdrawal withdraws the dedicated rule, which the user plane accepts and the UE is never
+// told of, so the withdrawal is reverted. spoil runs between the two. It returns what the revert
+// sent, nil if nothing.
+func revertOfWithdrawal(t *testing.T, spoil func(*twoRuleSession)) (*twoRuleSession, *pfcpParam) {
+	t.Helper()
+
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	s.withConnection(true)
+	s.cirRule.FlowInfos = []models.FlowInformation{{
+		FlowDescription: openapi.PtrString("permit out ip from 192.168.250.1/32 to assigned"),
+		PackFiltId:      openapi.PtrString("5"),
+	}}
+	committedRule := s.cirRule
+	s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+
+	var sends []*pfcpParam
+	sendPfcpSessionModifyReq = func(_ *smf_context.SMContext, p *pfcpParam) error {
+		sends = append(sends, p)
+		return nil
+	}
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error {
+		spoil(s)
+		return errors.New("amf unreachable")
+	}
+
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.deleteDedicatedRule())); err == nil {
+		t.Fatal("the undeliverable modification was reported as delivered")
+	}
+	if len(sends) < 2 {
+		return s, nil
+	}
+
+	return s, sends[1]
+}
