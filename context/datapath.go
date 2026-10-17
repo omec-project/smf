@@ -508,10 +508,12 @@ func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData strin
 			dlMbr = *maxbrDl
 		}
 
-		// Rates
+		// Rates, normalized as the guaranteed ones are: a policy's "10.0 Mbps" or "10Mbps" read
+		// raw is 0 kbps. Policy updates build their QERs here, and the builder they used before
+		// normalized.
 		newQER.MBR = &MBR{
-			ULMBR: util.BitRateTokbps(ulMbr),
-			DLMBR: util.BitRateTokbps(dlMbr),
+			ULMBR: util.BitRateTokbps(util.NormalizeBitRate(ulMbr)),
+			DLMBR: util.BitRateTokbps(util.NormalizeBitRate(dlMbr)),
 		}
 
 		// The guaranteed rate is programmed here as well as on the policy-update path. Setting it

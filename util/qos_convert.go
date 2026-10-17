@@ -42,8 +42,8 @@ func BitRateToBps(bitrate string) uint64 {
 	}
 
 	// Matched case-insensitively: a policy's "10 mbps" is as valid as "10 Mbps", and the caller
-	// reaching this directly (sessionAmbrToBps, the raw-string MBR reads in CreatePccRuleQer and
-	// CreateSessRuleQer) has no other chance to canonicalize the casing before it is read.
+	// reaching this directly (sessionAmbrToBps, the raw-string MBR read in CreateSessRuleQer) has
+	// no other chance to canonicalize the casing before it is read.
 	var multiplier uint64
 	switch strings.ToLower(s[1]) {
 	case bpsUnit:

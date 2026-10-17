@@ -1579,6 +1579,28 @@ func TestARevertThatCannotBeBuiltIsAFailedRevert(t *testing.T) {
 	})
 }
 
+// A rate is converted as written in any of the spellings a policy carries. Read raw, "10.0 Mbps"
+// and "10Mbps" were 0 kbps: policy updates build their QERs with CreatePccRuleQer, and the builder
+// they used before normalized the rate first.
+func TestARateChangeInAnySpellingReachesTheUserPlane(t *testing.T) {
+	for _, spelling := range [][2]string{{"10.0 Mbps", "20.0 Mbps"}, {"10Mbps", "20Mbps"}} {
+		s := newTwoRuleSession(t, false)
+		decision := s.rateChange()
+		changed := (*decision.QosDecs)[cirQosID]
+		changed.MaxbrUl = *openapi.NewNullableString(openapi.PtrString(spelling[0]))
+		changed.MaxbrDl = *openapi.NewNullableString(openapi.PtrString(spelling[1]))
+		(*decision.QosDecs)[cirQosID] = changed
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+		param := BuildPfcpParam(s.sm)
+
+		qer := s.flowQERAfter(param, s.cirDL)
+		if qer == nil || qer.MBR == nil || qer.MBR.ULMBR != 10000 || qer.MBR.DLMBR != 20000 {
+			t.Errorf("%q/%q: the flow QER is %+v, want 10000/20000 kbps", spelling[0], spelling[1], qer)
+		}
+	}
+}
+
 // A revert that needs nothing built is not refused because the node cannot build. A decision that
 // changes nothing the user plane carries is put back by doing nothing, on a node that is not
 // associated as on one that is; refused, the session would be marked for good as one whose user
