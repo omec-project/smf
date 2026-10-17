@@ -292,6 +292,11 @@ func BuildPfcpSessionEstablishmentRequest(
 		if pdr.State == context.RULE_INITIAL {
 			ies = append(ies, pdrToCreatePDR(pdr))
 		}
+		// Created, like the FARs and QERs below. Left at RULE_INITIAL, the first modification to
+		// carry the PDR without marking it re-created it under the same identifier. Restoration
+		// sets every rule back to RULE_INITIAL itself before re-establishing, so it is not relying
+		// on this.
+		pdr.State = context.RULE_CREATE
 	}
 
 	for _, far := range farList {

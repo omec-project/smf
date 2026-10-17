@@ -61,7 +61,9 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 
 	logger.PduSessLog.Infoln("In HandleSMPolicyUpdateNotify")
 
-	smContext.SMLock.Lock()
+	// After any revert still owed, as in ApplyModification: this applies a modification in the same
+	// hold of the lock that checks none is pending.
+	lockAfterRevert(smContext)
 
 	// A session being released has no tunnel by the time a notification for it can arrive. Refused
 	// here, under the lock release takes to clear it, as the cheaper of two refusals: without this,
@@ -73,6 +75,20 @@ func HandleSMPolicyUpdateNotify(eventData any) error {
 		smContext.SMLock.Unlock()
 
 		err := fmt.Errorf("SMContext[%s-%02d] has no tunnel: it is being released", smContext.Supi, smContext.PDUSessionID)
+		logger.PduSessLog.Warnf("policy update notification refused: %v", err)
+		txn.Err = err
+		txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
+
+		return err
+	}
+
+	// Nor is a session whose user plane could not be put back after an abandoned modification: a
+	// modification built on it would program on top of the parameters the failed revert left in
+	// place.
+	if smContext.RevertFailed {
+		smContext.SMLock.Unlock()
+
+		err := fmt.Errorf("SMContext[%s-%02d] could not have its user plane put back", smContext.Supi, smContext.PDUSessionID)
 		logger.PduSessLog.Warnf("policy update notification refused: %v", err)
 		txn.Err = err
 		txn.Rsp = makePduCtxtModifyErrRsp(smContext, err.Error())
@@ -199,7 +215,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			shouldSendReleaseOnly = true
 		}
 	}
-	logger.PduSessLog.Infof("[BuildPfcpParam] Using PCC RuleId=%s, releaseOnly=%v", ruleid, shouldSendReleaseOnly)
+	logger.PduSessLog.Infof("[BuildPfcpParam] releaseOnly=%v", shouldSendReleaseOnly)
 
 	// Iterate over all active data paths in the SM context
 	if smContext.Tunnel == nil {
@@ -222,22 +238,36 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		}
 
 		ANUPF := dataPath.FirstDPNode
-		var dedQERs []*smfContext.QER
-		var err error
 		logger.PduSessLog.Infof("Processing DataPath with UPF Node: %s", ANUPF.GetNodeIP())
 
-		// Only create/activate QERs and tunnels if not release-only
-		if !shouldSendReleaseOnly {
-			dedQERs, err = ANUPF.CreateDedicatedQosQer(smContext)
-			if err != nil {
-				logger.PduSessLog.Warnf("[BuildPfcpParam] CreateSessRuleQer failed: %v", err)
-			} else {
-				logger.PduSessLog.Infof("[BuildPfcpParam] Created %d dedicated QER(s)", len(dedQERs))
-			}
+		// Read before the tunnels are extended below: a PDR built there for an added rule does not
+		// carry the session QER yet, so it would empty the intersection this is.
+		sessQERs := sessionQERs(ANUPF)
 
+		// The session QER is found on the PDRs that carry it, so a node whose every rule has been
+		// withdrawn has none to find it on, and rules added there -- a revert of that withdrawal
+		// among them -- came back without the session AMBR. They get a new one, built as
+		// establishment builds it; the old one is left as the withdrawal left it, referred to by
+		// nothing, until the session's release removes it.
+		if len(sessQERs) == 0 && !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 && !hasPDRs(ANUPF) {
+			if sessQER, err := ANUPF.CreateSessRuleQer(smContext); err != nil {
+				smContext.SubPduSessLog.Errorf("the rules added to UPF %s carry no session AMBR: %v", ANUPF.GetNodeIP(), err)
+				pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("session QER on UPF %s: %w", ANUPF.GetNodeIP(), err))
+			} else {
+				sessQERs = map[uint32]*smfContext.QER{sessQER.QERID: sessQER}
+				pfcpParam.qerList = append(pfcpParam.qerList, sessQER)
+			}
+		}
+
+		// Only activate tunnels if not release-only, and only for rules the update adds: the tunnel
+		// build makes PDRs for those and nothing else, and with no PCC rule in the update -- a
+		// decision changing only QoS data or traffic control data -- it allocated a "default" PDR
+		// over whatever rule went by that name.
+		if !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 {
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
 			}
+			pfcpParam.unbuilt = append(pfcpParam.unbuilt, unbuiltAddedRules(smContext, ANUPF)...)
 		}
 
 		// A rule the update deletes is withdrawn from the user plane here. The radio is told to
@@ -246,169 +276,362 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// moving the traffic. The release-only branch below is a different case: it fires when a
 		// decision has no valid rules at all, not when one rule among several goes away.
 		//
-		// The PDR and its FAR go; the QERs do not. A QER here is built per session and attached
-		// to every PDR on the path, so removing the ones this PDR points at would take rate
-		// enforcement off the rules that remain. One left unreferenced enforces nothing and goes
-		// with the session.
+		// The PDR, its FAR and the rule's own flow QER go; the session QER does not. It is
+		// attached to every PDR on the path, so removing it would take the session AMBR off the
+		// rules that remain -- but a rule's flow QER is built for that rule and direction alone,
+		// and left behind it stayed installed with nothing referring to it.
 		for deletedRule := range deleted {
-			if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[deletedRule]; ok {
-				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
-				if dlPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, dlPDR.FAR)
+			for _, tunnel := range []*smfContext.GTPTunnel{ANUPF.DownLinkTunnel, ANUPF.UpLinkTunnel} {
+				pdr, ok := tunnel.PDR[deletedRule]
+				if !ok {
+					continue
 				}
 
-				smContext.AddPendingUPF(ANUPF.GetNodeIP())
-			}
-
-			if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[deletedRule]; ok {
-				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-				if ulPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
+				pfcpParam.removePDR = append(pfcpParam.removePDR, pdr)
+				if pdr.FAR != nil {
+					pfcpParam.removeFAR = append(pfcpParam.removeFAR, pdr.FAR)
+				}
+				for _, qer := range pdr.QER {
+					if qer == nil {
+						continue
+					}
+					if _, session := sessQERs[qer.QERID]; !session {
+						pfcpParam.removeQER = append(pfcpParam.removeQER, qer)
+					}
 				}
 
 				smContext.AddPendingUPF(ANUPF.GetNodeIP())
 			}
 		}
 
-		// ----------------------
-		// Handle Downlink PDRs
-		// ----------------------
-		if dlPDR, ok := ANUPF.DownLinkTunnel.PDR[ruleid]; ok {
-			logger.PduSessLog.Infof("[BuildPfcpParam] Checking DL PDR: Name=%s, ID=%d", ruleid, dlPDR.PDRID)
-
-			// Release-only scenario: mark PDR, FAR, QER for removal
-			if shouldSendReleaseOnly {
-				// Not twice: a rule the update deletes was marked above, and a Remove PDR repeated in
-				// one request is one the user plane can refuse the whole request for.
-				if _, removed := deleted[ruleid]; removed {
-					continue
-				}
-				logger.PduSessLog.Infof("[BuildPfcpParam] Marking DL PDR[%s] for removal", ruleid)
-				pfcpParam.removePDR = append(pfcpParam.removePDR, dlPDR)
-				if dlPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, dlPDR.FAR)
-				}
-				if dlPDR.QER != nil {
-					pfcpParam.removeQER = append(pfcpParam.removeQER, dlPDR.QER...)
-				}
-
-				// Mark UL PDR, FAR, QER for removal
-				if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
-					logger.PduSessLog.Infof("[BuildPfcpParam] Marking UL PDR[%s] for removal", ruleid)
-					pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-					if ulPDR.FAR != nil {
-						pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
-					}
-					if ulPDR.QER != nil {
-						pfcpParam.removeQER = append(pfcpParam.removeQER, ulPDR.QER...)
-					}
-				}
-				continue
+		if shouldSendReleaseOnly {
+			// Not twice: a rule the update deletes was marked above, and a Remove PDR repeated in
+			// one request is one the user plane can refuse the whole request for.
+			if _, removed := deleted[ruleid]; !removed {
+				releaseRule(pfcpParam, ANUPF, ruleid)
 			}
-
-			// Attach dedicated QERs to DL PDR
-			if len(dedQERs) > 0 {
-				dlPDR.QER = dedQERs
-			}
-			if dlPDR.Precedence == 0 {
-				dlPDR.Precedence = 1
-			}
-
-			// Set PDI fields for core interface
-			dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
-			dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-
-			// Configure FAR for downlink traffic
-			if dlPDR.FAR == nil {
-				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
-			}
-			dlFAR := dlPDR.FAR
-			if dlFAR != nil {
-				dlFAR.ApplyAction = smfContext.ApplyAction{
-					Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
-				}
-			}
-
-			// Append to PFCP param lists
-			pfcpParam.pdrList = append(pfcpParam.pdrList, dlPDR)
-			if dlFAR != nil {
-				pfcpParam.farList = append(pfcpParam.farList, dlFAR)
-			} else {
-				logger.PduSessLog.Errorf("dlPDR.FAR is nil")
-			}
-			if len(dedQERs) > 0 {
-				pfcpParam.qerList = append(pfcpParam.qerList, dedQERs...)
-			} else {
-				logger.PduSessLog.Errorf("dedicated QER is nil")
-			}
-
-			smContext.AddPendingUPF(ANUPF.GetNodeIP())
+			continue
 		}
 
-		// ----------------------
-		// Handle Uplink PDRs
-		// ----------------------
-		if ulPDR, ok := ANUPF.UpLinkTunnel.PDR[ruleid]; ok {
-			if shouldSendReleaseOnly {
-				if _, removed := deleted[ruleid]; removed {
-					continue
-				}
-				// Mark UL PDR, FAR, QER for removal
-				pfcpParam.removePDR = append(pfcpParam.removePDR, ulPDR)
-				if ulPDR.FAR != nil {
-					pfcpParam.removeFAR = append(pfcpParam.removeFAR, ulPDR.FAR)
-				}
-				if ulPDR.QER != nil {
-					pfcpParam.removeQER = append(pfcpParam.removeQER, ulPDR.QER...)
-				}
-				continue
-			}
-
-			// Attach dedicated QERs to UL PDR
-			if len(dedQERs) > 0 {
-				ulPDR.QER = dedQERs
-			}
-			if ulPDR.Precedence == 0 {
-				ulPDR.Precedence = 1
-			}
-
-			// Set PDI and outer header removal for access interface
-			ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
-			ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
-			ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
-			ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
-				OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
-			}
-
-			// Configure FAR for UL traffic
-			if ulPDR.FAR == nil {
-				logger.PduSessLog.Errorf("ulPDR.FAR is nil")
-			}
-			ulFAR := ulPDR.FAR
-			if ulFAR != nil {
-				ulFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
-				ulFAR.ForwardingParameters = &smfContext.ForwardingParameters{
-					DestinationInterface: smfContext.DestinationInterface{
-						InterfaceValue: smfContext.DestinationInterfaceCore,
-					},
-					NetworkInstance: []byte(smContext.Dnn),
-				}
-			}
-
-			// Append to PFCP param lists
-			pfcpParam.pdrList = append(pfcpParam.pdrList, ulPDR)
-			if ulFAR != nil {
-				pfcpParam.farList = append(pfcpParam.farList, ulFAR)
-			} else {
-				logger.PduSessLog.Errorf("ulFAR is nil")
-			}
-
-			smContext.AddPendingUPF(ANUPF.GetNodeIP())
-			logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", ruleid, ulPDR)
+		// Each rule is programmed on its own PDRs. This used to take the first valid rule in map
+		// order and hang every dedicated QER in the decision on that one rule's PDRs, replacing
+		// what they carried. With a single PCC rule that is always the right rule, which is why
+		// nothing caught it; with a catch-all beside a dedicated flow it is a coin flip, and on
+		// the losing side the catch-all's traffic is metered at the dedicated flow's rates with
+		// its own flow QER and the session AMBR gone from it.
+		for name := range addedPccRules(smContext) {
+			programAddedRule(smContext, pfcpParam, ANUPF, name, sessQERs)
+		}
+		for name, qosRef := range requalifiedPccRules(smContext) {
+			requalifyRule(smContext, pfcpParam, ANUPF, name, qosRef, sessQERs)
 		}
 	}
 
 	return pfcpParam
+}
+
+// sessionQERs returns, by ID, the QERs carried by every PDR on the node, which is the session QER:
+// it is built once per node and attached to all of them, while a rule's flow QER is built per
+// direction and so is on one PDR only.
+//
+// Matched by ID, not by pointer. A session restored from the database has its tunnels decoded PDR
+// by PDR, so each PDR holds its own copy of the session QER, and a pointer intersection comes out
+// empty -- which would have every QER treated as the rule's own, and the session AMBR dropped.
+func sessionQERs(node *smfContext.DataPathNode) map[uint32]*smfContext.QER {
+	var shared map[uint32]*smfContext.QER
+
+	for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+		if tunnel == nil {
+			continue
+		}
+
+		for _, pdr := range tunnel.PDR {
+			carried := make(map[uint32]*smfContext.QER, len(pdr.QER))
+			for _, qer := range pdr.QER {
+				if qer == nil {
+					continue
+				}
+				if _, ok := shared[qer.QERID]; shared == nil || ok {
+					carried[qer.QERID] = qer
+				}
+			}
+
+			shared = carried
+		}
+	}
+
+	return shared
+}
+
+// hasPDRs reports whether any rule is left on the node.
+func hasPDRs(node *smfContext.DataPathNode) bool {
+	for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+		if tunnel != nil && len(tunnel.PDR) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// unbuiltAddedRules reports each rule the update adds that the tunnel build left without a PDR in
+// either direction, or with one carrying no flow QER although the rule names QoS data -- a rule
+// that names none has no flow QER at establishment either. The build logs and skips such a rule -- an
+// unassociated node or an exhausted ID pool among the causes -- and where it returns an error, it
+// has stopped before the downlink, so either way nothing else says the rule is missing from what
+// is sent.
+func unbuiltAddedRules(smContext *smfContext.SMContext, node *smfContext.DataPathNode) []error {
+	var unbuilt []error
+	for name, rule := range addedPccRules(smContext) {
+		for dir, tunnel := range map[string]*smfContext.GTPTunnel{"uplink": node.UpLinkTunnel, "downlink": node.DownLinkTunnel} {
+			switch pdr := tunnel.PDR[name]; {
+			case pdr == nil:
+				unbuilt = append(unbuilt, fmt.Errorf("PCC rule %s has no %s PDR", name, dir))
+			case len(pdr.QER) == 0 && len(rule.RefQosData) > 0:
+				unbuilt = append(unbuilt, fmt.Errorf("PCC rule %s has no %s flow QER", name, dir))
+			}
+		}
+	}
+	return unbuilt
+}
+
+// addedPccRules names the rules the pending update adds. Their PDRs are built by
+// ActivateUlDlTunnel, under the same names.
+func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
+	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil ||
+		smContext.SmPolicyUpdates[0].PccRuleUpdate == nil {
+		return nil
+	}
+
+	return smContext.SmPolicyUpdates[0].PccRuleUpdate.GetAddPccRuleUpdate()
+}
+
+// requalifiedPccRules names the established rules whose QoS data or traffic control data the pending
+// update changes, or which it changes themselves, with the QoS data each refers to. Traffic control
+// is where a rule's gate comes from -- CreatePccRuleQer closes the QER for a disabled flow -- so a
+// decision that only disables or re-enables a flow reaches the user plane through here too. The
+// second matters when a rule is re-pointed at QoS data that already exists: nothing about the QoS
+// data changes, only which of it the rule uses -- and undoing a re-pointing is exactly that case. A
+// rule on the default QoS flow is included: establishment builds its flow QER from its QoS data like
+// any other rule's, so a change to that data has to reach it too.
+//
+// The established rules are the committed ones as the decision leaves them: a decision changing a
+// rule's QoS data or traffic control data need not repeat the rule, and a rule it leaves out still
+// refers to them.
+func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
+	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil {
+		return nil
+	}
+
+	update := smContext.SmPolicyUpdates[0]
+	added := addedPccRules(smContext)
+	changed := update.QosFlowUpdate.GetModified()
+	requalified := make(map[string]string)
+
+	names := make(map[string]bool)
+	for name := range update.SmPolicyDecision.GetPccRules() {
+		names[name] = true
+	}
+	for name := range smContext.SmPolicyData.SmCtxtPccRules.PccRules {
+		names[name] = true
+	}
+
+	for name := range names {
+		rule := qos.DecidedPccRule(update.SmPolicyDecision, &smContext.SmPolicyData, name)
+		if name == "" || rule == nil || added[name] != nil || len(rule.RefQosData) == 0 {
+			continue
+		}
+
+		qosRef := rule.RefQosData[0]
+		_, ok := changed[qosRef]
+		if !ok {
+			_, ok = update.QosFlowUpdate.GetAdded()[qosRef]
+		}
+		if !ok {
+			_, ok = update.PccRuleUpdate.GetModPccRuleUpdate()[name]
+		}
+		if !ok && len(rule.RefTcData) > 0 {
+			_, ok = update.TCUpdate.GetModified()[rule.RefTcData[0]]
+		}
+		if !ok {
+			continue
+		}
+
+		requalified[name] = qosRef
+	}
+
+	return requalified
+}
+
+// releaseRule withdraws a rule's PDRs, FARs and QERs, for a decision that carries no valid rule.
+func releaseRule(pfcpParam *pfcpParam, node *smfContext.DataPathNode, ruleid string) {
+	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
+		pdr, ok := tunnel.PDR[ruleid]
+		if !ok {
+			continue
+		}
+
+		logger.PduSessLog.Infof("[BuildPfcpParam] Marking PDR[%s] ID=%d for removal", ruleid, pdr.PDRID)
+		pfcpParam.removePDR = append(pfcpParam.removePDR, pdr)
+		if pdr.FAR != nil {
+			pfcpParam.removeFAR = append(pfcpParam.removeFAR, pdr.FAR)
+		}
+		if pdr.QER != nil {
+			pfcpParam.removeQER = append(pfcpParam.removeQER, pdr.QER...)
+		}
+	}
+}
+
+// programAddedRule completes the PDRs ActivateUlDlTunnel built for a rule the update adds, and
+// queues them for creation. They carry the rule's own flow QER from that build; the session QER is
+// added here, since the tunnel build does not attach it.
+func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
+	name string, sessQERs map[uint32]*smfContext.QER,
+) {
+	var session []*smfContext.QER
+	for _, qer := range sessQERs {
+		session = append(session, qer)
+	}
+
+	if dlPDR, ok := node.DownLinkTunnel.PDR[name]; ok {
+		pfcpParam.qerList = append(pfcpParam.qerList, dlPDR.QER...)
+		dlPDR.QER = append(dlPDR.QER, session...)
+		if dlPDR.Precedence == 0 {
+			dlPDR.Precedence = 1
+		}
+
+		// Set PDI fields for core interface
+		dlPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceCore}
+		dlPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		dlPDR.PDI.UEIPAddress = sessionUEAddress(smContext, pfcpParam)
+
+		// Configure FAR for downlink traffic. While the access connection is up, the rule forwards
+		// to the radio's end of the session's tunnel, as every other downlink rule does: nothing
+		// later switches a buffering FAR over for an active connection, since a setup response comes
+		// only on activation and a downlink report is acted on only for a deactivated one. Buffered,
+		// the rule's downlink was held for good -- an added rule's and a reinstated one's alike. A
+		// deactivated connection buffers and reports, so the downlink pages the UE, and the setup
+		// response re-points every downlink rule.
+		if dlFAR := dlPDR.FAR; dlFAR != nil {
+			if smContext.UpCnxState == models.UPCNXSTATE_ACTIVATED &&
+				smContext.Tunnel != nil && smContext.Tunnel.ANInformation.IPAddress != nil {
+				dlFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
+				dlFAR.ForwardingParameters = buildAccessForwardingParameters(smContext, dlFAR.ForwardingParameters)
+			} else {
+				dlFAR.ApplyAction = smfContext.ApplyAction{
+					Buff: true, Drop: false, Dupl: false, Forw: false, Nocp: true,
+				}
+			}
+			pfcpParam.farList = append(pfcpParam.farList, dlFAR)
+		} else {
+			logger.PduSessLog.Errorf("dlPDR.FAR is nil")
+		}
+
+		pfcpParam.pdrList = append(pfcpParam.pdrList, dlPDR)
+		smContext.AddPendingUPF(node.GetNodeIP())
+	}
+
+	if ulPDR, ok := node.UpLinkTunnel.PDR[name]; ok {
+		pfcpParam.qerList = append(pfcpParam.qerList, ulPDR.QER...)
+		ulPDR.QER = append(ulPDR.QER, session...)
+		if ulPDR.Precedence == 0 {
+			ulPDR.Precedence = 1
+		}
+
+		// Set PDI and outer header removal for access interface
+		ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
+		ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
+		ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		ulPDR.PDI.UEIPAddress = sessionUEAddress(smContext, pfcpParam)
+		ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{
+			OuterHeaderRemovalDescription: smfContext.OuterHeaderRemovalGtpUUdpIpv4,
+		}
+
+		// Configure FAR for UL traffic
+		if ulFAR := ulPDR.FAR; ulFAR != nil {
+			ulFAR.ApplyAction = smfContext.ApplyAction{Forw: true}
+			ulFAR.ForwardingParameters = &smfContext.ForwardingParameters{
+				DestinationInterface: smfContext.DestinationInterface{
+					InterfaceValue: smfContext.DestinationInterfaceCore,
+				},
+				NetworkInstance: []byte(smContext.Dnn),
+			}
+			pfcpParam.farList = append(pfcpParam.farList, ulFAR)
+		} else {
+			logger.PduSessLog.Errorf("ulFAR is nil")
+		}
+
+		pfcpParam.pdrList = append(pfcpParam.pdrList, ulPDR)
+		smContext.AddPendingUPF(node.GetNodeIP())
+		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ulPDR)
+	}
+}
+
+// sessionUEAddress is the UE's address as a rule added to an established session names it, in
+// either direction, as establishment names it on every rule. Without it the user plane reads the
+// flow description's "assigned" as any address, so the rule matched every subscriber's traffic
+// that fitted its filter: downlink delivered to this UE, and uplink -- whose CHOOSE F-TEID the user
+// plane leaves unallocated in a modification, so the PDR matches on any TEID -- metered and counted
+// as this UE's. Named outright whether the SMF or the user plane chose it at establishment: the
+// SMF holds it either way, and the user plane's answer to a modification has no Created PDR to
+// report one in.
+//
+// An address the session does not hold -- none, or the unspecified one its release leaves -- is
+// not named, since the user plane reads either as any address too, and the rule is recorded as
+// not built.
+func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *smfContext.UEIPAddress {
+	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil || smContext.PDUAddress.Ip.IsUnspecified() {
+		pfcpParam.unbuilt = append(pfcpParam.unbuilt, errors.New("the session holds no UE address to bind its rules to"))
+		return nil
+	}
+	return &smfContext.UEIPAddress{V4: true, Ipv4Address: smContext.PDUAddress.Ip.To4()}
+}
+
+// requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
+// way the establishment path builds one, and sends them as updates. The superseded flow QER is
+// removed; the session QER stays. Nothing else about the PDRs changes: their filters and FARs are
+// already programmed, and a downlink FAR rewritten here would stop forwarding an active flow.
+func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
+	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
+) {
+	tcRef := ""
+	if rule := qos.DecidedPccRule(smContext.SmPolicyUpdates[0].SmPolicyDecision, &smContext.SmPolicyData, name); rule != nil &&
+		len(rule.RefTcData) > 0 {
+		tcRef = rule.RefTcData[0]
+	}
+
+	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
+		pdr, ok := tunnel.PDR[name]
+		if !ok {
+			continue
+		}
+
+		flowQER, err := node.CreatePccRuleQer(smContext, qosRef, tcRef)
+		if err != nil {
+			// Left as it is rather than stripped: the old rates still bound the flow.
+			logger.PduSessLog.Errorf("PCC rule %s keeps its previous rates: %v", name, err)
+			pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("PCC rule %s: %w", name, err))
+			continue
+		}
+
+		qers := []*smfContext.QER{flowQER}
+		for _, qer := range pdr.QER {
+			if qer == nil {
+				continue
+			}
+			if _, session := sessQERs[qer.QERID]; session {
+				qers = append(qers, qer)
+			} else {
+				pfcpParam.removeQER = append(pfcpParam.removeQER, qer)
+			}
+		}
+
+		pdr.QER = qers
+		pdr.State = smfContext.RULE_UPDATE
+		pfcpParam.pdrList = append(pfcpParam.pdrList, pdr)
+		pfcpParam.qerList = append(pfcpParam.qerList, flowQER)
+		smContext.AddPendingUPF(node.GetNodeIP())
+		logger.PduSessLog.Infof("[BuildPfcpParam] PCC rule %s PDR %d now carries QER %d", name, pdr.PDRID, flowQER.QERID)
+	}
 }
 
 // 3GPP Reference: TS 23.502 §4.3.3.4 – "PDU Session Modification" procedure
@@ -656,15 +879,20 @@ var ErrPfcpModifyFailed = errors.New("pfcp session modify failed")
 // modification, as runDeferredModification checks held work: the corrective modification is
 // queued, a release can reach the session first, and starting on a session with no tunnel would
 // set PfcpModify, program nothing, and have the failure path set the session back to Active. The
-// procedure the caller reserved is released with it, since nothing will run it now.
+// procedure the caller reserved is released with it, since nothing will run it now. Nor is a session
+// whose user plane a failed revert left divergent, whatever its state now says.
 func ApplyModification(smContext *smfContext.SMContext, update *qos.PolicyUpdate) error {
-	smContext.SMLock.Lock()
-	if state := smContext.SMContextState; smContext.Tunnel == nil ||
+	lockAfterRevert(smContext)
+	if state := smContext.SMContextState; smContext.Tunnel == nil || smContext.RevertFailed ||
 		(state != smfContext.SmStateActive && state != smfContext.SmStatePfcpModify) {
 		smContext.NwModificationPending = false
 		smContext.NwModificationUnsent = false
+		failed := smContext.RevertFailed
 		smContext.SMLock.Unlock()
 
+		if failed {
+			return fmt.Errorf("%w: its user plane could not be put back", errSessionNotModifiable)
+		}
 		return fmt.Errorf("%w: the session is %s", errSessionNotModifiable, state.String())
 	}
 
@@ -718,6 +946,10 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 
 	logger.PduSessLog.Infof("PFCP modify successful for UE [%s], PDU Session ID [%d]",
 		smContext.Supi, smContext.PDUSessionID)
+
+	smContext.SMLock.Lock()
+	forgetRemovedRules(smContext, pfcpParam)
+	smContext.SMLock.Unlock()
 
 	// Expected from before the transfer rather than after it. The radio's answer travels its own
 	// path back and can arrive while this HTTP call is still in flight, and a handler finding no
@@ -840,10 +1072,11 @@ func startT3591Locked(smContext *smfContext.SMContext, maxRetries int) {
 			// Active, and a transaction in the session's slot can be waiting for the user plane's answer
 			// in SmStatePfcpModify -- a paging failure's own modification, say. That answer is delivered
 			// only in SmStatePfcpModify, so the transaction, and everything queued behind it, would wait
-			// for good.
-			queueSessionTask(smContext, func() {
-				abandonIfCurrent(smContext, timer, "t3591_expiry", "ue_did_not_acknowledge")
-			})
+			// for good. And the revert that follows waits on the session's one PFCP response channel,
+			// which carries no correlation, so it must not be in flight beside any other exchange for the
+			// session -- and a transaction that has already passed its wait for an owed revert, but not
+			// yet sent, is one the timer could otherwise overtake.
+			queueSessionTask(smContext, func() { abandonIfCurrent(smContext, timer) })
 		})
 	smContext.T3591 = timer
 	// StopT3591 above cleared it; the procedure is still running.
@@ -917,7 +1150,10 @@ func abandonModificationLocked(smContext *smfContext.SMContext) {
 // acknowledgement that just arrived and superseded this procedure. Resuming then, it would discard
 // whatever modification is pending by then, which after a partial rejection is the corrective one
 // started in the meantime.
-func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, path, cause string) {
+func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer) {
+	// T3591 is the only timer whose expiry abandons a modification, and it expires for one reason.
+	const path, cause = "t3591_expiry", "ue_did_not_acknowledge"
+
 	// This starts holding no lock, so it takes SMLock -- and keeps it across the check and the
 	// abandonment. Releasing in between put the two on either side of a lock acquisition, so
 	// an acknowledgement arriving in the gap could commit and start the next procedure, and this
@@ -931,12 +1167,16 @@ func abandonIfCurrent(smContext *smfContext.SMContext, timer *smfContext.Timer, 
 		return
 	}
 
-	abandonModificationLocked(smContext)
-	startDeferredModificationLocked(smContext)
+	abandoned := abandonForRevertLocked(smContext)
 	smContext.SMLock.Unlock()
 
 	// Reported outside the lock: it logs and counts, and touches no session state.
 	reportAbandonment(smContext, path, cause)
+
+	// The user plane was programmed before the command was first sent, and a UE that never
+	// answered never took the new parameters up. This holds no lock here, and runs in the session's
+	// transaction slot, so no other transaction for the session runs beside the revert.
+	restoreUserPlane(smContext, abandoned)
 }
 
 // reportAbandonment logs and counts an abandonment without touching session state, so the two
@@ -947,19 +1187,76 @@ func reportAbandonment(smContext *smfContext.SMContext, path, cause string) {
 	metrics.IncrementModificationAbandonedStats(path, cause)
 }
 
-// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock.
+// abandonModificationUnderLock is abandonModification for a caller that already holds SMLock, for a
+// modification whose user plane had been programmed: the UE refusing the command, and the radio
+// refusing all of it. The revert runs on its own goroutine, because it waits on the user plane and
+// the caller holds the session lock across its whole handler.
 func abandonModificationUnderLock(smContext *smfContext.SMContext, path, cause string) {
 	reportAbandonment(smContext, path, cause)
+	restoreUserPlaneAsync(smContext, abandonForRevertLocked(smContext))
+}
+
+// restoreUserPlaneAsync is behind a seam for the reason applyModification is: the restore runs on
+// its own goroutine and reaches the user plane, so a test needs to see that it was issued without
+// it outliving the test.
+var restoreUserPlaneAsync = func(smContext *smfContext.SMContext, abandoned *qos.PolicyUpdate) {
+	go restoreUserPlane(smContext, abandoned)
+}
+
+// empty reports whether the parameters change nothing on the user plane.
+func (p *pfcpParam) empty() bool {
+	return len(p.pdrList) == 0 && len(p.farList) == 0 && len(p.barList) == 0 && len(p.qerList) == 0 &&
+		len(p.removePDR) == 0 && len(p.removeFAR) == 0 && len(p.removeQER) == 0
+}
+
+// lockAfterRevert takes SMLock once no revert is owed on the session, and returns holding it.
+//
+// A revert is part of the procedure it undoes: it is computed from the committed rules and the
+// update that was abandoned, and programs the committed rules back. A modification built before it
+// had finished would be programmed first and then undone -- the revert restores the committed
+// rules over whatever the new one had just set -- and the two would wait on the session's one
+// response channel at once. Every transaction waits for an owed revert before processing; this is
+// the same wait for ApplyModification, which the realignment reaches as a queued task and the
+// delivery-failure paths reach from inside a transaction that is already past that point.
+func lockAfterRevert(smContext *smfContext.SMContext) {
+	for {
+		smContext.SMLock.Lock()
+		owed := smContext.RevertInFlight
+		if owed == nil {
+			return
+		}
+		smContext.SMLock.Unlock()
+		<-owed
+	}
+}
+
+// abandonForRevertLocked abandons the modification in flight and returns what it discarded, so the
+// caller can put the user plane back from exactly that update; the caller holds SMLock. When there
+// is something to put back, the revert is recorded as owed in the same hold, so nothing can start
+// in between: the caller must hand the update to restoreUserPlane, which settles it.
+func abandonForRevertLocked(smContext *smfContext.SMContext) *qos.PolicyUpdate {
+	abandoned := pendingUpdateLocked(smContext)
 	abandonModificationLocked(smContext)
+	if abandoned != nil && smContext.RevertInFlight == nil {
+		smContext.RevertInFlight = make(chan struct{})
+		smContext.RevertOwed.Store(true)
+	}
+
+	return abandoned
+}
+
+// pendingUpdateLocked is the modification in flight, or nil. The caller holds SMLock, and takes it
+// in the same hold as the abandonment that discards it, so what is reverted is what was discarded.
+func pendingUpdateLocked(smContext *smfContext.SMContext) *qos.PolicyUpdate {
+	if len(smContext.SmPolicyUpdates) == 0 {
+		return nil
+	}
+
+	return smContext.SmPolicyUpdates[0]
 }
 
 // revertModification gives up on a modification that could not be delivered and puts the user
 // plane back to the parameters the UE still believes are in force.
-//
-// The discard comes first and does the heavy lifting: the pending policy update was never
-// committed, so once it is dropped the session's policy state already describes the
-// pre-modification session, and rebuilding the PFCP parameters from it yields exactly the rules
-// that were in force. Nothing is snapshotted and nothing is copied.
 //
 // The path is always "delivery_failure": that is what reverting means, as distinct from a
 // modification abandoned because the UE did not answer or the radio refused it. The one delivery
@@ -982,47 +1279,125 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 
 		return true
 	}
-	abandonModificationLocked(smContext)
+	abandoned := abandonForRevertLocked(smContext)
 	smContext.SMLock.Unlock()
 	reportAbandonment(smContext, path, cause)
 
-	smContext.SMLock.Lock()
-	pfcpParam := BuildPfcpParam(smContext)
-	smContext.SMLock.Unlock()
+	return restoreUserPlane(smContext, abandoned)
+}
 
-	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
-		// The session is now genuinely divergent: the user plane still enforces the modification
-		// the UE was never told about, and putting it back has failed too. Releasing the session
-		// is the right answer and this is deliberately not the place that does it.
-		//
-		// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext
-		// plus notifying the AMF. That channel is a single-slot rendezvous with five existing
-		// readers, and this runs on a background goroutine — adding a sixth reader here would risk
-		// consuming another transaction's response to clean up after a rare double failure, which
-		// is a worse outcome than the divergence it repairs.
-		//
-		// So this marks and reports, and does not pretend to have released. The state is a label
-		// nothing acts on; the metric is what makes the session findable.
-		smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about and needs releasing, which this path deliberately does not attempt", err)
-		metrics.IncrementModificationAbandonedStats("revert_failure", "upf_unreachable")
+// restoreUserPlane puts the user plane back to the committed policy after abandoned has been
+// discarded, and reports whether it went back. The caller must not hold SMLock: this waits on the
+// user plane's answer.
+//
+// The revert is built from the abandoned update rather than by rebuilding from the committed
+// policy. The PFCP builder programs what an update changes, so with the abandoned update discarded
+// and nothing pending it programs nothing -- which is what this did before, while logging that the
+// user plane had been put back. The update abandoned installed is still installed; RevertOf is the
+// one that takes it out again.
+func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpdate) bool {
+	// A policy decision held behind the abandoned modification starts once this has finished, on
+	// every exit, and not when the abandonment settled the session: the revert is a PFCP exchange on
+	// the session's one response channel, and a modification started before it had its answer
+	// would program the user plane alongside it. Every abandonment ends here.
+	defer func() {
 		smContext.SMLock.Lock()
-		smContext.ChangeState(smfContext.SmStatePfcpRelease)
 		startDeferredModificationLocked(smContext)
 		smContext.SMLock.Unlock()
+	}()
+
+	if abandoned == nil {
+		smContext.SubPduSessLog.Infof("no modification was pending; the user plane has nothing to put back")
+		return true
+	}
+
+	// Settled however this ends, so a modification waiting in lockAfterRevert is never stranded.
+	defer func() {
+		smContext.SMLock.Lock()
+		if owed := smContext.RevertInFlight; owed != nil {
+			close(owed)
+			smContext.RevertInFlight = nil
+			smContext.RevertOwed.Store(false)
+		}
+		smContext.SMLock.Unlock()
+	}()
+
+	smContext.SMLock.Lock()
+	revert := qos.RevertOf(&smContext.SmPolicyData, abandoned)
+	// Programmed through the builder as the pending update, and not left pending: it is not a
+	// modification of the session, and nothing may commit it or tell the UE about it. Whatever was
+	// pending by now -- a modification started since the abandonment -- is put back as it was.
+	pending := smContext.SmPolicyUpdates
+	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{revert}
+	pfcpParam := BuildPfcpParam(smContext)
+	smContext.SmPolicyUpdates = pending
+
+	// Not sent when any of it could not be built: a partial revert matches neither policy, and an
+	// empty one is not the no-op below. Its parameters were never put back either way.
+	if err := errors.Join(pfcpParam.unbuilt...); err != nil {
+		smContext.SMLock.Unlock()
+		revertFailed(smContext, fmt.Errorf("building the revert: %w", err), "not_built")
 
 		return false
 	}
 
-	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
+	if pfcpParam.empty() {
+		smContext.SMLock.Unlock()
+		smContext.SubPduSessLog.Infof("the abandoned modification changed nothing the user plane carries; nothing to put back")
+		return true
+	}
 
-	// Only now, and not when the abandonment above settled the session: the revert is a PFCP
-	// exchange on the session's one response channel, and a held decision started before it had
-	// its answer would program the user plane alongside it.
-	smContext.SMLock.Lock()
-	startDeferredModificationLocked(smContext)
+	// The response handler signals the waiting sender only while the session is in PfcpModify,
+	// and the abandonment has just moved it to Active. Sent from Active, the UPF's acceptance was
+	// never delivered: this waited on SBIPFCPCommunicationChan for good, and the next exchange on
+	// the session had its answer taken by this wait instead. Seen on a rig: the revert went out
+	// and was accepted, and the SMF never logged it as done.
+	settled := smContext.SMContextState
+	smContext.ChangeState(smfContext.SmStatePfcpModify)
 	smContext.SMLock.Unlock()
 
+	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		revertFailed(smContext, err, "upf_unreachable")
+
+		return false
+	}
+
+	smContext.SMLock.Lock()
+	forgetRemovedRules(smContext, pfcpParam)
+	smContext.ChangeState(settled)
+	smContext.SMLock.Unlock()
+
+	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
+
 	return true
+}
+
+// revertFailed marks a session whose user plane could not be put back. The caller must not hold
+// SMLock.
+//
+// The session is now genuinely divergent: the user plane still enforces the modification the UE
+// was never told about, and putting it back has failed too. Releasing the session is the right
+// answer and this is deliberately not the place that does it.
+//
+// A release is releaseTunnel plus a read of SBIPFCPCommunicationChan plus RemoveSMContext plus
+// notifying the AMF. That channel is a single-slot rendezvous with five existing readers, and this
+// runs on a background goroutine — adding a sixth reader here would risk consuming another
+// transaction's response to clean up after a rare double failure, which is a worse outcome than the
+// divergence it repairs.
+//
+// So this marks and reports, and does not release. The state keeps modifications off the session,
+// but it has no state-machine handler, so a release the UE or the AMF asks for is dropped while it
+// holds; and the transaction that started this can set it back to Active. RevertFailed is the mark
+// that holds. The metric is what makes the session findable.
+func revertFailed(smContext *smfContext.SMContext, err error, cause string) {
+	smContext.SubPduSessLog.Errorf("reverting the user plane failed: %v; this session now enforces parameters the UE was never told about, and is not released here", err)
+	metrics.IncrementModificationAbandonedStats("revert_failure", cause)
+	smContext.SMLock.Lock()
+	smContext.ChangeState(smfContext.SmStatePfcpRelease)
+	// The mark that holds: the state above can be set back to Active by the transaction that
+	// started this, once its handler returns.
+	smContext.RevertFailed = true
+	smContext.SMLock.Unlock()
 }
 
 // startDeferredModificationLocked starts the oldest held policy decision once the modification
@@ -1034,7 +1409,9 @@ func revertModification(smContext *smfContext.SMContext, gen uint64) bool {
 // usually a transaction whose state machine has not finished: HandleEvent applies the handler's
 // returned state after the handler has released the lock, and a modification started in between
 // moved the session to SmStatePfcpModify only for that to put it back to Active -- after which the
-// user plane's answer, delivered only in SmStatePfcpModify, never reached it.
+// user plane's answer, delivered only in SmStatePfcpModify, never reached it. And in the queue for a
+// second reason: a modification whose delivery fails reverts it, and a revert is owed only from
+// inside the queue.
 func startDeferredModificationLocked(smContext *smfContext.SMContext) {
 	if modificationInProgressLocked(smContext) {
 		return
@@ -1079,7 +1456,8 @@ func SetSessionTaskQueue(queue func(*smfContext.SMContext, func())) {
 // update is computed now, against what the session has committed by now, because a decision is a
 // change to the policy in force and not a description of all of it (TS 29.512 subclause 4.2.6.1).
 func runDeferredModification(smContext *smfContext.SMContext) {
-	smContext.SMLock.Lock()
+	// After any revert still owed: built before it, this modification would be undone by it.
+	lockAfterRevert(smContext)
 
 	// Something else started first, and its end starts this one instead.
 	if modificationInProgressLocked(smContext) || len(smContext.DeferredPolicyDecisions) == 0 ||
@@ -1089,9 +1467,9 @@ func runDeferredModification(smContext *smfContext.SMContext) {
 	}
 
 	// A session on its way out takes its held decisions with it, as a notification arriving now
-	// would be refused. PfcpModify is a session whose UE answered before the transfer returned, and
-	// it is settling back to Active.
-	if smContext.Tunnel == nil ||
+	// would be refused; so does one a failed revert left divergent. PfcpModify is a session whose UE
+	// answered before the transfer returned, and it is settling back to Active.
+	if smContext.Tunnel == nil || smContext.RevertFailed ||
 		(smContext.SMContextState != smfContext.SmStateActive && smContext.SMContextState != smfContext.SmStatePfcpModify) {
 		smContext.SubPduSessLog.Warnf("dropping %d held policy decisions: the session is %s and will not be modified",
 			len(smContext.DeferredPolicyDecisions), smContext.SMContextState.String())
@@ -1163,4 +1541,66 @@ func armRanAnswerGuardLocked(smContext *smfContext.SMContext) {
 		smContext.CommittedBeforeRanAnswer = nil
 		startDeferredModificationLocked(smContext)
 	})
+}
+
+// forgetRemovedRules drops the PDRs the user plane has just accepted removing from the session's
+// tunnels and PFCP context, and returns their PDR and FAR identifiers to the pool. The caller holds
+// SMLock, and calls this only once the removal has been accepted: until then the rules are still
+// installed, and a failed removal has to find them where they were.
+//
+// Left in the tunnels, a withdrawn rule was still the session's as far as everything reading them
+// was concerned. Restoration re-installs a restarted UPF from exactly those maps, so a rule the
+// policy had deleted came back with it; and a rule later added under the same name overwrote the
+// entry without freeing it, losing a PDR identifier from a pool of 65535 shared by every session on
+// the UPF.
+//
+// QER identifiers are not returned. They come from a pool of 2^32 per UPF, are scoped to the PFCP
+// session on the wire, and one per rate change is what a superseded flow QER costs; freeing them
+// safely would mean proving no PDR still names one, for a pool that does not run out.
+func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
+	if len(pfcpParam.removePDR) == 0 || smContext.Tunnel == nil {
+		return
+	}
+
+	removed := make(map[*smfContext.PDR]bool, len(pfcpParam.removePDR))
+	for _, pdr := range pfcpParam.removePDR {
+		removed[pdr] = true
+	}
+	removedFAR := make(map[*smfContext.FAR]bool, len(pfcpParam.removeFAR))
+	for _, far := range pfcpParam.removeFAR {
+		removedFAR[far] = true
+	}
+
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+		node := dataPath.FirstDPNode
+		if node == nil || node.UPF == nil {
+			continue
+		}
+
+		nodeIP := node.UPF.NodeID.ResolveNodeIdToIp().String()
+		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+			if tunnel == nil {
+				continue
+			}
+
+			for name, pdr := range tunnel.PDR {
+				if !removed[pdr] {
+					continue
+				}
+
+				delete(tunnel.PDR, name)
+				if pfcpCtx := smContext.PFCPContext[nodeIP]; pfcpCtx != nil {
+					delete(pfcpCtx.PDRs, pdr.PDRID)
+				}
+				if err := node.UPF.RemovePDR(pdr); err != nil {
+					smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
+				}
+				if pdr.FAR != nil && removedFAR[pdr.FAR] {
+					if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
+						smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+					}
+				}
+			}
+		}
+	}
 }

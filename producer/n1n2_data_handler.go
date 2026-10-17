@@ -37,6 +37,9 @@ type pfcpParam struct {
 	removePDR []*context.PDR // Add for teardown
 	removeFAR []*context.FAR
 	removeQER []*context.QER
+	// What BuildPfcpParam could not build. It logs and skips a rule it cannot program, so the
+	// lists above can be short of the update, or empty, with nothing in them saying so.
+	unbuilt []error
 }
 
 func buildAccessForwardingParameters(smContext *context.SMContext,
@@ -400,7 +403,6 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// own cause rather than a timeout, and it is reported on the same path as one, so that
 			// a modification the network could not apply is countable however it failed.
 			abandonModificationUnderLock(smContext, "command_reject", fmt.Sprintf("5gsm_cause_%d", cause))
-			startDeferredModificationLocked(smContext)
 
 		case nas.MsgTypePDUSessionReleaseComplete:
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, N1 Msg PDU Session Release Complete received")
@@ -1021,14 +1023,10 @@ func handleModifyResponse(smContext *context.SMContext, body models.UpdateSmCont
 		return nil
 	}
 
-	// The radio's answer can end the modification, when the UE has already completed it, and a
-	// policy decision held behind it then starts. A correction this answer calls for goes first: it
-	// marks the session pending, and the decision waits for the correction to end.
-	//
-	// A held decision also waits for this answer once the UE has completed, but only for one T3591
-	// interval (armRanAnswerGuardLocked), since an answer that never comes would otherwise hold every
-	// later decision for good. A late answer meeting the newer modification is the case
-	// ranAnswerIsExpectedLocked already cannot separate.
+	// The radio's answer ends the modification when the UE has already completed it, and a policy
+	// decision held behind the modification then starts. It is queued as a session task, so it waits
+	// for any revert owed, and a correction this answer calls for goes first, since it marks the
+	// session pending.
 	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
@@ -1093,7 +1091,7 @@ func handleModifyFailure(smContext *context.SMContext, body models.UpdateSmConte
 		return nil
 	}
 
-	// Refusing the modification ends it, and a held decision starts.
+	// As in handleModifyResponse: the answer can end the modification, and a held decision starts.
 	defer startDeferredModificationLocked(smContext)
 
 	fileBytes, err := readBinaryN2SmInformation(body.GetBinaryDataN2SmInformation())
@@ -1230,9 +1228,9 @@ func realignAfterPartialRejection(smContext *context.SMContext, result context.M
 // programmed nothing, and the user-plane call blocked forever on a response the triggering
 // transaction had already taken.
 //
-// It runs on its own goroutine, and acquiring SMLock is what sequences it: the transaction that
-// brought the acknowledgement holds the lock for its whole life, so the correction cannot start
-// until that has finished and the user plane's response channel is free.
+// It runs as a task in the session's transaction queue: the transaction that brought the
+// acknowledgement is the session's active one for its whole life, so the correction cannot start
+// until that has ended and the user plane's response channel is free.
 func realignSession(smContext *context.SMContext, realign *context.PendingRealignment, corrective *qos.PolicyUpdate) {
 	smContext.SubPduSessLog.Warnf("realigning session: radio access network established %v and refused %v",
 		realign.EstablishedQFIs, realign.RefusedQFIs)
@@ -1269,9 +1267,11 @@ func realignSession(smContext *context.SMContext, realign *context.PendingRealig
 
 	refused := realign.RefusedQFIs
 	start := func() {
-		// Queued in the session's transaction slot, for the reason a held decision is: the caller is
-		// the UE's completion, whose state machine sets Active after this returns, and a correction
-		// already in SmStatePfcpModify by then would never see the user plane's answer.
+		// Queued in the session's transaction slot, for two reasons. The caller is the UE's
+		// completion, whose state machine sets Active after this returns, and a correction already in
+		// SmStatePfcpModify by then would never see the user plane's answer. And a correction that
+		// cannot be delivered is reverted, which has to happen inside the queue for the reason
+		// abandonIfCurrent's expiry is queued.
 		queueSessionTask(smContext, correct(smContext, corrective, refused))
 	}
 	if wait > 0 {
