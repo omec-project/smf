@@ -837,7 +837,7 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 			if _, exist := deletedPFCPNode[curUPFID]; !exist {
 				deletedPFCPNode[curUPFID] = true
 				pendingUPF[curDataPathNode.GetNodeIP()] = true
-				targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.Port})
+				targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.PFCPPort()})
 			}
 		}
 	}
@@ -1016,7 +1016,7 @@ func HandlePduSessN1N2TransFailInd(eventData any) error {
 		smContext.ChangeState(smf_context.SmStatePfcpModify)
 
 		// Sending PFCP modification with flag set to DROP the packets.
-		err := pfcp_message.SendAwaitedPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.Port)
+		err := pfcp_message.SendAwaitedPfcpSessionModificationRequest(ANUPF.UPF.NodeID, smContext, pdrList, farList, barList, qerList, nil, nil, nil, ANUPF.UPF.PFCPPort())
 		if err != nil {
 			smContext.SubPduSessLog.Errorf("pfcp Session Modification Request failed: %v", err)
 

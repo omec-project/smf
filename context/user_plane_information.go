@@ -387,24 +387,22 @@ func getOrCreateUpfNode(existing *UserPlaneInformation, name string, node *facto
 		}
 
 		upf.SNssaiInfos = snssaiInfos
+		// The record is in the pool from NewUPF on, and a returning one is
+		// used by its sessions, so its port and interfaces are written under
+		// UpfLock, which the heartbeat, PFCPPort and GetInterface read them
+		// under. None of those takes the context lock, so taking it here is
+		// safe.
+		upf.UpfLock.Lock()
+		upf.Port = upNode.Port
 		upf.N9Interfaces = n9Interfaces
+		// A returning UPF keeps its N3: the PFCP handlers replace it with the
+		// address the UPF reports in a session establishment, which is the
+		// address the RAN was given. A configured one written over it would
+		// be given to the RAN until the next establishment.
 		if !reused {
-			upf.Port = upNode.Port
 			upf.N3Interfaces = n3Interfaces
-		} else {
-			// A returning UPF is live: the heartbeat loop reads its port and
-			// the PFCP handlers write its N3 under UpfLock. None of them takes
-			// the context lock, so taking it here is safe.
-			upf.UpfLock.Lock()
-			upf.Port = upNode.Port
-			// It keeps the N3 address it reported in its last session
-			// establishment: that is the address the RAN was given, and the
-			// configured one would replace it until the next establishment.
-			if len(upf.N3Interfaces) == 0 {
-				upf.N3Interfaces = n3Interfaces
-			}
-			upf.UpfLock.Unlock()
 		}
+		upf.UpfLock.Unlock()
 
 		existing.UPFs[name] = upNode
 

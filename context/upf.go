@@ -307,24 +307,41 @@ func (upf *UPF) HasRestarted(received time.Time) bool {
 
 // *** add unit test ***//
 // GetInterface return the UPFInterfaceInfo that match input cond
+//
+// It reads the interfaces under UpfLock, because a configuration update replaces them on a UPF
+// that returns to the configuration while its sessions use it. The lists are only ever replaced,
+// never changed in place, so the entry returned stays as it was read.
 func (upf *UPF) GetInterface(interfaceType models.UPInterfaceType, dnn string) *UPFInterfaceInfo {
+	upf.UpfLock.RLock()
+	defer upf.UpfLock.RUnlock()
 	switch interfaceType {
 	case models.UPINTERFACETYPE_N3:
-		for i, iface := range upf.N3Interfaces {
+		n3Interfaces := upf.N3Interfaces
+		for i, iface := range n3Interfaces {
 			logger.CtxLog.Debugf("checking N3 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
-				return &upf.N3Interfaces[i]
+				return &n3Interfaces[i]
 			}
 		}
 	case models.UPINTERFACETYPE_N9:
-		for i, iface := range upf.N9Interfaces {
+		n9Interfaces := upf.N9Interfaces
+		for i, iface := range n9Interfaces {
 			logger.CtxLog.Debugf("checking N9 interface %d: NetworkInstance: %s, Requested DNN: %s", i, iface.NetworkInstance, dnn)
 			if iface.NetworkInstance == dnn {
-				return &upf.N9Interfaces[i]
+				return &n9Interfaces[i]
 			}
 		}
 	}
 	return nil
+}
+
+// PFCPPort is the port the UPF's PFCP messages are sent to, for a caller that does not hold
+// UpfLock. A configuration update writes it under that lock when the UPF returns to the
+// configuration while its sessions use it.
+func (upf *UPF) PFCPPort() uint16 {
+	upf.UpfLock.RLock()
+	defer upf.UpfLock.RUnlock()
+	return upf.Port
 }
 
 func (upf *UPF) PFCPAddr() *net.UDPAddr {

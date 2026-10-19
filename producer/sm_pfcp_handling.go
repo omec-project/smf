@@ -39,7 +39,7 @@ func SendPfcpSessionModifyReq(smContext *smf_context.SMContext, pfcpParam *pfcpP
 
 	if err := sendModificationRequest(ANUPF.UPF.NodeID, smContext,
 		pfcpParam.pdrList, pfcpParam.farList, pfcpParam.barList, pfcpParam.qerList,
-		pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.Port); err != nil {
+		pfcpParam.removePDR, pfcpParam.removeFAR, pfcpParam.removeQER, ANUPF.UPF.PFCPPort()); err != nil {
 		// Returning rather than waiting, whatever failed: the answer that ends the wait is put on
 		// the channel by dispatching the user plane's response, and every failure here is a
 		// failure to dispatch one. Waiting would wait for a response nobody will send.

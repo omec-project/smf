@@ -477,6 +477,67 @@ func TestReprovisionedUPFKeepsItsReportedN3Address(t *testing.T) {
 	}
 }
 
+// A returning UPF's N3 is the PFCP handlers' to replace, so a configuration update leaves it as it
+// is even when it is empty: the adapter empties it before appending the reported address, and a
+// configured address installed in between would be the one the RAN is given.
+func TestReprovisionedUPFLeavesItsN3ToThePFCPHandlers(t *testing.T) {
+	restoreSelfAfter(t)
+
+	applyToSelfWithin(t, []nfConfigApi.SessionManagement{
+		makeSessionConfig("slice1", "208", "93", "1", "010203", "internet", "192.168.1.0/24", "192.0.2.15", 8805),
+	})
+	original := smfContext.UserPlaneInformation.UPNodes["192.0.2.15"].UPF
+	original.N3Interfaces = make([]UPFInterfaceInfo, 0)
+
+	applyToSelfWithin(t, nil)
+	applyToSelfWithin(t, []nfConfigApi.SessionManagement{
+		makeSessionConfig("slice1", "208", "93", "1", "010203", "internet", "192.168.1.0/24", "192.0.2.15", 8805),
+	})
+
+	upf := smfContext.UserPlaneInformation.UPNodes["192.0.2.15"].UPF
+	if upf != original {
+		t.Fatal("expected the returning UPF to keep its record")
+	}
+	if len(upf.N3Interfaces) != 0 {
+		t.Errorf("expected the configuration to leave the N3 alone, got %+v", upf.N3Interfaces)
+	}
+}
+
+// A returning UPF is in use by its sessions while the configuration rewrites its port and N9, so
+// the two must not race. This fails only under -race, which the unit tests run with.
+func TestReprovisionedUPFIsRewrittenUnderItsLock(t *testing.T) {
+	restoreSelfAfter(t)
+
+	cfg := []nfConfigApi.SessionManagement{
+		makeSessionConfig("slice1", "208", "93", "1", "010203", "internet", "192.168.1.0/24", "192.0.2.16", 8805),
+	}
+	applyToSelfWithin(t, cfg)
+	upf := smfContext.UserPlaneInformation.UPNodes["192.0.2.16"].UPF
+	applyToSelfWithin(t, nil)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				upf.GetInterface(models.UPINTERFACETYPE_N9, "internet")
+				upf.PFCPPort()
+			}
+		}
+	}()
+	applyToSelfWithin(t, cfg)
+	close(stop)
+	<-done
+
+	if got := upf.GetInterface(models.UPINTERFACETYPE_N9, "internet"); got == nil {
+		t.Error("expected the returning UPF's N9 interface for its DNN")
+	}
+}
+
 // NewUPF stores a record in the pool only once it is initialised: the heartbeat loop ranges the
 // pool and reads what it finds under UpfLock, which does not order it after writes NewUPF made
 // without the lock. This fails only under -race.

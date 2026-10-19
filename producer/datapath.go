@@ -53,7 +53,7 @@ func SendPFCPRules(smContext *context.SMContext) {
 				if pfcpState == nil {
 					pfcpPool[curDataPathNode.GetNodeIP()] = &PFCPState{
 						nodeID:  curDataPathNode.UPF.NodeID,
-						port:    curDataPathNode.UPF.Port,
+						port:    curDataPathNode.UPF.PFCPPort(),
 						pdrList: pdrList,
 						farList: farList,
 						qerList: qerList,
