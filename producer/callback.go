@@ -390,6 +390,11 @@ func addedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule {
 // The established rules are the committed ones as the decision leaves them: a decision changing a
 // rule's QoS data or traffic control data need not repeat the rule, and a rule it leaves out still
 // refers to them.
+//
+// A rule that names no QoS data is included when the update changes the rule itself, with an empty
+// reference. It has no flow QER at establishment, but one it was given by an earlier decision stays
+// on its PDRs until something takes it off -- and undoing a modification that gave it QoS data is
+// exactly that case.
 func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 	if len(smContext.SmPolicyUpdates) == 0 || smContext.SmPolicyUpdates[0] == nil {
 		return nil
@@ -410,20 +415,23 @@ func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 
 	for name := range names {
 		rule := qos.DecidedPccRule(update.SmPolicyDecision, &smContext.SmPolicyData, name)
-		if name == "" || rule == nil || added[name] != nil || len(rule.RefQosData) == 0 {
+		if name == "" || rule == nil || added[name] != nil {
 			continue
 		}
 
-		qosRef := rule.RefQosData[0]
-		_, ok := changed[qosRef]
-		if !ok {
-			_, ok = update.QosFlowUpdate.GetAdded()[qosRef]
-		}
-		if !ok {
-			_, ok = update.PccRuleUpdate.GetModPccRuleUpdate()[name]
-		}
-		if !ok && len(rule.RefTcData) > 0 {
-			_, ok = update.TCUpdate.GetModified()[rule.RefTcData[0]]
+		_, ok := update.PccRuleUpdate.GetModPccRuleUpdate()[name]
+		qosRef := ""
+		if len(rule.RefQosData) > 0 {
+			qosRef = rule.RefQosData[0]
+			if !ok {
+				_, ok = changed[qosRef]
+			}
+			if !ok {
+				_, ok = update.QosFlowUpdate.GetAdded()[qosRef]
+			}
+			if !ok && len(rule.RefTcData) > 0 {
+				_, ok = update.TCUpdate.GetModified()[rule.RefTcData[0]]
+			}
 		}
 		if !ok {
 			continue
@@ -542,8 +550,10 @@ func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *sm
 
 // requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
 // way the establishment path builds one, and sends them as updates. The superseded flow QER is
-// removed; the session QER stays. Nothing else about the PDRs changes: their filters and FARs are
-// already programmed, and a downlink FAR rewritten here would stop forwarding an active flow.
+// removed; the session QER stays. A rule that names no QoS data gets no flow QER, as at
+// establishment, and loses the one it had. Nothing else about the PDRs changes: their filters and
+// FARs are already programmed, and a downlink FAR rewritten here would stop forwarding an active
+// flow.
 func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
 	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
 ) {
@@ -559,15 +569,21 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 			continue
 		}
 
-		flowQER, err := node.CreatePccRuleQer(smContext, qosRef, tcRef)
-		if err != nil {
-			// Left as it is rather than stripped: the old rates still bound the flow.
-			logger.PduSessLog.Errorf("PCC rule %s keeps its previous rates: %v", name, err)
-			pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("PCC rule %s: %w", name, err))
-			continue
+		var flowQER *smfContext.QER
+		if qosRef != "" {
+			var err error
+			if flowQER, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err != nil {
+				// Left as it is rather than stripped: the old rates still bound the flow.
+				logger.PduSessLog.Errorf("PCC rule %s keeps its previous rates: %v", name, err)
+				pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("PCC rule %s: %w", name, err))
+				continue
+			}
 		}
 
-		qers := []*smfContext.QER{flowQER}
+		var qers []*smfContext.QER
+		if flowQER != nil {
+			qers = append(qers, flowQER)
+		}
 		for _, qer := range pdr.QER {
 			if qer == nil {
 				continue
@@ -582,8 +598,12 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		pdr.QER = qers
 		pdr.State = smfContext.RULE_UPDATE
 		pfcpParam.pdrList = append(pfcpParam.pdrList, pdr)
-		pfcpParam.qerList = append(pfcpParam.qerList, flowQER)
 		smContext.AddPendingUPF(node.GetNodeIP())
+		if flowQER == nil {
+			logger.PduSessLog.Infof("[BuildPfcpParam] PCC rule %s PDR %d now carries no flow QER", name, pdr.PDRID)
+			continue
+		}
+		pfcpParam.qerList = append(pfcpParam.qerList, flowQER)
 		logger.PduSessLog.Infof("[BuildPfcpParam] PCC rule %s PDR %d now carries QER %d", name, pdr.PDRID, flowQER.QERID)
 	}
 }

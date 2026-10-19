@@ -1798,3 +1798,98 @@ func TestADeletionOrARevertLeavesTheDefaultPathAlone(t *testing.T) {
 		})
 	}
 }
+
+// qerIDs lists the IDs of the QERs a PDR carries.
+func qerIDs(pdr *smf_context.PDR) map[uint32]bool {
+	ids := map[uint32]bool{}
+	for _, qer := range pdr.QER {
+		ids[qer.QERID] = true
+	}
+	return ids
+}
+
+// A rule that loses its QoS data loses the flow QER built from it, as a rule that names none has no
+// flow QER at establishment. The builder requalified only rules that name QoS data, so one that no
+// longer did kept the flow QER and its rates -- after a decision took the QoS data away, and after
+// a revert of one that gave it some, which then reported the user plane put back.
+func TestARuleThatLosesItsQosDataLosesItsFlowQER(t *testing.T) {
+	type outcome struct {
+		param  *pfcpParam
+		gone   []*smf_context.QER
+		ul, dl *smf_context.PDR
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T, s *twoRuleSession) outcome
+	}{
+		{"a decision", func(t *testing.T, s *twoRuleSession) outcome {
+			allow := s.allowRule
+			allow.RefQosData = nil
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{allowRuleID: allow, cirRuleID: s.cirRule},
+				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+			}))}
+			return outcome{BuildPfcpParam(s.sm), []*smf_context.QER{s.allowULQER, s.allowDLQER}, s.allowUL, s.allowDL}
+		}},
+		{"a revert", func(t *testing.T, s *twoRuleSession) outcome {
+			// Established naming no QoS data, so with the session QER alone.
+			committed := s.allowRule
+			committed.RefQosData = nil
+			s.sm.SmPolicyData.SmCtxtPccRules.PccRules[allowRuleID] = &committed
+			s.allowUL.QER = []*smf_context.QER{s.sessQER}
+			s.allowDL.QER = []*smf_context.QER{s.sessQER}
+
+			given := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: s.cirRule},
+				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+			}))
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{given}
+			BuildPfcpParam(s.sm)
+			var built []*smf_context.QER
+			for _, pdr := range []*smf_context.PDR{s.allowUL, s.allowDL} {
+				for _, qer := range pdr.QER {
+					if qer.QERID != s.sessQER.QERID {
+						built = append(built, qer)
+					}
+				}
+			}
+			if len(built) != 2 {
+				t.Fatalf("the modification gave the rule %d flow QERs, want one per direction", len(built))
+			}
+
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.RevertOf(&s.sm.SmPolicyData, given)}
+			return outcome{BuildPfcpParam(s.sm), built, s.allowUL, s.allowDL}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTwoRuleSession(t, false)
+			got := tc.run(t, s)
+
+			sent := map[*smf_context.PDR]bool{}
+			for _, pdr := range got.param.pdrList {
+				sent[pdr] = true
+			}
+			removed := map[uint32]bool{}
+			for _, qer := range got.param.removeQER {
+				removed[qer.QERID] = true
+			}
+			for dir, pdr := range map[string]*smf_context.PDR{"UL": got.ul, "DL": got.dl} {
+				if !sent[pdr] {
+					t.Errorf("%s: the rule's PDR was not updated", dir)
+				}
+				if ids := qerIDs(pdr); len(ids) != 1 || !ids[s.sessQER.QERID] {
+					t.Errorf("%s: the PDR carries QERs %v, want the session QER %d alone", dir, ids, s.sessQER.QERID)
+				}
+			}
+			for _, qer := range got.gone {
+				if !removed[qer.QERID] {
+					t.Errorf("flow QER %d stays installed on the user plane", qer.QERID)
+				}
+			}
+			if len(got.param.unbuilt) != 0 {
+				t.Errorf("a rule with no QoS data was recorded as not built: %v", got.param.unbuilt)
+			}
+		})
+	}
+}
