@@ -298,7 +298,8 @@ func TestUpdateSmfContextAppliesConfigAfterEmpty(t *testing.T) {
 	if _, ok := upNodes["192.0.2.1"]; ok {
 		t.Errorf("expected the UPF from before the empty config to be gone, got nodes %v", keys(upNodes))
 	}
-	snssai := models.Snssai{Sst: 1, Sd: openapi.PtrString("000005")}
+	snssai := models.Snssai{Sst: 1}
+	snssai.SetSd("000005")
 	if RetrieveDnnInformation(snssai, "internet2") == nil {
 		t.Error("expected DNN internet2 to be configured after re-provisioning")
 	}
@@ -312,9 +313,11 @@ func TestRetrieveDnnInformationAfterEmptyConfigReturnsNil(t *testing.T) {
 	})
 	applyToSelfWithin(t, nil)
 
+	snssai := models.Snssai{Sst: 1}
+	snssai.SetSd("010203")
 	got := make(chan *SnssaiSmfDnnInfo, 1)
 	go func() {
-		got <- RetrieveDnnInformation(models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")}, "internet")
+		got <- RetrieveDnnInformation(snssai, "internet")
 	}()
 	select {
 	case info := <-got:
