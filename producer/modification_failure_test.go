@@ -406,8 +406,8 @@ func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.
 	}
 }
 
-// A decision that deletes only the default rule carries no valid rule, so the builder also takes
-// its release-only branch for that rule. The deletion has already marked it, and marking it again
+// A decision that deletes only the default rule removes it once. The builder used to take a
+// release-only branch for a decision holding no valid rule as well, and marking the rule again there
 // sent each Remove PDR and Remove FAR twice in one request.
 func TestDeletingTheDefaultRuleRemovesItOnce(t *testing.T) {
 	sm := modifyingSession()

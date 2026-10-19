@@ -1657,3 +1657,144 @@ func TestAnAddedRuleWithoutItsFlowQERIsRecordedAsNotBuilt(t *testing.T) {
 		t.Errorf("recorded as not built: %v, want the added rule's two flow QERs", param.unbuilt)
 	}
 }
+
+// defaultPathNodeIP is the UPF of the session established with no PCC rule.
+const defaultPathNodeIP = "10.0.0.9"
+
+// defaultPathSession is a session established with no PCC rule, so its tunnels hold the "default"
+// PDRs the tunnel build makes then, each carrying the session QER, beside the PDRs of an "app" rule
+// a later modification added.
+type defaultPathSession struct {
+	sm                   *smf_context.SMContext
+	sessQER              *smf_context.QER
+	defaultUL, defaultDL *smf_context.PDR
+	appUL, appDL         *smf_context.PDR
+	appRule              models.PccRule
+	appQos               models.QosData
+}
+
+func newDefaultPathSession(t *testing.T) *defaultPathSession {
+	t.Helper()
+	const appRuleID, appQosID = "app", "2"
+
+	upf := smf_context.NewUPF(smf_context.NewNodeID(defaultPathNodeIP), nil)
+	upf.UPFStatus = smf_context.AssociatedSetUpSuccess
+	t.Cleanup(func() { smf_context.RemoveUPFNodeByNodeID(upf.NodeID) })
+
+	newQER := func() *smf_context.QER {
+		qer, err := upf.AddQER()
+		if err != nil {
+			t.Fatalf("AddQER: %v", err)
+		}
+		qer.GateStatus = &smf_context.GateStatus{}
+		qer.State = smf_context.RULE_CREATE
+		return qer
+	}
+	newPDR := func(qers ...*smf_context.QER) *smf_context.PDR {
+		pdr, err := upf.AddPDR()
+		if err != nil {
+			t.Fatalf("AddPDR: %v", err)
+		}
+		pdr.QER = qers
+		pdr.State = smf_context.RULE_CREATE
+		pdr.FAR.State = smf_context.RULE_CREATE
+		return pdr
+	}
+
+	s := &defaultPathSession{sm: modifyingSession()}
+	s.sessQER = newQER()
+	s.defaultUL, s.defaultDL = newPDR(s.sessQER), newPDR(s.sessQER)
+	s.appUL, s.appDL = newPDR(newQER(), s.sessQER), newPDR(newQER(), s.sessQER)
+
+	node := &smf_context.DataPathNode{
+		UPF:            upf,
+		UpLinkTunnel:   &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{defaultPdrKey: s.defaultUL, appRuleID: s.appUL}},
+		DownLinkTunnel: &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{defaultPdrKey: s.defaultDL, appRuleID: s.appDL}},
+	}
+	s.sm.Tunnel = &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{
+		1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
+	}}
+
+	s.appRule = models.PccRule{
+		PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
+		FlowInfos: []models.FlowInformation{{
+			FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
+			PackFiltId:      openapi.PtrString("7"),
+		}},
+	}
+	s.appQos = models.QosData{QosId: appQosID, Var5qi: openapi.PtrInt32(2)}
+	s.sm.SmPolicyData.Initialize()
+	s.sm.SmPolicyData.SmCtxtSessionRules.ActiveRule = &models.SessionRule{
+		AuthSessAmbr: &models.Ambr{Uplink: "150 Mbps", Downlink: "200 Mbps"},
+	}
+
+	return s
+}
+
+// A decision withdraws the rules it deletes and nothing else. The builder released the "default"
+// PDRs whenever a decision held no valid rule, and on a session established with no PCC rule they
+// are its whole traffic path. A decision whose every rule is a deletion holds none, and so does the
+// revert of a modification that adds or deletes no rule, which carries an empty rule map: deleting
+// the rules added since, or reverting a modification, took the session's traffic and its session
+// AMBR with them.
+func TestADeletionOrARevertLeavesTheDefaultPathAlone(t *testing.T) {
+	const appRuleID, appQosID = "app", "2"
+
+	for _, tc := range []struct {
+		name      string
+		withdraws bool
+		update    func(s *defaultPathSession) *qos.PolicyUpdate
+	}{
+		{"a decision deleting the added rule", true, func(s *defaultPathSession) *qos.PolicyUpdate {
+			appRule, appQos := s.appRule, s.appQos
+			s.sm.SmPolicyData.SmCtxtPccRules.PccRules[appRuleID] = &appRule
+			s.sm.SmPolicyData.SmCtxtQosData.QosData[appQosID] = &appQos
+			return qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{appRuleID: {}},
+				QosDecs:  &map[string]models.QosData{appQosID: {}},
+			}))
+		}},
+		{"the revert of the modification that added it", true, func(s *defaultPathSession) *qos.PolicyUpdate {
+			added := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{appRuleID: s.appRule},
+				QosDecs:  &map[string]models.QosData{appQosID: s.appQos},
+			}))
+			return qos.RevertOf(&s.sm.SmPolicyData, added)
+		}},
+		// The session holds QoS data and no PCC rule, so the revert's rule map is empty.
+		{"the revert of a change that names no rule", false, func(s *defaultPathSession) *qos.PolicyUpdate {
+			appQos := s.appQos
+			s.sm.SmPolicyData.SmCtxtQosData.QosData[appQosID] = &appQos
+			changed := s.appQos
+			changed.MaxbrUl = *openapi.NewNullableString(openapi.PtrString("2 Mbps"))
+			changed.MaxbrDl = *openapi.NewNullableString(openapi.PtrString("4 Mbps"))
+			rateChange := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				QosDecs: &map[string]models.QosData{appQosID: changed},
+			}))
+			return qos.RevertOf(&s.sm.SmPolicyData, rateChange)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newDefaultPathSession(t)
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{tc.update(s)}
+
+			param := BuildPfcpParam(s.sm)
+
+			removed := map[*smf_context.PDR]bool{}
+			for _, pdr := range param.removePDR {
+				removed[pdr] = true
+			}
+			if removed[s.appUL] != tc.withdraws || removed[s.appDL] != tc.withdraws {
+				t.Errorf("the added rule withdrawn: UL %v, DL %v, want %v", removed[s.appUL], removed[s.appDL], tc.withdraws)
+			}
+			if removed[s.defaultUL] || removed[s.defaultDL] {
+				t.Error("the default PDRs, the session's traffic path, were withdrawn with the deleted rule")
+			}
+			for _, qer := range param.removeQER {
+				if qer.QERID == s.sessQER.QERID {
+					t.Error("the session QER was removed")
+				}
+			}
+		})
+	}
+}

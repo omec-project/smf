@@ -175,7 +175,7 @@ func deletedPccRules(smContext *smfContext.SMContext) map[string]*models.PccRule
 // BuildPfcpParam constructs the PFCP parameters (PDRs, FARs, QERs,) for a given SMContext.
 // It analyzes the SM Policy updates and the current data paths in the SM context to:
 //  1. Create or modify PDRs (Packet Detection Rules), FARs (Forwarding Action Rules), and QERs (QoS Enforcement Rules).
-//  2. Identify PDRs, FARs, and QERs to be removed if the policy indicates a release-only scenario.
+//  2. Identify the PDRs, FARs and QERs of the rules the update deletes, to be removed.
 //  3. Activate UL/DL tunnels on the UPFs if needed.
 //
 // This function returns a pfcpParam structure containing lists of rules to add or remove for PFCP session management.
@@ -193,29 +193,12 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 	// Initialize map to track UPFs pending PFCP configuration
 	smContext.ResetPendingUPF(nil)
 
-	// Determine if we only need to release existing rules (no new policy).
-	// A valid rule is one where both the map key and PccRuleId are non-empty.
-	// Release-only when PccRules is present but contains no valid rules.
-	shouldSendReleaseOnly := false
-	ruleid := "default"
-
-	if len(smContext.SmPolicyUpdates) > 0 && smContext.SmPolicyUpdates[0].SmPolicyDecision.HasPccRules() {
-		validRuleID := ""
-		for ruleId, rule := range smContext.SmPolicyUpdates[0].SmPolicyDecision.GetPccRules() {
-			logger.PduSessLog.Infof("[BuildPfcpParam] Checking PCC RuleId=%s, Rule=%+v", ruleId, rule)
-			if ruleId != "" && rule.GetPccRuleId() != "" {
-				validRuleID = ruleId
-				break
-			}
-			logger.PduSessLog.Warnf("[BuildPfcpParam] Skipping invalid PCC rule: key=%q, PccRuleId=%q", ruleId, rule.GetPccRuleId())
-		}
-		if validRuleID != "" {
-			ruleid = validRuleID
-		} else {
-			shouldSendReleaseOnly = true
-		}
-	}
-	logger.PduSessLog.Infof("[BuildPfcpParam] releaseOnly=%v", shouldSendReleaseOnly)
+	// There is no "release only" reading of a decision. It took a decision holding no valid PCC
+	// rule -- one whose every rule is a deletion, or an empty map -- as an order to release the
+	// PDRs named "default", which are a session's whole traffic path when it was established with
+	// no PCC rule. Deleting the rules added since, or reverting a modification on such a session,
+	// took its traffic and its session AMBR with them. A deletion is withdrawn below by name, and
+	// nothing else is.
 
 	// Iterate over all active data paths in the SM context
 	if smContext.Tunnel == nil {
@@ -249,7 +232,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// among them -- came back without the session AMBR. They get a new one, built as
 		// establishment builds it; the old one is left as the withdrawal left it, referred to by
 		// nothing, until the session's release removes it.
-		if len(sessQERs) == 0 && !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 && !hasPDRs(ANUPF) {
+		if len(sessQERs) == 0 && len(addedPccRules(smContext)) > 0 && !hasPDRs(ANUPF) {
 			if sessQER, err := ANUPF.CreateSessRuleQer(smContext); err != nil {
 				smContext.SubPduSessLog.Errorf("the rules added to UPF %s carry no session AMBR: %v", ANUPF.GetNodeIP(), err)
 				pfcpParam.unbuilt = append(pfcpParam.unbuilt, fmt.Errorf("session QER on UPF %s: %w", ANUPF.GetNodeIP(), err))
@@ -259,11 +242,11 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 			}
 		}
 
-		// Only activate tunnels if not release-only, and only for rules the update adds: the tunnel
-		// build makes PDRs for those and nothing else, and with no PCC rule in the update -- a
-		// decision changing only QoS data or traffic control data -- it allocated a "default" PDR
-		// over whatever rule went by that name.
-		if !shouldSendReleaseOnly && len(addedPccRules(smContext)) > 0 {
+		// Tunnels are activated only for rules the update adds: the tunnel build makes PDRs for
+		// those and nothing else, and with no PCC rule in the update -- a decision changing only
+		// QoS data or traffic control data -- it allocated a "default" PDR over whatever rule went
+		// by that name.
+		if len(addedPccRules(smContext)) > 0 {
 			if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
 				logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
 			}
@@ -273,8 +256,7 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 		// A rule the update deletes is withdrawn from the user plane here. The radio is told to
 		// release the flow and the UE is told to stop using it; without this the PDR went on
 		// forwarding it, so the only party still carrying the deleted rule was the one actually
-		// moving the traffic. The release-only branch below is a different case: it fires when a
-		// decision has no valid rules at all, not when one rule among several goes away.
+		// moving the traffic.
 		//
 		// The PDR, its FAR and the rule's own flow QER go; the session QER does not. It is
 		// attached to every PDR on the path, so removing it would take the session AMBR off the
@@ -302,15 +284,6 @@ func BuildPfcpParam(smContext *smfContext.SMContext) *pfcpParam {
 
 				smContext.AddPendingUPF(ANUPF.GetNodeIP())
 			}
-		}
-
-		if shouldSendReleaseOnly {
-			// Not twice: a rule the update deletes was marked above, and a Remove PDR repeated in
-			// one request is one the user plane can refuse the whole request for.
-			if _, removed := deleted[ruleid]; !removed {
-				releaseRule(pfcpParam, ANUPF, ruleid)
-			}
-			continue
 		}
 
 		// Each rule is programmed on its own PDRs. This used to take the first valid rule in map
@@ -460,25 +433,6 @@ func requalifiedPccRules(smContext *smfContext.SMContext) map[string]string {
 	}
 
 	return requalified
-}
-
-// releaseRule withdraws a rule's PDRs, FARs and QERs, for a decision that carries no valid rule.
-func releaseRule(pfcpParam *pfcpParam, node *smfContext.DataPathNode, ruleid string) {
-	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
-		pdr, ok := tunnel.PDR[ruleid]
-		if !ok {
-			continue
-		}
-
-		logger.PduSessLog.Infof("[BuildPfcpParam] Marking PDR[%s] ID=%d for removal", ruleid, pdr.PDRID)
-		pfcpParam.removePDR = append(pfcpParam.removePDR, pdr)
-		if pdr.FAR != nil {
-			pfcpParam.removeFAR = append(pfcpParam.removeFAR, pdr.FAR)
-		}
-		if pdr.QER != nil {
-			pfcpParam.removeQER = append(pfcpParam.removeQER, pdr.QER...)
-		}
-	}
 }
 
 // programAddedRule completes the PDRs ActivateUlDlTunnel built for a rule the update adds, and
