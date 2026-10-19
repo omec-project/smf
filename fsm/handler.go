@@ -74,6 +74,14 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateInActivePending][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
+	// The AMF can send ReleaseSmContext (TS 29.502 clause 5.2.2.3.2) before the UE's Release
+	// Complete arrives for a release the NAS path already started: HandleStateActiveEventPduSessModify
+	// above leaves such a context in SmStateInActivePending, not SmStateActive. Without this,
+	// SmEventPduSessRelease met EmptyEventHandler here, the API returned HTTP 500, and the context
+	// was never removed. producer.HandlePDUSessionSMContextRelease already tolerates this: it skips
+	// the PFCP delete for the Tunnel this path already released, and ReleaseUeIpAddr is idempotent,
+	// so the same handler is safe to reuse rather than needing a InActivePending-specific one.
+	SmfFsmHandler[smf_context.SmStateInActivePending][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
 }
@@ -162,15 +170,23 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 	return smf_context.SmStateInit, nil
 }
 
+// HandleStateActiveEventPduSessModify runs the update pipeline and returns the state
+// HandlePDUSessionSMContextUpdate's own dispatch already left the context in, rather than assuming
+// success always means SmStateActive: a UE-initiated release (TS 24.501 clause 6.3.3) moves the
+// context to SmStatePfcpRelease then SmStateInActivePending internally before returning, and a
+// hardcoded SmStateActive here would have HandleEvent's unconditional ChangeState stomp that back
+// to Active immediately after -- reactivating a session whose user plane was just torn down and
+// hiding the isSmContextInactive guards in n1n2_data_handler.go from ever seeing the real state on
+// a subsequent retransmission.
 func HandleStateActiveEventPduSessModify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.HandlePDUSessionSMContextUpdate(eventData.Txn); err != nil {
 		smCtxt.SubFsmLog.Errorf("sm context update error, %v ", err.Error())
-		return smf_context.SmStateActive, err
+		return smCtxt.SMContextState, err
 	}
-	return smf_context.SmStateActive, nil
+	return smCtxt.SMContextState, nil
 }
 
 // HandleInactiveStateEventPduSessModify runs the update pipeline for a context that is not active,
