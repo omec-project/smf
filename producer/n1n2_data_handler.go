@@ -40,6 +40,17 @@ type pfcpParam struct {
 	// What BuildPfcpParam could not build. It logs and skips a rule it cannot program, so the
 	// lists above can be short of the update, or empty, with nothing in them saying so.
 	unbuilt []error
+	// The established PDRs the build changed in place, as they were before, for a modification
+	// the user plane does not accept to put back.
+	requalified []requalifiedPDR
+}
+
+// requalifiedPDR is an established PDR the build changed, with what it carried before.
+type requalifiedPDR struct {
+	pdr        *context.PDR
+	qer        []*context.QER
+	precedence uint32
+	state      context.RuleState
 }
 
 func buildAccessForwardingParameters(smContext *context.SMContext,

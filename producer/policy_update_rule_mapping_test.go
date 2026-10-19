@@ -1936,3 +1936,120 @@ func TestAPrecedenceChangeReachesTheRulesPDRs(t *testing.T) {
 		})
 	}
 }
+
+// A modification the user plane does not accept leaves the rules it requalified as the UPF has
+// them. The builder changes them in place before the request goes out, and a refused or unsent
+// request left them naming flow QERs the UPF never installed: the next update removed those instead
+// of the ones the UPF held, and a restoration would have installed the refused rates.
+func TestARefusedModificationLeavesItsRulesAsTheUPFHasThem(t *testing.T) {
+	type state struct {
+		qers       map[uint32]bool
+		precedence uint32
+		st         smf_context.RuleState
+	}
+	snapshot := func(pdrs ...*smf_context.PDR) []state {
+		var out []state
+		for _, pdr := range pdrs {
+			out = append(out, state{qerIDs(pdr), pdr.Precedence, pdr.State})
+		}
+		return out
+	}
+
+	for _, tc := range []struct {
+		name string
+		// run drives the modification and returns the PDRs to check, with what the UPF holds for
+		// them.
+		run func(t *testing.T, s *twoRuleSession) ([]*smf_context.PDR, []state)
+	}{
+		{"a refused modification", func(t *testing.T, s *twoRuleSession) ([]*smf_context.PDR, []state) {
+			sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return errors.New("rejected") }
+			held := snapshot(s.cirUL, s.cirDL)
+			if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())); err == nil {
+				t.Fatal("the refused modification was reported as applied")
+			}
+			return []*smf_context.PDR{s.cirUL, s.cirDL}, held
+		}},
+		{"a refused revert", func(t *testing.T, s *twoRuleSession) ([]*smf_context.PDR, []state) {
+			var held []state
+			sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+				if held == nil {
+					held = snapshot(s.cirUL, s.cirDL)
+					return nil
+				}
+				return errors.New("rejected")
+			}
+			sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+			if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())); err == nil {
+				t.Fatal("the undeliverable modification was reported as delivered")
+			}
+			if !s.sm.RevertFailed {
+				t.Fatal("the refused revert was not marked as failed")
+			}
+			return []*smf_context.PDR{s.cirUL, s.cirDL}, held
+		}},
+		{"a revert that could not be built", func(t *testing.T, s *twoRuleSession) ([]*smf_context.PDR, []state) {
+			// The modification changes the catch-all's rates and withdraws the dedicated rule, so
+			// its revert requalifies the one and re-creates the other, which a released UE address
+			// stops.
+			s.withPfcpContext()
+			s.withConnection(true)
+			s.cirRule.FlowInfos = []models.FlowInformation{{
+				FlowDescription: openapi.PtrString("permit out ip from 192.168.250.1/32 to assigned"),
+				PackFiltId:      openapi.PtrString("5"),
+			}}
+			committedRule := s.cirRule
+			s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID] = &committedRule
+			var held []state
+			sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+				held = snapshot(s.allowUL, s.allowDL)
+				return nil
+			}
+			sendQosN1N2TransferMsg = func(*smf_context.SMContext) error {
+				s.sm.PDUAddress.Ip = net.IPv4zero
+				return errors.New("amf unreachable")
+			}
+			allowQos := s.allowQos
+			allowQos.MaxbrUl = *openapi.NewNullableString(openapi.PtrString("5 Mbps"))
+			allowQos.MaxbrDl = *openapi.NewNullableString(openapi.PtrString("8 Mbps"))
+			decision := roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: {}},
+				QosDecs:  &map[string]models.QosData{allowQosID: allowQos, cirQosID: {}},
+			})
+			if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)); err == nil {
+				t.Fatal("the undeliverable modification was reported as delivered")
+			}
+			if !s.sm.RevertFailed {
+				t.Fatal("the revert that could not be built was not marked as failed")
+			}
+			return []*smf_context.PDR{s.allowUL, s.allowDL}, held
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+			t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+
+			s := newTwoRuleSession(t, false)
+			pdrs, held := tc.run(t, s)
+			if len(held) != len(pdrs) {
+				t.Fatalf("nothing was sent to the user plane")
+			}
+			for i, pdr := range pdrs {
+				got := snapshot(pdr)[0]
+				if len(got.qers) != len(held[i].qers) {
+					t.Errorf("PDR %d carries QERs %v, want %v as the UPF has them", pdr.PDRID, got.qers, held[i].qers)
+					continue
+				}
+				for id := range held[i].qers {
+					if !got.qers[id] {
+						t.Errorf("PDR %d carries QERs %v, want %v as the UPF has them", pdr.PDRID, got.qers, held[i].qers)
+						break
+					}
+				}
+				if got.precedence != held[i].precedence || got.st != held[i].st {
+					t.Errorf("PDR %d has precedence %d and state %v, want %d and %v",
+						pdr.PDRID, got.precedence, got.st, held[i].precedence, held[i].st)
+				}
+			}
+		})
+	}
+}

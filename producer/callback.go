@@ -554,6 +554,9 @@ func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *sm
 // QER, as at establishment, and loses the one it had. Nothing else about the PDRs changes: their
 // filters and FARs are already programmed, and a downlink FAR rewritten here would stop forwarding
 // an active flow.
+//
+// The PDRs are changed in place, before the user plane has answered, so what they carried before is
+// recorded for undoRequalified.
 func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
 	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
 ) {
@@ -582,6 +585,10 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 				continue
 			}
 		}
+
+		pfcpParam.requalified = append(pfcpParam.requalified, requalifiedPDR{
+			pdr: pdr, qer: pdr.QER, precedence: pdr.Precedence, state: pdr.State,
+		})
 
 		var qers []*smfContext.QER
 		if flowQER != nil {
@@ -613,6 +620,17 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		}
 		pfcpParam.qerList = append(pfcpParam.qerList, flowQER)
 		logger.PduSessLog.Infof("[BuildPfcpParam] PCC rule %s PDR %d now carries QER %d", name, pdr.PDRID, flowQER.QERID)
+	}
+}
+
+// undoRequalified puts the established PDRs the build changed back as they were, for a
+// modification the user plane did not accept. Left changed, they named flow QERs the UPF never
+// installed: the next update would remove those instead of the ones it holds, and a restoration
+// would install the refused rates. The flow QERs built for them keep their IDs, since it cannot be
+// told from here whether a request that failed was applied. The caller holds SMLock.
+func undoRequalified(pfcpParam *pfcpParam) {
+	for _, r := range pfcpParam.requalified {
+		r.pdr.QER, r.pdr.Precedence, r.pdr.State = r.qer, r.precedence, r.state
 	}
 }
 
@@ -906,6 +924,7 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 		smContext.SubCtxLog.Errorf("PFCP session modify error: %v", err)
 		smContext.SMLock.Lock()
+		undoRequalified(pfcpParam)
 		// The procedure never got started, so it must not leave the session looking as though one
 		// were running: every later UE request would be disregarded, silently and forever.
 		smContext.NwModificationPending = false
@@ -1317,6 +1336,7 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	// Not sent when any of it could not be built: a partial revert matches neither policy, and an
 	// empty one is not the no-op below. Its parameters were never put back either way.
 	if err := errors.Join(pfcpParam.unbuilt...); err != nil {
+		undoRequalified(pfcpParam)
 		smContext.SMLock.Unlock()
 		revertFailed(smContext, fmt.Errorf("building the revert: %w", err), "not_built")
 
@@ -1339,6 +1359,9 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	smContext.SMLock.Unlock()
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
+		smContext.SMLock.Lock()
+		undoRequalified(pfcpParam)
+		smContext.SMLock.Unlock()
 		revertFailed(smContext, err, "upf_unreachable")
 
 		return false
