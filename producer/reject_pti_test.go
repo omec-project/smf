@@ -225,6 +225,65 @@ func TestReleaseRejectEchoesRequestPti(t *testing.T) {
 	}
 }
 
+// TestReleaseRequestForNeverEstablishedSessionIsRejectedWithInvalidIdentity covers the SmStateInit
+// branch of the isSmContextInactive guard: a release request naming the session the context
+// actually holds, but before anything was ever established, still needs a NAS answer -- #43
+// invalid PDU session identity, TS 24.501 subclause 6.4.2.6 item b -- rather than a silent 200
+// with no N1 content, or the UE's own release procedure retransmits until its timer expires.
+func TestReleaseRequestForNeverEstablishedSessionIsRejectedWithInvalidIdentity(t *testing.T) {
+	const pduSessionID = 10
+
+	// NewSMContext's default state: nothing was ever established for this session.
+	smContext := smf_context.NewSMContext("imsi-208930100007488", pduSessionID)
+
+	var request models.UpdateSmContextRequest
+	request.SetJsonData(models.SmContextUpdateData{})
+	request.SetBinaryDataN1SmMessage(n1SmMessageFile(t, encodeReleaseRequest(t, pduSessionID, requestPti)))
+
+	txn := transaction.NewTransaction(request, nil, svcmsgtypes.UpdateSmContext)
+	txn.Ctxt = smContext
+
+	response := models.NewUpdateSmContext200Response()
+	if err := HandleUpdateN1Msg(txn, response, &pfcpAction{}); err != nil {
+		t.Fatalf("HandleUpdateN1Msg returned %v, want the release to be refused without error", err)
+	}
+
+	file := response.GetBinaryDataN1SmMessage()
+	if file == nil {
+		t.Fatal("no N1 SM message was attached to the response: a never-established session's release request was silently dropped")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("could not rewind the response payload: %v", err)
+	}
+	payload, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatalf("could not read the response's N1 SM message: %v", err)
+	}
+	m := nas.NewMessage()
+	if err := m.GsmMessageDecode(&payload); err != nil {
+		t.Fatalf("could not decode the response's N1 SM message: %v", err)
+	}
+
+	if got := m.GsmHeader.GetMessageType(); got != nas.MsgTypePDUSessionReleaseReject {
+		t.Fatalf("message type = %#02x, want PDU SESSION RELEASE REJECT (%#02x)", got, nas.MsgTypePDUSessionReleaseReject)
+	}
+	reject := m.PDUSessionReleaseReject
+	if got := reject.GetCauseValue(); got != nasMessage.Cause5GSMInvalidPDUSessionIdentity {
+		t.Errorf("5GSM cause = #%d, want #43 invalid PDU session identity", got)
+	}
+	if got := reject.GetPTI(); got != requestPti {
+		t.Errorf("PTI = %#02x, want the request's %#02x", got, requestPti)
+	}
+	if got := int32(reject.GetPDUSessionID()); got != pduSessionID {
+		t.Errorf("PDU session id = %d, want %d", got, pduSessionID)
+	}
+
+	if smContext.SMContextState != smf_context.SmStateInit {
+		t.Errorf("SM context state = %v, want it to remain SmStateInit: nothing was ever established to clean up",
+			smContext.SMContextState.String())
+	}
+}
+
 // TestErrorCauseRejectsCarryContextPti is the weaker, builder-level guard. It cannot fail for the
 // defect the two tests above cover, because it supplies the PTI itself - it guards the encoder and
 // the cause table against a rejection that drops the identity on the way to the wire.

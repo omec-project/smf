@@ -162,15 +162,23 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 	return smf_context.SmStateInit, nil
 }
 
+// HandleStateActiveEventPduSessModify runs the update pipeline and returns the state
+// HandlePDUSessionSMContextUpdate's own dispatch already left the context in, rather than assuming
+// success always means SmStateActive: a UE-initiated release (TS 24.501 clause 6.3.3) moves the
+// context to SmStatePfcpRelease then SmStateInActivePending internally before returning, and a
+// hardcoded SmStateActive here would have HandleEvent's unconditional ChangeState stomp that back
+// to Active immediately after -- reactivating a session whose user plane was just torn down and
+// hiding the isSmContextInactive guards in n1n2_data_handler.go from ever seeing the real state on
+// a subsequent retransmission.
 func HandleStateActiveEventPduSessModify(event SmEvent, eventData *SmEventData) (smf_context.SMContextState, error) {
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
 	if err := producer.HandlePDUSessionSMContextUpdate(eventData.Txn); err != nil {
 		smCtxt.SubFsmLog.Errorf("sm context update error, %v ", err.Error())
-		return smf_context.SmStateActive, err
+		return smCtxt.SMContextState, err
 	}
-	return smf_context.SmStateActive, nil
+	return smCtxt.SMContextState, nil
 }
 
 // HandleInactiveStateEventPduSessModify runs the update pipeline for a context that is not active,

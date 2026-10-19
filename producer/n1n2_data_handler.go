@@ -179,35 +179,41 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, SM Context State[%v] should be SmStateActive", smContext.SMContextState.String())
 			}
 			if pduSessIDRelReq == pduSessIDSmCxt {
+				if isSmContextInactive(smContext.SMContextState) {
+					if smContext.SMContextState == context.SmStateInActivePending {
+						// The release is already in progress: HandlePDUSessionReleaseRequest (UE IP
+						// release) and the PFCP delete it triggers below must only run once, but the
+						// UE only retransmits here because the first PDU Session Release Command
+						// (TS 24.501 clause 6.3.3.3) never reached it, e.g. it was lost over the air.
+						// Resend the N1/N2 Release Command so the retry can still complete the
+						// handshake, without repeating the cleanup or disturbing the state the
+						// pending PFCP delete answer still needs.
+						smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, retransmitted PDU Session Release Request: resending Release Command, SM context state[%v]",
+							smContext.SMContextState.String())
+						buildPDUSessionReleaseN1N2(smContext, response)
+						break
+					}
+					if smContext.SMContextState == context.SmStateInit {
+						// TS 24.501 subclause 6.4.2.6 item b): a session that was never established has
+						// no release to resend, but the request still needs a NAS answer -- #43 invalid
+						// PDU session identity -- or the UE's own release procedure retransmits until
+						// its timer expires. State stays SmStateInit: there is nothing to clean up.
+						smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, rejecting PDU Session Release Request for a never-established session: SM context state[%v]",
+							smContext.SMContextState.String())
+						buildPDUSessionReleaseReject(smContext, response, pduSessIDRelReq, "InvalidPDUSessionIdentity")
+						break
+					}
+					// SmStateRelease: the N1 PDUSessionReleaseComplete handler or the N2
+					// duplicate-session-ID handler above already removed the context earlier in this
+					// same update. This guard only applies to a release request naming the session the
+					// context actually holds: a mismatched identity must still fall through to the
+					// reject branch below regardless of state.
+					smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, ignoring PDU Session Release Request: SM context state[%v] has no active user plane",
+						smContext.SMContextState.String())
+					break
+				}
 				smContext.HandlePDUSessionReleaseRequest(m.PDUSessionReleaseRequest)
-				if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
-					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
-				} else {
-					tmpFile, err := util.CreatePayloadTempFile(buf)
-					if err != nil {
-						smContext.SubPduSessLog.Errorln(err)
-					} else {
-						response.SetBinaryDataN1SmMessage(tmpFile)
-						jsonData := response.GetJsonData()
-						jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "PDUSessionReleaseCommand"})
-						response.SetJsonData(jsonData)
-					}
-				}
-
-				if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
-					smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
-				} else {
-					tmpFile, err := util.CreatePayloadTempFile(buf)
-					if err != nil {
-						smContext.SubPduSessLog.Errorln(err)
-					} else {
-						response.SetBinaryDataN2SmInformation(tmpFile)
-						jsonData := response.GetJsonData()
-						jsonData.SetN2SmInfo(models.RefToBinaryData{ContentId: "PDUResourceReleaseCommand"})
-						jsonData.SetN2SmInfoType(models.N2SMINFOTYPE_PDU_RES_REL_CMD)
-						response.SetJsonData(jsonData)
-					}
-				}
+				buildPDUSessionReleaseN1N2(smContext, response)
 
 				if smContext.Tunnel != nil {
 					smContext.ChangeState(context.SmStatePfcpModify)
@@ -221,19 +227,7 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				}
 			} else {
 				smContext.SubPduSessLog.Errorf("Invalid PDU Session ID")
-				if buf, err := context.BuildGSMPDUSessionReleaseRejectWithCause(smContext, pduSessIDRelReq, "InvalidPDUSessionIdentity"); err != nil {
-					smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
-				} else {
-					tmpFile, err := util.CreatePayloadTempFile(buf)
-					if err != nil {
-						smContext.SubPduSessLog.Errorln(err)
-					} else {
-						response.SetBinaryDataN1SmMessage(tmpFile)
-						jsonData := response.GetJsonData()
-						jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: context.PDU_SESS_REL_REJECT})
-						response.SetJsonData(jsonData)
-					}
-				}
+				buildPDUSessionReleaseReject(smContext, response, pduSessIDRelReq, "InvalidPDUSessionIdentity")
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			}
@@ -452,6 +446,68 @@ func isSmContextInactive(state context.SMContextState) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// buildPDUSessionReleaseN1N2 fills response with the GSM PDU Session Release Command (N1) and the
+// matching PDUSessionResourceReleaseCommandTransfer (N2) that TS 23.502 clause 4.3.4 has the AMF
+// relay together to the UE/gNB. Used both for the first PDU Session Release Request and, without
+// the cleanup that must only run once, to resend the same pair on a retransmission that never saw
+// either arrive.
+func buildPDUSessionReleaseN1N2(smContext *context.SMContext, response *models.UpdateSmContext200Response) {
+	if buf, err := context.BuildGSMPDUSessionReleaseCommand(smContext); err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseCommand failed: %+v", err)
+	} else {
+		tmpFile, err := util.CreatePayloadTempFile(buf)
+		if err != nil {
+			smContext.SubPduSessLog.Errorln(err)
+		} else {
+			response.SetBinaryDataN1SmMessage(tmpFile)
+			var refToBinaryData models.RefToBinaryData
+			refToBinaryData.SetContentId("PDUSessionReleaseCommand")
+			jsonData := response.GetJsonData()
+			jsonData.SetN1SmMsg(refToBinaryData)
+			response.SetJsonData(jsonData)
+		}
+	}
+
+	if buf, err := context.BuildPDUSessionResourceReleaseCommandTransfer(smContext); err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build PDUSessionResourceReleaseCommandTransfer failed: %+v", err)
+	} else {
+		tmpFile, err := util.CreatePayloadTempFile(buf)
+		if err != nil {
+			smContext.SubPduSessLog.Errorln(err)
+		} else {
+			response.SetBinaryDataN2SmInformation(tmpFile)
+			var refToBinaryData models.RefToBinaryData
+			refToBinaryData.SetContentId("PDUResourceReleaseCommand")
+			jsonData := response.GetJsonData()
+			jsonData.SetN2SmInfo(refToBinaryData)
+			jsonData.SetN2SmInfoType(models.N2SMINFOTYPE_PDU_RES_REL_CMD)
+			response.SetJsonData(jsonData)
+		}
+	}
+}
+
+// buildPDUSessionReleaseReject fills response with a GSM PDU Session Release Reject (N1) carrying
+// cause, the TS 24.501 clause 6.4.2.6 answer a release request naming the wrong or a
+// never-established PDU session must get instead of being silently dropped.
+func buildPDUSessionReleaseReject(smContext *context.SMContext, response *models.UpdateSmContext200Response, pduSessionID int32, cause string) {
+	if buf, err := context.BuildGSMPDUSessionReleaseRejectWithCause(smContext, pduSessionID, cause); err != nil {
+		smContext.SubPduSessLog.Errorf("PDUSessionSMContextUpdate, build GSM PDUSessionReleaseReject failed: %+v", err)
+	} else {
+		tmpFile, err := util.CreatePayloadTempFile(buf)
+		if err != nil {
+			smContext.SubPduSessLog.Errorln(err)
+		} else {
+			response.SetBinaryDataN1SmMessage(tmpFile)
+			var refToBinaryData models.RefToBinaryData
+			refToBinaryData.SetContentId(context.PDU_SESS_REL_REJECT)
+
+			jsonData := response.GetJsonData()
+			jsonData.SetN1SmMsg(refToBinaryData)
+			response.SetJsonData(jsonData)
+		}
 	}
 }
 
