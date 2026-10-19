@@ -477,6 +477,35 @@ func TestReprovisionedUPFKeepsItsReportedN3Address(t *testing.T) {
 	}
 }
 
+// NewUPF stores a record in the pool only once it is initialised: the heartbeat loop ranges the
+// pool and reads what it finds under UpfLock, which does not order it after writes NewUPF made
+// without the lock. This fails only under -race.
+func TestAUPFIsInThePoolOnlyOnceInitialised(t *testing.T) {
+	restoreSelfAfter(t)
+	nodeID := NewNodeID("192.0.2.17")
+
+	found := make(chan struct{})
+	go func() {
+		defer close(found)
+		for {
+			for _, upf := range RegisteredUPFs() {
+				upf.UpfLock.Lock()
+				ours := upf.NodeID.Equal(*nodeID) && upf.UPFStatus == NotAssociated
+				upf.UpfLock.Unlock()
+				if ours {
+					return
+				}
+			}
+		}
+	}()
+	NewUPF(nodeID, nil)
+	select {
+	case <-found:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the new UPF never appeared in the pool")
+	}
+}
+
 func keys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

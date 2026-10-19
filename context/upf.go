@@ -219,8 +219,6 @@ func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 	upf = new(UPF)
 	upf.uuid = uuid.New()
 
-	upfPool.Store(upf.UUID(), upf)
-
 	// Initialize context
 	upf.UPFStatus = NotAssociated
 	upf.NodeID = *nodeID
@@ -244,6 +242,10 @@ func NewUPF(nodeID *NodeID, ifaces []factory.InterfaceUpfInfoItem) (upf *UPF) {
 		}
 	}
 
+	// Published last: the heartbeat loop ranges the pool, and a record stored before it was
+	// initialised could be read half-made. The store is what orders these writes before any
+	// reader's load.
+	upfPool.Store(upf.UUID(), upf)
 	return upf
 }
 
