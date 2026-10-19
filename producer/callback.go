@@ -549,18 +549,21 @@ func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *sm
 }
 
 // requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
-// way the establishment path builds one, and sends them as updates. The superseded flow QER is
-// removed; the session QER stays. A rule that names no QoS data gets no flow QER, as at
-// establishment, and loses the one it had. Nothing else about the PDRs changes: their filters and
-// FARs are already programmed, and a downlink FAR rewritten here would stop forwarding an active
-// flow.
+// way the establishment path builds one, and its decided precedence, and sends them as updates. The
+// superseded flow QER is removed; the session QER stays. A rule that names no QoS data gets no flow
+// QER, as at establishment, and loses the one it had. Nothing else about the PDRs changes: their
+// filters and FARs are already programmed, and a downlink FAR rewritten here would stop forwarding
+// an active flow.
 func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *smfContext.DataPathNode,
 	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
 ) {
 	tcRef := ""
-	if rule := qos.DecidedPccRule(smContext.SmPolicyUpdates[0].SmPolicyDecision, &smContext.SmPolicyData, name); rule != nil &&
-		len(rule.RefTcData) > 0 {
-		tcRef = rule.RefTcData[0]
+	var precedence uint32
+	if rule := qos.DecidedPccRule(smContext.SmPolicyUpdates[0].SmPolicyDecision, &smContext.SmPolicyData, name); rule != nil {
+		if len(rule.RefTcData) > 0 {
+			tcRef = rule.RefTcData[0]
+		}
+		precedence = uint32(rule.GetPrecedence())
 	}
 
 	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
@@ -596,6 +599,11 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		}
 
 		pdr.QER = qers
+		// A precedence the decision leaves out keeps the one the PDR has, as an added rule's
+		// keeps the fallback it was given.
+		if precedence != 0 {
+			pdr.Precedence = precedence
+		}
 		pdr.State = smfContext.RULE_UPDATE
 		pfcpParam.pdrList = append(pfcpParam.pdrList, pdr)
 		smContext.AddPendingUPF(node.GetNodeIP())

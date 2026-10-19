@@ -1893,3 +1893,46 @@ func TestARuleThatLosesItsQosDataLosesItsFlowQER(t *testing.T) {
 		})
 	}
 }
+
+// A precedence change reaches the rule's PDRs. The builder requalified the rule for it and sent its
+// PDRs with the old precedence, while the commit recorded the new one: overlapping rules went on
+// matching in the old order, and an identical later decision no longer read as a change.
+func TestAPrecedenceChangeReachesTheRulesPDRs(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		precedence *int32
+		revert     bool
+		want       uint32
+	}{
+		{"a new precedence", openapi.PtrInt32(150), false, 150},
+		{"a precedence the decision leaves out", nil, false, 200},
+		{"the revert of a new precedence", openapi.PtrInt32(150), true, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTwoRuleSession(t, false)
+			s.cirUL.Precedence, s.cirDL.Precedence = 200, 200
+			cir := s.cirRule
+			cir.Precedence = tc.precedence
+			update := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
+				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: cir},
+				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+			}))
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{update}
+
+			param := BuildPfcpParam(s.sm)
+			if tc.revert {
+				s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.RevertOf(&s.sm.SmPolicyData, update)}
+				param = BuildPfcpParam(s.sm)
+			}
+
+			for dir, pdr := range map[string]*smf_context.PDR{"UL": s.cirUL, "DL": s.cirDL} {
+				if !param.touches(pdr) {
+					t.Errorf("%s: the rule's PDR was not updated", dir)
+				}
+				if pdr.Precedence != tc.want {
+					t.Errorf("%s: the PDR is sent with precedence %d, want %d", dir, pdr.Precedence, tc.want)
+				}
+			}
+		})
+	}
+}
