@@ -5,6 +5,8 @@ package fsm
 
 import (
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"testing"
 
@@ -271,5 +273,106 @@ func TestFirstReleaseFromActiveReachesInActivePendingAndRetransmissionResendsCom
 	}
 	if int32(gotPduSessionID) != pduSessionID {
 		t.Errorf("PDU session id in the resent Release Command = %d, want %d", gotPduSessionID, pduSessionID)
+	}
+}
+
+// The AMF can send ReleaseSmContext (TS 29.502 clause 5.2.2.3.2) for a session the NAS release
+// already moved to SmStateInActivePending, before the UE's own Release Complete ever arrives.
+// InitFsm used to register SmEventPduSessRelease only for SmStateActive, so dispatch for this
+// context reached EmptyEventHandler, returning an error that surfaced as an HTTP 500 and left the
+// context registered forever. This also exercises the producer's unconditional ReleaseUeIpAddr
+// call a second time (the N1 release handler already released the address once): it must be a
+// no-op rather than re-releasing it.
+func TestReleaseSmContextInActivePendingCompletesCleanup(t *testing.T) {
+	const pduSessionID = int32(10)
+
+	prevConfig := factory.SmfConfig
+	t.Cleanup(func() { factory.SmfConfig = prevConfig })
+	disabled := false
+	factory.SmfConfig = factory.Config{
+		Configuration: &factory.Configuration{KafkaInfo: factory.KafkaInfo{EnableKafka: &disabled}},
+	}
+
+	// releaseTunnel's GetUPFID lookup dereferences this package-level singleton unconditionally;
+	// a non-nil, empty UserPlaneInformation makes the lookup miss harmlessly (logged, no PFCP
+	// session deletion sent) instead of nil-pointer-panicking. Shared global state: save/restore.
+	prevUPI := smf_context.SMF_Self().UserPlaneInformation
+	t.Cleanup(func() { smf_context.SMF_Self().UserPlaneInformation = prevUPI })
+	smf_context.SMF_Self().UserPlaneInformation = &smf_context.UserPlaneInformation{}
+
+	allocator, err := smf_context.NewIPAllocator("192.168.139.0/30")
+	if err != nil {
+		t.Fatalf("build the UE IP allocator: %v", err)
+	}
+	const supi = "imsi-208930100007488"
+	ueIP, err := allocator.Allocate(supi)
+	if err != nil {
+		t.Fatalf("allocate the UE address: %v", err)
+	}
+
+	sm := &smf_context.SMContext{
+		Supi:                     supi,
+		PDUSessionID:             pduSessionID,
+		SMContextState:           smf_context.SmStateActive,
+		Tunnel:                   singleUpfTunnel("10.0.0.1"),
+		SBIPFCPCommunicationChan: make(chan smf_context.PFCPSessionResponseStatus, 1),
+		DNNInfo:                  &smf_context.SnssaiSmfDnnInfo{UeIPAllocator: allocator},
+		PDUAddress:               &smf_context.UeIpAddr{Ip: ueIP},
+		SubPduSessLog:            zap.NewNop().Sugar(),
+		SubCtxLog:                zap.NewNop().Sugar(),
+		SubGsmLog:                zap.NewNop().Sugar(),
+		SubFsmLog:                zap.NewNop().Sugar(),
+	}
+
+	// Buffered channel: queue the verdict before the blocking read inside SendPfcpSessionReleaseReq
+	// reaches it, so the NAS release path completes synchronously with no PFCP peer involved.
+	sm.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
+
+	firstTxn := releaseRequestTxn(t, sm, pduSessionID, 7)
+	if err = HandleEvent(sm, SmEventPduSessModify, SmEventData{Txn: firstTxn}); err != nil {
+		t.Fatalf("first (NAS) release: HandleEvent returned an error: %v", err)
+	}
+	if sm.SMContextState != smf_context.SmStateInActivePending {
+		t.Fatalf("after the NAS release, state = %v, want SmStateInActivePending", sm.SMContextState.String())
+	}
+	if !sm.PDUAddress.Ip.Equal(net.IPv4zero) {
+		t.Fatalf("after the NAS release, UE address = %v, want it released (0.0.0.0)", sm.PDUAddress.Ip)
+	}
+
+	// The AMF's ReleaseSmContext: a separate SBI request, not another N1 message, so it is
+	// dispatched directly as SmEventPduSessRelease rather than through releaseRequestTxn.
+	releaseTxn := &transaction.Transaction{Req: *models.NewReleaseSmContextRequest(), Ctxt: sm}
+	if err = HandleEvent(sm, SmEventPduSessRelease, SmEventData{Txn: releaseTxn}); err != nil {
+		t.Fatalf("ReleaseSmContext in SmStateInActivePending returned an error (the AMF would see an "+
+			"HTTP 500 and the context would never be removed): %v", err)
+	}
+
+	rsp, ok := releaseTxn.Rsp.(*httpwrapper.Response)
+	if !ok {
+		t.Fatalf("expected an httpwrapper.Response, got %T", releaseTxn.Rsp)
+	}
+	if rsp.Status != http.StatusNoContent {
+		t.Errorf("ReleaseSmContext response status = %d, want %d (no PFCP peer left to delete from)",
+			rsp.Status, http.StatusNoContent)
+	}
+	if !sm.PDUAddress.Ip.Equal(net.IPv4zero) {
+		t.Errorf("UE address after ReleaseSmContext = %v, want it to remain released, not re-released",
+			sm.PDUAddress.Ip)
+	}
+
+	// The address the NAS release freed must still be the one handed back out. The pool's /30
+	// allocator has only two usable addresses, both already handed out exactly once by this point
+	// (ueIP to supi, then the one below to the next caller), so a third allocate can only succeed
+	// by reusing ueIP's freed slot -- which a second ReleaseUeIpAddr call that mishandled the
+	// already-zeroed sentinel, instead of leaving it a no-op, could have corrupted.
+	if _, err = allocator.Allocate("imsi-208930100007499"); err != nil {
+		t.Fatalf("allocate the pool's other address: %v", err)
+	}
+	reallocated, err := allocator.Allocate("imsi-208930100007500")
+	if err != nil {
+		t.Fatalf("re-allocate ueIP's freed slot: %v", err)
+	}
+	if !reallocated.Equal(ueIP) {
+		t.Errorf("re-allocated address = %v, want the one ReleaseUeIpAddr freed (%v)", reallocated, ueIP)
 	}
 }

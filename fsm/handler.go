@@ -74,6 +74,14 @@ func InitFsm() {
 	SmfFsmHandler[smf_context.SmStateInit][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateInActivePending][SmEventPduSessModify] = HandleInactiveStateEventPduSessModify
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
+	// The AMF can send ReleaseSmContext (TS 29.502 clause 5.2.2.3.2) before the UE's Release
+	// Complete arrives for a release the NAS path already started: HandleStateActiveEventPduSessModify
+	// above leaves such a context in SmStateInActivePending, not SmStateActive. Without this,
+	// SmEventPduSessRelease met EmptyEventHandler here, the API returned HTTP 500, and the context
+	// was never removed. producer.HandlePDUSessionSMContextRelease already tolerates this: it skips
+	// the PFCP delete for the Tunnel this path already released, and ReleaseUeIpAddr is idempotent,
+	// so the same handler is safe to reuse rather than needing a InActivePending-specific one.
+	SmfFsmHandler[smf_context.SmStateInActivePending][SmEventPduSessRelease] = HandleStateActiveEventPduSessRelease
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPduSessN1N2TransferFailureIndication] = HandleStateActiveEventPduSessN1N2TransFailInd
 	SmfFsmHandler[smf_context.SmStateActive][SmEventPolicyUpdateNotify] = HandleStateActiveEventPolicyUpdateNotify
 }

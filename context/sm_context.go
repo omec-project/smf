@@ -792,11 +792,17 @@ func (smContext *SMContext) ReleaseUeIpAddr() error {
 		logger.CtxLog.Warnf("ReleaseUeIpAddr: PduSessionUeAddress is nil, skipping release")
 		return nil
 	}
-	if ip := smContext.PDUAddress.Ip; ip != nil && !smContext.PDUAddress.UpfProvided {
-		smContext.SubPduSessLog.Infof("Release IP[%s]", smContext.PDUAddress.Ip.String())
-		smContext.DNNInfo.UeIPAllocator.Release(smContext.Supi, ip)
-		smContext.PDUAddress.Ip = net.IPv4(0, 0, 0, 0)
+	// net.IPv4zero is the sentinel this function itself writes back below once an address has
+	// been released: callers on independent cleanup paths (NAS release, PFCP session report,
+	// ReleaseSmContext) can each reach this function for the same context, and without this guard
+	// a second call would release the sentinel into the allocator instead of being a no-op.
+	ip := smContext.PDUAddress.Ip
+	if ip == nil || ip.Equal(net.IPv4zero) || smContext.PDUAddress.UpfProvided {
+		return nil
 	}
+	smContext.SubPduSessLog.Infof("Release IP[%s]", ip.String())
+	smContext.DNNInfo.UeIPAllocator.Release(smContext.Supi, ip)
+	smContext.PDUAddress.Ip = net.IPv4(0, 0, 0, 0)
 	return nil
 }
 
