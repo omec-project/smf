@@ -182,11 +182,11 @@ type SMContext struct {
 	// RevertOwed is whether RevertInFlight is open, set and cleared with it under SMLock, and read
 	// without the lock by the PFCP modification response handlers. They cannot take SMLock: in
 	// adapter mode the response is handled inside the send, on a goroutine whose caller may hold it.
-	// The revert's answer is delivered while one is owed whatever the session's state: the revert
-	// moves the session to SmStatePfcpModify for its exchange, but a NAS or NGAP handler that started
-	// it from inside a transaction has its state machine set Active after it returns, possibly while
-	// the exchange is out. Nothing else for the session is in flight while a revert is owed, so the
-	// answer arriving then is the revert's.
+	// The revert's answer is delivered while one is owed whatever the session's state, and the
+	// revert leaves the state alone: a NAS or NGAP handler that started it from inside a transaction
+	// has its state machine set a state after it returns, possibly while the exchange is out or
+	// after it has finished. Nothing else for the session is in flight while a revert is owed, so
+	// the answer arriving then is the revert's.
 	RevertOwed atomic.Bool `json:"-" yaml:"-" bson:"-"`
 
 	// RevertFailed is set, for good, when a revert could not put the user plane back: the session

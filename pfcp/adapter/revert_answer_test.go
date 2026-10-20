@@ -16,11 +16,11 @@ import (
 	"github.com/wmnsk/go-pfcp/message"
 )
 
-// A revert's answer reaches the revert even if the session is no longer in SmStatePfcpModify. A
-// NAS or NGAP handler starts the revert from inside a transaction, and that transaction's state
-// machine sets Active after the handler returns -- possibly after the revert has moved the session
-// to SmStatePfcpModify for its exchange. Dropped, the answer left the revert waiting for good, and
-// every later transaction for the session waiting on it.
+// A revert's answer reaches the revert whatever the session's state. The revert is sent in the
+// state the session is in and leaves it alone, and a NAS or NGAP handler that starts it from inside
+// a transaction has its state machine write a state after the handler returns, possibly while the
+// exchange is out. Dropped, the answer left the revert waiting for good, and every later
+// transaction for the session waiting on it.
 func TestARevertsAnswerIsDeliveredWhateverTheState(t *testing.T) {
 	if factory.SmfConfig.Configuration == nil {
 		off := false

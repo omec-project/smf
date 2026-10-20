@@ -763,16 +763,20 @@ func TestRevertingAnAdditionRemovesTheRuleFromTheSession(t *testing.T) {
 	}
 }
 
-// The UPF's answer to a modification reaches the waiting sender only while the session is in
-// PfcpModify: HandlePfcpSessionModificationResponse drops it in any other state. The abandonment
-// that precedes a revert settles the session in Active, so a revert sent from there waited for an
-// answer that was never delivered -- on a rig, accepted by the UPF and never logged as done.
-func TestARevertIsSentWhileTheSessionAwaitsTheAnswer(t *testing.T) {
+// A revert leaves the session's state alone, and is sent while it is owed: the response handlers
+// deliver its answer by RevertOwed, whatever the state. A NAS or NGAP handler that starts a revert
+// returns the state it reads after releasing the lock, and its transaction's state machine writes
+// that back after the handler returns. The revert used to move the session to SmStatePfcpModify for
+// its exchange, so that write, read while the revert was out and made once it had settled, left the
+// session in SmStatePfcpModify for good, where no policy notification or release is handled.
+func TestARevertLeavesTheSessionsStateAlone(t *testing.T) {
 	original := sendPfcpSessionModifyReq
 	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
 	var stateAtSend smf_context.SMContextState
+	var owedAtSend bool
 	sendPfcpSessionModifyReq = func(sm *smf_context.SMContext, _ *pfcpParam) error {
 		stateAtSend = sm.SMContextState
+		owedAtSend = sm.RevertOwed.Load()
 		return nil
 	}
 
@@ -783,12 +787,14 @@ func TestARevertIsSentWhileTheSessionAwaitsTheAnswer(t *testing.T) {
 
 	abandonIfCurrent(s.sm, timer)
 
-	if stateAtSend != smf_context.SmStatePfcpModify {
-		t.Errorf("the revert was sent in state %s; the answer is delivered only in %s",
-			stateAtSend, smf_context.SmStatePfcpModify)
+	if !owedAtSend {
+		t.Error("the revert was sent with no revert owed, so its answer would be dropped")
 	}
+	// The starting transaction's trailing write: the state it read while the revert was out.
+	s.sm.ChangeState(stateAtSend)
 	if s.sm.SMContextState != smf_context.SmStateActive {
-		t.Errorf("after the revert the session is in %s, want it settled in %s", s.sm.SMContextState, smf_context.SmStateActive)
+		t.Errorf("after the revert and its transaction's state write the session is in %s, want %s",
+			s.sm.SMContextState, smf_context.SmStateActive)
 	}
 }
 

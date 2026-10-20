@@ -588,8 +588,8 @@ func TestATimeoutNobodyIsWaitingForLeavesNothingBehind(t *testing.T) {
 }
 
 // A revert is waited on whatever the session's state, so its timeout is answered whatever the state
-// too. The revert moves the session to SmStatePfcpModify for its exchange, but a transaction's
-// trailing state change can move it on before the user plane has answered, and the response handlers
+// too. The revert is sent in the state the session is in and leaves it alone; a transaction's
+// trailing state write can change it before the user plane has answered, and the response handlers
 // deliver a revert's answer by RevertOwed for that reason. A timeout read only the state: it was
 // dropped, the revert waited on its channel for good, and nothing queued for the session ran again.
 func TestARevertTheUserPlaneNeverAnswersAnswersItsWaiterInAnyState(t *testing.T) {

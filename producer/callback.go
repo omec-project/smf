@@ -1391,13 +1391,12 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 		return true
 	}
 
-	// The response handler signals the waiting sender only while the session is in PfcpModify,
-	// and the abandonment has just moved it to Active. Sent from Active, the UPF's acceptance was
-	// never delivered: this waited on SBIPFCPCommunicationChan for good, and the next exchange on
-	// the session had its answer taken by this wait instead. Seen on a rig: the revert went out
-	// and was accepted, and the SMF never logged it as done.
-	settled := smContext.SMContextState
-	smContext.ChangeState(smfContext.SmStatePfcpModify)
+	// Sent in the state the abandonment left, Active: the response handlers deliver the answer
+	// while a revert is owed, whatever the state. The session is not moved to SmStatePfcpModify
+	// for the exchange. A NAS or NGAP handler that starts the revert returns the state it reads
+	// once it has released the lock, and its state machine writes that back after the handler
+	// returns: read while the revert was out and written once it had settled, SmStatePfcpModify
+	// stayed for good, and no policy notification or release is handled in that state.
 	smContext.SMLock.Unlock()
 
 	if err := sendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
@@ -1411,7 +1410,6 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 
 	smContext.SMLock.Lock()
 	forgetRemovedRules(smContext, pfcpParam)
-	smContext.ChangeState(settled)
 	smContext.SMLock.Unlock()
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
