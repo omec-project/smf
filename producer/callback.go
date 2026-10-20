@@ -551,9 +551,10 @@ func sessionUEAddress(smContext *smfContext.SMContext, pfcpParam *pfcpParam) *sm
 // requalifyRule gives an established rule's PDRs a flow QER built from its changed QoS data, the
 // way the establishment path builds one, and its decided precedence, and sends them as updates. The
 // superseded flow QER is removed; the session QER stays. A rule that names no QoS data gets no flow
-// QER, as at establishment, and loses the one it had. Nothing else about the PDRs changes: their
-// filters and FARs are already programmed, and a downlink FAR rewritten here would stop forwarding
-// an active flow.
+// QER, as at establishment, and loses the one it had. An uplink PDR also names the F-TEID the UPF
+// allocated for it, in place of the CHOOSE it was established with (see installedUplinkFTEID).
+// Nothing else about the PDRs changes: their filters and FARs are already programmed, and a
+// downlink FAR rewritten here would stop forwarding an active flow.
 //
 // The PDRs are changed in place, before the user plane has answered, so what they carried before is
 // recorded for undoRequalified.
@@ -580,6 +581,17 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 			continue
 		}
 
+		var fteid *smfContext.FTEID
+		if local := pdr.PDI.LocalFTeid; local != nil && local.Ch {
+			if fteid = installedUplinkFTEID(smContext, node); fteid == nil {
+				logger.PduSessLog.Errorf("PCC rule %s PDR %d keeps its previous rates: its tunnel's F-TEID is not known",
+					name, pdr.PDRID)
+				pfcpParam.unbuilt = append(pfcpParam.unbuilt,
+					fmt.Errorf("PCC rule %s: the F-TEID of its uplink tunnel is not known", name))
+				continue
+			}
+		}
+
 		var flowQER *smfContext.QER
 		if qosRef != "" {
 			var err error
@@ -592,8 +604,11 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		}
 
 		pfcpParam.requalified = append(pfcpParam.requalified, requalifiedPDR{
-			pdr: pdr, qer: pdr.QER, precedence: pdr.Precedence, state: pdr.State,
+			pdr: pdr, qer: pdr.QER, precedence: pdr.Precedence, state: pdr.State, localFTeid: pdr.PDI.LocalFTeid,
 		})
+		if fteid != nil {
+			pdr.PDI.LocalFTeid = fteid
+		}
 
 		var qers []*smfContext.QER
 		if flowQER != nil {
@@ -636,7 +651,29 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 func undoRequalified(pfcpParam *pfcpParam) {
 	for _, r := range pfcpParam.requalified {
 		r.pdr.QER, r.pdr.Precedence, r.pdr.State = r.qer, r.precedence, r.state
+		r.pdr.PDI.LocalFTeid = r.localFTeid
 	}
+}
+
+// installedUplinkFTEID is the F-TEID the UPF allocated for node's uplink tunnel, as an Update PDR
+// names it, or nil if it is not known.
+//
+// Establishment asks the UPF to choose the F-TEID, and the SMF records the one the UPF chose on the
+// tunnel, not on the PDRs, so an uplink PDR still carries the CHOOSE flag. An Update PDR's PDI
+// replaces the one the UPF holds (TS 29.244 table 7.5.4.2-1), and the reference UPF allocates no
+// F-TEID for an update: it parses the PDR afresh and keeps no TEID, so the rule matched any TEID.
+// The F-TEID is named as restoration pins it, from the tunnel's TEID and the N3 address the RAN
+// was given. An address that is not IPv4 is not known here: the F-TEID is built as IPv4, as the
+// SMF builds its sessions, and an IPv6 address would go on the wire as 0.0.0.0.
+func installedUplinkFTEID(smContext *smfContext.SMContext, node *smfContext.DataPathNode) *smfContext.FTEID {
+	if node.UpLinkTunnel == nil || node.UpLinkTunnel.TEID == 0 || node.UPF == nil {
+		return nil
+	}
+	access := accessAddressOf(node.UPF, smContext.SelectedPDUSessionType).To4()
+	if access == nil {
+		return nil
+	}
+	return &smfContext.FTEID{V4: true, Teid: node.UpLinkTunnel.TEID, Ipv4Address: access}
 }
 
 // 3GPP Reference: TS 23.502 §4.3.3.4 – "PDU Session Modification" procedure

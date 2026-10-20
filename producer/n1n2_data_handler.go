@@ -51,6 +51,7 @@ type requalifiedPDR struct {
 	qer        []*context.QER
 	precedence uint32
 	state      context.RuleState
+	localFTeid *context.FTEID
 }
 
 func buildAccessForwardingParameters(smContext *context.SMContext,

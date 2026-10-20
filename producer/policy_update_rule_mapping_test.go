@@ -6,14 +6,19 @@ package producer
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/omec-project/nas/v2/nasMessage"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
+	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/qos"
+	"github.com/wmnsk/go-pfcp/ie"
+	"github.com/wmnsk/go-pfcp/message"
 )
 
 // twoRuleSession is an established session carrying two PCC rules, the way a slice with a
@@ -2060,6 +2065,128 @@ func TestARefusedModificationLeavesItsRulesAsTheUPFHasThem(t *testing.T) {
 					t.Errorf("PDR %d has precedence %d and state %v, want %d and %v",
 						pdr.PDRID, got.precedence, got.st, held[i].precedence, held[i].st)
 				}
+			}
+		})
+	}
+}
+
+// An update of an established uplink PDR names the F-TEID the UPF allocated for it. Establishment
+// asks the UPF to choose one and the SMF records it on the tunnel, so the PDR still carried the
+// CHOOSE flag, and an Update PDR's PDI replaces the one the UPF holds. The reference UPF allocates
+// no F-TEID for an update, so after any rate, gate or precedence change the rule matched any TEID.
+func TestAnUplinkUpdateNamesTheInstalledFTEID(t *testing.T) {
+	const teid = 0x1234
+	access := net.ParseIP("10.0.0.70").To4()
+	// established gives the session's uplink PDRs the F-TEID establishment sends, and its tunnel
+	// the one the UPF chose; n3 is the UPF's N3 address the RAN was told, if any.
+	established := func(t *testing.T, n3 net.IP) *twoRuleSession {
+		s := newTwoRuleSession(t, false)
+		s.sm.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
+		node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+		node.UpLinkTunnel.TEID = teid
+		for _, pdr := range []*smf_context.PDR{s.allowUL, s.cirUL} {
+			pdr.PDI.LocalFTeid = &smf_context.FTEID{V4: true, Ch: true, Chid: true, ChooseId: 1}
+		}
+		if n3 != nil {
+			node.UPF.N3Interfaces = []smf_context.UPFInterfaceInfo{{IPv4EndPointAddresses: []net.IP{n3}}}
+		}
+		return s
+	}
+
+	t.Run("the update names it", func(t *testing.T) {
+		s := established(t, access)
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())}
+		param := BuildPfcpParam(s.sm)
+		if len(param.unbuilt) != 0 {
+			t.Fatalf("not built: %v", param.unbuilt)
+		}
+
+		req, err := pfcp_message.BuildPfcpSessionModificationRequest(1, 1, 2, net.ParseIP("10.0.0.1"),
+			param.pdrList, param.farList, param.qerList, param.removePDR, param.removeFAR, param.removeQER)
+		if err != nil {
+			t.Fatalf("building the request: %v", err)
+		}
+		wire, err := req.Marshal()
+		if err != nil {
+			t.Fatalf("encoding the request: %v", err)
+		}
+		sent, err := message.ParseSessionModificationRequest(wire)
+		if err != nil {
+			t.Fatalf("decoding the request: %v", err)
+		}
+
+		fteids := map[uint16]*ie.FTEIDFields{}
+		for _, update := range sent.UpdatePDR {
+			id, err := update.PDRID()
+			if err != nil {
+				t.Fatalf("Update PDR without a PDR ID: %v", err)
+			}
+			pdi, err := update.PDI()
+			if err != nil {
+				t.Fatalf("Update PDR %d without a PDI: %v", id, err)
+			}
+			fteids[id] = nil
+			for _, x := range pdi {
+				if x.Type == ie.FTEID {
+					if fteids[id], err = x.FTEID(); err != nil {
+						t.Fatalf("decoding PDR %d's F-TEID: %v", id, err)
+					}
+				}
+			}
+		}
+
+		f, ok := fteids[s.cirUL.PDRID]
+		if !ok {
+			t.Fatal("the rule's uplink PDR was not updated")
+		}
+		if f == nil {
+			t.Fatal("the uplink Update PDR names no F-TEID")
+		}
+		if f.HasCh() || f.HasChID() {
+			t.Errorf("the uplink Update PDR asks the UPF to choose an F-TEID (flags %#x): it allocates none for "+
+				"an update, so the rule matches any TEID", f.Flags)
+		}
+		if f.TEID != teid || !f.IPv4Address.Equal(access) {
+			t.Errorf("the uplink Update PDR names TEID %#x at %v, want %#x at %v, the tunnel the RAN sends on",
+				f.TEID, f.IPv4Address, teid, access)
+		}
+		if f, ok := fteids[s.cirDL.PDRID]; !ok || f != nil {
+			t.Errorf("the downlink Update PDR: sent %v, F-TEID %+v; want sent with none", ok, f)
+		}
+	})
+
+	t.Run("a refused update puts the PDR back", func(t *testing.T) {
+		s := established(t, access)
+		chosen := s.cirUL.PDI.LocalFTeid
+		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())}
+		undoRequalified(BuildPfcpParam(s.sm))
+		if s.cirUL.PDI.LocalFTeid != chosen {
+			t.Errorf("after a refused update the uplink PDR names %+v, want the F-TEID it had, %+v",
+				s.cirUL.PDI.LocalFTeid, chosen)
+		}
+	})
+
+	// With no N3 address, or only one the IPv4 F-TEID cannot carry: an IPv6 address goes on the wire
+	// as 0.0.0.0. An IPv4v6 session reads the IPv6 one when the UPF has no IPv4 address.
+	for name, n3 := range map[string][]smf_context.UPFInterfaceInfo{
+		"no N3 address":      nil,
+		"an IPv6 N3 address": {{IPv6EndPointAddresses: []net.IP{net.ParseIP("2001:db8::1")}}},
+	} {
+		t.Run("an unknown F-TEID leaves the uplink PDR alone: "+name, func(t *testing.T) {
+			s := established(t, nil)
+			s.sm.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4IPv6
+			s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.N3Interfaces = n3
+			held := qerIDs(s.cirUL)
+			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange())}
+			param := BuildPfcpParam(s.sm)
+			if param.touches(s.cirUL) {
+				t.Errorf("the uplink PDR is updated with F-TEID %+v, which the SMF does not know", s.cirUL.PDI.LocalFTeid)
+			}
+			if got := qerIDs(s.cirUL); !maps.Equal(got, held) {
+				t.Errorf("the uplink PDR carries QERs %v, want the ones it had, %v", got, held)
+			}
+			if len(param.unbuilt) == 0 {
+				t.Error("the update is not recorded as not built")
 			}
 		})
 	}
