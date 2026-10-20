@@ -252,20 +252,37 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 		return fmt.Errorf("no pending pfcp session establishment response for sequence no: %v", seq)
 	}
 
-	if rsp.UPFSEID != nil {
-		NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
-		pfcpSessionCtx := smContext.PFCPContext[NodeIDtoIP]
-		rspUPFseid, err := rsp.UPFSEID.FSEID()
-		if err != nil {
-			return fmt.Errorf("pfcp session establishment response UPFSEID error: %v", err)
+	upfKey, _ := smContext.GetPFCPContextKeyByLocalSEID(SEID)
+
+	if rsp.Cause == nil {
+		return errors.New("pfcp session establishment response has no cause")
+	}
+	causeValue, causeErr := rsp.Cause.Cause()
+	if causeErr != nil {
+		return fmt.Errorf("pfcp session establishment response cause error: %v", causeErr)
+	}
+	var rspUPFseid *ie.FSEIDFields
+	if causeValue == ie.CauseRequestAccepted && rsp.UPFSEID != nil {
+		var fseidErr error
+		if rspUPFseid, fseidErr = rsp.UPFSEID.FSEID(); fseidErr != nil {
+			logger.PfcpLog.Errorf("failed to parse FSEID IE: %+v", fseidErr)
+			rspUPFseid = nil
 		}
-		pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
-		// Which incarnation of the node acknowledged it, so a restoration after a restart can tell a
-		// session the restarted node lost from one it already holds. See AcknowledgedAtRecovery.
+	}
+	accepted := causeValue == ie.CauseRequestAccepted
+
+	if accepted {
+		pfcpSessionCtx := smContext.PFCPContext[upfKey]
+		if pfcpSessionCtx == nil {
+			return fmt.Errorf("PFCP Session Establishment accepted but its PFCP context is gone for UPF[%s]", nodeID.ResolveNodeIdToIp().String())
+		}
+		if rspUPFseid != nil {
+			pfcpSessionCtx.RemoteSEID = rspUPFseid.SEID
+			smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
+		}
 		if upf := context.RetrieveUPFNodeByNodeID(*nodeID); upf != nil {
 			pfcpSessionCtx.AcknowledgedAtRecovery = upf.HeldRecovery()
 		}
-		smContext.SubPfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse rsp.UPFSEID.Seid [%v] ", rspUPFseid.SEID)
 	}
 
 	// Get N3 interface UPF
@@ -275,7 +292,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 	}
 	ANUPF := smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
 
-	if rsp.CreatedPDR != nil {
+	if accepted && rsp.CreatedPDR != nil {
 		ueIPAddress := FindUEIPAddress(rsp.CreatedPDR)
 		if ueIPAddress != nil {
 			smContext.SubPfcpLog.Infof("upf provided ue ip address [%v]", ueIPAddress)
@@ -308,6 +325,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
 				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
 		}
+
 		ANUPF.UpLinkTunnel.TEID = fteid.TEID
 		upf := context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
@@ -332,53 +350,29 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 		return errors.New("failed to get UPF from default path")
 	}
 
-	if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
-		if rsp.Cause == nil {
-			return errors.New("pfcp session establishment response has no cause")
+	// Gated on the state, like the modification and release handlers. Restoration issues an
+	// establishment without waiting on this channel, so an unconditional send here would leave a
+	// stale value for whichever unrelated modification or release next waits on it.
+	awaited := smContext.SMContextState == context.SmStatePfcpCreatePending
+
+	if !accepted {
+		smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
+		if causeValue == ie.CauseNoEstablishedPFCPAssociation {
+			SetUpfInactive(*rspNodeID)
 		}
-		causeValue, err := rsp.Cause.Cause()
-		if err != nil {
-			return fmt.Errorf("pfcp session establishment response cause error: %v", err)
-		}
-		// Gated on the state, like the modification and release handlers. Restoration issues an
-		// establishment without waiting on this channel, so an unconditional send here would leave a
-		// stale value for whichever unrelated modification or release next waits on it.
-		awaited := smContext.SMContextState == context.SmStatePfcpCreatePending
-		// UPF Accept
-		if causeValue == ie.CauseRequestAccepted {
-			if awaited {
-				// Not a blocking send. A data path through several user planes establishes one
-				// session on each, and every response lands here while the channel holds one
-				// verdict and is read once. In adapter mode the response is dispatched inline, on the
-				// goroutine that reads the channel afterwards -- so a second blocking write parked it
-				// on its own channel, and two user planes that both accepted wedged the session.
-				// The first verdict stands and later ones are dropped; which one should stand when
-				// the user planes disagree is a separate question, and this does not answer it.
-				select {
-				case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishSuccess:
-				default:
-					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishSuccess)
-				}
-			}
-			smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
-		} else {
-			if awaited {
-				// Not a blocking send. A data path through several user planes establishes one
-				// session on each, and every response lands here while the channel holds one
-				// verdict and is read once. In adapter mode the response is dispatched inline, on the
-				// goroutine that reads the channel afterwards -- so a second blocking write parked it
-				// on its own channel, and two user planes that both accepted wedged the session.
-				// The first verdict stands and later ones are dropped; which one should stand when
-				// the user planes disagree is a separate question, and this does not answer it.
-				select {
-				case smContext.SBIPFCPCommunicationChan <- context.SessionEstablishFailed:
-				default:
-					smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", context.SessionEstablishFailed)
-				}
-			}
-			smContext.SubPfcpLog.Errorf("PFCP Session Establishment rejected with cause [%v]", causeValue)
-			if causeValue == ie.CauseNoEstablishedPFCPAssociation {
-				SetUpfInactive(*rspNodeID)
+	} else {
+		smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
+	}
+
+	if awaited {
+		tracked, signal, verdict := smContext.AggregateEstablishmentResponse(upfKey, accepted)
+		if !tracked {
+			smContext.SubPfcpLog.Warnf("PFCP Session Establishment Response from UPF[%s] was not pending; not counted toward the establishment verdict", nodeID.ResolveNodeIdToIp().String())
+		} else if signal {
+			select {
+			case smContext.SBIPFCPCommunicationChan <- verdict:
+			default:
+				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
 			}
 		}
 	}

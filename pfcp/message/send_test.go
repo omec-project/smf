@@ -758,3 +758,72 @@ func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
 		t.Errorf("%d pending entries after a failed association setup, want 0", n)
 	}
 }
+
+// An establishment that goes out but the user plane never answers takes back its bookkeeping entry
+// too. TestARequestThatNeverWentOutLeavesNoPendingEntry covers the synchronous refusal, where the
+// send never left the SMF; this covers the send that did leave and then timed out. That timeout is
+// reported asynchronously, by establishmentSendErrorHandler, after the UDP transaction is already
+// gone -- so no response will ever arrive to consume the seq->NodeID entry. Each unanswered
+// establishment to an unreachable user plane leaked one until the handler took it back itself.
+func TestAnEstablishmentTheUserPlaneNeverAnswersLeavesNoPendingEntry(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpCreatePending)
+
+	before := pendingRequestsFor(upNodeID)
+
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext,
+		nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for pendingRequestsFor(upNodeID) != before {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d pending entries remain after an unanswered establishment, want %d",
+				pendingRequestsFor(upNodeID), before)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// Taking the bookkeeping entry back is only half of what a tracked establishment's asynchronous
+// timeout owes a create. The create FSM blocks on SBIPFCPCommunicationChan for one aggregate
+// verdict, so a UPF that times out has to be folded out of the PendingUPF batch as a failure and --
+// once that drains the batch -- deliver exactly one SessionEstablishFailed, or the create hangs
+// forever. The sibling test above covers the transaction-cleanup half on a batch that was never
+// populated; this registers the UPF in the batch first and covers the fold half, so it fails if
+// foldEstablishmentFailureIntoBatch is dropped from establishmentSendErrorHandler.
+func TestAnUnansweredEstablishmentFailsTheCreateBatch(t *testing.T) {
+	upNodeID, smContext, port := unansweredUserPlane(t, context.SmStatePfcpCreatePending)
+
+	upfKey := upNodeID.ResolveNodeIdToIp().String()
+	smContext.AddPendingUPF(upfKey)
+
+	before := pendingRequestsFor(upNodeID)
+
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext,
+		nil, nil, nil, nil, port); err != nil {
+		t.Fatalf("the request was not sent: %v", err)
+	}
+
+	verdict, got := awaitVerdict(smContext)
+	if !got {
+		t.Fatal("no aggregate verdict was queued after the only UPF's establishment timed out")
+	}
+	if verdict != context.SessionEstablishFailed {
+		t.Errorf("verdict = %v, want SessionEstablishFailed", verdict)
+	}
+
+	select {
+	case second := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("a second verdict %v was queued; the aggregate must be emitted once", second)
+	default:
+	}
+
+	if !smContext.PendingUPFIsEmpty() {
+		t.Errorf("the timed-out UPF was not folded out of the batch; PendingUPF still holds %v", smContext.PendingUPF)
+	}
+
+	if n := pendingRequestsFor(upNodeID); n != before {
+		t.Errorf("%d pending entries remain after an unanswered establishment, want %d", n, before)
+	}
+}

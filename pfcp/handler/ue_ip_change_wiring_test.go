@@ -104,6 +104,7 @@ func TestEstablishmentResponseReportsTheUpfAllocatedAddress(t *testing.T) {
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.1", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.1"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 			ie.NewUEIPAddress(0x02, wiringUpfAllocatedIpv4, "", 0, 0),
@@ -204,6 +205,7 @@ func TestEstablishmentResponseReportsBeforeReleasingTheOldAddress(t *testing.T) 
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("1.1.1.2", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("1.1.1.2"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4322, net.ParseIP("192.168.1.1"), nil, 0),
 			ie.NewUEIPAddress(0x02, wiringUpfAllocatedIpv4, "", 0, 0),

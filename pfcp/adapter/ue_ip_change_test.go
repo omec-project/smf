@@ -94,6 +94,7 @@ func TestAdapterEstablishmentResponseReportsTheUpfAllocatedAddress(t *testing.T)
 		ie.NewCause(ie.CauseRequestAccepted),
 		ie.NewNodeID("3.3.3.3", "", ""),
 		ie.NewRecoveryTimeStamp(time.Now()),
+		ie.NewFSEID(0xABCD, net.ParseIP("3.3.3.3"), nil),
 		ie.NewCreatedPDR(
 			ie.NewFTEID(0, 4321, net.ParseIP("192.168.1.1"), nil, 0),
 			ie.NewUEIPAddress(0x02, upfIpv4, "", 0, 0),
