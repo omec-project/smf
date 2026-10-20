@@ -1899,18 +1899,29 @@ func TestARuleThatLosesItsQosDataLosesItsFlowQER(t *testing.T) {
 // matching in the old order, and an identical later decision no longer read as a change.
 func TestAPrecedenceChangeReachesTheRulesPDRs(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
+		name string
+		// committed is the rule's precedence in force, and installed the PDRs'; nil and 0 are
+		// 200 for both.
+		committed  *int32
+		installed  uint32
 		precedence *int32
 		revert     bool
 		want       uint32
 	}{
-		{"a new precedence", openapi.PtrInt32(150), false, 150},
-		{"a precedence the decision leaves out", nil, false, 200},
-		{"the revert of a new precedence", openapi.PtrInt32(150), true, 200},
+		{"a new precedence", nil, 0, openapi.PtrInt32(150), false, 150},
+		{"a precedence the decision leaves out", nil, 0, nil, false, 200},
+		{"the revert of a new precedence", nil, 0, openapi.PtrInt32(150), true, 200},
+		// The top of the order, programmed as 1 as an added rule's zero is.
+		{"a zero precedence", nil, 0, openapi.PtrInt32(0), false, 1},
+		{"the revert to a zero precedence", openapi.PtrInt32(0), 1, openapi.PtrInt32(150), true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTwoRuleSession(t, false)
 			s.cirUL.Precedence, s.cirDL.Precedence = 200, 200
+			if tc.committed != nil {
+				s.sm.SmPolicyData.SmCtxtPccRules.PccRules[cirRuleID].Precedence = tc.committed
+				s.cirUL.Precedence, s.cirDL.Precedence = tc.installed, tc.installed
+			}
 			cir := s.cirRule
 			cir.Precedence = tc.precedence
 			update := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{

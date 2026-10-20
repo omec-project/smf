@@ -561,12 +561,17 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 	name, qosRef string, sessQERs map[uint32]*smfContext.QER,
 ) {
 	tcRef := ""
-	var precedence uint32
+	var precedence *uint32
 	if rule := qos.DecidedPccRule(smContext.SmPolicyUpdates[0].SmPolicyDecision, &smContext.SmPolicyData, name); rule != nil {
 		if len(rule.RefTcData) > 0 {
 			tcRef = rule.RefTcData[0]
 		}
-		precedence = uint32(rule.GetPrecedence())
+		if decided, ok := rule.GetPrecedenceOk(); ok {
+			// Zero is the top of the order. The SMF reads a PDR's zero as unset, so it is
+			// programmed as 1, as an added rule's is.
+			value := max(uint32(*decided), 1)
+			precedence = &value
+		}
 	}
 
 	for _, tunnel := range []*smfContext.GTPTunnel{node.DownLinkTunnel, node.UpLinkTunnel} {
@@ -608,8 +613,8 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 		pdr.QER = qers
 		// A precedence the decision leaves out keeps the one the PDR has, as an added rule's
 		// keeps the fallback it was given.
-		if precedence != 0 {
-			pdr.Precedence = precedence
+		if precedence != nil {
+			pdr.Precedence = *precedence
 		}
 		pdr.State = smfContext.RULE_UPDATE
 		pfcpParam.pdrList = append(pfcpParam.pdrList, pdr)
