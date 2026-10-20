@@ -354,7 +354,7 @@ func HandlePfcpAssociationReleaseRequest(msg *udp.Message) {
 		return
 	}
 	smf_context.RemoveUPFNodeByNodeID(*nodeID)
-	err = pfcp_message.SendPfcpAssociationReleaseResponse(*nodeID, ie.CauseRequestAccepted, upf.Port)
+	err = pfcp_message.SendPfcpAssociationReleaseResponse(*nodeID, ie.CauseRequestAccepted, upf.PFCPPort())
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to send PFCP Association Release Response: %+v", err)
 	}
