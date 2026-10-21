@@ -827,3 +827,45 @@ func TestAnUnansweredEstablishmentFailsTheCreateBatch(t *testing.T) {
 		t.Errorf("%d pending entries remain after an unanswered establishment, want %d", n, before)
 	}
 }
+
+// A PFCPContext lookup can fail before a local SEID is ever known -- e.g. an FQDN UPF whose address
+// changed between SendPFCPRules registering the create batch (producer/datapath.go) and this call
+// re-resolving the NodeID. That UPF can still be a tracked PendingUPF entry, so the failure must fold
+// into the batch by the dispatch-time NodeID string instead of answering the waiter directly: a direct
+// answer would let a multi-UPF create resume while another UPF's establishment request is still
+// outstanding. This fails if the deferred failure path regresses to always answering the waiter
+// directly whenever no local SEID is known.
+func TestMissingPFCPContextFoldsIntoCreateBatch(t *testing.T) {
+	initTestSmfConfig()
+
+	const upNodeIDStr = "127.0.0.1"
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	// No PFCPContext entry for upNodeIDStr, so the lookup in SendPfcpSessionEstablishmentRequest fails.
+	smContext := &context.SMContext{
+		SMContextState:           context.SmStatePfcpCreatePending,
+		SBIPFCPCommunicationChan: make(chan context.PFCPSessionResponseStatus, 1),
+	}
+	// A second, still-outstanding UPF of the same create batch.
+	smContext.ResetPendingUPF(context.PendingUPF{upNodeIDStr: true, "127.0.0.2": true})
+
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, nil, nil, nil, nil, 8810); err == nil {
+		t.Fatal("expected an error sending the PFCP Session Establishment Request")
+	}
+
+	select {
+	case verdict := <-smContext.SBIPFCPCommunicationChan:
+		t.Errorf("a verdict %v was queued while another UPF of the batch is still pending", verdict)
+	default:
+	}
+
+	if smContext.HasPendingUPF(upNodeIDStr) {
+		t.Error("the failed UPF was not folded out of the batch")
+	}
+	if !smContext.HasPendingUPF("127.0.0.2") {
+		t.Error("the still-outstanding UPF was dropped from the batch")
+	}
+}

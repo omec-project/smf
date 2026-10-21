@@ -302,22 +302,31 @@ func SendPfcpSessionEstablishmentRequest(
 	// would then be stranded, its UPF session never deleted. This mirrors establishmentSendErrorHandler,
 	// which folds an asynchronous (transaction-timeout) failure into the same batch.
 	//
-	// Before the local SEID is known (no PFCPContext) there is nothing to key the failure by, so the
-	// waiter is answered directly.
+	// A PFCPContext lookup failure (no local SEID) still has the dispatch-time NodeID string, which
+	// is the same key SendPFCPRules registered this UPF under in PendingUPF (producer/datapath.go),
+	// so that failure is folded into the batch by that key too -- an FQDN UPF whose address changes
+	// between context allocation and dispatch must not let a multi-UPF create resume early by
+	// answering the waiter directly while other requests are still outstanding. Only a call with no
+	// tracked batch at all (e.g. this key is not pending) falls back to answering the waiter
+	// directly.
 	var localSEID uint64
 	var haveLocalSEID bool
+	var upNodeIDStr string
 	defer func() {
 		if err == nil {
 			return
 		}
 		if haveLocalSEID {
 			foldEstablishmentFailureIntoBatch(ctx, localSEID)
-		} else {
-			answerTheWaitingSession(ctx, awaitingEstablishment, smf_context.SessionEstablishFailed)
+			return
 		}
+		if foldEstablishmentFailureIntoBatchByKey(ctx, upNodeIDStr) {
+			return
+		}
+		answerTheWaitingSession(ctx, awaitingEstablishment, smf_context.SessionEstablishFailed)
 	}()
 
-	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
+	upNodeIDStr = upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
 	if !ok {
 		return fmt.Errorf("PFCP Context not found for NodeID[%v]", upNodeID)
@@ -807,18 +816,33 @@ func establishmentSendErrorHandler(localSEID uint64) func(message.Message, error
 // foldEstablishmentFailureIntoBatch records one UPF's establishment failure in the create's PendingUPF
 // batch and queues the aggregate SessionEstablishFailed verdict only once that drains the batch. Both
 // an asynchronous failure (establishmentSendErrorHandler, on a transaction timeout) and a synchronous
-// one (the deferred failure path of SendPfcpSessionEstablishmentRequest) fold through here, so a
-// failure on one UPF of a multi-UPF create never answers -- and rolls back -- the create while the
-// other establishment requests are still in flight. The N4 Out/Failure metric and DNS refresh are
-// reported by the caller's reportSendFailure, not here.
+// one (the deferred failure path of SendPfcpSessionEstablishmentRequest, once a local SEID is known)
+// fold through here, so a failure on one UPF of a multi-UPF create never answers -- and rolls back --
+// the create while the other establishment requests are still in flight. The N4 Out/Failure metric
+// and DNS refresh are reported by the caller's reportSendFailure, not here.
 //
 // It deliberately does not reject the UE or remove the context: once the verdict is read the create
 // procedure's own failure path (the FSM's create-failure handler) does both, and doing them here too
 // would double them.
 func foldEstablishmentFailureIntoBatch(smContext *smf_context.SMContext, localSEID uint64) {
 	upfKey, known := smContext.GetPFCPContextKeyByLocalSEID(localSEID)
-	if !known || upfKey == "" || smContext.SMContextState != smf_context.SmStatePfcpCreatePending {
+	if !known || upfKey == "" {
 		return
+	}
+	foldEstablishmentFailureIntoBatchByKey(smContext, upfKey)
+}
+
+// foldEstablishmentFailureIntoBatchByKey is the shared implementation behind foldEstablishmentFailureIntoBatch,
+// keyed directly by a UPF's PendingUPF entry (the dispatch-time NodeID string SendPFCPRules registered it
+// under, see producer/datapath.go) rather than by resolving one from a local SEID. The deferred failure
+// path of SendPfcpSessionEstablishmentRequest uses this directly when a PFCPContext lookup fails before a
+// local SEID is known: that UPF can still be a tracked batch entry, and folding the failure in here keeps
+// a multi-UPF create from resuming early by answering the waiter directly while other requests are still
+// outstanding. tracked reports whether upfKey belonged to the pending batch, so the caller can fall back
+// to answering the waiter directly when it does not.
+func foldEstablishmentFailureIntoBatchByKey(smContext *smf_context.SMContext, upfKey string) (tracked bool) {
+	if upfKey == "" || smContext.SMContextState != smf_context.SmStatePfcpCreatePending {
+		return false
 	}
 
 	tracked, signal, verdict := smContext.AggregateEstablishmentResponse(upfKey, false)
@@ -829,6 +853,7 @@ func foldEstablishmentFailureIntoBatch(smContext *smf_context.SMContext, localSE
 			smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
 		}
 	}
+	return tracked
 }
 
 // answerTheWaitingSession puts a verdict on the session's PFCP channel when the request was not
