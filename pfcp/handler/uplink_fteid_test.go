@@ -68,6 +68,7 @@ func TestAnEstablishmentWithMoreThanOneUplinkFTEIDIsReported(t *testing.T) {
 			ies := []*ie.IE{
 				ie.NewCause(ie.CauseRequestAccepted),
 				ie.NewNodeID(ip, "", ""),
+				ie.NewFSEID(0xABCD, net.ParseIP(ip), nil),
 			}
 			for i, teid := range tc.teids {
 				ies = append(ies, ie.NewCreatedPDR(
