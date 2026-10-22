@@ -1246,6 +1246,9 @@ var restoreUserPlaneAsync = func(smContext *smfContext.SMContext, abandoned *qos
 	go restoreUserPlane(smContext, abandoned)
 }
 
+// storeSmContext is behind a seam so a test can see the store without a database.
+var storeSmContext = smfContext.AsyncStoreSmContextInDB
+
 // empty reports whether the parameters change nothing on the user plane.
 func (p *pfcpParam) empty() bool {
 	return len(p.pdrList) == 0 && len(p.farList) == 0 && len(p.barList) == 0 && len(p.qerList) == 0 &&
@@ -1355,7 +1358,16 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	}
 
 	// Settled however this ends, so a modification waiting in lockAfterRevert is never stranded.
+	//
+	// Stored first, while the revert is still owed, so no transaction runs between the two and the
+	// store holds what the revert left. A revert the UE's reject or the radio's whole refusal starts
+	// runs beside its transaction, whose own store can be taken before the revert is built or
+	// answered, with the rules it is undoing; nothing else stored the session until its next
+	// transaction. A revert run inside a transaction is stored again by it if it succeeds.
 	defer func() {
+		if factory.SmfConfig.Configuration.EnableDbStore {
+			storeSmContext(smContext)
+		}
 		smContext.SMLock.Lock()
 		if owed := smContext.RevertInFlight; owed != nil {
 			close(owed)

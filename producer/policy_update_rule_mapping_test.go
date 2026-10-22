@@ -15,6 +15,7 @@ import (
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/qos"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -795,6 +796,61 @@ func TestARevertLeavesTheSessionsStateAlone(t *testing.T) {
 	if s.sm.SMContextState != smf_context.SmStateActive {
 		t.Errorf("after the revert and its transaction's state write the session is in %s, want %s",
 			s.sm.SMContextState, smf_context.SmStateActive)
+	}
+}
+
+// A revert started by a NAS or NGAP handler runs beside the transaction that started it, and that
+// transaction's store can be taken before the revert has finished, with the rules it is undoing. So
+// the revert stores the session itself once it has put the rules back, and while it is still owed,
+// so no transaction waiting for it runs first and is stored half done. It used to store nothing,
+// and the store kept the abandoned modification until the session's next transaction.
+func TestARevertBesideItsTransactionStoresTheSessionItPutBack(t *testing.T) {
+	originalSend, originalStore, originalConfig := sendPfcpSessionModifyReq, storeSmContext, factory.SmfConfig
+	t.Cleanup(func() {
+		sendPfcpSessionModifyReq, storeSmContext, factory.SmfConfig = originalSend, originalStore, originalConfig
+	})
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	disabled := false
+	config := factory.Configuration{KafkaInfo: factory.KafkaInfo{EnableKafka: &disabled}}
+	if originalConfig.Configuration != nil {
+		config = *originalConfig.Configuration
+	}
+	config.EnableDbStore = true
+	factory.SmfConfig.Configuration = &config
+
+	s := programmedRateChange(t)
+	// What the store would write: whether the revert was still owed, and the rule's flow rates.
+	type snapshot struct {
+		owed  bool
+		ulMbr uint64
+	}
+	stored := make(chan snapshot, 1)
+	storeSmContext = func(sm *smf_context.SMContext) {
+		sm.SMLock.Lock()
+		defer sm.SMLock.Unlock()
+		seen := snapshot{owed: sm.RevertInFlight != nil}
+		for _, qer := range s.cirUL.QER {
+			if qer.QERID != s.sessQER.QERID && qer.MBR != nil {
+				seen.ulMbr = qer.MBR.ULMBR
+			}
+		}
+		stored <- seen
+	}
+
+	s.sm.SMLock.Lock()
+	abandonModificationUnderLock(s.sm, "command_reject", "5gsm_cause_26")
+	s.sm.SMLock.Unlock()
+
+	select {
+	case seen := <-stored:
+		if !seen.owed {
+			t.Error("the session was stored after its revert was settled, when a transaction waiting for it could have run first")
+		}
+		if seen.ulMbr != 3000 {
+			t.Errorf("the stored rule's uplink MBR is %d, want the committed 3000", seen.ulMbr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the session was not stored after its revert")
 	}
 }
 
