@@ -161,7 +161,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeExists(t *testing.T) {
 		Conn: conn,
 	})
 
-	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8803)
+	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeIDStr, pdrList, farList, barList, qerList, 8803)
 	if err != nil {
 		t.Errorf("error sending PFCP Session Establishment Request: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestSendPfcpSessionEstablishmentRequestUpNodeDoesNotExist(t *testing.T) {
 		Conn: conn,
 	})
 
-	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, pdrList, farList, barList, qerList, 8804)
+	err = message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeIDStr, pdrList, farList, barList, qerList, 8804)
 	if err == nil {
 		t.Errorf("expected error sending PFCP Session Establishment Request")
 	}
@@ -732,7 +732,8 @@ func TestARequestThatNeverWentOutLeavesNoPendingEntry(t *testing.T) {
 	// No server, so udp.SendPfcp refuses after the entry has been made.
 	setTestServer(t, nil)
 
-	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, nil, nil, nil, nil, 8808); err == nil {
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeID.ResolveNodeIdToIp().String(),
+		nil, nil, nil, nil, 8808); err == nil {
 		t.Fatal("an establishment the socket refused was reported as sent")
 	}
 
@@ -770,7 +771,7 @@ func TestAnEstablishmentTheUserPlaneNeverAnswersLeavesNoPendingEntry(t *testing.
 
 	before := pendingRequestsFor(upNodeID)
 
-	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext,
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeID.ResolveNodeIdToIp().String(),
 		nil, nil, nil, nil, port); err != nil {
 		t.Fatalf("the request was not sent: %v", err)
 	}
@@ -800,7 +801,7 @@ func TestAnUnansweredEstablishmentFailsTheCreateBatch(t *testing.T) {
 
 	before := pendingRequestsFor(upNodeID)
 
-	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext,
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upfKey,
 		nil, nil, nil, nil, port); err != nil {
 		t.Fatalf("the request was not sent: %v", err)
 	}
@@ -852,7 +853,7 @@ func TestMissingPFCPContextFoldsIntoCreateBatch(t *testing.T) {
 	// A second, still-outstanding UPF of the same create batch.
 	smContext.ResetPendingUPF(context.PendingUPF{upNodeIDStr: true, "127.0.0.2": true})
 
-	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, nil, nil, nil, nil, 8810); err == nil {
+	if err := message.SendPfcpSessionEstablishmentRequest(upNodeID, smContext, upNodeIDStr, nil, nil, nil, nil, 8810); err == nil {
 		t.Fatal("expected an error sending the PFCP Session Establishment Request")
 	}
 

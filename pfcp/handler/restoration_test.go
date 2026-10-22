@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
 // SPDX-License-Identifier: Apache-2.0
 
-package handler_test
+package handler
 
 import (
 	"net"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/pfcp/handler"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -62,7 +61,7 @@ func TestAssociationSetupRequestReachesTheRestoration(t *testing.T) {
 	nodeIP := "10.40.0.1"
 	upfHolding(t, nodeIP, time.Now().Add(-time.Hour))
 
-	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
+	HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
 		PfcpMessage: message.NewAssociationSetupRequest(1,
 			ie.NewNodeID(nodeIP, "", ""), ie.NewRecoveryTimeStamp(time.Now())),
@@ -82,7 +81,7 @@ func TestAssociationSetupResponseReachesTheRestoration(t *testing.T) {
 	upfHolding(t, nodeIP, time.Now().Add(-time.Hour))
 	pfcp_message.InsertPfcpTxn(77, context.NewNodeID(nodeIP))
 
-	handler.HandlePfcpAssociationSetupResponse(&udp.Message{
+	HandlePfcpAssociationSetupResponse(&udp.Message{
 		RemoteAddr: at(nodeIP),
 		PfcpMessage: message.NewAssociationSetupResponse(77,
 			ie.NewCause(ie.CauseRequestAccepted), ie.NewNodeID(nodeIP, "", ""),
@@ -103,7 +102,7 @@ func TestAnUnchangedRecoveryTimestampDoesNotReachTheRestoration(t *testing.T) {
 	unchanged := time.Now().Add(-time.Hour)
 	upfHolding(t, nodeIP, unchanged)
 
-	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
+	HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
 		PfcpMessage: message.NewAssociationSetupRequest(2,
 			ie.NewNodeID(nodeIP, "", ""), ie.NewRecoveryTimeStamp(unchanged)),
@@ -124,7 +123,7 @@ func TestAFirstAssociationIsNotARestart(t *testing.T) {
 	context.NewUPF(nodeID, nil) // no recovery timestamp held
 	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*nodeID) })
 
-	handler.HandlePfcpAssociationSetupRequest(&udp.Message{
+	HandlePfcpAssociationSetupRequest(&udp.Message{
 		RemoteAddr: at(nodeIP),
 		PfcpMessage: message.NewAssociationSetupRequest(3,
 			ie.NewNodeID(nodeIP, "", ""), ie.NewRecoveryTimeStamp(time.Now())),
@@ -147,7 +146,7 @@ func TestEveryPathComparesBeforeItOverwritesTheHeldTimestamp(t *testing.T) {
 		deliver func(nodeIP string, fresh time.Time)
 	}{
 		{"association setup request", "10.40.0.5", func(nodeIP string, fresh time.Time) {
-			handler.HandlePfcpAssociationSetupRequest(&udp.Message{
+			HandlePfcpAssociationSetupRequest(&udp.Message{
 				RemoteAddr: at(nodeIP),
 				PfcpMessage: message.NewAssociationSetupRequest(4,
 					ie.NewNodeID(nodeIP, "", ""), ie.NewRecoveryTimeStamp(fresh)),
@@ -155,7 +154,7 @@ func TestEveryPathComparesBeforeItOverwritesTheHeldTimestamp(t *testing.T) {
 		}},
 		{"association setup response", "10.40.0.6", func(nodeIP string, fresh time.Time) {
 			pfcp_message.InsertPfcpTxn(88, context.NewNodeID(nodeIP))
-			handler.HandlePfcpAssociationSetupResponse(&udp.Message{
+			HandlePfcpAssociationSetupResponse(&udp.Message{
 				RemoteAddr: at(nodeIP),
 				PfcpMessage: message.NewAssociationSetupResponse(88,
 					ie.NewCause(ie.CauseRequestAccepted), ie.NewNodeID(nodeIP, "", ""),
@@ -217,7 +216,7 @@ func TestRestoringASessionReplacesTheIdentifierFromBeforeTheRestart(t *testing.T
 	pfcpCtx.RemoteSEID = beforeTheRestart
 	pfcp_message.InsertPfcpTxn(4321, nodeID)
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr: at(nodeIP),
 		PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, pfcpCtx.LocalSEID, 4321, 0,
 			ie.NewCause(ie.CauseRequestAccepted),
@@ -253,7 +252,7 @@ func TestTheHeartbeatPathLeavesTheHeldTimestampForTheReassociation(t *testing.T)
 	fresh := time.Now()
 
 	pfcp_message.InsertPfcpTxn(89, context.NewNodeID(nodeIP))
-	handler.HandlePfcpHeartbeatResponse(&udp.Message{
+	HandlePfcpHeartbeatResponse(&udp.Message{
 		RemoteAddr:  at(nodeIP),
 		PfcpMessage: message.NewHeartbeatResponse(89, ie.NewRecoveryTimeStamp(fresh)),
 	})

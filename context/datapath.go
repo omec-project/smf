@@ -8,6 +8,7 @@ package context
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -381,6 +382,80 @@ func (dataPathPool DataPathPool) GetDefaultPath() (dataPath *DataPath) {
 		}
 	}
 	return
+}
+
+// FindNode returns the node on this data path whose UPF is configured with nodeID, or nil if none is.
+//
+// The match is on the configured NodeID (NodeID.Equal), not on a resolved address: a response's UPF
+// and the node describing it share the same configured NodeID, so comparing those identities
+// correlates them without resolving either -- even for an FQDN UPF whose address has drifted since
+// dispatch. An earlier version resolved both sides to an IP and compared the strings; a DNS refresh
+// landing between the caller's resolution and this one made the same configured UPF fail to match, so
+// its F-TEID update was skipped while its acceptance still counted -- and a successful create could
+// then advertise the access tunnel's old TEID. Used to apply an establishment response's F-TEID to the
+// node that actually sent it, instead of assuming it is the access node.
+func (dataPath *DataPath) FindNode(nodeID NodeID) *DataPathNode {
+	for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+		if node.UPF != nil && node.UPF.NodeID.Equal(nodeID) {
+			return node
+		}
+	}
+	return nil
+}
+
+// OwnsUplinkPDR reports whether pdrID is one of the PDRs of this node's uplink tunnel.
+func (node *DataPathNode) OwnsUplinkPDR(pdrID uint16) bool {
+	if node == nil || node.UpLinkTunnel == nil {
+		return false
+	}
+	for _, pdr := range node.UpLinkTunnel.PDR {
+		if pdr != nil && pdr.PDRID == pdrID {
+			return true
+		}
+	}
+	return false
+}
+
+// FindNode returns the node, across every path in the pool, that the establishment response from
+// nodeID describes, or nil if the UPF is on none of them.
+//
+// A response can come from a UPF that sits only on a non-default path (SendPFCPRules sends to every
+// activated path, and EstablishPSA2 to the branch's activating path, which is a pool member), so
+// searching the default path alone rejects valid answers. pdrID is the PDR the response created; a
+// UPF shared by several paths has one tunnel per path, and the node whose tunnel owns that PDR is the
+// one the F-TEID belongs to. When no tunnel claims the PDR (or pdrID is unknown) the first matching
+// node is returned, preferring the default path, so the choice does not depend on map order.
+func (dataPathPool DataPathPool) FindNode(nodeID NodeID, pdrID uint16, havePDRID bool) *DataPathNode {
+	keys := make([]int64, 0, len(dataPathPool))
+	for key := range dataPathPool {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		pi, pj := dataPathPool[keys[i]], dataPathPool[keys[j]]
+		if pi != nil && pj != nil && pi.IsDefaultPath != pj.IsDefaultPath {
+			return pi.IsDefaultPath
+		}
+		return keys[i] < keys[j]
+	})
+
+	var fallback *DataPathNode
+	for _, key := range keys {
+		path := dataPathPool[key]
+		if path == nil {
+			continue
+		}
+		node := path.FindNode(nodeID)
+		if node == nil {
+			continue
+		}
+		if havePDRID && node.OwnsUplinkPDR(pdrID) {
+			return node
+		}
+		if fallback == nil {
+			fallback = node
+		}
+	}
+	return fallback
 }
 
 func (dataPath *DataPath) String() string {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-package handler_test
+package handler
 
 import (
 	"net"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/pfcp/handler"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -75,7 +74,7 @@ func TestEstablishmentResponseDrainsBatchAfterDnsAddressChanged(t *testing.T) {
 		ie.NewFSEID(0xBEEF, net.ParseIP(dispatchIP), nil),
 	)
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP(dispatchIP), Port: 8805},
 		PfcpMessage: rsp,
 	})

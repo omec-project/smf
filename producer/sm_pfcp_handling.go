@@ -7,6 +7,7 @@ package producer
 
 import (
 	"fmt"
+	"time"
 
 	smf_context "github.com/omec-project/smf/context"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
@@ -71,17 +72,79 @@ func SendPfcpSessionReleaseReq(smContext *smf_context.SMContext) error {
 	// release UPF data tunnel
 	releaseTunnel(smContext)
 
-	PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan
-	switch PFCPResponseStatus {
-	case smf_context.SessionReleaseSuccess:
-		smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, PFCP Session Release Success")
+	return awaitPfcpReleaseVerdict(smContext, nil)
+}
+
+// awaitPfcpReleaseVerdict waits for the verdict of a release already sent. A nil timeout waits for
+// as long as it takes, which is what a release whose caller can wait does; a channel that fires ends
+// the wait with an error, for the caller that cannot.
+func awaitPfcpReleaseVerdict(smContext *smf_context.SMContext, timeout <-chan time.Time) error {
+	select {
+	case PFCPResponseStatus := <-smContext.SBIPFCPCommunicationChan:
+		switch PFCPResponseStatus {
+		case smf_context.SessionReleaseSuccess:
+			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, PFCP Session Release Success")
+			return nil
+		case smf_context.SessionReleaseTimeout:
+			smContext.SubCtxLog.Errorln("PDUSessionSMContextUpdate, PFCP Session Release Failed")
+			return fmt.Errorf("pfcp session release timeout")
+		case smf_context.SessionReleaseFailed:
+			smContext.SubCtxLog.Errorln("PDUSessionSMContextUpdate, PFCP Session Release Failed")
+			return fmt.Errorf("pfcp session release failed")
+		}
 		return nil
-	case smf_context.SessionReleaseTimeout:
-		smContext.SubCtxLog.Errorln("PDUSessionSMContextUpdate, PFCP Session Release Failed")
-		return fmt.Errorf("pfcp session release timeout")
-	case smf_context.SessionReleaseFailed:
-		smContext.SubCtxLog.Errorln("PDUSessionSMContextUpdate, PFCP Session Release Failed")
-		return fmt.Errorf("pfcp session release failed")
+	case <-timeout:
+		return fmt.Errorf("no verdict on the pfcp session release")
 	}
-	return nil
+}
+
+// rollbackVerdictTimeout bounds how long RollbackFailedCreate waits for the deletions' verdict. A
+// variable so a test can shorten it.
+//
+// The wait is normally ended by the UDP layer, which answers a deletion that went unanswered when its
+// retries run out. It cannot be relied on to be: a response that arrives and is parseable completes
+// the transaction, and the handler may then find it unusable and queue nothing. The rollback holds
+// SMLock for the whole wait and the failed create's context is only removed after it returns, so an
+// unbounded wait would leave that context, and the lock, held for good.
+var rollbackVerdictTimeout = 30 * time.Second
+
+// RollbackFailedCreate undoes what a create that has failed leaves behind, ahead of the context's
+// removal. A create fails as a whole -- one UPF rejected its leg, or one that had accepted its own
+// was lost to a restart -- while the UPFs that did accept still hold a PFCP session and forwarding
+// rules, and the SMF still holds the PDR, FAR and QER allocations the data path made. Removing the
+// context alone drops the only record of both: the SEID mapping goes, so nothing can ever delete the
+// accepted sessions, and the allocations are never returned to their UPFs' pools.
+//
+// It is the release procedure run on a session that never became active: the state moves to
+// SmStatePfcpRelease, which is what the deletion response handlers and the send-failure answers are
+// gated on, releaseTunnel deactivates the data path and sends the deletions, and the wait for the
+// verdict is the same. A leg that holds no session -- the one that rejected -- answers its deletion
+// with a refusal, which ends the wait the same way an acceptance does.
+//
+// Nothing is done for a context with no tunnel (already released, so nothing is held) or one that
+// has been purged and replaced: the replacement's own release owns its teardown, and the handlers
+// do not answer a purged context's deletions, so waiting on one would never return.
+//
+// The wait is bounded by rollbackVerdictTimeout, independently of the transport's own retry
+// timeouts. A failed or unanswered deletion is logged and not returned: the create has failed
+// whatever it says, and the context is removed either way.
+func RollbackFailedCreate(smContext *smf_context.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	if smContext.Tunnel == nil {
+		return
+	}
+	if smContext.LocalPurged.Load() {
+		smContext.SubPfcpLog.Infof("session has been purged and replaced; leaving its teardown to the replacement")
+		return
+	}
+
+	smContext.ChangeState(smf_context.SmStatePfcpRelease)
+	releaseTunnel(smContext)
+	timer := time.NewTimer(rollbackVerdictTimeout)
+	defer timer.Stop()
+	if err := awaitPfcpReleaseVerdict(smContext, timer.C); err != nil {
+		smContext.SubPfcpLog.Warnf("rolling back the failed create: %v", err)
+	}
 }

@@ -93,8 +93,11 @@ func SendPFCPRules(smContext *context.SMContext) {
 	for ip, pfcp := range pfcpPool {
 		sessionContext, exist := smContext.PFCPContext[ip]
 		if !exist || sessionContext.RemoteSEID == 0 {
+			// ip is the exact key this UPF was registered under in PendingUPF above, handed to the send
+			// so a missing-context synchronous failure drains its own batch entry rather than waking
+			// the create FSM while the rest of the batch is still in flight.
 			err := message.SendPfcpSessionEstablishmentRequest(
-				pfcp.nodeID, smContext, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
+				pfcp.nodeID, smContext, ip, pfcp.pdrList, pfcp.farList, nil, pfcp.qerList, pfcp.port)
 			if err != nil {
 				logger.PduSessLog.Errorf("send pfcp session establishment request failed: %v for UPF[%v, %v]: ", err, pfcp.nodeID, pfcp.nodeID.ResolveNodeIdToIp())
 			}

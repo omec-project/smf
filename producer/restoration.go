@@ -273,6 +273,11 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 		if establishing > 0 {
 			// Not an empty node. These are being set up right now and their own establishment owns
 			// them; restoration must not touch one, but nor should it report the node as bare.
+			//
+			// One of these may be a session this node had already accepted before it restarted, whose
+			// create has yet to finish. Its rules were lost, so SessionsAnchoredOn latches that on the
+			// create (NoteRestartDuringCreate) and the create completes as a failure rather than a
+			// success over a leg this node no longer holds.
 			logger.PfcpLog.Infof("UPF[%s] restarted with no established sessions to restore; %d are "+
 				"still being set up and are left to the paths establishing them", nodeIP, establishing)
 		} else {
