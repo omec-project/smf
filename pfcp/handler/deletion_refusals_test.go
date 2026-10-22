@@ -93,3 +93,40 @@ func TestDeletionRefusalDoesNotBlockBehindAQueuedVerdict(t *testing.T) {
 		t.Fatal("a refusal blocked behind a verdict already queued")
 	}
 }
+
+// A deletion response with no Cause, or one that cannot be read, is a refusal and not nothing: the
+// transport has already completed the request's transaction on receiving it, so no retry timeout is
+// left to wake the release, and a response dropped here would leave it waiting for good.
+func TestDeletionResponseWithAnUnusableCauseResumesTheWaiter(t *testing.T) {
+	for name, build := range map[string]func(seid uint64) message.Message{
+		"no cause": func(seid uint64) message.Message { return message.NewSessionDeletionResponse(0, 0, seid, 1, 0) },
+		"unreadable cause": func(seid uint64) message.Message {
+			return message.NewSessionDeletionResponse(0, 0, seid, 1, 0, ie.New(ie.Cause, []byte{}))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			smContext := context.NewSMContext("imsi-100000000000073", 14)
+			t.Cleanup(func() { context.RemoveSMContext(smContext.Ref) })
+			smContext.SMContextState = context.SmStatePfcpRelease
+			smContext.AllocateLocalSEIDForDataPath(&context.DataPath{
+				FirstDPNode: &context.DataPathNode{UPF: &context.UPF{NodeID: *context.NewNodeID("10.82.0.4")}},
+			})
+			seid := smContext.PFCPContext["10.82.0.4"].LocalSEID
+			smContext.ResetPendingUPF(context.PendingUPF{"10.82.0.4": true})
+
+			HandlePfcpSessionDeletionResponse(&udp.Message{
+				RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("10.82.0.4"), Port: 8805},
+				PfcpMessage: build(seid),
+			})
+
+			select {
+			case got := <-smContext.SBIPFCPCommunicationChan:
+				if got != context.SessionReleaseSuccess {
+					t.Errorf("the waiter was resumed with %v, want SessionReleaseSuccess", got)
+				}
+			default:
+				t.Fatal("an unusable deletion response left the release waiting")
+			}
+		})
+	}
+}

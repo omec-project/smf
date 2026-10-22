@@ -125,9 +125,11 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreate(event SmEvent, eventData *S
 	txn := eventData.Txn.(*transaction.Transaction)
 	smCtxt := txn.Ctxt.(*smf_context.SMContext)
 
-	// The create owns the session until it has read its verdict, whatever else touches the context
+	// The create owns the session until it leaves this state, whatever else touches the context
 	// meanwhile: restoration consults this, not SMContextState, which ChangeState writes without
-	// SMLock. Marked before the rules go out so that no response precedes it.
+	// SMLock. Marked before the rules go out so that no response precedes it, and ended by
+	// ChangeState rather than here: the state still reads create-pending after the verdict is read,
+	// through the AMF failure notification and the rollback on the failure path.
 	smCtxt.BeginCreate()
 	producer.SendPFCPRules(smCtxt)
 	smCtxt.SubFsmLog.Debug("waiting for pfcp session establish response")

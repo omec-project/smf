@@ -262,16 +262,18 @@ type SMContext struct {
 	// EstablishmentFailed latches a rejection seen from any UPF while PendingUPF is drained, so the
 	// verdict queued once it empties reflects every response gathered, not only the last one.
 	EstablishmentFailed bool `json:"-" yaml:"-" bson:"-"` // ignore
-	// createInFlight is true from the moment the create FSM starts its establishment until it has
-	// consumed the verdict (BeginCreate .. FinishCreate). It, not SMContextState, is what tells
-	// restoration a create still owns the session: SMContextState is written by ChangeState without
-	// SMLock, so a restoration sweep reading it races that write, whereas this is guarded by
-	// PendingUPFLock on both sides. Unlike PendingUPF it stays true after the batch drains, up to the
-	// instant the FSM takes the queued verdict off the channel.
+	// createInFlight is true from the moment the create FSM starts its establishment until the
+	// session leaves SmStatePfcpCreatePending (BeginCreate .. ChangeState). It, not SMContextState, is
+	// what tells restoration a create still owns the session: SMContextState is written by ChangeState
+	// without SMLock, so a restoration sweep reading it races that write, whereas this is guarded by
+	// PendingUPFLock on both sides. Unlike PendingUPF it stays true after the batch drains and after
+	// the FSM has taken the queued verdict off the channel, because until the state changes a response
+	// to a reissue would still be taken for the create's own.
 	createInFlight bool
 	// createLegLost latches, while createInFlight, that a UPF restarted after accepting its leg of the
 	// create and so no longer holds that leg's rules. FinishCreate turns a success verdict into a
 	// failure when it is set; the verdict already queued, or still to be queued, is left untouched.
+	// Cleared with createInFlight.
 	createLegLost bool
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
@@ -460,8 +462,9 @@ func (smContext *SMContext) PendingUPFIsEmpty() bool {
 	return smContext.PendingUPF.IsEmpty()
 }
 
-// BeginCreate marks the start of the create FSM's establishment: from here until FinishCreate the
-// create owns the session, and restoration leaves it alone. Called before the rules are sent, so no
+// BeginCreate marks the start of the create FSM's establishment: from here until the session leaves
+// SmStatePfcpCreatePending (see FinishCreate) the create owns the session, and restoration leaves it
+// alone. Called before the rules are sent, so no
 // response can arrive for a create not yet marked.
 func (smContext *SMContext) BeginCreate() {
 	smContext.PendingUPFLock.Lock()
@@ -490,20 +493,32 @@ func (smContext *SMContext) NoteRestartDuringCreate(legLost bool) (inFlight bool
 	return true
 }
 
-// FinishCreate ends the create's ownership of the session and returns the verdict the create is to
-// act on: the one it received, except that a success becomes a failure when a UPF lost its leg to a
-// restart while the create was in flight. Called as soon as the FSM has taken the verdict off the
-// session's channel.
+// FinishCreate returns the verdict the create is to act on: the one it received, except that a
+// success becomes a failure when a UPF lost its leg to a restart while the create was in flight.
+// Called as soon as the FSM has taken the verdict off the session's channel.
+//
+// It does not end the create's ownership of the session. The FSM changes the state only after its
+// handler returns -- and, when the create failed, only once the failure handler has told the AMF and
+// begun the rollback -- and until then the state is still SmStatePfcpCreatePending, which is what
+// the establishment response handler gates its verdict on. A restoration sweep that found the
+// session free in that interval would reissue its rules, and an immediate response would queue a
+// second establishment verdict for whichever unrelated modification or release next reads the
+// channel. Ownership ends in ChangeState, when the session leaves that state.
 func (smContext *SMContext) FinishCreate(verdict PFCPSessionResponseStatus) PFCPSessionResponseStatus {
 	smContext.PendingUPFLock.Lock()
 	defer smContext.PendingUPFLock.Unlock()
-	lost := smContext.createLegLost
-	smContext.createInFlight = false
-	smContext.createLegLost = false
-	if lost && verdict == SessionEstablishSuccess {
+	if smContext.createLegLost && verdict == SessionEstablishSuccess {
 		return SessionEstablishFailed
 	}
 	return verdict
+}
+
+// endCreate ends the create's ownership of the session, so restoration may touch it again.
+func (smContext *SMContext) endCreate() {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	smContext.createInFlight = false
+	smContext.createLegLost = false
 }
 
 // AggregateEstablishmentResponse folds one UPF's establishment verdict into the batch the create
@@ -596,6 +611,12 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	smContext.SubCtxLog.Infof("context state change, current state[%v] next state[%v]",
 		smContext.SMContextState.String(), nextState.String())
 	smContext.SMContextState = nextState
+	if nextState != SmStatePfcpCreatePending {
+		// After the state is written, not before: with the guard down while the state still read
+		// create-pending, a restoration sweep would find the session free in a state that makes a
+		// reissue's response look like the create's own.
+		smContext.endCreate()
+	}
 
 	// Published after the state is updated so the Kafka event reports the state being entered,
 	// not the one being left.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/factory"
 )
 
 func anchor(t *testing.T, supi string, psi int32, nodeIPs ...string) *context.SMContext {
@@ -337,9 +338,22 @@ func TestSessionsAnchoredOnLeavesADrainedCreateToItsVerdict(t *testing.T) {
 	}
 }
 
-// Once the FSM has read the verdict the create no longer owns the session, so a restart after that is
+// withKafkaDisabled lets a test change a session's state: ChangeState publishes the new state, and the
+// publish reads the configuration.
+func withKafkaDisabled(t *testing.T) {
+	t.Helper()
+	prev := factory.SmfConfig
+	t.Cleanup(func() { factory.SmfConfig = prev })
+	disabled := false
+	factory.SmfConfig = factory.Config{
+		Configuration: &factory.Configuration{KafkaInfo: factory.KafkaInfo{EnableKafka: &disabled}},
+	}
+}
+
+// Once the session has left create-pending the create no longer owns it, so a restart after that is
 // an ordinary one and the session is restored.
 func TestSessionsAnchoredOnRestoresASessionOnceItsCreateHasFinished(t *testing.T) {
+	withKafkaDisabled(t)
 	node := *context.NewNodeID("10.20.0.61")
 	restart := time.Unix(1_790_000_000, 0)
 
@@ -347,10 +361,12 @@ func TestSessionsAnchoredOnRestoresASessionOnceItsCreateHasFinished(t *testing.T
 	done.SMLock.Lock()
 	done.PFCPContext["10.20.0.61"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
 	done.SMLock.Unlock()
+	done.ChangeState(context.SmStatePfcpCreatePending)
 	done.BeginCreate()
 	if got := done.FinishCreate(context.SessionEstablishSuccess); got != context.SessionEstablishSuccess {
 		t.Fatalf("verdict = %v, want SessionEstablishSuccess", got)
 	}
+	done.ChangeState(context.SmStateN1N2TransferPending)
 
 	for _, s := range mustAnchoredAt(node, restart) {
 		if s == done {
@@ -358,6 +374,50 @@ func TestSessionsAnchoredOnRestoresASessionOnceItsCreateHasFinished(t *testing.T
 		}
 	}
 	t.Fatalf("a session whose create had finished was not offered for restoration")
+}
+
+// Reading the verdict is not the end of the create. The state still reads create-pending until the FSM
+// changes it -- and on a failure, through the AMF notification and the rollback -- and a reissue in
+// that interval has its response taken for the create's own, leaving a second establishment verdict
+// for whichever unrelated modification or release next reads the channel.
+func TestSessionsAnchoredOnLeavesASessionToItsCreateUntilTheStateChanges(t *testing.T) {
+	withKafkaDisabled(t)
+	node := *context.NewNodeID("10.20.0.62")
+	restart := time.Unix(1_790_000_000, 0)
+
+	for i, c := range []struct {
+		name string
+		next context.SMContextState
+	}{
+		{"the create succeeds", context.SmStateN1N2TransferPending},
+		{"the create fails", context.SmStatePfcpRelease},
+	} {
+		next := c.next
+		t.Run(c.name, func(t *testing.T) {
+			creating := anchor(t, fmt.Sprintf("imsi-20893000000006%d", i), int32(15+i), "10.20.0.62")
+			creating.SMLock.Lock()
+			creating.PFCPContext["10.20.0.62"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
+			creating.SMLock.Unlock()
+			creating.ChangeState(context.SmStatePfcpCreatePending)
+			creating.BeginCreate()
+			creating.FinishCreate(context.SessionEstablishSuccess)
+
+			for _, s := range mustAnchoredAt(node, restart) {
+				if s == creating {
+					t.Fatalf("a session whose verdict was read, still create-pending, was offered for restoration")
+				}
+			}
+
+			creating.ChangeState(next)
+			found := false
+			for _, s := range mustAnchoredAt(node, restart) {
+				found = found || s == creating
+			}
+			if !found {
+				t.Errorf("the session was still held back once it had left create-pending")
+			}
+		})
+	}
 }
 
 // A rejection stays a rejection however the restart is latched.

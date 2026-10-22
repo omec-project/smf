@@ -766,15 +766,17 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 		// TODO fix: SEID should be the value sent by UPF but now the SEID value is from sm context
 	}
 
+	// A response whose cause is missing or unreadable is a node's answer that cannot be taken for an
+	// acceptance, so it is treated as a refusal below rather than dropped: the transport has already
+	// completed the request's transaction on receiving it, so no retry timeout is left to wake the
+	// release waiting on the session's PFCP channel, and dropping it would leave that wait open.
+	causeValue := ie.CauseRequestRejected
 	if rsp.Cause == nil {
-		logger.PfcpLog.Errorln("PFCP Session Deletion Response missing Cause")
-		return
-	}
-
-	causeValue, err := rsp.Cause.Cause()
-	if err != nil {
-		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
-		return
+		logger.PfcpLog.Errorln("PFCP Session Deletion Response missing Cause; treating it as a refusal")
+	} else if parsed, err := rsp.Cause.Cause(); err != nil {
+		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v; treating the response as a refusal", err)
+	} else {
+		causeValue = parsed
 	}
 
 	if causeValue == ie.CauseRequestAccepted {

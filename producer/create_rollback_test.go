@@ -243,3 +243,35 @@ func TestRollbackFailedCreateDeletesTheSessionOfAnFqdnUpfWhoseAddressMoved(t *te
 		t.Errorf("the deletion is addressed to SEID %#x, want the UPF's own %#x", deletion.SEID(), f.remoteSEID)
 	}
 }
+
+// The wait for the deletions' verdict ends on its own bound. A response the handler finds unusable
+// can leave nothing to wake it, and the rollback holds SMLock throughout: waiting for good would
+// leave the failed create's context, and the lock, held for good.
+func TestRollbackFailedCreateStopsWaitingForAVerdictThatNeverComes(t *testing.T) {
+	f := newRollbackFixture(t)
+	// The fixture queues a verdict ahead of the wait; take it back, so that nothing answers.
+	<-f.smContext.SBIPFCPCommunicationChan
+	prev := rollbackVerdictTimeout
+	rollbackVerdictTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { rollbackVerdictTimeout = prev })
+	// Longer than the bound, so that it is the bound that ends the wait and not the transport's.
+	retries, reqTimeout, rspTimeout := udp.GetRetryTimingForTest()
+	udp.SetRetryTimingForTest(1, 600*time.Millisecond, 600*time.Millisecond)
+	t.Cleanup(func() { udp.SetRetryTimingForTest(retries, reqTimeout, rspTimeout) })
+
+	done := make(chan struct{})
+	go func() {
+		RollbackFailedCreate(f.smContext)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the rollback waited on a verdict that was never coming")
+	}
+
+	if !f.smContext.SMLock.TryLock() {
+		t.Fatal("the rollback returned with SMLock still held")
+	}
+	f.smContext.SMLock.Unlock()
+}
