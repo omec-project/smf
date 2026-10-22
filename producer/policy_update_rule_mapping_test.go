@@ -669,6 +669,42 @@ func TestAWithdrawnRuleLeavesTheSession(t *testing.T) {
 	}
 }
 
+// The withdrawn rule leaves the PFCP session context the session recorded it in, found by the UPF's
+// NodeID: the entry is keyed by the address resolved when the session was allocated, and an FQDN
+// UPF's address can move under the DNS refresh. Looked up by a fresh resolution, the entry was
+// missed and kept the withdrawn PDRs, which the session store writes and reads back.
+func TestAWithdrawnRuleLeavesThePFCPContextItWasRecordedIn(t *testing.T) {
+	originalPfcp, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = originalPfcp, originalN1N2 })
+	sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error { return nil }
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return nil }
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	t.Cleanup(func() {
+		s.sm.SMLock.Lock()
+		s.sm.StopT3591()
+		s.sm.SMLock.Unlock()
+	})
+	// Recorded under the address the UPF had when the session was allocated, which it no longer
+	// resolves to.
+	const allocatedAt = "10.99.0.1"
+	recorded := s.sm.PFCPContext[upfNodeIP]
+	recorded.NodeID = s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.NodeID
+	s.sm.PFCPContext = map[string]*smf_context.PFCPSessionContext{allocatedAt: recorded}
+
+	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.deleteDedicatedRule())); err != nil {
+		t.Fatalf("ApplyModification: %v", err)
+	}
+
+	if recorded.PDRs[s.cirUL.PDRID] != nil || recorded.PDRs[s.cirDL.PDRID] != nil {
+		t.Error("the withdrawn rule's PDRs are still in the PFCP context recorded under the allocation-time address")
+	}
+	if recorded.PDRs[s.allowUL.PDRID] == nil {
+		t.Error("a rule the modification kept was dropped from the PFCP context")
+	}
+}
+
 // And a withdrawal that is then abandoned brings the rule back: on its own PDRs, at its committed
 // rates, with the session QER.
 func TestRevertingAWithdrawalReinstatesTheRule(t *testing.T) {

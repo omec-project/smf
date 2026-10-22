@@ -1634,7 +1634,6 @@ func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
 			continue
 		}
 
-		nodeIP := node.UPF.NodeID.ResolveNodeIdToIp().String()
 		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
 			if tunnel == nil {
 				continue
@@ -1646,9 +1645,7 @@ func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
 				}
 
 				delete(tunnel.PDR, name)
-				if pfcpCtx := smContext.PFCPContext[nodeIP]; pfcpCtx != nil {
-					delete(pfcpCtx.PDRs, pdr.PDRID)
-				}
+				smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
 				if err := node.UPF.RemovePDR(pdr); err != nil {
 					smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
 				}
