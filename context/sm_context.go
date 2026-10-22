@@ -168,6 +168,35 @@ type SMContext struct {
 	// Command, and is ignored. Read and written under SMLock; not persisted.
 	NwModificationUnsent bool `json:"-" yaml:"-" bson:"-"`
 
+	// RevertInFlight is open from the moment a modification whose user plane was programmed is
+	// abandoned until the revert that puts the user plane back has finished, and nil otherwise.
+	// Every transaction for the session waits for it before processing, and ApplyModification waits
+	// for it too: the revert shares the session's uncorrelated PFCP response channel, and a
+	// modification built before it would be undone by it. It is only ever set from inside the
+	// session's queue (T3591's expiry, the realignment's correction and a held policy decision are
+	// queued as session tasks),
+	// so a transaction past its wait cannot see it set behind it. Not
+	// persisted, as the fields above are not.
+	RevertInFlight chan struct{} `json:"-" yaml:"-" bson:"-"`
+
+	// RevertOwed is whether RevertInFlight is open, set and cleared with it under SMLock, and read
+	// without the lock by the PFCP modification response handlers. They cannot take SMLock: in
+	// adapter mode the response is handled inside the send, on a goroutine whose caller may hold it.
+	// The revert's answer is delivered while one is owed whatever the session's state, and the
+	// revert leaves the state alone: a NAS or NGAP handler that started it from inside a transaction
+	// has its state machine set a state after it returns, possibly while the exchange is out or
+	// after it has finished. Nothing else for the session is in flight while a revert is owed, so
+	// the answer arriving then is the revert's.
+	RevertOwed atomic.Bool `json:"-" yaml:"-" bson:"-"`
+
+	// RevertFailed is set, for good, when a revert could not put the user plane back: the session
+	// enforces parameters its UE was never told about, and no modification is started on it again.
+	// The failure also marks the session SmStatePfcpRelease, but that mark cannot be relied on: a
+	// revert started by a NAS or NGAP handler runs beside the transaction that started it, whose
+	// state machine sets the state it returns after the handler, and so can set Active over the mark.
+	// Read and written under SMLock; not persisted.
+	RevertFailed bool `json:"-" yaml:"-" bson:"-"`
+
 	// RanAnswerPending is true from the moment a modification is sent towards the radio until its
 	// response or failure is acted on, or until the modification is abandoned. It is what tells a
 	// stale answer from the one this session is waiting for; NwModificationPending cannot, because
@@ -559,6 +588,20 @@ func (smContext *SMContext) AggregateEstablishmentResponse(upfIP string, accepte
 	}
 	smContext.EstablishmentFailed = false
 	return true, true, verdict
+}
+
+// WaitForOwedRevert blocks while a revert is owed on the session, and returns holding nothing. The
+// caller must hold neither SMLock nor the transaction bus lock: the revert takes SMLock to build.
+func (smContext *SMContext) WaitForOwedRevert() {
+	for {
+		smContext.SMLock.Lock()
+		owed := smContext.RevertInFlight
+		smContext.SMLock.Unlock()
+		if owed == nil {
+			return
+		}
+		<-owed
+	}
 }
 
 func (smContext *SMContext) ChangeState(nextState SMContextState) {

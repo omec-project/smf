@@ -55,7 +55,7 @@ func TestRevertReturnsTheUserPlaneWhenDeliveryFails(t *testing.T) {
 		return nil
 	}
 
-	sm := modifyingSession()
+	sm := programmedRateChange(t).sm
 	revertModification(sm, sm.NwModificationGen)
 
 	if !reverted {
@@ -79,13 +79,70 @@ func TestFailedRevertReleasesTheSession(t *testing.T) {
 		return errors.New("upf unreachable")
 	}
 
-	sm := modifyingSession()
+	sm := programmedRateChange(t).sm
 	revertModification(sm, sm.NwModificationGen)
 
 	if sm.SMContextState != smf_context.SmStatePfcpRelease {
 		t.Errorf("state = %s, want %s: a session whose user plane cannot be corrected must not keep running",
 			sm.SMContextState, smf_context.SmStatePfcpRelease)
 	}
+}
+
+// A revert started by a NAS or NGAP handler runs beside the transaction that started it, and that
+// transaction's state machine sets the state it returns once the handler is done -- Active, over
+// the release mark of a revert that has already failed. Nothing may start on the session then:
+// built on the parameters the failed revert left in place, a modification would program on top of
+// them, and the session would go on as though it had been put back.
+func TestAFailedRevertHoldsOffModificationsThoughItsStateIsSetBack(t *testing.T) {
+	original, originalN1N2 := sendPfcpSessionModifyReq, sendQosN1N2TransferMsg
+	t.Cleanup(func() { sendPfcpSessionModifyReq, sendQosN1N2TransferMsg = original, originalN1N2 })
+	// Reached only if a modification starts anyway, which the PFCP stub below already reports.
+	sendQosN1N2TransferMsg = func(*smf_context.SMContext) error { return errors.New("amf unreachable") }
+
+	failedRevert := func(t *testing.T) *twoRuleSession {
+		t.Helper()
+		sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+			return errors.New("upf unreachable")
+		}
+		s := programmedRateChange(t)
+		revertModification(s.sm, s.sm.NwModificationGen)
+		// What HandleEvent does with the handler's returned state, after the revert has failed.
+		s.sm.ChangeState(smf_context.SmStateActive)
+
+		sendPfcpSessionModifyReq = func(*smf_context.SMContext, *pfcpParam) error {
+			t.Error("a modification was programmed on a session whose user plane could not be put back")
+			return nil
+		}
+		return s
+	}
+
+	t.Run("ApplyModification", func(t *testing.T) {
+		s := failedRevert(t)
+		err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.rateChange()))
+		if !errors.Is(err, errSessionNotModifiable) {
+			t.Errorf("ApplyModification = %v, want it refused as not modifiable", err)
+		}
+	})
+
+	t.Run("a held decision", func(t *testing.T) {
+		s := failedRevert(t)
+		s.sm.DeferredPolicyDecisions = []*models.SmPolicyDecision{s.rateChange()}
+		runDeferredModification(s.sm)
+		if len(s.sm.DeferredPolicyDecisions) != 0 {
+			t.Errorf("%d held decisions kept for a session that will not be modified", len(s.sm.DeferredPolicyDecisions))
+		}
+	})
+
+	t.Run("a policy notification", func(t *testing.T) {
+		s := failedRevert(t)
+		txn := &transaction.Transaction{
+			Req:  models.SmPolicyNotification{SmPolicyDecision: s.rateChange()},
+			Ctxt: s.sm,
+		}
+		if err := HandleSMPolicyUpdateNotify(txn); err == nil {
+			t.Error("the notification was accepted for a session whose user plane could not be put back")
+		}
+	})
 }
 
 // A realignment is a modification like any other. If its command cannot be sent, the corrective
@@ -349,8 +406,8 @@ func TestADeliveryFailureForAnEndedModificationLeavesTheNextOneAlone(t *testing.
 	}
 }
 
-// A decision that deletes only the default rule carries no valid rule, so the builder also takes
-// its release-only branch for that rule. The deletion has already marked it, and marking it again
+// A decision that deletes only the default rule removes it once. The builder used to take a
+// release-only branch for a decision holding no valid rule as well, and marking the rule again there
 // sent each Remove PDR and Remove FAR twice in one request.
 func TestDeletingTheDefaultRuleRemovesItOnce(t *testing.T) {
 	sm := modifyingSession()
@@ -375,5 +432,34 @@ func TestDeletingTheDefaultRuleRemovesItOnce(t *testing.T) {
 	}
 	if got := len(param.removeFAR); got != 1 {
 		t.Errorf("Remove FARs = %d, want the default rule's one FAR once", got)
+	}
+}
+
+// A revert after a delivery failure is owed while its exchange is in flight, like every other
+// revert: a modification or transaction for the session starting meanwhile would share its one
+// PFCP response channel. And it is settled once the exchange is done.
+func TestADeliveryFailureRevertIsOwedWhileItIsInFlight(t *testing.T) {
+	original := sendPfcpSessionModifyReq
+	t.Cleanup(func() { sendPfcpSessionModifyReq = original })
+	var owedDuringSend bool
+	sendPfcpSessionModifyReq = func(sm *smf_context.SMContext, _ *pfcpParam) error {
+		sm.SMLock.Lock()
+		owedDuringSend = sm.RevertInFlight != nil && sm.RevertOwed.Load()
+		sm.SMLock.Unlock()
+		return nil
+	}
+
+	sm := programmedRateChange(t).sm
+	if !revertModification(sm, sm.NwModificationGen) {
+		t.Fatal("the revert reported failure")
+	}
+
+	if !owedDuringSend {
+		t.Error("the revert was not recorded as owed while its exchange was in flight")
+	}
+	sm.SMLock.Lock()
+	defer sm.SMLock.Unlock()
+	if sm.RevertInFlight != nil || sm.RevertOwed.Load() {
+		t.Error("the revert was left owed after it finished")
 	}
 }
