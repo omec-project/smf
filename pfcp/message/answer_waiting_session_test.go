@@ -100,7 +100,7 @@ func TestAMissingPfcpContextStillAnswersTheEstablishment(t *testing.T) {
 	smContext := waitingSession(t, smf_context.SmStatePfcpCreatePending)
 
 	if err := SendPfcpSessionEstablishmentRequest(*smf_context.NewNodeID("10.0.0.9"), smContext,
-		nil, nil, nil, nil, 8805); err == nil {
+		"10.0.0.9", nil, nil, nil, nil, 8805); err == nil {
 		t.Fatal("a session with no PFCP context for that node reported a request as sent")
 	}
 

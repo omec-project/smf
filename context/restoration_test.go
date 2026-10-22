@@ -220,7 +220,159 @@ func TestSessionsAnchoredOnSkipsASessionTheRestartedNodeAcknowledged(t *testing.
 	}
 }
 
+// A session whose initial create has not finished is being set up, not recovered from this restart,
+// even when the restarted node has already acknowledged its own leg of a multi-UPF create: the
+// create completes only once every UPF on the path answers, and another may still be outstanding or
+// may have rejected. Offering it for restoration lets reissue reset the in-flight PendingUPF batch
+// (SendPFCPRules does so while SmStatePfcpCreatePending) and clear the rejection latch, which can
+// turn a create one UPF rejected into a false success. It is excluded and counted as still
+// establishing instead, so a caller does not read the node as empty.
+func TestSessionsAnchoredOnSkipsASessionStillFinishingItsCreate(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.55")
+	// anchor records a non-zero RemoteSEID, so the restarted node has acknowledged this leg; only the
+	// overall create state keeps the session out of restoration.
+	creating := anchor(t, "imsi-208930000000055", 10, "10.20.0.55")
+	creating.BeginCreate()
+
+	anchored, _, stillEstablishing := context.SessionsAnchoredOn(node, time.Time{})
+	for _, s := range anchored {
+		if s == creating {
+			t.Errorf("a session still finishing its initial create was offered for restoration; " +
+				"reissuing over it resets the in-flight create batch and can mask a UPF's rejection")
+		}
+	}
+	if stillEstablishing == 0 {
+		t.Errorf("a session still finishing its create was not counted as still establishing; " +
+			"a caller may wrongly read the node as empty")
+	}
+}
+
 func mustAnchoredAt(node context.NodeID, recovery time.Time) []*context.SMContext {
 	anchored, _, _ := context.SessionsAnchoredOn(node, recovery)
 	return anchored
+}
+
+// A restarted node that had accepted its leg of a still-pending multi-UPF create has lost that leg,
+// and no later sweep revisits the session. The create must not complete as a success without that
+// node's rules, so the sweep latches the create as failed -- leaving the pending batch intact, since
+// reissuing over it would reset the batch and the latch.
+func TestSessionsAnchoredOnFailsAPendingCreateWhoseAcceptedNodeRestarted(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.56")
+	restart := time.Unix(1_790_000_000, 0)
+
+	creating := anchor(t, "imsi-208930000000056", 11, "10.20.0.56")
+	creating.SMLock.Lock()
+	creating.PFCPContext["10.20.0.56"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
+	creating.SMLock.Unlock()
+	creating.BeginCreate()
+	// The other UPF on the path has not answered yet.
+	creating.AddPendingUPF("10.20.0.57")
+
+	anchored, _, _ := context.SessionsAnchoredOn(node, restart)
+	for _, s := range anchored {
+		if s == creating {
+			t.Fatalf("a pending create was offered for restoration; reissuing resets its in-flight batch")
+		}
+	}
+	if !creating.HasPendingUPF("10.20.0.57") {
+		t.Fatalf("the sweep cleared the pending batch; the create would no longer wait on the other UPF")
+	}
+
+	// The remaining UPF accepts, so the batch itself succeeds -- yet the create must come out failed.
+	tracked, signal, verdict := creating.AggregateEstablishmentResponse("10.20.0.57", true)
+	if !tracked || !signal {
+		t.Fatalf("expected the last response to complete the batch, got tracked=%v signal=%v", tracked, signal)
+	}
+	if got := creating.FinishCreate(verdict); got != context.SessionEstablishFailed {
+		t.Errorf("verdict = %v, want SessionEstablishFailed: the restarted node lost its rules", got)
+	}
+}
+
+// A pending create whose node acknowledged at the restarted incarnation itself lost nothing.
+func TestSessionsAnchoredOnDoesNotFailAPendingCreateTheRestartedNodeAcknowledged(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.58")
+	restart := time.Unix(1_790_000_000, 0)
+
+	creating := anchor(t, "imsi-208930000000058", 12, "10.20.0.58")
+	creating.SMLock.Lock()
+	creating.PFCPContext["10.20.0.58"].AcknowledgedAtRecovery = restart
+	creating.SMLock.Unlock()
+	creating.BeginCreate()
+	creating.AddPendingUPF("10.20.0.59")
+
+	context.SessionsAnchoredOn(node, restart)
+
+	_, _, verdict := creating.AggregateEstablishmentResponse("10.20.0.59", true)
+	if got := creating.FinishCreate(verdict); got != context.SessionEstablishSuccess {
+		t.Errorf("verdict = %v, want SessionEstablishSuccess: the node acknowledged after its restart", got)
+	}
+}
+
+// A create whose batch has already drained still owns the session until the FSM reads the verdict
+// queued for it: reissuing then would drain that verdict from the channel and reset the batch and
+// rejection latch, so a rejection could be lost. The session is therefore left alone, and a restarted
+// node's lost leg is applied to the verdict itself -- a success becomes a failure, a failure stays one.
+func TestSessionsAnchoredOnLeavesADrainedCreateToItsVerdict(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.60")
+	restart := time.Unix(1_790_000_000, 0)
+
+	drained := anchor(t, "imsi-208930000000060", 13, "10.20.0.60")
+	drained.SMLock.Lock()
+	drained.PFCPContext["10.20.0.60"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
+	drained.SMLock.Unlock()
+	drained.BeginCreate()
+	// No pending UPF: every leg has answered and the verdict is on its way to the FSM.
+
+	anchored, _, stillEstablishing := context.SessionsAnchoredOn(node, restart)
+	for _, s := range anchored {
+		if s == drained {
+			t.Fatalf("a create with a drained batch was offered for restoration; reissue would drain its queued verdict")
+		}
+	}
+	if stillEstablishing == 0 {
+		t.Errorf("a create with a drained batch was not counted as still establishing")
+	}
+	if got := drained.FinishCreate(context.SessionEstablishSuccess); got != context.SessionEstablishFailed {
+		t.Errorf("verdict = %v, want SessionEstablishFailed: the restarted node lost its rules", got)
+	}
+}
+
+// Once the FSM has read the verdict the create no longer owns the session, so a restart after that is
+// an ordinary one and the session is restored.
+func TestSessionsAnchoredOnRestoresASessionOnceItsCreateHasFinished(t *testing.T) {
+	node := *context.NewNodeID("10.20.0.61")
+	restart := time.Unix(1_790_000_000, 0)
+
+	done := anchor(t, "imsi-208930000000061", 14, "10.20.0.61")
+	done.SMLock.Lock()
+	done.PFCPContext["10.20.0.61"].AcknowledgedAtRecovery = restart.Add(-time.Hour)
+	done.SMLock.Unlock()
+	done.BeginCreate()
+	if got := done.FinishCreate(context.SessionEstablishSuccess); got != context.SessionEstablishSuccess {
+		t.Fatalf("verdict = %v, want SessionEstablishSuccess", got)
+	}
+
+	for _, s := range mustAnchoredAt(node, restart) {
+		if s == done {
+			return
+		}
+	}
+	t.Fatalf("a session whose create had finished was not offered for restoration")
+}
+
+// A rejection stays a rejection however the restart is latched.
+func TestFinishCreateKeepsARejection(t *testing.T) {
+	// Bare, not registered in the pool: the lifecycle needs nothing else, and removing a pooled
+	// context publishes to Kafka, which these tests do not configure.
+	sc := new(context.SMContext)
+	sc.BeginCreate()
+	sc.NoteRestartDuringCreate(true)
+	if got := sc.FinishCreate(context.SessionEstablishFailed); got != context.SessionEstablishFailed {
+		t.Errorf("verdict = %v, want SessionEstablishFailed", got)
+	}
+	// The latch does not outlive the create: the next one starts clean.
+	sc.BeginCreate()
+	if got := sc.FinishCreate(context.SessionEstablishSuccess); got != context.SessionEstablishSuccess {
+		t.Errorf("verdict = %v, want SessionEstablishSuccess: a lost leg leaked into the next create", got)
+	}
 }

@@ -9,7 +9,7 @@
 // about which SEID it gets, so nothing here depends on file ordering any more. Kept external
 // because there is no longer a reason either way, not because the old one still holds.
 
-package handler_test
+package handler
 
 import (
 	"encoding/json"
@@ -24,7 +24,6 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/pfcp/handler"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -111,7 +110,7 @@ func TestEstablishmentResponseReportsTheUpfAllocatedAddress(t *testing.T) {
 		),
 	)
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 8805},
 		PfcpMessage: rsp,
 	})
@@ -212,7 +211,7 @@ func TestEstablishmentResponseReportsBeforeReleasingTheOldAddress(t *testing.T) 
 		),
 	)
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.2"), Port: 8805},
 		PfcpMessage: rsp,
 	})

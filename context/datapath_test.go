@@ -172,3 +172,93 @@ func TestActivateDlLinkPdr(t *testing.T) {
 		t.Errorf("expected pdr.PDI.UEIPAddress.Ipv4Address to be %v, got %v", net.IP{192, 168, 1, 1}, pdr.PDI.UEIPAddress.Ipv4Address)
 	}
 }
+
+// TestFindNodeMatchesConfiguredNodeIDAcrossDnsRefresh is a regression test for the establishment
+// handler's F-TEID routing. FindNode must correlate a response to its data path node by the configured
+// NodeID, not by a resolved address. An earlier version resolved both the caller's NodeID and each
+// node's NodeID to an IP and compared the strings; a DNS refresh landing between the caller's
+// resolution and FindNode's own made the same configured UPF fail to match, so the handler skipped its
+// F-TEID update while still counting its acceptance -- and a successful create could then advertise the
+// access tunnel's stale TEID. Comparing the configured NodeID is immune to that drift.
+func TestFindNodeMatchesConfiguredNodeIDAcrossDnsRefresh(t *testing.T) {
+	const (
+		fqdn        = "upf.findnode-drift.test"
+		dispatchIP  = "10.70.0.1"
+		refreshedIP = "10.70.0.2"
+	)
+
+	// The address the UPF was reachable at when the establishment request went out.
+	context.InsertDnsHostIp(fqdn, net.ParseIP(dispatchIP))
+
+	nodeID := context.NewNodeID(fqdn)
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*nodeID) })
+	node := context.NewDataPathNode()
+	node.UPF = context.NewUPF(nodeID, nil)
+	path := context.NewDataPath()
+	path.FirstDPNode = node
+
+	// What the caller (the establishment response handler) resolved the responding UPF to before any
+	// refresh -- the key the old resolved-string FindNode would have been handed.
+	callerResolved := nodeID.ResolveNodeIdToIp().String()
+	if callerResolved != dispatchIP {
+		t.Fatalf("precondition: NodeID resolved to %q, want %q", callerResolved, dispatchIP)
+	}
+
+	// The DNS cache moves the UPF to a new address -- as the periodic refresh would -- after the caller
+	// resolved but before the node is matched. The node now resolves to a different address than the
+	// caller captured, so the old lookup (FindNode(callerResolved) compared against node.GetNodeIP())
+	// would miss the very node that responded.
+	context.InsertDnsHostIp(fqdn, net.ParseIP(refreshedIP))
+	if got := node.GetNodeIP(); got == callerResolved {
+		t.Fatalf("precondition: node still resolves to the caller's address %q; the refresh did not take", got)
+	}
+
+	// Matching on the configured NodeID finds the responding UPF's node regardless of the drift.
+	if got := path.FindNode(*nodeID); got != node {
+		t.Errorf("FindNode did not match the responding UPF's node after a DNS refresh; the handler would skip its F-TEID update while still counting the acceptance")
+	}
+}
+
+// A response can come from a UPF that is on a non-default path only (SendPFCPRules sends to every
+// activated path; EstablishPSA2 to the activating path). The pool lookup must find it, and for a UPF
+// shared by several paths pick the node whose tunnel owns the created PDR.
+func TestDataPathPoolFindNodeSearchesEveryPath(t *testing.T) {
+	newNode := func(ip string, pdrID uint16) *context.DataPathNode {
+		n := context.NewDataPathNode()
+		n.UPF = context.NewUPF(context.NewNodeID(ip), nil)
+		// One cleanup per allocation: RemoveUPFNodeByNodeID removes a single matching UPF per call,
+		// and this registers one UPF for every node, two of them for the same address.
+		t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*context.NewNodeID(ip)) })
+		n.UpLinkTunnel.PDR["default"] = &context.PDR{PDRID: pdrID}
+		return n
+	}
+
+	defaultNode := newNode("10.71.0.1", 1)
+	defaultPath := context.NewDataPath()
+	defaultPath.IsDefaultPath = true
+	defaultPath.FirstDPNode = defaultNode
+
+	sharedOnBranch := newNode("10.71.0.1", 2)
+	branchOnly := newNode("10.71.0.2", 3)
+	sharedOnBranch.AddNext(branchOnly)
+	branchPath := context.NewDataPath()
+	branchPath.FirstDPNode = sharedOnBranch
+
+	pool := context.DataPathPool{1: defaultPath, 2: branchPath}
+
+	if got := pool.FindNode(*context.NewNodeID("10.71.0.2"), 3, true); got != branchOnly {
+		t.Errorf("a UPF only on the branch path was not found")
+	}
+	if got := pool.FindNode(*context.NewNodeID("10.71.0.1"), 2, true); got != sharedOnBranch {
+		t.Errorf("shared UPF: the node owning PDR 2 was not chosen")
+	}
+	if got := pool.FindNode(*context.NewNodeID("10.71.0.1"), 1, true); got != defaultNode {
+		t.Errorf("shared UPF: the node owning PDR 1 was not chosen")
+	}
+	if got := pool.FindNode(*context.NewNodeID("10.71.0.1"), 0, false); got != defaultNode {
+		t.Errorf("without a PDR ID the default path's node should win")
+	}
+	if got := pool.FindNode(*context.NewNodeID("10.71.0.9"), 0, false); got != nil {
+		t.Errorf("a UPF on no path matched")
+	}
+}

@@ -85,3 +85,40 @@ func SendPfcpSessionReleaseReq(smContext *smf_context.SMContext) error {
 	}
 	return nil
 }
+
+// RollbackFailedCreate undoes what a create that has failed leaves behind, ahead of the context's
+// removal. A create fails as a whole -- one UPF rejected its leg, or one that had accepted its own
+// was lost to a restart -- while the UPFs that did accept still hold a PFCP session and forwarding
+// rules, and the SMF still holds the PDR, FAR and QER allocations the data path made. Removing the
+// context alone drops the only record of both: the SEID mapping goes, so nothing can ever delete the
+// accepted sessions, and the allocations are never returned to their UPFs' pools.
+//
+// It is the release procedure run on a session that never became active: the state moves to
+// SmStatePfcpRelease, which is what the deletion response handlers and the send-failure answers are
+// gated on, releaseTunnel deactivates the data path and sends the deletions, and the wait for the
+// verdict is the same. A leg that holds no session -- the one that rejected -- answers its deletion
+// with a refusal, which ends the wait the same way an acceptance does.
+//
+// Nothing is done for a context with no tunnel (already released, so nothing is held) or one that
+// has been purged and replaced: the replacement's own release owns its teardown, and the handlers
+// do not answer a purged context's deletions, so waiting on one would never return.
+//
+// A failed or unanswered deletion is logged and not returned: the create has failed whatever it
+// says, and the context is removed either way.
+func RollbackFailedCreate(smContext *smf_context.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	if smContext.Tunnel == nil {
+		return
+	}
+	if smContext.LocalPurged.Load() {
+		smContext.SubPfcpLog.Infof("session has been purged and replaced; leaving its teardown to the replacement")
+		return
+	}
+
+	smContext.ChangeState(smf_context.SmStatePfcpRelease)
+	if err := SendPfcpSessionReleaseReq(smContext); err != nil {
+		smContext.SubPfcpLog.Warnf("rolling back the failed create: %v", err)
+	}
+}

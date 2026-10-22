@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package handler_test
+package handler
 
 import (
 	"net"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/pfcp/handler"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -43,7 +42,7 @@ func TestFindUEIPAddressNoAddressInCreatedPDR(t *testing.T) {
 
 	createdPDRIEs := sessionEstablishmentResponse.CreatedPDR
 
-	ipAddress := handler.FindUEIPAddress(createdPDRIEs)
+	ipAddress := FindUEIPAddress(createdPDRIEs)
 
 	if ipAddress != nil {
 		t.Errorf("Expected nil, got %v", ipAddress)
@@ -67,7 +66,7 @@ func TestFindUEIPAddressNoUEIPAddressInCreatedPDR(t *testing.T) {
 
 	createdPDRIEs := sessionEstablishmentResponse.CreatedPDR
 
-	ipAddress := handler.FindUEIPAddress(createdPDRIEs)
+	ipAddress := FindUEIPAddress(createdPDRIEs)
 
 	if !ipAddress.Equal(net.IPv4(1, 2, 3, 4)) {
 		t.Errorf("Expected %v, got %v", "1.2.3.4", ipAddress)
@@ -119,7 +118,7 @@ func TestHandlePfcpAssociationSetupResponse(t *testing.T) {
 		PfcpMessage: msg,
 	}
 
-	handler.HandlePfcpAssociationSetupResponse(&udpMessage)
+	HandlePfcpAssociationSetupResponse(&udpMessage)
 
 	if upf.UPFStatus != context.AssociatedSetUpSuccess {
 		t.Errorf("Expected UPFStatus %v, got %v", context.AssociatedSetUpSuccess, upf.UPFStatus)
@@ -207,7 +206,7 @@ func TestHandlePfcpSessionEstablishmentResponse(t *testing.T) {
 		PfcpMessage: rsp,
 	}
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+	HandlePfcpSessionEstablishmentResponse(&udpMessage)
 
 	if smContext.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode.UpLinkTunnel.TEID != 4321 {
 		t.Errorf("Expected TEID 4321, got %d", smContext.Tunnel.ANInformation.TEID)
@@ -294,7 +293,7 @@ func TestHandlePfcpSessionEstablishmentResponseNilTunnel(t *testing.T) {
 		}
 	}()
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+	HandlePfcpSessionEstablishmentResponse(&udpMessage)
 
 	if leaked := pfcp_message.FetchPfcpTxn(seq); leaked != nil {
 		t.Errorf("expected pending PFCP txn for seq %d to be consumed on the nil-Tunnel ignore path, but it was still present", seq)
@@ -396,7 +395,7 @@ func TestHandlePfcpSessionEstablishmentResponseChannelGatedByState(t *testing.T)
 				PfcpMessage: rsp,
 			}
 
-			handler.HandlePfcpSessionEstablishmentResponse(&udpMessage)
+			HandlePfcpSessionEstablishmentResponse(&udpMessage)
 
 			select {
 			case status := <-smContext.SBIPFCPCommunicationChan:
@@ -473,7 +472,7 @@ func TestASecondEstablishmentAnswerIsNotQueuedBehindTheFirst(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+		HandlePfcpSessionEstablishmentResponse(&udp.Message{
 			RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.2"), Port: 8809},
 			PfcpMessage: rsp,
 		})
@@ -544,7 +543,7 @@ func TestHandlePfcpSessionEstablishmentResponseIgnoresNonPendingResponse(t *test
 		ie.NewRecoveryTimeStamp(time.Now()),
 	)
 
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr:  &net.UDPAddr{IP: net.ParseIP("1.1.1.11"), Port: 8809},
 		PfcpMessage: rsp,
 	})
@@ -623,7 +622,7 @@ func TestHandlePfcpSessionEstablishmentResponseAggregatesConflictingTrackedUPFs(
 			deliver := map[string]func(){
 				verdictAccept: func() {
 					pfcp_message.InsertPfcpTxn(uint32(accessSEID), context.NewNodeID(accessUpf))
-					handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+					HandlePfcpSessionEstablishmentResponse(&udp.Message{
 						RemoteAddr: &net.UDPAddr{IP: net.ParseIP(accessUpf), Port: 8809},
 						PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, accessSEID, uint32(accessSEID), 0,
 							ie.NewCause(ie.CauseRequestAccepted),
@@ -635,7 +634,7 @@ func TestHandlePfcpSessionEstablishmentResponseAggregatesConflictingTrackedUPFs(
 				},
 				verdictReject: func() {
 					pfcp_message.InsertPfcpTxn(uint32(secondarySEID), context.NewNodeID(secondaryUpf))
-					handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+					HandlePfcpSessionEstablishmentResponse(&udp.Message{
 						RemoteAddr: &net.UDPAddr{IP: net.ParseIP(secondaryUpf), Port: 8809},
 						PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, secondarySEID, uint32(secondarySEID), 0,
 							ie.NewCause(ie.CauseRequestRejected),
@@ -721,7 +720,7 @@ func TestHandlePfcpSessionModificationResponseNoSMContext(t *testing.T) {
 				}
 			}()
 
-			handler.HandlePfcpSessionModificationResponse(&udpMessage)
+			HandlePfcpSessionModificationResponse(&udpMessage)
 		})
 	}
 }

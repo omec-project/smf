@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/pfcp/ies"
 	"github.com/wmnsk/go-pfcp/ie"
 )
@@ -72,5 +73,37 @@ func TestACreatedPDRWithoutAnFTEIDIsNotCounted(t *testing.T) {
 	}
 	if err := ies.CheckOneFTEID(nil); err != nil {
 		t.Errorf("a response with no Created PDR reported as differing: %v", err)
+	}
+}
+
+// Every uplink PDR sent to a UPF shares one CHOOSE ID, so the UPF may return the group's F-TEID on
+// the branch PDR alone. The default tunnel must take it, not keep a TEID the UPF never allocated.
+func TestApplyCreatedFTEIDsOnlyBranchPDRCarriesGroupFTEID(t *testing.T) {
+	nodeID := context.NewNodeID("1.1.1.60")
+	defaultNode := &context.DataPathNode{
+		UPF:          &context.UPF{NodeID: *nodeID},
+		UpLinkTunnel: &context.GTPTunnel{PDR: map[string]*context.PDR{"default": {PDRID: 1}}},
+	}
+	branchNode := &context.DataPathNode{
+		UPF:          &context.UPF{NodeID: *nodeID},
+		UpLinkTunnel: &context.GTPTunnel{PDR: map[string]*context.PDR{"branch": {PDRID: 2}}},
+	}
+	pool := context.DataPathPool{
+		10: &context.DataPath{IsDefaultPath: true, FirstDPNode: defaultNode},
+		11: &context.DataPath{FirstDPNode: branchNode},
+	}
+	created := ies.CreatedFTEIDs([]*ie.IE{
+		ie.NewCreatedPDR(ie.NewPDRID(2), ie.NewFTEID(0x01, 0x222, net.ParseIP("10.0.0.2"), nil, 0)),
+	})
+
+	advertised, err := ies.ApplyCreatedFTEIDs(pool, *nodeID, created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultNode.UpLinkTunnel.TEID != 0x222 || branchNode.UpLinkTunnel.TEID != 0x222 {
+		t.Errorf("TEIDs = %#x, %#x, want both 0x222", defaultNode.UpLinkTunnel.TEID, branchNode.UpLinkTunnel.TEID)
+	}
+	if !advertised.IPv4Address.Equal(net.ParseIP("10.0.0.2")) {
+		t.Errorf("advertised address = %v, want 10.0.0.2", advertised.IPv4Address)
 	}
 }

@@ -829,16 +829,31 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		dataPath.DeactivateTunnelAndPDR(smContext)
 		for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
-			curUPFID, err := curDataPathNode.GetUPFID()
-			if err != nil {
-				smContext.SubPduSessLog.Error(err)
+			// Keyed by the PFCPContext entry the node's session is held under, which is also what the
+			// response handlers recover from the local SEID. Neither the UPF ID nor a fresh
+			// resolution of the NodeID will do: both go through the node's address as it resolves
+			// now, and an FQDN UPF's can move under the DNS refresh after the session was allocated --
+			// which dropped the node from the teardown and left its session and rules behind.
+			pfcpKey, held := smContext.PFCPContextKeyForNode(curDataPathNode.UPF.NodeID)
+			if !held {
+				smContext.SubPduSessLog.Warnf("releaseTunnel, no PFCP session held on UPF[%s]; nothing to delete",
+					curDataPathNode.UPF.NodeID.ResolveNodeIdToIp())
 				continue
 			}
-			if _, exist := deletedPFCPNode[curUPFID]; !exist {
-				deletedPFCPNode[curUPFID] = true
-				pendingUPF[curDataPathNode.GetNodeIP()] = true
-				targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.PFCPPort()})
+			if deletedPFCPNode[pfcpKey] {
+				continue
 			}
+			deletedPFCPNode[pfcpKey] = true
+			// A node that never acknowledged the session -- the one that rejected its leg, or one
+			// still unanswered -- has no SEID of its own to address a deletion to: a session-related
+			// message carries the receiver's SEID in its header (TS 29.244), and only an
+			// establishment goes out without one. It would only refuse, so none is sent.
+			if smContext.PFCPContext[pfcpKey].RemoteSEID == 0 {
+				smContext.SubPduSessLog.Infof("releaseTunnel, UPF[%s] never acknowledged the session; no deletion sent", pfcpKey)
+				continue
+			}
+			pendingUPF[pfcpKey] = true
+			targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.PFCPPort()})
 		}
 	}
 
@@ -846,6 +861,12 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 	// same map without SMLock (see SMContext.PendingUPFLock's declaration), so this assignment
 	// goes through the locked helper rather than the field directly.
 	smContext.ResetPendingUPF(pendingUPF)
+
+	if len(targets) == 0 {
+		// Nothing was sent, so no response will come to resume the release's waiter on the PFCP
+		// channel: it is resumed here, as the success it is -- nothing is held on any node.
+		smContext.QueuePFCPVerdict(smf_context.SessionReleaseSuccess)
+	}
 
 	for _, target := range targets {
 		if err := pfcp_message.SendPfcpSessionDeletionRequest(target.nodeID, smContext, target.port); err != nil {

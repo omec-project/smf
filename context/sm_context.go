@@ -262,6 +262,17 @@ type SMContext struct {
 	// EstablishmentFailed latches a rejection seen from any UPF while PendingUPF is drained, so the
 	// verdict queued once it empties reflects every response gathered, not only the last one.
 	EstablishmentFailed bool `json:"-" yaml:"-" bson:"-"` // ignore
+	// createInFlight is true from the moment the create FSM starts its establishment until it has
+	// consumed the verdict (BeginCreate .. FinishCreate). It, not SMContextState, is what tells
+	// restoration a create still owns the session: SMContextState is written by ChangeState without
+	// SMLock, so a restoration sweep reading it races that write, whereas this is guarded by
+	// PendingUPFLock on both sides. Unlike PendingUPF it stays true after the batch drains, up to the
+	// instant the FSM takes the queued verdict off the channel.
+	createInFlight bool
+	// createLegLost latches, while createInFlight, that a UPF restarted after accepting its leg of the
+	// create and so no longer holds that leg's rules. FinishCreate turns a success verdict into a
+	// failure when it is set; the verdict already queued, or still to be queued, is left untouched.
+	createLegLost bool
 	// NodeID(string form) to PFCP Session Context
 	PFCPContext map[string]*PFCPSessionContext `json:"-" yaml:"pfcpContext" bson:"-"`
 	// seidToPFCPCtx indexes PFCPContext by each entry's local SEID, giving the entry's stable key
@@ -447,6 +458,52 @@ func (smContext *SMContext) PendingUPFIsEmpty() bool {
 	smContext.PendingUPFLock.Lock()
 	defer smContext.PendingUPFLock.Unlock()
 	return smContext.PendingUPF.IsEmpty()
+}
+
+// BeginCreate marks the start of the create FSM's establishment: from here until FinishCreate the
+// create owns the session, and restoration leaves it alone. Called before the rules are sent, so no
+// response can arrive for a create not yet marked.
+func (smContext *SMContext) BeginCreate() {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	smContext.createInFlight = true
+	smContext.createLegLost = false
+}
+
+// NoteRestartDuringCreate is restoration's one question to a session's create. It reports whether a
+// create is in flight, in which case the session is not restoration's to touch: reissuing over it
+// resets the pending batch and rejection latch, and drains a verdict the FSM has yet to read, so a
+// rejected create can come out a success. legLost says the restarted UPF had already accepted its
+// leg and has lost it; that is latched here and applied by FinishCreate, so the create completes as
+// a failure rather than a success without that node's rules -- whether the batch is still waiting on
+// other UPFs or has already drained and queued its verdict. It does nothing, and reports false, when
+// no create is in flight.
+func (smContext *SMContext) NoteRestartDuringCreate(legLost bool) (inFlight bool) {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	if !smContext.createInFlight {
+		return false
+	}
+	if legLost {
+		smContext.createLegLost = true
+	}
+	return true
+}
+
+// FinishCreate ends the create's ownership of the session and returns the verdict the create is to
+// act on: the one it received, except that a success becomes a failure when a UPF lost its leg to a
+// restart while the create was in flight. Called as soon as the FSM has taken the verdict off the
+// session's channel.
+func (smContext *SMContext) FinishCreate(verdict PFCPSessionResponseStatus) PFCPSessionResponseStatus {
+	smContext.PendingUPFLock.Lock()
+	defer smContext.PendingUPFLock.Unlock()
+	lost := smContext.createLegLost
+	smContext.createInFlight = false
+	smContext.createLegLost = false
+	if lost && verdict == SessionEstablishSuccess {
+		return SessionEstablishFailed
+	}
+	return verdict
 }
 
 // AggregateEstablishmentResponse folds one UPF's establishment verdict into the batch the create
@@ -637,6 +694,34 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 		// not the time, is what identifies the incarnation.
 		acknowledgedByRestarted := onThisNode && !neverAcknowledged && !recovery.IsZero() &&
 			pfcpContext.AcknowledgedAtRecovery.Unix() == recovery.Unix()
+		// A session whose create is still in flight is being set up, not recovered from this restart,
+		// even when the restarted node has already acknowledged its own leg: a create whose data path
+		// spans several UPFs only completes once every one of them has answered, and the others may
+		// still be outstanding (or one may have rejected). Reissuing over it is worse than the
+		// neverAcknowledged case above -- SendPFCPRules resets PendingUPF while the context is
+		// SmStatePfcpCreatePending, and reissue drains a verdict the create has not yet read -- so the
+		// create's rejection latch could be cleared or its verdict lost, turning a create that one UPF
+		// rejected into a false success. So the create is left to finish and this sweep skips the
+		// session. That includes a create whose batch has already drained: its verdict is queued and
+		// only the FSM may consume it.
+		//
+		// The one case that cannot simply be skipped: the restarted node had already accepted its leg
+		// (acknowledged under an earlier incarnation) and then lost it in the restart while the create
+		// has yet to finish. No later sweep would revisit it -- re-association has already recorded the
+		// new recovery timestamp, so unchanged heartbeats do not trigger one -- and the create would
+		// complete as a success with no forwarding rules on this node. Reissuing is still wrong, so the
+		// loss is latched on the create (NoteRestartDuringCreate) and FinishCreate turns its verdict
+		// into a failure; the failure path then runs.
+		//
+		// Whether a create is in flight is read from the create's own lifecycle, guarded by
+		// PendingUPFLock, and not from SMContextState: ChangeState writes that without SMLock (see
+		// fsm/handler.go), so reading it here, SMLock held or not, would be a data race.
+		lostAcceptedLeg := onThisNode && !neverAcknowledged && !acknowledgedByRestarted && !recovery.IsZero()
+		createInFlight := onThisNode && smContext.NoteRestartDuringCreate(lostAcceptedLeg)
+		if createInFlight && lostAcceptedLeg {
+			smContext.SubPfcpLog.Warnf("UPF[%s] restarted after accepting this session's create, which has not finished; "+
+				"failing the create instead of completing it without that node's rules", nodeIP)
+		}
 		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
 		if !onThisNode {
 			for key := range smContext.PFCPContext {
@@ -648,7 +733,7 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 		if !onThisNode {
 			return true
 		}
-		if neverAcknowledged {
+		if neverAcknowledged || createInFlight {
 			establishing++
 			return true
 		}
@@ -1053,10 +1138,53 @@ func (smContext *SMContext) PutPDRtoPFCPSession(nodeID NodeID, pdrList map[strin
 	return nil
 }
 
+// PFCPContextKeyForNode returns the PFCPContext key of the session held on nodeID, and whether there
+// is one. The entry is matched on the NodeID it was created with, not on the node's address as it
+// resolves now: the key is the address resolved once, when the session was allocated, and an FQDN
+// UPF's address can move under the periodic DNS refresh (see ResolveNodeIdToIp) while the session is
+// still held. A key built from a fresh resolution then names no entry, and indexing the map with it
+// yields nil. The resolved address is the fallback, for an entry whose NodeID was not recorded.
+//
+// Iterates PFCPContext, so the caller holds SMLock, as it must to read the map at all.
+func (smContext *SMContext) PFCPContextKeyForNode(nodeID NodeID) (string, bool) {
+	for key, pfcpSessCtx := range smContext.PFCPContext {
+		if pfcpSessCtx != nil && pfcpSessCtx.NodeID.Equal(nodeID) {
+			return key, true
+		}
+	}
+
+	key := nodeID.ResolveNodeIdToIp().String()
+	if pfcpSessCtx := smContext.PFCPContext[key]; pfcpSessCtx != nil {
+		return key, true
+	}
+
+	return "", false
+}
+
+// RemovePDRfromPFCPSession forgets pdr in the session held on nodeID. A node holding no session is
+// not an error: it is what a teardown finds when the session never reached the node, or when the
+// context has already been dropped.
 func (smContext *SMContext) RemovePDRfromPFCPSession(nodeID NodeID, pdr *PDR) {
-	NodeIDtoIP := nodeID.ResolveNodeIdToIp().String()
-	pfcpSessCtx := smContext.PFCPContext[NodeIDtoIP]
-	delete(pfcpSessCtx.PDRs, pdr.PDRID)
+	key, ok := smContext.PFCPContextKeyForNode(nodeID)
+	if !ok {
+		return
+	}
+	delete(smContext.PFCPContext[key].PDRs, pdr.PDRID)
+}
+
+// QueuePFCPVerdict puts verdict on SBIPFCPCommunicationChan for the exchange waiting on it, and
+// reports whether it was queued. It never blocks. The channel holds one verdict, and a deletion
+// response handler runs either on the UDP read loop or, in adapter mode, inline in the very
+// goroutine that will read the channel once it has sent every request -- a send that waits for room
+// there waits for a read that is behind it, with SMLock held. A verdict that finds the slot taken is
+// dropped: the waiter is already resumed, which is all a second one could do.
+func (smContext *SMContext) QueuePFCPVerdict(verdict PFCPSessionResponseStatus) bool {
+	select {
+	case smContext.SBIPFCPCommunicationChan <- verdict:
+		return true
+	default:
+		return false
+	}
 }
 
 func (smContext *SMContext) isAllowedPDUSessionType(requestedPDUSessionType uint8) error {

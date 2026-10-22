@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Forsway Scandinavia AB
 // SPDX-License-Identifier: Apache-2.0
 
-package handler_test
+package handler
 
 import (
 	"net"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
-	"github.com/omec-project/smf/pfcp/handler"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -55,7 +54,7 @@ func TestAnEstablishmentRecordsTheIncarnationThatAcknowledgedIt(t *testing.T) {
 
 	seq := uint32(localSEID)
 	pfcp_message.InsertPfcpTxn(seq, nodeID)
-	handler.HandlePfcpSessionEstablishmentResponse(&udp.Message{
+	HandlePfcpSessionEstablishmentResponse(&udp.Message{
 		RemoteAddr: &net.UDPAddr{IP: net.ParseIP(ip), Port: 8805},
 		PfcpMessage: message.NewSessionEstablishmentResponse(0, 0, localSEID, seq, 0,
 			ie.NewCause(ie.CauseRequestAccepted),

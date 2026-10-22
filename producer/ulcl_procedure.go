@@ -146,7 +146,7 @@ func EstablishPSA2(smContext *context.SMContext) {
 			curDPNodeIP := curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String()
 			bpMGR.PendingUPF[curDPNodeIP] = true
 			err := message.SendPfcpSessionEstablishmentRequest(
-				curDataPathNode.UPF.NodeID, smContext, pdrList, farList, barList, qerList, curDataPathNode.UPF.PFCPPort())
+				curDataPathNode.UPF.NodeID, smContext, curDPNodeIP, pdrList, farList, barList, qerList, curDataPathNode.UPF.PFCPPort())
 			if err != nil {
 				logger.PduSessLog.Errorf("send pfcp session establishment request failed: %v for UPF[%v, %v]: ", err, curDataPathNode.UPF.NodeID, curDataPathNode.UPF.NodeID.ResolveNodeIdToIp())
 			}

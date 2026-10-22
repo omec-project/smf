@@ -568,12 +568,19 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			return
 		}
 		logger.PfcpLog.Infof("created PDR FTEID: %+v", fteid)
-		if err := ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
+		if err = ies.CheckOneFTEID(rsp.CreatedPDR); err != nil {
 			smContext.SubPfcpLog.Errorf("UPF[%s]: %v; the RAN is told TEID %#x",
 				nodeID.ResolveNodeIdToIp().String(), err, fteid.TEID)
 		}
 
-		ANUPF.UpLinkTunnel.TEID = fteid.TEID
+		// Applied to the node each F-TEID belongs to, not to ANUPF: a response can come from any UPF
+		// on any of the session's data paths. See DataPathPool.FindNode and ies.ApplyCreatedFTEIDs.
+		advertised, err := ies.ApplyCreatedFTEIDs(smContext.Tunnel.DataPathPool, *nodeID, ies.CreatedFTEIDs(rsp.CreatedPDR))
+		if err != nil {
+			logger.PfcpLog.Errorf("%v", err)
+			failPendingEstablishment(smContext, upfKey)
+			return
+		}
 		upf := smf_context.RetrieveUPFNodeByNodeID(*nodeID)
 		if upf == nil {
 			logger.PfcpLog.Errorf("can't find UPF[%s]", nodeID.ResolveNodeIdToIp().String())
@@ -581,7 +588,7 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			return
 		}
 		n3Interface := smf_context.UPFInterfaceInfo{}
-		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, fteid.IPv4Address)
+		n3Interface.IPv4EndPointAddresses = append(n3Interface.IPv4EndPointAddresses, advertised.IPv4Address)
 		upf.UpfLock.Lock()
 		upf.N3Interfaces = make([]smf_context.UPFInterfaceInfo, 0)
 		upf.N3Interfaces = append(upf.N3Interfaces, n3Interface)
@@ -783,13 +790,23 @@ func HandlePfcpSessionDeletionResponse(msg *udp.Message) {
 			smContext.SubPduSessLog.Debugf("delete pending pfcp response: UPF [%s]", upfKey)
 
 			if pendingEmpty && !smContext.LocalPurged.Load() {
-				smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
+				smContext.QueuePFCPVerdict(smf_context.SessionReleaseSuccess)
 			}
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Success[%d]", SEID)
 	} else {
-		if smContext.SMContextState == smf_context.SmStatePfcpRelease && !smContext.LocalPurged.Load() {
-			smContext.SBIPFCPCommunicationChan <- smf_context.SessionReleaseSuccess
+		if smContext.SMContextState == smf_context.SmStatePfcpRelease {
+			// A refusal is the answer of one node, so it drains that node from the pending batch
+			// the way an acceptance does, and resumes the waiter only once the batch is empty.
+			// Resuming per refusal queued a second verdict behind the first, and with the verdict
+			// slot taken the send blocked: in adapter mode this runs inline in the goroutine that
+			// reads the slot, with SMLock held. An answer from a session this element holds no
+			// context for (unknown SEID key) has no entry to drain and resumes the waiter outright.
+			upfKey, known := smContext.GetPFCPContextKeyByLocalSEID(SEID)
+			pendingEmpty := !known || smContext.DeletePendingUPF(upfKey)
+			if pendingEmpty && !smContext.LocalPurged.Load() {
+				smContext.QueuePFCPVerdict(smf_context.SessionReleaseSuccess)
+			}
 		}
 		smContext.SubPfcpLog.Infof("PFCP Session Deletion Failed[%d]", SEID)
 	}
