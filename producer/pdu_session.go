@@ -837,7 +837,7 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 			pfcpKey, held := smContext.PFCPContextKeyForNode(curDataPathNode.UPF.NodeID)
 			if !held {
 				smContext.SubPduSessLog.Warnf("releaseTunnel, no PFCP session held on UPF[%s]; nothing to delete",
-					curDataPathNode.UPF.NodeID.ResolveNodeIdToIp())
+					curDataPathNode.UPF.NodeID.ResolveNodeIdToIpCached())
 				continue
 			}
 			if deletedPFCPNode[pfcpKey] {

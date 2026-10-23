@@ -275,3 +275,28 @@ func TestRollbackFailedCreateStopsWaitingForAVerdictThatNeverComes(t *testing.T)
 	}
 	f.smContext.SMLock.Unlock()
 }
+
+// A verdict left on the channel by the failed establishment is not an answer to the deletions the
+// rollback sends. Read as one -- the wait takes any verdict outside the release ones for a success --
+// it ended the wait at once, with the deletions still in flight.
+func TestRollbackFailedCreateDoesNotTakeAStaleEstablishmentVerdictForTheAnswer(t *testing.T) {
+	f := newRollbackFixture(t)
+	<-f.smContext.SBIPFCPCommunicationChan
+	f.smContext.SBIPFCPCommunicationChan <- smf_context.SessionEstablishFailed
+
+	const bound = 300 * time.Millisecond
+	prev := rollbackVerdictTimeout
+	rollbackVerdictTimeout = bound
+	t.Cleanup(func() { rollbackVerdictTimeout = prev })
+	// Longer than the bound, so that nothing but the bound can end the wait.
+	retries, reqTimeout, rspTimeout := udp.GetRetryTimingForTest()
+	udp.SetRetryTimingForTest(1, 800*time.Millisecond, 800*time.Millisecond)
+	t.Cleanup(func() { udp.SetRetryTimingForTest(retries, reqTimeout, rspTimeout) })
+
+	start := time.Now()
+	RollbackFailedCreate(f.smContext)
+
+	if elapsed := time.Since(start); elapsed < bound/2 {
+		t.Errorf("the rollback returned after %v, taking the stale verdict for the deletions' answer", elapsed)
+	}
+}

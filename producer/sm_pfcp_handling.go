@@ -141,6 +141,15 @@ func RollbackFailedCreate(smContext *smf_context.SMContext) {
 	}
 
 	smContext.ChangeState(smf_context.SmStatePfcpRelease)
+	// Anything already on the channel is not an answer to the deletions about to be sent: it is left
+	// from the establishment that failed, and the wait below reads any verdict outside the release
+	// ones as a success, which would end it with the deletions still in flight. No deletion response
+	// can precede the send, and SMLock is held, so nothing of theirs can be taken by mistake.
+	select {
+	case stale := <-smContext.SBIPFCPCommunicationChan:
+		smContext.SubPfcpLog.Debugf("discarded a verdict %v left from the failed create", stale)
+	default:
+	}
 	releaseTunnel(smContext)
 	timer := time.NewTimer(rollbackVerdictTimeout)
 	defer timer.Stop()

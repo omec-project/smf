@@ -1217,7 +1217,10 @@ func (smContext *SMContext) PFCPContextKeyForNode(nodeID NodeID) (string, bool) 
 		}
 	}
 
-	key := nodeID.ResolveNodeIdToIp().String()
+	// Cached, not resolved: the caller holds SMLock, and resolving an FQDN missing from the cache is a
+	// DNS lookup with no timeout. An entry this function is asked for was keyed by an address already
+	// resolved once, so a name the cache does not hold has no entry to find by it.
+	key := nodeID.ResolveNodeIdToIpCached().String()
 	if pfcpSessCtx := smContext.PFCPContext[key]; pfcpSessCtx != nil {
 		return key, true
 	}
