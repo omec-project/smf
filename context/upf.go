@@ -654,6 +654,18 @@ func (upf *UPF) RemovePDR(pdr *PDR) (err error) {
 	return nil
 }
 
+// HoldsPDR reports whether the PDR with this identifier is still allocated from this UPF's pool.
+func (upf *UPF) HoldsPDR(pdrID uint16) bool {
+	_, ok := upf.pdrPool.Load(pdrID)
+	return ok
+}
+
+// HoldsFAR reports whether the FAR with this identifier is still allocated from this UPF's pool.
+func (upf *UPF) HoldsFAR(farID uint32) bool {
+	_, ok := upf.farPool.Load(farID)
+	return ok
+}
+
 // *** add unit test ***//
 func (upf *UPF) RemoveFAR(far *FAR) (err error) {
 	if upf.UPFStatus != AssociatedSetUpSuccess {

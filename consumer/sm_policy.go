@@ -126,7 +126,11 @@ func releasedIpv4(smContext *smf_context.SMContext) string {
 // ueIpChangeReportTimeout bounds one UE_IP_CH report. It matches
 // n1n2TransferTimeout, the timeout the SMF already puts on a single SBI attempt
 // made from a handler.
-const ueIpChangeReportTimeout = 5 * time.Second
+const defaultUeIpChangeReportTimeout = 5 * time.Second
+
+// ueIpChangeReportTimeout is a variable only so that a test can wait out a silent PCF without
+// waiting the full default.
+var ueIpChangeReportTimeout = defaultUeIpChangeReportTimeout
 
 // SendSMPolicyAssociationUpdateUeIpChange reports the UE IPv4 address to the PCF as the UE_IP_CH
 // policy control request trigger, and records what was reported. This is the SMF-initiated update

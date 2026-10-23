@@ -960,6 +960,29 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 	// is a collision to be disregarded rather than refused.
 	smContext.NwModificationPending = true
 	pfcpParam := BuildPfcpParam(smContext)
+
+	// Not sent when any of it could not be built. The update is committed and the UE told once the
+	// user plane has accepted it, so a rule left without its PDR or flow QER, or a PDR left on its
+	// old rates, would be enforced differently from what the UE and the policy record say -- a rate
+	// decrease not enforced at all. The revert refuses a partial build for the same reason.
+	if err := errors.Join(pfcpParam.unbuilt...); err != nil {
+		smContext.SubPduSessLog.Errorf("the modification could not be built, and is not sent: %v", err)
+		undoRequalified(pfcpParam)
+		discardBuiltRules(smContext)
+		smContext.NwModificationPending = false
+		smContext.NwModificationUnsent = false
+		if discardErr := smContext.CommitSmPolicyDecisionLocked(false); discardErr != nil {
+			smContext.SubPduSessLog.Errorf("discarding the unbuilt modification failed: %v", discardErr)
+		}
+		smContext.ResetPendingUPF(nil)
+		startDeferredModificationLocked(smContext)
+		smContext.SMLock.Unlock()
+
+		metrics.IncrementModificationAbandonedStats("build_failure", "not_built")
+
+		return fmt.Errorf("%w: %v", ErrPfcpModifyFailed, err)
+	}
+
 	smContext.ChangeState(smfContext.SmStatePfcpModify)
 	smContext.SMLock.Unlock()
 
@@ -1629,32 +1652,71 @@ func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
 	}
 
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
-		node := dataPath.FirstDPNode
-		if node == nil || node.UPF == nil {
-			continue
-		}
-
-		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
-			if tunnel == nil {
+		// Every node of the path holds PDRs of the session, each from its own UPF's pools.
+		for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+			if node.UPF == nil {
 				continue
 			}
 
-			for name, pdr := range tunnel.PDR {
-				if !removed[pdr] {
+			for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+				if tunnel == nil {
 					continue
 				}
 
-				delete(tunnel.PDR, name)
-				smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
-				if err := node.UPF.RemovePDR(pdr); err != nil {
-					smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
-				}
-				if pdr.FAR != nil && removedFAR[pdr.FAR] {
-					if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
-						smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+				for name, pdr := range tunnel.PDR {
+					if !removed[pdr] {
+						continue
+					}
+
+					delete(tunnel.PDR, name)
+					smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+					if err := node.UPF.RemovePDR(pdr); err != nil {
+						smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
+					}
+					if pdr.FAR != nil && removedFAR[pdr.FAR] {
+						if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
+							smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+						}
 					}
 				}
 			}
 		}
 	}
+}
+
+// discardBuiltRules takes out of the tunnels the PDRs, and returns the PDR and FAR identifiers, of
+// the rules the pending update adds, for a modification that is not sent. BuildPfcpParam makes
+// them in the tunnels before anything is sent, and a rule the user plane never received would
+// otherwise stay in the maps restoration re-installs from. The caller holds SMLock.
+func discardBuiltRules(smContext *smfContext.SMContext) {
+	added := addedPccRules(smContext)
+	if len(added) == 0 || smContext.Tunnel == nil {
+		return
+	}
+
+	discarded := &pfcpParam{}
+	for _, dataPath := range smContext.Tunnel.DataPathPool {
+		// The build makes the added rule's PDRs on every node of the path, not only the first.
+		for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+			for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+				if tunnel == nil {
+					continue
+				}
+
+				for name := range added {
+					pdr, ok := tunnel.PDR[name]
+					if !ok {
+						continue
+					}
+
+					discarded.removePDR = append(discarded.removePDR, pdr)
+					if pdr.FAR != nil {
+						discarded.removeFAR = append(discarded.removeFAR, pdr.FAR)
+					}
+				}
+			}
+		}
+	}
+
+	forgetRemovedRules(smContext, discarded)
 }
