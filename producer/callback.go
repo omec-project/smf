@@ -1652,29 +1652,31 @@ func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
 	}
 
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
-		node := dataPath.FirstDPNode
-		if node == nil || node.UPF == nil {
-			continue
-		}
-
-		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
-			if tunnel == nil {
+		// Every node of the path holds PDRs of the session, each from its own UPF's pools.
+		for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+			if node.UPF == nil {
 				continue
 			}
 
-			for name, pdr := range tunnel.PDR {
-				if !removed[pdr] {
+			for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+				if tunnel == nil {
 					continue
 				}
 
-				delete(tunnel.PDR, name)
-				smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
-				if err := node.UPF.RemovePDR(pdr); err != nil {
-					smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
-				}
-				if pdr.FAR != nil && removedFAR[pdr.FAR] {
-					if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
-						smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+				for name, pdr := range tunnel.PDR {
+					if !removed[pdr] {
+						continue
+					}
+
+					delete(tunnel.PDR, name)
+					smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+					if err := node.UPF.RemovePDR(pdr); err != nil {
+						smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
+					}
+					if pdr.FAR != nil && removedFAR[pdr.FAR] {
+						if err := node.UPF.RemoveFAR(pdr.FAR); err != nil {
+							smContext.SubPduSessLog.Warnf("returning FAR %d to the pool: %v", pdr.FAR.FARID, err)
+						}
 					}
 				}
 			}
@@ -1694,25 +1696,23 @@ func discardBuiltRules(smContext *smfContext.SMContext) {
 
 	discarded := &pfcpParam{}
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
-		node := dataPath.FirstDPNode
-		if node == nil {
-			continue
-		}
-
-		for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
-			if tunnel == nil {
-				continue
-			}
-
-			for name := range added {
-				pdr, ok := tunnel.PDR[name]
-				if !ok {
+		// The build makes the added rule's PDRs on every node of the path, not only the first.
+		for node := dataPath.FirstDPNode; node != nil; node = node.Next() {
+			for _, tunnel := range []*smfContext.GTPTunnel{node.UpLinkTunnel, node.DownLinkTunnel} {
+				if tunnel == nil {
 					continue
 				}
 
-				discarded.removePDR = append(discarded.removePDR, pdr)
-				if pdr.FAR != nil {
-					discarded.removeFAR = append(discarded.removeFAR, pdr.FAR)
+				for name := range added {
+					pdr, ok := tunnel.PDR[name]
+					if !ok {
+						continue
+					}
+
+					discarded.removePDR = append(discarded.removePDR, pdr)
+					if pdr.FAR != nil {
+						discarded.removeFAR = append(discarded.removeFAR, pdr.FAR)
+					}
 				}
 			}
 		}

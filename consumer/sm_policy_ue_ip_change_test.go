@@ -138,6 +138,12 @@ const unboundedReportBound = 30 * time.Second
 // client carries no timeout of its own, so the bound has to come from the
 // context this passes.
 func TestUeIpChangeReportDoesNotWaitOnASilentPCF(t *testing.T) {
+	// The bound is shortened so the test does not sit out the production timeout; what is pinned
+	// against the 10s ceiling below is the default it replaces.
+	original := ueIpChangeReportTimeout
+	ueIpChangeReportTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { ueIpChangeReportTimeout = original })
+
 	release := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +180,9 @@ func TestUeIpChangeReportDoesNotWaitOnASilentPCF(t *testing.T) {
 
 	// Pinned separately, because the check above only proves the call ends, not
 	// that it ends soon enough to be held under SMLock.
-	if ueIpChangeReportTimeout > 10*time.Second {
-		t.Errorf("ueIpChangeReportTimeout is %s; this runs under SMLock on every establishment, "+
-			"so it has to stay short", ueIpChangeReportTimeout)
+	if defaultUeIpChangeReportTimeout > 10*time.Second {
+		t.Errorf("defaultUeIpChangeReportTimeout is %s; this runs under SMLock on every establishment, "+
+			"so it has to stay short", defaultUeIpChangeReportTimeout)
 	}
 
 	// The address must not be recorded as reported when it was not.

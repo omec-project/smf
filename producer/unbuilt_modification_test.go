@@ -66,7 +66,7 @@ func TestAModificationThatCannotBeBuiltInFullIsNotSent(t *testing.T) {
 		refused(t, s, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision), count)
 
 		node := s.sm.Tunnel.DataPathPool[1].FirstDPNode
-		for dir, tunnel := range map[string]*smf_context.GTPTunnel{"uplink": node.UpLinkTunnel, "downlink": node.DownLinkTunnel} {
+		for dir, tunnel := range tunnelsOf(node) {
 			if _, ok := tunnel.PDR["app"]; ok {
 				t.Errorf("the %s tunnel still holds the PDR of the rule that was not sent", dir)
 			}
@@ -153,7 +153,7 @@ func TestDiscardBuiltRulesGivesBackOnlyTheAddedRulesPDRs(t *testing.T) {
 
 	discardBuiltRules(s.sm)
 
-	for dir, tunnel := range map[string]*smf_context.GTPTunnel{"uplink": node.UpLinkTunnel, "downlink": node.DownLinkTunnel} {
+	for dir, tunnel := range tunnelsOf(node) {
 		if tunnel.PDR["app"] != nil {
 			t.Errorf("the %s tunnel still holds the added rule's PDR", dir)
 		}
@@ -161,4 +161,108 @@ func TestDiscardBuiltRulesGivesBackOnlyTheAddedRulesPDRs(t *testing.T) {
 			t.Errorf("the %s tunnel lost an established rule's PDR", dir)
 		}
 	}
+}
+
+// A path of more than one UPF has the added rule's PDRs built on every node, so a refused build
+// gives back every node's: each tunnel, each PFCP context, each UPF's identifiers. The rules the
+// session was established with stay on both nodes.
+func TestDiscardBuiltRulesGivesBackEveryNodeOfThePath(t *testing.T) {
+	const secondNodeIP = "10.0.0.8"
+
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+
+	upf2 := smf_context.NewUPF(smf_context.NewNodeID(secondNodeIP), nil)
+	upf2.UPFStatus = smf_context.AssociatedSetUpSuccess
+	t.Cleanup(func() { smf_context.RemoveUPFNodeByNodeID(upf2.NodeID) })
+
+	newPDR := func() *smf_context.PDR {
+		pdr, err := upf2.AddPDR()
+		if err != nil {
+			t.Fatalf("AddPDR: %v", err)
+		}
+		return pdr
+	}
+	held := map[string]*smf_context.PDR{"ul": newPDR(), "dl": newPDR()}
+	built := map[string]*smf_context.PDR{"ul": newPDR(), "dl": newPDR()}
+	second := &smf_context.DataPathNode{
+		UPF: upf2,
+		UpLinkTunnel: &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{
+			allowRuleID: held["ul"], "app": built["ul"],
+		}},
+		DownLinkTunnel: &smf_context.GTPTunnel{PDR: map[string]*smf_context.PDR{
+			allowRuleID: held["dl"], "app": built["dl"],
+		}},
+	}
+	first := s.sm.Tunnel.DataPathPool[1].FirstDPNode
+	first.AddNext(second)
+	s.sm.PFCPContext[secondNodeIP] = &smf_context.PFCPSessionContext{
+		NodeID: upf2.NodeID,
+		PDRs: map[uint16]*smf_context.PDR{
+			held["ul"].PDRID: held["ul"], held["dl"].PDRID: held["dl"],
+			built["ul"].PDRID: built["ul"], built["dl"].PDRID: built["dl"],
+		},
+	}
+	// The first node's PDRs for the added rule, as the build makes them.
+	firstBuilt := map[string]*smf_context.PDR{}
+	for dir, tunnel := range map[string]*smf_context.GTPTunnel{"ul": first.UpLinkTunnel, "dl": first.DownLinkTunnel} {
+		pdr, err := first.UPF.AddPDR()
+		if err != nil {
+			t.Fatalf("AddPDR: %v", err)
+		}
+		tunnel.PDR["app"] = pdr
+		firstBuilt[dir] = pdr
+		s.sm.PFCPContext[upfNodeIP].PDRs[pdr.PDRID] = pdr
+	}
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.addAppRule())}
+
+	discardBuiltRules(s.sm)
+
+	for name, node := range map[string]*smf_context.DataPathNode{"first": first, "second": second} {
+		for dir, tunnel := range tunnelsOf(node) {
+			if tunnel.PDR["app"] != nil {
+				t.Errorf("the %s node's %s tunnel still holds the added rule's PDR", name, dir)
+			}
+			if tunnel.PDR[allowRuleID] == nil {
+				t.Errorf("the %s node's %s tunnel lost an established rule's PDR", name, dir)
+			}
+		}
+	}
+
+	ctx2 := s.sm.PFCPContext[secondNodeIP].PDRs
+	for dir, pdr := range built {
+		if ctx2[pdr.PDRID] != nil {
+			t.Errorf("the second node's PFCP context still holds the added %s PDR", dir)
+		}
+	}
+	for dir, pdr := range held {
+		if ctx2[pdr.PDRID] == nil {
+			t.Errorf("the second node's PFCP context lost the established %s PDR", dir)
+		}
+	}
+	for dir, pdr := range firstBuilt {
+		if s.sm.PFCPContext[upfNodeIP].PDRs[pdr.PDRID] != nil {
+			t.Errorf("the first node's PFCP context still holds the added %s PDR", dir)
+		}
+	}
+
+	// The identifiers are given back to the second UPF's pools, the established rules' kept.
+	for dir, pdr := range built {
+		if upf2.HoldsPDR(pdr.PDRID) {
+			t.Errorf("PDR %d of the second node's added %s rule was not returned to its pool", pdr.PDRID, dir)
+		}
+		if upf2.HoldsFAR(pdr.FAR.FARID) {
+			t.Errorf("FAR %d of the second node's added %s rule was not returned to its pool", pdr.FAR.FARID, dir)
+		}
+	}
+	for dir, pdr := range held {
+		if !upf2.HoldsPDR(pdr.PDRID) || !upf2.HoldsFAR(pdr.FAR.FARID) {
+			t.Errorf("the second node's established %s rule lost its PDR or FAR identifier", dir)
+		}
+	}
+}
+
+// tunnelsOf names a node's two tunnels by direction.
+func tunnelsOf(node *smf_context.DataPathNode) map[string]*smf_context.GTPTunnel {
+	return map[string]*smf_context.GTPTunnel{"uplink": node.UpLinkTunnel, "downlink": node.DownLinkTunnel}
 }
