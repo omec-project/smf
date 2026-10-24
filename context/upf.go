@@ -563,7 +563,12 @@ func (upf *UPF) BuildCreatePdrFromPccRule(rule *models.PccRule) (*PDR, error) {
 	}
 
 	pdr.PDI = pdi
-	pdr.Precedence = uint32(rule.GetPrecedence())
+	// A negative precedence is out of a PDR's unsigned range, and converted it wrapped to about 4
+	// billion and put the rule last. Left zero it reads as unset, and the tunnel build gives the PDR
+	// its default.
+	if precedence := rule.GetPrecedence(); precedence > 0 {
+		pdr.Precedence = uint32(precedence)
+	}
 
 	return pdr, nil
 }
