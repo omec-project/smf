@@ -573,10 +573,16 @@ func requalifyRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, node *
 			tcRef = rule.RefTcData[0]
 		}
 		if decided, ok := rule.GetPrecedenceOk(); ok {
-			// Zero is the top of the order. The SMF reads a PDR's zero as unset, so it is
-			// programmed as 1, as an added rule's is.
-			value := max(uint32(*decided), 1)
-			precedence = &value
+			if *decided < 0 {
+				// Out of the range of an unsigned PDR precedence: converted, it would wrap to about
+				// 4 billion and put the rule last. Left out, so the PDR keeps the one it has.
+				logger.PduSessLog.Warnf("PCC rule %s: ignoring the negative precedence %d", name, *decided)
+			} else {
+				// Zero is the top of the order. The SMF reads a PDR's zero as unset, so it is
+				// programmed as 1, as an added rule's is.
+				value := max(uint32(*decided), 1)
+				precedence = &value
+			}
 		}
 	}
 
