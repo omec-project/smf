@@ -501,7 +501,12 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 
 		// Set PDI and outer header removal for access interface
 		ulPDR.PDI.SourceInterface = smfContext.SourceInterface{InterfaceValue: smfContext.SourceInterfaceAccess}
-		ulPDR.PDI.LocalFTeid = &smfContext.FTEID{Ch: true}
+		// The F-TEID the RAN was given, named outright: a CHOOSE with no CHOOSE ID is not tied to
+		// it, so a user plane that follows the spec would allocate this PDR a TEID of its own.
+		if ulPDR.PDI.LocalFTeid = installedUplinkFTEID(smContext, node); ulPDR.PDI.LocalFTeid == nil {
+			pfcpParam.unbuilt = append(pfcpParam.unbuilt,
+				fmt.Errorf("PCC rule %s: the F-TEID of its uplink tunnel is not known", name))
+		}
 		ulPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
 		ulPDR.PDI.UEIPAddress = sessionUEAddress(smContext, pfcpParam)
 		ulPDR.OuterHeaderRemoval = &smfContext.OuterHeaderRemoval{

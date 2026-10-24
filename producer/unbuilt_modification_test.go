@@ -85,6 +85,7 @@ func TestAModificationThatCannotBeBuiltInFullIsNotSent(t *testing.T) {
 		// Still carrying the CHOOSE it was established with, on a tunnel that has no TEID recorded.
 		chosen := &smf_context.FTEID{Ch: true}
 		s.cirUL.PDI.LocalFTeid = chosen
+		s.sm.Tunnel.DataPathPool[1].FirstDPNode.UpLinkTunnel.TEID = 0
 		heldQERs, heldPrecedence, heldState := qerIDs(s.cirUL), s.cirUL.Precedence, s.cirUL.State
 		heldDLQERs := qerIDs(s.cirDL)
 
