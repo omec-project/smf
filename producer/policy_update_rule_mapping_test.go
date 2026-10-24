@@ -107,6 +107,7 @@ func newTwoRuleSession(t *testing.T, restored bool) *twoRuleSession {
 	s.sm.Tunnel = &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{
 		1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
 	}}
+	establishedUplinkTunnel(s.sm, node)
 
 	s.allowRule = models.PccRule{PccRuleId: allowRuleID, RefQosData: []string{allowQosID}, Precedence: openapi.PtrInt32(255)}
 	s.cirRule = models.PccRule{PccRuleId: cirRuleID, RefQosData: []string{cirQosID}, Precedence: openapi.PtrInt32(200)}
@@ -1817,6 +1818,7 @@ func newDefaultPathSession(t *testing.T) *defaultPathSession {
 	s.sm.Tunnel = &smf_context.UPTunnel{DataPathPool: smf_context.DataPathPool{
 		1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
 	}}
+	establishedUplinkTunnel(s.sm, node)
 
 	s.appRule = models.PccRule{
 		PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
@@ -2287,5 +2289,32 @@ func TestAnUplinkUpdateNamesTheInstalledFTEID(t *testing.T) {
 				t.Error("the update is not recorded as not built")
 			}
 		})
+	}
+}
+
+// establishedUplinkTunnel gives node's uplink tunnel the TEID the UPF chose at establishment and
+// the UPF the N3 address the RAN was told, which a rule added to the session names its F-TEID by.
+func establishedUplinkTunnel(sm *smf_context.SMContext, node *smf_context.DataPathNode) {
+	sm.SelectedPDUSessionType = nasMessage.PDUSessionTypeIPv4
+	node.UpLinkTunnel.TEID = 0x1234
+	node.UPF.N3Interfaces = []smf_context.UPFInterfaceInfo{{IPv4EndPointAddresses: []net.IP{net.ParseIP("10.0.0.70")}}}
+}
+
+// A rule added to an established session names the F-TEID the RAN was given, as an Update PDR does,
+// and does not ask the UPF to choose one: a CHOOSE with no CHOOSE ID is not tied to the session's
+// tunnel, so a UPF that follows the spec would allocate the new PDR a TEID of its own.
+func TestAnAddedUplinkPDRNamesTheInstalledFTEID(t *testing.T) {
+	s := newTwoRuleSession(t, false)
+	s.withPfcpContext()
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, s.addAppRule())}
+
+	param := BuildPfcpParam(s.sm)
+	if len(param.unbuilt) != 0 {
+		t.Fatalf("not built: %v", param.unbuilt)
+	}
+	ul := s.sm.Tunnel.DataPathPool[1].FirstDPNode.UpLinkTunnel.PDR["app"]
+	f := ul.PDI.LocalFTeid
+	if f == nil || f.Ch || f.Chid || !f.V4 || f.Teid != 0x1234 || !f.Ipv4Address.Equal(net.ParseIP("10.0.0.70")) {
+		t.Errorf("the added uplink PDR names %+v, want TEID 0x1234 at 10.0.0.70 with no CHOOSE", f)
 	}
 }
