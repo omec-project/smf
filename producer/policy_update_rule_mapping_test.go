@@ -2317,4 +2317,47 @@ func TestAnAddedUplinkPDRNamesTheInstalledFTEID(t *testing.T) {
 	if f == nil || f.Ch || f.Chid || !f.V4 || f.Teid != 0x1234 || !f.Ipv4Address.Equal(net.ParseIP("10.0.0.70")) {
 		t.Errorf("the added uplink PDR names %+v, want TEID 0x1234 at 10.0.0.70 with no CHOOSE", f)
 	}
+
+	// On the wire, where the UPF reads it: no CHOOSE or CHOOSE ID, so it allocates nothing and has
+	// no Created PDR to answer with, which is why the modification response is not read for one.
+	req, err := pfcp_message.BuildPfcpSessionModificationRequest(1, 1, 2, net.ParseIP("10.0.0.1"),
+		param.pdrList, param.farList, param.qerList, param.removePDR, param.removeFAR, param.removeQER)
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	wire, err := req.Marshal()
+	if err != nil {
+		t.Fatalf("encoding the request: %v", err)
+	}
+	sent, err := message.ParseSessionModificationRequest(wire)
+	if err != nil {
+		t.Fatalf("decoding the request: %v", err)
+	}
+	var found bool
+	for _, create := range sent.CreatePDR {
+		id, err := create.PDRID()
+		if err != nil || id != ul.PDRID {
+			continue
+		}
+		pdi, err := create.PDI()
+		if err != nil {
+			t.Fatalf("Create PDR %d without a PDI: %v", id, err)
+		}
+		for _, x := range pdi {
+			if x.Type != ie.FTEID {
+				continue
+			}
+			found = true
+			w, err := x.FTEID()
+			if err != nil {
+				t.Fatalf("decoding the F-TEID: %v", err)
+			}
+			if w.HasCh() || w.HasChID() || w.TEID != 0x1234 || !w.IPv4Address.Equal(net.ParseIP("10.0.0.70")) {
+				t.Errorf("the Create PDR sends F-TEID %+v (flags %#x), want TEID 0x1234 at 10.0.0.70 with no CHOOSE", w, w.Flags)
+			}
+		}
+	}
+	if !found {
+		t.Error("the added uplink PDR was sent with no F-TEID")
+	}
 }
