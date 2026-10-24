@@ -2361,3 +2361,26 @@ func TestAnAddedUplinkPDRNamesTheInstalledFTEID(t *testing.T) {
 		t.Error("the added uplink PDR was sent with no F-TEID")
 	}
 }
+
+// A negative decided precedence is outside a PDR's unsigned range: converted, it wrapped to about 4
+// billion and put the rule last. It is ignored, and the PDR keeps the precedence it has.
+func TestANegativeDecidedPrecedenceLeavesThePDRsPrecedence(t *testing.T) {
+	s := newTwoRuleSession(t, false)
+	s.cirUL.Precedence, s.cirDL.Precedence = 200, 200
+	decision := s.rateChange()
+	rule := decision.PccRules[cirRuleID]
+	rule.Precedence = openapi.PtrInt32(-5)
+	decision.PccRules[cirRuleID] = rule
+	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
+
+	param := BuildPfcpParam(s.sm)
+	if len(param.unbuilt) != 0 {
+		t.Fatalf("not built: %v", param.unbuilt)
+	}
+	if !param.touches(s.cirUL) || !param.touches(s.cirDL) {
+		t.Fatal("the rule's PDRs were not updated")
+	}
+	if s.cirUL.Precedence != 200 || s.cirDL.Precedence != 200 {
+		t.Errorf("precedences are %d and %d, want the 200 the PDRs had", s.cirUL.Precedence, s.cirDL.Precedence)
+	}
+}
