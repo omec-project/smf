@@ -7,9 +7,8 @@ package context
 
 import (
 	"errors"
+	"fmt"
 	"net"
-	"os"
-	"strconv"
 	"sync"
 
 	"github.com/omec-project/smf/logger"
@@ -86,23 +85,19 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 		}
 	}
 
-	if offset, err := a.g.allocate(); err != nil {
-		return nil, errors.New("ip allocation failed" + err.Error())
-	} else {
-		smfCountStr := os.Getenv("SMF_COUNT")
-		if smfCountStr == "" {
-			smfCountStr = "1"
-		}
-		smfCount, err := strconv.Atoi(smfCountStr)
-		if err != nil {
-			logger.CtxLog.Errorf("failed to convert SMF_COUNT to int: %v", err)
-		}
-		ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset)+(smfCount-1)*5000)
-		logger.CtxLog.Infof("unique id - ip %v", ip)
-		logger.CtxLog.Infof("unique id - offset %v", offset)
-		logger.CtxLog.Infof("unique id - smfCount %v", smfCount)
-		return ip, nil
+	// The offset is the address's place in the pool; nothing is added to it. The old
+	// (SMF_COUNT-1)*5000 shift meant a range per instance, but SMF_COUNT counts starts and not
+	// instances (see SetupSmfCollection), so it did not survive a restart; nothing bounded it by
+	// the pool either, and Release and BlockIp never applied it.
+	offset, err := a.g.allocate()
+	if err != nil {
+		return nil, fmt.Errorf("ip allocation failed: %w", err)
 	}
+
+	ip := IPAddrWithOffset(a.ipNetwork.IP, int(offset))
+	logger.CtxLog.Infof("allocated UE address %v, offset %v in pool %v", ip, offset, a.ipNetwork)
+
+	return ip, nil
 }
 
 func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
