@@ -144,11 +144,11 @@ func (a *IPAllocator) BlockIp(ip net.IP) {
 }
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
-	// The address cannot be returned to the pool the running configuration holds, and nothing
-	// reconciles the two, so the loss is logged rather than passed over.
+	// There is no pool to return the address to, so the release is skipped and logged rather
+	// than passed over. Reconciling the running pool with restored sessions is out of scope.
 	if a == nil || a.g == nil || a.ipNetwork == nil {
 		logger.CtxLog.Warnf("cannot release UE address %v for %s: this allocator has no pool, "+
-			"so the address stays marked used", ip, imsi)
+			"so the release is skipped", ip, imsi)
 
 		return
 	}
