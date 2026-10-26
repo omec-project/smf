@@ -14,6 +14,12 @@ import (
 	"github.com/omec-project/smf/logger"
 )
 
+// IPAllocator hands out the UE addresses of one DNN's pool.
+//
+// A method can be reached on an allocator that has no pool: buildSnssaiSmfInfo stores a DNN whose
+// ipDomain carries no usable ueSubnet with UeIPAllocator nil, and an SMContext read back from
+// MongoDB carries an allocator that marshalled as {}, the type having only unexported fields.
+// Each method answers such a receiver instead of dereferencing it.
 type IPAllocator struct {
 	ipNetwork *net.IPNet
 	g         *_IDPool
@@ -89,6 +95,11 @@ func (a *IPAllocator) StaticIpForImsi(imsi string) net.IP {
 
 // Allocate will allocate the IP address and returns it
 func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
+	// No pool, no addresses; the caller answers this error with IpAllocError.
+	if a == nil || a.g == nil || a.ipNetwork == nil {
+		return nil, errors.New("ip allocation failed: this DNN has no usable UE subnet")
+	}
+
 	// check if static IP already reserved for this IMSI
 	if ip := a.StaticIpForImsi(imsi); ip != nil {
 		return ip, nil
@@ -110,6 +121,10 @@ func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 }
 
 func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
+	if a == nil || a.g == nil || a.ipNetwork == nil {
+		return
+	}
+
 	a.g.staticIps = ips
 	for _, ipStr := range *ips {
 		if ip := net.ParseIP(ipStr).To4(); ip != nil {
@@ -120,11 +135,24 @@ func (a *IPAllocator) ReserveStaticIps(ips *map[string]string) {
 }
 
 func (a *IPAllocator) BlockIp(ip net.IP) {
+	if a == nil || a.g == nil || a.ipNetwork == nil {
+		return
+	}
+
 	offset := IPAddrOffset(ip, a.ipNetwork.IP)
 	a.g.block(int64(offset))
 }
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
+	// The address cannot be returned to the pool the running configuration holds, and nothing
+	// reconciles the two, so the loss is logged rather than passed over.
+	if a == nil || a.g == nil || a.ipNetwork == nil {
+		logger.CtxLog.Warnf("cannot release UE address %v for %s: this allocator has no pool, "+
+			"so the address stays marked used", ip, imsi)
+
+		return
+	}
+
 	// Don't release static IPs
 	if a.StaticIpForImsi(imsi) != nil {
 		return

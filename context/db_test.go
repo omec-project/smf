@@ -273,3 +273,56 @@ func TestSMContextDBRoundTrip_PreservesFieldsAcrossSerializerMigration(t *testin
 		t.Errorf("expected CommunicationClient to be dropped across the DB round trip, got %+v", recovered.CommunicationClient)
 	}
 }
+
+// Releasing a session restored from MongoDB used to panic: the allocator it carries has no pool.
+// The address cannot be returned to the running configuration's pool, but the release itself has
+// to finish, and the session's own address is cleared either way.
+func TestReleaseUeIpAddr_OnRestoredContext(t *testing.T) {
+	allocator, err := NewIPAllocator("192.168.100.0/24")
+	if err != nil {
+		t.Fatalf("NewIPAllocator: %v", err)
+	}
+	ip, err := allocator.Allocate(testSupi)
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+
+	original := &SMContext{
+		Ref:        "restored-release-ref",
+		Supi:       testSupi,
+		Dnn:        "restored-release-dnn",
+		PDUAddress: &UeIpAddr{Ip: ip},
+		DNNInfo:    &SnssaiSmfDnnInfo{UeIPAllocator: allocator, MTU: 1400},
+		AnType:     models.ACCESSTYPE__3_GPP_ACCESS,
+		// Real values for the same reason as the round-trip test above: AccessType, NfStatus and
+		// SscModes.DefaultSscMode reject "" in their own UnmarshalJSON.
+		AMFProfile: models.NFProfileDiscovery{
+			NfInstanceId: "amf-instance-1",
+			NfType:       models.NFTYPE_AMF,
+			NfStatus:     models.NFSTATUS_REGISTERED,
+		},
+		SelectedPCFProfile: models.NFProfileDiscovery{
+			NfInstanceId: "pcf-instance-1",
+			NfType:       models.NFTYPE_PCF,
+			NfStatus:     models.NFSTATUS_REGISTERED,
+		},
+		DnnConfiguration: models.DnnConfiguration{
+			SscModes: models.SscModes{DefaultSscMode: models.SSCMODE_SSC_MODE_1},
+		},
+	}
+
+	recovered := &SMContext{}
+	if err := recovered.UnmarshalJSON(mapToByte(ToBsonM(original))); err != nil {
+		t.Fatalf("round-trip unmarshal failed: %v", err)
+	}
+	if recovered.DNNInfo == nil || recovered.DNNInfo.UeIPAllocator == nil {
+		t.Fatalf("DNNInfo did not survive the round trip: %+v", recovered.DNNInfo)
+	}
+
+	if err := recovered.ReleaseUeIpAddr(); err != nil {
+		t.Errorf("ReleaseUeIpAddr: %v", err)
+	}
+	if got := recovered.PDUAddress.Ip; !got.Equal(net.IPv4zero) {
+		t.Errorf("PDUAddress.Ip = %v, want the 0.0.0.0 sentinel", got)
+	}
+}
