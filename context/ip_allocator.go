@@ -75,14 +75,23 @@ func IPAddrOffset(in, base net.IP) int {
 	return offset
 }
 
+// StaticIpForImsi returns the address configured for imsi in staticIpInfo, or nil for none.
+func (a *IPAllocator) StaticIpForImsi(imsi string) net.IP {
+	if a.g.staticIps == nil {
+		return nil
+	}
+	ipStr := (*a.g.staticIps)[imsi]
+	if ipStr == "" {
+		return nil
+	}
+	return net.ParseIP(ipStr).To4()
+}
+
 // Allocate will allocate the IP address and returns it
 func (a *IPAllocator) Allocate(imsi string) (net.IP, error) {
 	// check if static IP already reserved for this IMSI
-	if a.g.staticIps != nil {
-		staticIps := *a.g.staticIps
-		if ipStr := staticIps[imsi]; ipStr != "" {
-			return net.ParseIP(ipStr).To4(), nil
-		}
+	if ip := a.StaticIpForImsi(imsi); ip != nil {
+		return ip, nil
 	}
 
 	// The offset is the address's place in the pool; nothing is added to it. The old
@@ -117,11 +126,8 @@ func (a *IPAllocator) BlockIp(ip net.IP) {
 
 func (a *IPAllocator) Release(imsi string, ip net.IP) {
 	// Don't release static IPs
-	if a.g.staticIps != nil {
-		staticIps := *a.g.staticIps
-		if ipStr := staticIps[imsi]; ipStr != "" {
-			return
-		}
+	if a.StaticIpForImsi(imsi) != nil {
+		return
 	}
 
 	offset := IPAddrOffset(ip, a.ipNetwork.IP)

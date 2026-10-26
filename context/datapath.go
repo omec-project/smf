@@ -663,15 +663,24 @@ func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error
 	return flowQER, nil
 }
 
+// ueIpAddressIE builds the UE IP Address IE for a PDI of this session.
+//
+// A UPF that allocates is asked to choose (CHV4), except for a session on a staticIpInfo address:
+// that one is named, or the UPF allocates over it and the SMF adopts its choice.
+//
+// Where the UPF allocates, a staticIpInfo address has to be outside the UPF's own pool. PFCP
+// cannot reserve it there, and the SMF cannot check it: the UPF's pool is not signalled over N4.
+func ueIpAddressIE(smContext *SMContext, upf *UPF) UEIPAddress {
+	if upf.IsUpfSupportUeIpAddrAlloc() && !smContext.HasStaticUeIpAddr() {
+		return UEIPAddress{CHV4: true}
+	}
+
+	return UEIPAddress{V4: true, Ipv4Address: smContext.PDUAddress.Ip.To4()}
+}
+
 // ActivateUpLinkPdr
 func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32) error {
-	ueIpAddr := UEIPAddress{}
-	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
-		ueIpAddr.CHV4 = true
-	} else {
-		ueIpAddr.V4 = true
-		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
-	}
+	ueIpAddr := ueIpAddressIE(smContext, dpNode.UPF)
 
 	curULTunnel := dpNode.UpLinkTunnel
 	for name, ULPDR := range curULTunnel.PDR {
@@ -745,14 +754,7 @@ func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER,
 	var iface *UPFInterfaceInfo
 	curDLTunnel := dpNode.DownLinkTunnel
 
-	// UPF provided UE ip-addr
-	ueIpAddr := UEIPAddress{}
-	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
-		ueIpAddr.CHV4 = true
-	} else {
-		ueIpAddr.V4 = true
-		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
-	}
+	ueIpAddr := ueIpAddressIE(smContext, dpNode.UPF)
 
 	for name, DLPDR := range curDLTunnel.PDR {
 		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v]", name, DLPDR)
@@ -865,6 +867,12 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 
 		logger.CtxLog.Debugln("calculate", curDataPathNode.UPF.PFCPAddr().String())
 
+		if curDataPathNode.UPF.IsUpfSupportUeIpAddrAlloc() && smContext.HasStaticUeIpAddr() {
+			logger.CtxLog.Infof("UPF[%s] allocates UE addresses; naming %s's static address %s in "+
+				"its rules, which the UPF's own pool must not contain",
+				curDataPathNode.UPF.PFCPAddr(), smContext.Supi, smContext.PDUAddress.Ip)
+		}
+
 		// Setup UpLink PDR
 		if curDataPathNode.UpLinkTunnel != nil {
 			if err := curDataPathNode.ActivateUpLinkPdr(smContext, defQER, precedence); err != nil {
@@ -879,13 +887,7 @@ func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence 
 			}
 		}
 
-		ueIpAddr := UEIPAddress{}
-		if curDataPathNode.UPF.IsUpfSupportUeIpAddrAlloc() {
-			ueIpAddr.CHV4 = true
-		} else {
-			ueIpAddr.V4 = true
-			ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
-		}
+		ueIpAddr := ueIpAddressIE(smContext, curDataPathNode.UPF)
 
 		if curDataPathNode.DownLinkTunnel != nil {
 			if curDataPathNode.DownLinkTunnel.SrcEndPoint == nil {

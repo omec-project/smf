@@ -87,6 +87,7 @@ func decSMContextActive() uint64 {
 type UeIpAddr struct {
 	Ip          net.IP
 	UpfProvided bool
+	Static      bool // Ip was allocated from staticIpInfo; ask HasStaticUeIpAddr, which UpfProvided overrides
 }
 
 type SMContext struct {
@@ -934,6 +935,22 @@ func GetSMContextBySEID(SEID uint64) (smContext *SMContext) {
 		}
 	}
 	return
+}
+
+// HasStaticUeIpAddr reports whether the address this session holds came from staticIpInfo.
+//
+// Static is what was allocated; UpfProvided is what replaced it, and the 0.0.0.0 ReleaseUeIpAddr
+// writes back is not an address at all. Either answers no, because a rule may name only an
+// address the UE actually holds.
+func (smContext *SMContext) HasStaticUeIpAddr() bool {
+	if smContext.PDUAddress == nil || smContext.PDUAddress.Ip == nil {
+		return false
+	}
+	if smContext.PDUAddress.UpfProvided || smContext.PDUAddress.Ip.IsUnspecified() {
+		return false
+	}
+
+	return smContext.PDUAddress.Static
 }
 
 func (smContext *SMContext) ReleaseUeIpAddr() error {

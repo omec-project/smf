@@ -221,7 +221,11 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("IpAllocError")
 		return fmt.Errorf("IpAllocError")
 	} else {
-		smContext.PDUAddress = &smf_context.UeIpAddr{Ip: ip, UpfProvided: false}
+		smContext.PDUAddress = &smf_context.UeIpAddr{
+			Ip:          ip,
+			UpfProvided: false,
+			Static:      smContext.DNNInfo.UeIPAllocator.StaticIpForImsi(smContext.Supi) != nil,
+		}
 		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, IP alloc success IP[%s]",
 			smContext.PDUAddress.Ip.String())
 	}
