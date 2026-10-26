@@ -169,3 +169,29 @@ func TestAReleasedAddressIsAllocatedAgainAfterRestarts(t *testing.T) {
 		t.Errorf("allocation after %v was released: %v", first, err)
 	}
 }
+
+// Every method of an allocator with no pool panicked before; see IPAllocator for the two ways a
+// caller comes to hold one.
+func TestIPAllocatorWithNoPool(t *testing.T) {
+	const imsi = "imsi-208930100007487"
+
+	for name, allocator := range map[string]*smf_context.IPAllocator{
+		"nil allocator":      nil,
+		"restored allocator": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ip, err := allocator.Allocate(imsi)
+			if err == nil {
+				t.Errorf("Allocate returned %v and no error", ip)
+			}
+			if ip != nil {
+				t.Errorf("Allocate returned address %v alongside its error", ip)
+			}
+
+			allocator.Release(imsi, net.ParseIP("192.168.1.5"))
+			allocator.BlockIp(net.ParseIP("192.168.1.6"))
+			static := map[string]string{imsi: "192.168.1.7"}
+			allocator.ReserveStaticIps(&static)
+		})
+	}
+}
