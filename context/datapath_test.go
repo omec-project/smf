@@ -11,7 +11,11 @@ import (
 	"github.com/omec-project/smf/context"
 )
 
-const testDnn = "internet"
+const (
+	testDnn = "internet"
+	// defaultPdr is the key the datapath gives the one PDR it builds per tunnel.
+	defaultPdr = "default"
+)
 
 func TestActivateUpLinkPdr(t *testing.T) {
 	smContext := &context.SMContext{
@@ -27,7 +31,7 @@ func TestActivateUpLinkPdr(t *testing.T) {
 		UPF: &context.UPF{},
 		UpLinkTunnel: &context.GTPTunnel{
 			PDR: map[string]*context.PDR{
-				"default": {
+				defaultPdr: {
 					Precedence: 0,
 					FAR:        &context.FAR{},
 				},
@@ -40,7 +44,7 @@ func TestActivateUpLinkPdr(t *testing.T) {
 		t.Errorf("expected no error, got %v", err)
 	}
 
-	pdr := dpNode.UpLinkTunnel.PDR["default"]
+	pdr := dpNode.UpLinkTunnel.PDR[defaultPdr]
 	if pdr == nil {
 		t.Fatalf("expected pdr to be not nil")
 		return
@@ -136,7 +140,7 @@ func TestActivateDlLinkPdr(t *testing.T) {
 		UPF: &context.UPF{},
 		DownLinkTunnel: &context.GTPTunnel{
 			PDR: map[string]*context.PDR{
-				"default": {
+				defaultPdr: {
 					Precedence: 0,
 					FAR:        &context.FAR{},
 				},
@@ -153,7 +157,7 @@ func TestActivateDlLinkPdr(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	pdr := dpNode.DownLinkTunnel.PDR["default"]
+	pdr := dpNode.DownLinkTunnel.PDR[defaultPdr]
 	if pdr == nil {
 		t.Fatalf("expected pdr to be not nil")
 		return
@@ -229,7 +233,7 @@ func TestDataPathPoolFindNodeSearchesEveryPath(t *testing.T) {
 		// One cleanup per allocation: RemoveUPFNodeByNodeID removes a single matching UPF per call,
 		// and this registers one UPF for every node, two of them for the same address.
 		t.Cleanup(func() { context.RemoveUPFNodeByNodeID(*context.NewNodeID(ip)) })
-		n.UpLinkTunnel.PDR["default"] = &context.PDR{PDRID: pdrID}
+		n.UpLinkTunnel.PDR[defaultPdr] = &context.PDR{PDRID: pdrID}
 		return n
 	}
 
@@ -323,7 +327,7 @@ func uplinkNode(upf *context.UPF) *context.DataPathNode {
 	return &context.DataPathNode{
 		UPF: upf,
 		UpLinkTunnel: &context.GTPTunnel{
-			PDR: map[string]*context.PDR{"default": {FAR: &context.FAR{}}},
+			PDR: map[string]*context.PDR{defaultPdr: {FAR: &context.FAR{}}},
 		},
 	}
 }
@@ -332,7 +336,7 @@ func downlinkNode(upf *context.UPF) *context.DataPathNode {
 	return &context.DataPathNode{
 		UPF: upf,
 		DownLinkTunnel: &context.GTPTunnel{
-			PDR: map[string]*context.PDR{"default": {FAR: &context.FAR{}}},
+			PDR: map[string]*context.PDR{defaultPdr: {FAR: &context.FAR{}}},
 		},
 	}
 }
@@ -350,7 +354,7 @@ func TestStaticUeIpIsNamedInTheRuleWhenTheUpfAllocates(t *testing.T) {
 			t.Fatalf("ActivateUpLinkPdr: %v", err)
 		}
 
-		assertNamesAddress(t, dpNode.UpLinkTunnel.PDR["default"], want)
+		assertNamesAddress(t, dpNode.UpLinkTunnel.PDR[defaultPdr], want)
 	})
 
 	t.Run("downlink", func(t *testing.T) {
@@ -362,7 +366,7 @@ func TestStaticUeIpIsNamedInTheRuleWhenTheUpfAllocates(t *testing.T) {
 			t.Fatalf("ActivateDlLinkPdr: %v", err)
 		}
 
-		assertNamesAddress(t, dpNode.DownLinkTunnel.PDR["default"], want)
+		assertNamesAddress(t, dpNode.DownLinkTunnel.PDR[defaultPdr], want)
 	})
 }
 
@@ -393,7 +397,7 @@ func TestDynamicUeIpStillAsksTheUpfToChoose(t *testing.T) {
 		t.Fatalf("ActivateUpLinkPdr: %v", err)
 	}
 
-	ueIP := dpNode.UpLinkTunnel.PDR["default"].PDI.UEIPAddress
+	ueIP := dpNode.UpLinkTunnel.PDR[defaultPdr].PDI.UEIPAddress
 	if ueIP == nil {
 		t.Fatalf("rule carries no UE IP Address IE")
 	}
@@ -430,7 +434,7 @@ func TestStaticUeIpSurvivesIntoARestoredSession(t *testing.T) {
 		t.Fatalf("ActivateUpLinkPdr: %v", err)
 	}
 
-	assertNamesAddress(t, dpNode.UpLinkTunnel.PDR["default"], net.ParseIP(staticAddr).To4())
+	assertNamesAddress(t, dpNode.UpLinkTunnel.PDR[defaultPdr], net.ParseIP(staticAddr).To4())
 }
 
 // ReleaseUeIpAddr writes 0.0.0.0 back, and the user plane reads it as any address, so a rule
@@ -444,7 +448,7 @@ func TestTheReleasedAddressSentinelIsNotNamedInARule(t *testing.T) {
 		t.Fatalf("ActivateUpLinkPdr: %v", err)
 	}
 
-	ueIP := dpNode.UpLinkTunnel.PDR["default"].PDI.UEIPAddress
+	ueIP := dpNode.UpLinkTunnel.PDR[defaultPdr].PDI.UEIPAddress
 	if ueIP == nil {
 		t.Fatalf("rule carries no UE IP Address IE")
 	}
