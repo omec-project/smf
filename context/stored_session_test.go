@@ -218,7 +218,7 @@ func stored(t *testing.T, db *memDB, supi string, o storedOpts) *context.SMConte
 	doc := context.ToBsonM(smContext)
 	db.put(context.SmContextDataColl, doc)
 	for _, pfcpContext := range smContext.PFCPContext {
-		db.put(context.SeidSmContextCol, map[string]any{"ref": smContext.Ref, "seid": context.SeidConv(pfcpContext.LocalSEID)})
+		db.put(context.SeidSmContextCol, map[string]any{refKey: smContext.Ref, seidKey: context.SeidConv(pfcpContext.LocalSEID)})
 	}
 	context.ForgetInMemory(smContext)
 	if current != "" {
@@ -268,7 +268,13 @@ func nfProfile(nfType models.NFType) models.NFProfileDiscovery {
 	return p
 }
 
-func storedRef(db *memDB, ref string) bool { return db.has(context.SmContextDataColl, "ref", ref) }
+// The fields the SMF keys its context and SEID documents by.
+const (
+	refKey  = "ref"
+	seidKey = "seid"
+)
+
+func storedRef(db *memDB, ref string) bool { return db.has(context.SmContextDataColl, refKey, ref) }
 
 // waitGone waits for the asynchronous delete of a stored document.
 func waitGone(t *testing.T, db *memDB, ref string) bool {
@@ -317,7 +323,7 @@ func TestACreateAfterARestartReleasesTheStoredSession(t *testing.T) {
 	if !waitGone(t, db, a.Ref) {
 		t.Errorf("the stored session for PDU session 1 survived the UE establishing PDU session 1 again")
 	}
-	if db.has(context.SeidSmContextCol, "seid", context.SeidConv(9001)) {
+	if db.has(context.SeidSmContextCol, seidKey, context.SeidConv(9001)) {
 		t.Errorf("the stored session's SEID record survived its release")
 	}
 	if ref, err := context.ResolveRef(supi, 1); err != nil || ref != created.Ref {
@@ -532,5 +538,43 @@ func TestReleasingAStoredSessionLeavesItsAddressWithTheUEHoldingItNow(t *testing
 	}
 	if !context.AllocatorHolds(pool, address) {
 		t.Errorf("releasing the stored session returned %v to the pool, which holds it for another UE", address)
+	}
+}
+
+// A SEID document is keyed by the SEID alone, so the one for a stored session's SEID may name another
+// session. Releasing the stored session leaves that session's records alone: its context document,
+// the SEID document that names it, and its in-memory SEID entry.
+func TestReleasingAStoredSessionLeavesAnotherSessionsSEIDAlone(t *testing.T) {
+	db := withStore(t)
+	const (
+		deadSupi = "imsi-208930018809030"
+		liveSupi = "imsi-208930018809031"
+	)
+	const seid = uint64(9030)
+	live := context.NewSMContext(liveSupi, 1)
+	t.Cleanup(func() { context.RemoveSMContext(live.Ref) })
+	dead := stored(t, db, deadSupi, storedOpts{seid: seid})
+	context.HoldSEID(seid, live)
+
+	// The live session's records, written when it was established with the same SEID.
+	db.put(context.SmContextDataColl, map[string]any{refKey: live.Ref, "identifier": liveSupi, "pduSessionID": 1})
+	if _, err := db.RestfulAPIPost(context.SeidSmContextCol, bson.M{seidKey: context.SeidConv(seid)},
+		map[string]any{refKey: live.Ref, seidKey: context.SeidConv(seid)}); err != nil {
+		t.Fatal(err)
+	}
+
+	context.ReleaseStoredSessions(deadSupi, 1)
+
+	if !waitGone(t, db, dead.Ref) {
+		t.Fatalf("precondition: the stored session was not released")
+	}
+	if !storedRef(db, live.Ref) {
+		t.Errorf("releasing a stored session deleted the context document of the live session that shares its SEID")
+	}
+	if !db.has(context.SeidSmContextCol, refKey, live.Ref) {
+		t.Errorf("releasing a stored session deleted the SEID document of the live session that shares its SEID")
+	}
+	if got := context.SEIDHeldBy(seid); got != live {
+		t.Errorf("releasing a stored session removed the live session's in-memory SEID entry")
 	}
 }

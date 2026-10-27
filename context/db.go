@@ -514,7 +514,11 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 // DeleteSmContextInDBBySEID Delete SMContext By SEID from DB. Callers (RemoveSMContext) must
 // hold the SMContext's SMLock across this call for the same reason as DeleteSmContextInDBByRef,
 // which this calls.
-func DeleteSmContextInDBBySEID(seidUint uint64) {
+//
+// ref is the session being released. The SEID's document is deleted, and the context it names with
+// it, only while it names that session: the document is keyed by the SEID alone, so it may name
+// another session, and deleting by SEID alone removed that session's records.
+func DeleteSmContextInDBBySEID(seidUint uint64, ref string) {
 	seid := SeidConv(seidUint)
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
 	filter := bson.M{seidFilterKey: seid}
@@ -525,7 +529,13 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 		logger.DataRepoLog.Warnln(getOneErr)
 	}
 	if result != nil {
-		ref := result[refFilterKey].(string)
+		if mapped, _ := result[refFilterKey].(string); mapped != ref {
+			logger.DataRepoLog.Infof("SEID %v now belongs to SMContext %s, not %s; leaving it", seid, mapped, ref)
+			return
+		}
+		// And the delete is scoped to ref as well, for a session that takes the SEID between the
+		// read above and the delete.
+		filter[refFilterKey] = ref
 
 		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
 		if delOneErr != nil {

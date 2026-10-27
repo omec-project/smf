@@ -897,9 +897,11 @@ func RemoveSMContextLocked(smContext *SMContext) {
 	smContext.DeferredPolicyDecisions = nil
 
 	for _, pfcpSessionContext := range smContext.PFCPContext {
-		seidSMContextMap.Delete(pfcpSessionContext.LocalSEID)
+		// Only this session's own entries: the index is keyed by the SEID alone, so an entry may be
+		// another session's.
+		seidSMContextMap.CompareAndDelete(pfcpSessionContext.LocalSEID, smContext)
 		if factory.SmfConfig.Configuration.EnableDbStore {
-			DeleteSmContextInDBBySEID(pfcpSessionContext.LocalSEID)
+			DeleteSmContextInDBBySEID(pfcpSessionContext.LocalSEID, smContext.Ref)
 		}
 	}
 
