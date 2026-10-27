@@ -275,6 +275,25 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 			}
 			txn.Rsp = httpResponse
 		}
+
+	case svcmsgtypes.SmPolicyUpdateNotification:
+		// Without a response the notification is answered 500, which the PCF reads as a fault of the
+		// SMF's rather than of the session: TS 29.500 clause 5.2.7.2, "If the specified target
+		// resource does not exist, the NF shall reject the HTTP method with the HTTP status code
+		// "404 Not Found"."
+		if !hasSMContext(txn) {
+			logger.PduSessLog.Warnf("SMPolicyUpdateNotification, SMContext[%s] is not found", txn.CtxtKey)
+
+			problemDetails := models.NewProblemDetails()
+			problemDetails.SetType("Resource Not Found")
+			problemDetails.SetTitle("SMContext Ref is not found")
+			problemDetails.SetStatus(int32(http.StatusNotFound))
+			txn.Rsp = &httpwrapper.Response{
+				Header: nil,
+				Status: http.StatusNotFound,
+				Body:   problemDetails,
+			}
+		}
 	}
 	txn.Status <- false
 	return transaction.TxnEventEnd, nil
