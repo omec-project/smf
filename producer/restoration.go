@@ -62,6 +62,7 @@ var lockAcquireTimeout = 50 * time.Millisecond
 
 func init() {
 	context.OnRestart = RestoreSessionsOnUPF
+	context.ReleaseRestoredSession = ReleaseRestoredSession
 }
 
 var restorationsInProgress sync.Map // UPF node IP -> *restorationRun
