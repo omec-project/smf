@@ -24,6 +24,20 @@ func RegisterCurrent(identifier string, pduSessionID int32, ref string) {
 	canonicalRef.Store(canonicalName(identifier, pduSessionID), ref)
 }
 
+// SEIDHeldBy is the context the in-memory SEID index holds for a local SEID, without the datastore
+// fallback GetSMContextBySEID adds.
+func SEIDHeldBy(seid uint64) *SMContext {
+	if value, ok := seidSMContextMap.Load(seid); ok {
+		return value.(*SMContext)
+	}
+	return nil
+}
+
+// HoldSEID enters a context in the in-memory SEID index, as establishing its PFCP session does.
+func HoldSEID(seid uint64, smContext *SMContext) {
+	seidSMContextMap.Store(seid, smContext)
+}
+
 // AllocatorHolds reports whether the allocator has ip marked in use.
 func AllocatorHolds(a *IPAllocator, ip net.IP) bool {
 	a.g.lock.Lock()
