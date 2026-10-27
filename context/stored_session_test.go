@@ -6,10 +6,16 @@ package context_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"reflect"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +26,10 @@ import (
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
 	"github.com/omec-project/smf/pfcp/udp"
+	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/smf/transaction"
+	"github.com/omec-project/util/httpwrapper"
+	mi "github.com/omec-project/util/metricinfo"
 	"github.com/omec-project/util/mongoapi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/wmnsk/go-pfcp/message"
@@ -32,13 +41,29 @@ import (
 // trip, so numbers are float64.
 type memDB struct {
 	mongoapi.DBInterface
-	mu    sync.Mutex
-	colls map[string][]map[string]any
+	mu       sync.Mutex
+	colls    map[string][]map[string]any
+	counters map[string]int32
+
+	// Faults a test can arm.
+	listingFails  bool   // RestfulAPIGetMany answers an error
+	listingMisses bool   // RestfulAPIGetMany answers nothing
+	goneAfterRead string // this ref's document is released as soon as it is read
 
 	afterRead func() // run once, after the next read of a session document
 }
 
-func newMemDB() *memDB { return &memDB{colls: make(map[string][]map[string]any)} }
+func newMemDB() *memDB {
+	return &memDB{colls: make(map[string][]map[string]any), counters: make(map[string]int32)}
+}
+
+// GetUniqueIdentity counts as the datastore's counters do: 1 on the first read, one more on each after.
+func (db *memDB) GetUniqueIdentity(name string) int32 {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.counters[name]++
+	return db.counters[name]
+}
 
 func normalise(v any) any {
 	b, err := json.Marshal(v)
@@ -64,9 +89,12 @@ func matches(doc map[string]any, filter bson.M) bool {
 func (db *memDB) RestfulAPIGetOne(coll string, filter bson.M) (map[string]any, error) {
 	db.mu.Lock()
 	var found map[string]any
-	for _, doc := range db.colls[coll] {
+	for i, doc := range db.colls[coll] {
 		if matches(doc, filter) {
 			found = copyDoc(doc)
+			if coll == context.SmContextDataColl && db.goneAfterRead != "" && doc["ref"] == db.goneAfterRead {
+				db.colls[coll] = append(db.colls[coll][:i], db.colls[coll][i+1:]...)
+			}
 			break
 		}
 	}
@@ -84,6 +112,12 @@ func (db *memDB) RestfulAPIGetOne(coll string, filter bson.M) (map[string]any, e
 func (db *memDB) RestfulAPIGetMany(coll string, filter bson.M) ([]map[string]any, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	if db.listingFails {
+		return nil, errors.New("simulated listing failure")
+	}
+	if db.listingMisses {
+		return nil, nil
+	}
 	var out []map[string]any
 	for _, doc := range db.colls[coll] {
 		if matches(doc, filter) {
@@ -167,18 +201,26 @@ func withStore(t *testing.T) *memDB {
 	return db
 }
 
+type stamp struct {
+	smfCount int32
+	seq      uint64
+}
+
 type storedOpts struct {
+	stamp      *stamp          // nil: written before sessions recorded when they were created
 	ip         string          // an address an earlier start of the SMF allocated from ueSubnet
 	unknownUPF string          // a node the data path names that this SMF does not hold
 	upf        *context.UPF    // a node this SMF holds, which the data path names and the session is anchored on
 	rules      [2]*context.PDR // the uplink and downlink rules the session holds on upf
+	anchorOn   string          // a node holding the session's PFCP session
 	seid       uint64
+	amf, pcf   string // API prefixes of the peers the session names
 	// acknowledgedAt is the recovery timestamp of the incarnation of upf that acknowledged the
 	// session; zero as in a document stored before it was kept.
 	acknowledgedAt time.Time
 }
 
-// stored writes a session to the datastore as an earlier SMF incarnation left it, and drops it from
+// stored writes a session to the datastore as an earlier start of the SMF left it, and drops it from
 // memory, as a restart does.
 func stored(t *testing.T, db *memDB, supi string, o storedOpts) *context.SMContext {
 	t.Helper()
@@ -216,17 +258,28 @@ func stored(t *testing.T, db *memDB, supi string, o storedOpts) *context.SMConte
 			NodeID: o.upf.NodeID, LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
 			AcknowledgedAtRecovery: o.acknowledgedAt,
 		}
+	} else if o.anchorOn != "" {
+		smContext.PFCPContext[o.anchorOn] = &context.PFCPSessionContext{
+			NodeID: *context.NewNodeID(o.anchorOn), LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
+		}
 	} else if o.seid != 0 {
 		smContext.PFCPContext["10.99.0.1"] = &context.PFCPSessionContext{
 			NodeID: *context.NewNodeID("10.99.0.1"), LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
 		}
 	}
-	// A stored session always carries both profiles. These name no service, so nothing is sent to
-	// either peer.
-	smContext.AMFProfile = nfProfile(models.NFTYPE_AMF)
-	smContext.SelectedPCFProfile = nfProfile(models.NFTYPE_PCF)
+	// A stored session always carries both profiles; one whose peer a test does not stand up names
+	// no service, so nothing is sent to it.
+	smContext.AMFProfile = nfProfile(models.NFTYPE_AMF, models.SERVICENAME_NAMF_COMM, o.amf)
+	smContext.SelectedPCFProfile = nfProfile(models.NFTYPE_PCF, models.SERVICENAME_NPCF_SMPOLICYCONTROL, o.pcf)
 
 	doc := context.ToBsonM(smContext)
+	if o.stamp == nil {
+		delete(doc, "createdSmfCount")
+		delete(doc, "createdSeq")
+	} else {
+		doc["createdSmfCount"] = o.stamp.smfCount
+		doc["createdSeq"] = o.stamp.seq
+	}
 	db.put(context.SmContextDataColl, doc)
 	for _, pfcpContext := range smContext.PFCPContext {
 		db.put(context.SeidSmContextCol, map[string]any{refKey: smContext.Ref, seidKey: context.SeidConv(pfcpContext.LocalSEID)})
@@ -285,11 +338,20 @@ func tunnelOn(upf *context.UPF, uplink, downlink *context.PDR) *context.UPTunnel
 	return &context.UPTunnel{DataPathPool: context.DataPathPool{1: dataPath}}
 }
 
-func nfProfile(nfType models.NFType) models.NFProfileDiscovery {
+func nfProfile(nfType models.NFType, service models.ServiceName, apiPrefix string) models.NFProfileDiscovery {
 	var p models.NFProfileDiscovery
-	p.SetNfInstanceId("nf-" + string(nfType))
+	p.SetNfInstanceId("nf-" + string(service))
 	p.SetNfType(nfType)
 	p.SetNfStatus(models.NFSTATUS_REGISTERED)
+	if apiPrefix != "" {
+		var s models.NFService
+		s.SetServiceInstanceId(string(service))
+		s.SetServiceName(service)
+		s.SetApiPrefix(apiPrefix)
+		s.SetNfServiceStatus(models.NFSERVICESTATUS_REGISTERED)
+		s.SetScheme(models.URISCHEME_HTTP)
+		p.SetNfServiceList(map[string]models.NFService{s.GetServiceInstanceId(): s})
+	}
 	return p
 }
 
@@ -300,6 +362,40 @@ const (
 )
 
 func storedRef(db *memDB, ref string) bool { return db.has(context.SmContextDataColl, refKey, ref) }
+
+func inPool(ref string) bool {
+	_, ok := context.GetSmContextPool().Load(ref)
+	return ok
+}
+
+var runs atomic.Int64
+
+// freshSupi is a subscriber no earlier run of the test has used: a run's release finishes clearing
+// its subscriber's current session only after its documents are gone, and a repeated run that
+// reused the subscriber could find that entry still there.
+func freshSupi() string {
+	return fmt.Sprintf("imsi-2089300189%05d", runs.Add(1))
+}
+
+// freshNode is a user-plane address no earlier run of the test has used: a restoration runs in the
+// background and could otherwise take up a later run's session on the same node.
+func freshNode() string {
+	n := runs.Add(1)
+	return fmt.Sprintf("10.78.%d.%d", n/250, n%250+1)
+}
+
+// waitReleased waits for a background release to make its last calls, to the AMF and the PCF, so
+// the test does not end -- and restore what the release reads -- while it is still running.
+func (p *peers) waitReleased(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if policyDelete, n1n2 := p.counts(); policyDelete >= 1 && n1n2 >= 1 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 // waitGone waits for the asynchronous delete of a stored document.
 func waitGone(t *testing.T, db *memDB, ref string) bool {
@@ -341,7 +437,7 @@ func loadCreate(t *testing.T, supi string) *context.SMContext {
 func TestACreateAfterARestartReleasesTheStoredSession(t *testing.T) {
 	db := withStore(t)
 	const supi = "imsi-208930018809001"
-	a := stored(t, db, supi, storedOpts{seid: 9001, unknownUPF: "10.88.0.1"})
+	a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9001, unknownUPF: "10.88.0.1"})
 
 	created := loadCreate(t, supi)
 
@@ -364,7 +460,7 @@ func TestACreateReleasesEveryStoredCopy(t *testing.T) {
 	copies := []*context.SMContext{
 		stored(t, db, supi, storedOpts{seid: 9101}),
 		stored(t, db, supi, storedOpts{seid: 9102}),
-		stored(t, db, supi, storedOpts{seid: 9103}),
+		stored(t, db, supi, storedOpts{stamp: &stamp{2, 7}, seid: 9103}),
 	}
 
 	loadCreate(t, supi)
@@ -373,6 +469,602 @@ func TestACreateReleasesEveryStoredCopy(t *testing.T) {
 		if !waitGone(t, db, c.Ref) {
 			t.Errorf("stored copy %d survived the UE establishing the PDU session again", i)
 		}
+	}
+}
+
+// A stored session that a later session for the same subscriber and PDU session ID has superseded
+// is not served as live, by reference or by SEID, and its documents go.
+func TestASupersededStoredSessionIsNotServed(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809003"
+	a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9201})
+	b := context.NewSMContext(supi, 1) // established after the restart
+	t.Cleanup(func() { context.RemoveSMContext(b.Ref) })
+
+	if got := context.GetSMContext(a.Ref); got != nil {
+		t.Errorf("a stored session superseded by %s was served by reference", b.Ref)
+	}
+	if inPool(a.Ref) {
+		t.Errorf("the superseded session was added to the sessions the SMF holds")
+	}
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the superseded session's documents were not removed")
+	}
+
+	a2 := stored(t, db, supi, storedOpts{stamp: &stamp{1, 2}, seid: 9202})
+	if got := context.GetSMContextBySEID(9202); got != nil {
+		t.Errorf("a stored session superseded by %s was served by SEID", b.Ref)
+	}
+	if inPool(a2.Ref) {
+		t.Errorf("the session found by SEID was added to the sessions the SMF holds")
+	}
+	if !waitGone(t, db, a2.Ref) {
+		t.Errorf("the session found by SEID kept its documents")
+	}
+}
+
+// Between two stored sessions for one key the most recently created is served, whichever a request
+// names first, and the order comes from the creation record rather than from which the store
+// returns first.
+func TestTheMostRecentlyCreatedStoredSessionIsServed(t *testing.T) {
+	for i, tc := range []struct {
+		name            string
+		older, newer    stamp
+		nameOlderFirst  bool
+		storeNewerFirst bool
+	}{
+		{"older named first", stamp{1, 1}, stamp{2, 1}, true, false},
+		{"newer named first", stamp{1, 1}, stamp{2, 1}, false, false},
+		{"same start, by sequence", stamp{3, 4}, stamp{3, 9}, true, true},
+		{"same start, by sequence, older stored first", stamp{3, 4}, stamp{3, 9}, true, false},
+		{"store returns the newer first", stamp{1, 1}, stamp{2, 1}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := withStore(t)
+			supi := fmt.Sprintf("imsi-2089300188092%02d", i)
+			var older, newer *context.SMContext
+			if tc.storeNewerFirst {
+				newer = stored(t, db, supi, storedOpts{stamp: &tc.newer, seid: 9301})
+				older = stored(t, db, supi, storedOpts{stamp: &tc.older, seid: 9302})
+			} else {
+				older = stored(t, db, supi, storedOpts{stamp: &tc.older, seid: 9302})
+				newer = stored(t, db, supi, storedOpts{stamp: &tc.newer, seid: 9301})
+			}
+			t.Cleanup(func() { context.RemoveSMContext(newer.Ref) })
+
+			first, second := newer, older
+			if tc.nameOlderFirst {
+				first, second = older, newer
+			}
+			gotFirst := context.GetSMContext(first.Ref)
+			gotSecond := context.GetSMContext(second.Ref)
+
+			if served := map[bool]*context.SMContext{true: gotFirst, false: gotSecond}[first == newer]; served == nil || served.Ref != newer.Ref {
+				t.Errorf("the most recently created stored session was not served")
+			}
+			if other := map[bool]*context.SMContext{true: gotSecond, false: gotFirst}[first == newer]; other != nil {
+				t.Errorf("the older stored session was served too")
+			}
+			if !waitGone(t, db, older.Ref) {
+				t.Errorf("the older stored session was not released")
+			}
+			if !storedRef(db, newer.Ref) {
+				t.Errorf("the most recently created stored session was released")
+			}
+		})
+	}
+}
+
+// Several stored sessions for one key with no creation record have no knowable order. None is
+// served and none is released, until the subscriber establishes the session again.
+func TestUnorderedStoredSessionsAreNeitherServedNorReleased(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809004"
+	a := stored(t, db, supi, storedOpts{seid: 9401})
+	b := stored(t, db, supi, storedOpts{seid: 9402})
+
+	if got := context.GetSMContext(a.Ref); got != nil {
+		t.Errorf("one of two unordered stored sessions was served by reference")
+	}
+	if got := context.GetSMContextBySEID(9402); got != nil {
+		t.Errorf("one of two unordered stored sessions was served by SEID")
+	}
+	time.Sleep(50 * time.Millisecond)
+	if !storedRef(db, a.Ref) || !storedRef(db, b.Ref) {
+		t.Errorf("an unordered stored session was released; without an order it could be the live one")
+	}
+}
+
+// A single stored session nothing has superseded is restored as before.
+func TestALoneStoredSessionIsRestored(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809005"
+	a := stored(t, db, supi, storedOpts{seid: 9501})
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+
+	got := context.GetSMContext(a.Ref)
+	if got == nil || got.Ref != a.Ref {
+		t.Fatalf("a lone stored session was not restored")
+	}
+	if !got.RestoredFromStore() {
+		t.Errorf("the restored session is not marked as read from the datastore")
+	}
+	if ref, err := context.ResolveRef(supi, 1); err != nil || ref != a.Ref {
+		t.Errorf("the restored session is not the subscriber's current session for PDU session 1: %q, %v", ref, err)
+	}
+}
+
+// peers stands up the peers a release informs, recording what each was asked.
+type peers struct {
+	srv          *httptest.Server
+	mu           sync.Mutex
+	policyDelete int
+	n1n2         int
+	n1n2For      map[string]int // transfers by the subscriber they name
+	amfRefuses   bool           // the AMF answers every transfer with an error
+	held         chan string    // when set, the first transfer names its subscriber here and waits
+	resume       chan struct{}  // for this to close
+	holdOnce     sync.Once
+}
+
+func newPeers(t *testing.T) *peers {
+	t.Helper()
+	p := &peers{n1n2For: map[string]int{}}
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		subscriber, transfer := strings.CutSuffix(r.URL.Path, "/n1-n2-messages")
+		subscriber = subscriber[strings.LastIndex(subscriber, "/")+1:]
+		p.mu.Lock()
+		held, resume := p.held, p.resume
+		p.mu.Unlock()
+		if transfer && held != nil {
+			p.holdOnce.Do(func() {
+				held <- subscriber
+				<-resume
+			})
+		}
+
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if transfer {
+			p.n1n2For[subscriber]++
+		}
+		switch {
+		case strings.Contains(r.URL.Path, "/sm-policies/") && strings.HasSuffix(r.URL.Path, "/delete"):
+			p.policyDelete++
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/n1-n2-messages") && p.amfRefuses:
+			p.n1n2++
+			w.WriteHeader(http.StatusInternalServerError)
+		case strings.Contains(r.URL.Path, "/n1-n2-messages"):
+			p.n1n2++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write([]byte(`{"cause":"N1_N2_TRANSFER_INITIATED"}`)); err != nil {
+				t.Error(err)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *peers) counts() (policyDelete, n1n2 int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.policyDelete, p.n1n2
+}
+
+func (p *peers) transfersFor(supi string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.n1n2For[supi]
+}
+
+// holdFirstTransfer holds the first transfer the AMF receives until resume is closed, after naming
+// the subscriber it is for on held.
+func (p *peers) holdFirstTransfer() (held <-chan string, resume chan<- struct{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.held, p.resume = make(chan string, 1), make(chan struct{})
+	return p.held, p.resume
+}
+
+// A request to release a stored session is honoured even when its order against the subscriber's
+// other stored sessions cannot be known: it names the session its sender holds. The release
+// terminates the policy association and answers success.
+func TestAReleaseOfAnUnorderedStoredSessionIsHonoured(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	const supi = "imsi-208930018809006"
+	a := stored(t, db, supi, storedOpts{seid: 9601, pcf: p.srv.URL})
+	stored(t, db, supi, storedOpts{seid: 9602})
+
+	release := models.NewReleaseSmContextRequest()
+	release.SetJsonData(models.SmContextReleaseData{})
+	txn := transaction.NewTransaction(*release, nil, svcmsgtypes.ReleaseSmContext)
+	txn.CtxtKey = a.Ref
+	if _, err := fsm.SmfTxnFsmHandle.TxnLoadCtxt(txn); err != nil {
+		t.Fatalf("the release named a stored session and was refused: %v", err)
+	}
+
+	if err := producer.HandlePDUSessionSMContextRelease(txn); err != nil {
+		t.Fatalf("releasing: %v", err)
+	}
+	if rsp, ok := txn.Rsp.(*httpwrapper.Response); !ok || rsp.Status != http.StatusNoContent {
+		t.Errorf("the release was answered %+v, want %d", txn.Rsp, http.StatusNoContent)
+	}
+	if policyDelete, _ := p.counts(); policyDelete != 1 {
+		t.Errorf("the PCF was asked to delete the policy association %d times, want once", policyDelete)
+	}
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the released session's documents were not removed")
+	}
+}
+
+// A restored session anchored on a user plane that restarts is released, with the AMF and the PCF
+// told, rather than re-installed: its address was allocated by an earlier start of the SMF.
+func TestARestoredSessionIsReleasedNotReinstalledWhenItsUserPlaneRestarts(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP := freshNode()
+	supi := freshSupi()
+	upf := context.NewUPF(context.NewNodeID(nodeIP), nil)
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: time.Now()}
+
+	a := stored(t, db, supi, storedOpts{ip: "10.60.0.8", seid: 9701, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	restored := context.GetSMContext(a.Ref)
+	if restored == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+	if !waitGone(t, db, a.Ref) {
+		t.Fatalf("the restored session was not released when its user plane restarted")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if policyDelete, n1n2 := p.counts(); policyDelete == 1 && n1n2 == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if policyDelete, n1n2 := p.counts(); policyDelete != 1 || n1n2 != 1 {
+		t.Errorf("the release told the PCF %d and the AMF %d times, want once each", policyDelete, n1n2)
+	}
+	releasedOutcome := map[string]string{upfLabel: nodeIP, "outcome": "releasedRestoredFromStore"}
+	deadline = time.Now().Add(2 * time.Second)
+	for v, _ := metricValue(t, "smf_upf_restoration_sessions_total", releasedOutcome); v != 1 && time.Now().Before(deadline); v, _ = metricValue(t, "smf_upf_restoration_sessions_total", releasedOutcome) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if v, _ := metricValue(t, "smf_upf_restoration_sessions_total", releasedOutcome); v != 1 {
+		t.Errorf("the restoration outcomes count %v session(s) released as restored from the datastore, want 1", v)
+	}
+	restored.SMLock.Lock()
+	state := restored.SMContextState
+	restored.SMLock.Unlock()
+	if state != context.SmStateRelease {
+		t.Errorf("the restored session is %v, want released", state)
+	}
+}
+
+// A user plane that restarts with a restored session anchored on it whose lock is held: the sweep
+// cannot examine the session, looks again as it does for any session it could not examine, and
+// releases it once the lock is free, instead of leaving it in place.
+func TestABusyRestoredSessionIsReleasedOnceItCanBeExamined(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP, supi := freshNode(), freshSupi()
+	restartedUPF(t, nodeIP)
+	a := stored(t, db, supi, storedOpts{seid: 9702, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	restored := context.GetSMContext(a.Ref)
+	if restored == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+
+	restored.SMLock.Lock()
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+	time.Sleep(300 * time.Millisecond) // the sweep finds the session busy, and looks again
+	if !storedRef(db, a.Ref) {
+		t.Fatalf("precondition: the session was released while its lock was held")
+	}
+	restored.SMLock.Unlock()
+
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("a restored session busy when its user plane restarted was never released")
+	}
+	p.waitReleased(t)
+}
+
+// A restored session whose release fails is still without service, and the user plane's
+// unrestored gauge counts it.
+func TestARestoredSessionWhoseReleaseFailsIsCountedUnrestored(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	p.amfRefuses = true
+	nodeIP, supi := freshNode(), freshSupi()
+	restartedUPF(t, nodeIP)
+	a := stored(t, db, supi, storedOpts{seid: 9703, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+	p.waitReleased(t)
+	deadline := time.Now().Add(2 * time.Second)
+	for unrestoredGauge(t, nodeIP) != 1 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := unrestoredGauge(t, nodeIP); got != 1 {
+		t.Errorf("the user plane reports %v sessions without service, want the 1 whose release failed", got)
+	}
+}
+
+// When the restarted user plane also holds sessions this SMF created, those go through the
+// restoration waves and the restored session is released after them.
+func TestARestoredSessionIsReleasedBesideSessionsToReinstall(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP, supi := freshNode(), freshSupi()
+	restartedUPF(t, nodeIP)
+	live := context.NewSMContext(freshSupi(), 1)
+	t.Cleanup(func() { context.RemoveSMContext(live.Ref) })
+	live.SMLock.Lock()
+	live.PFCPContext[nodeIP] = &context.PFCPSessionContext{NodeID: *context.NewNodeID(nodeIP), LocalSEID: 9705, RemoteSEID: 9706}
+	live.SMLock.Unlock()
+	a := stored(t, db, supi, storedOpts{seid: 9704, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the restored session was not released when its user plane restarted")
+	}
+	p.waitReleased(t)
+	if got := context.GetSMContext(live.Ref); got != live {
+		t.Errorf("the session this SMF created was released with the restored one")
+	}
+}
+
+// A restored session found on the restarted user plane is no reason to stop looking at a session
+// this SMF created there that was busy: the sweep looks again, as it would had it found nothing.
+func TestABusySessionBesideARestoredOneIsLookedAtAgain(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP, supi := freshNode(), freshSupi()
+	restartedUPF(t, nodeIP)
+	live := context.NewSMContext(freshSupi(), 1)
+	t.Cleanup(func() { context.RemoveSMContext(live.Ref) })
+	live.SMLock.Lock()
+	live.PFCPContext[nodeIP] = &context.PFCPSessionContext{NodeID: *context.NewNodeID(nodeIP), LocalSEID: 9707, RemoteSEID: 9708}
+	a := stored(t, db, supi, storedOpts{seid: 9709, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+	time.Sleep(300 * time.Millisecond) // the sweep finds the live session busy
+	live.SMLock.Unlock()
+
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the restored session was not released when its user plane restarted")
+	}
+	p.waitReleased(t)
+	// The live session has no data path to re-install, so once it is examined it is skipped.
+	skipped := map[string]string{upfLabel: nodeIP, "outcome": "skipped"}
+	deadline := time.Now().Add(2 * time.Second)
+	for v, _ := metricValue(t, "smf_upf_restoration_sessions_total", skipped); v != 1 && time.Now().Before(deadline); v, _ = metricValue(t, "smf_upf_restoration_sessions_total", skipped) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if v, _ := metricValue(t, "smf_upf_restoration_sessions_total", skipped); v != 1 {
+		t.Errorf("the busy session was examined %v times once its lock was free, want once", v)
+	}
+}
+
+// The restored sessions a restarted user plane holds are released after the restoration waves, from
+// the list the sweep took before them. One released or replaced in between is left alone: the
+// release command names the subscriber and PDU session ID, and the AMF would release the session
+// that replaced it. Nor is it counted as a session without service.
+func TestARestoredSessionReleasedSinceTheSweepIsNotReleasedAgain(t *testing.T) {
+	reattach := func(t *testing.T, s *context.SMContext) { loadCreate(t, s.Supi) }
+	for _, tc := range []struct {
+		name         string
+		listingFails bool // the sessions are served unregistered, and the new one replaces nothing
+		meanwhile    func(t *testing.T, s *context.SMContext)
+	}{
+		{"its UE establishes the PDU session again", false, reattach},
+		{"its UE establishes the PDU session again while the listing fails", true, reattach},
+		{"it is released on request", false, func(t *testing.T, s *context.SMContext) { context.RemoveSMContext(s.Ref) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := withStore(t)
+			db.listingFails = tc.listingFails
+			p := newPeers(t)
+			nodeIP := freshNode()
+			restartedUPF(t, nodeIP)
+			restored := map[string]*context.SMContext{}
+			for i := range 2 {
+				supi := freshSupi()
+				a := stored(t, db, supi, storedOpts{seid: uint64(9901 + i), anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+				if restored[supi] = context.GetSMContext(a.Ref); restored[supi] == nil {
+					t.Fatalf("precondition: the stored session was not restored")
+				}
+			}
+			held, resume := p.holdFirstTransfer()
+
+			producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+			var other *context.SMContext
+			select {
+			case first := <-held:
+				for supi, s := range restored {
+					if supi != first {
+						other = s
+					}
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("precondition: neither restored session was released")
+			}
+			tc.meanwhile(t, other)
+			close(resume)
+
+			// The gauge is set once the restored sessions have been dealt with.
+			labels := map[string]string{upfLabel: nodeIP}
+			deadline := time.Now().Add(2 * time.Second)
+			for _, done := metricValue(t, unrestoredMetric, labels); !done && time.Now().Before(deadline); _, done = metricValue(t, unrestoredMetric, labels) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			if n := p.transfersFor(other.Supi); n != 0 {
+				t.Errorf("the AMF was sent %d release(s) for the subscriber's PDU session after it was released or replaced", n)
+			}
+			if got := unrestoredGauge(t, nodeIP); got != 0 {
+				t.Errorf("the user plane reports %v sessions without service, want none", got)
+			}
+		})
+	}
+}
+
+// A restored session served without being registered as current -- the listing of its subscriber's
+// stored sessions failed -- is released like any restored session when its user plane restarts.
+func TestAnUnregisteredRestoredSessionIsReleasedWhenItsUserPlaneRestarts(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP, supi := freshNode(), freshSupi()
+	restartedUPF(t, nodeIP)
+	a := stored(t, db, supi, storedOpts{seid: 9905, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	db.listingFails = true
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+	if _, err := context.ResolveRef(supi, 1); err == nil {
+		t.Fatalf("precondition: the restored session was registered as current")
+	}
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the unregistered restored session was not released when its user plane restarted")
+	}
+	p.waitReleased(t)
+}
+
+// A restored session a later session for its PDU session superseded is not among those the sweep
+// releases: the subscriber's PDU session is now that later one, and releasing the restored one would
+// tell the AMF to release it. Here the listing failed, so the restored session was served without
+// being registered, and the UE's new session replaced nothing.
+func TestASupersededRestoredSessionIsNotSweptForRelease(t *testing.T) {
+	db := withStore(t)
+	nodeIP, supi := freshNode(), freshSupi()
+	a := stored(t, db, supi, storedOpts{seid: 9906, anchorOn: nodeIP})
+	db.listingFails = true
+	restored := context.GetSMContext(a.Ref)
+	if restored == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+	created := loadCreate(t, supi)
+	if !restored.SupersededByAnother() {
+		t.Fatalf("precondition: the session %s created since does not supersede the restored one", created.Ref)
+	}
+
+	anchored, _, _ := context.SessionsAnchoredOn(*context.NewNodeID(nodeIP), time.Time{})
+	for _, s := range anchored {
+		if s == restored {
+			t.Errorf("the superseded restored session was found anchored, for release")
+		}
+	}
+}
+
+// restartedUPF stands in for a user plane this SMF is associated with, and which has restarted.
+func restartedUPF(t *testing.T, nodeIP string) {
+	t.Helper()
+	upf := context.NewUPF(context.NewNodeID(nodeIP), nil)
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(upf.NodeID) })
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: time.Now()}
+}
+
+// The gauge of the sessions a user plane holds without service, and the label naming the user plane.
+const (
+	unrestoredMetric = "smf_upf_unrestored_sessions"
+	upfLabel         = "upf"
+)
+
+// unrestoredGauge reads how many of a user plane's sessions this SMF reports as without service.
+func unrestoredGauge(t *testing.T, nodeIP string) float64 {
+	t.Helper()
+	value, _ := metricValue(t, unrestoredMetric, map[string]string{upfLabel: nodeIP})
+	return value
+}
+
+// Sessions are ordered by the smfCount of the start that created them, read when the SMF sets up its
+// datastore: a session a later start creates outranks one an earlier start created, whatever their
+// sequences.
+func TestALaterStartsSessionOutranksAnEarlierStarts(t *testing.T) {
+	db := withStore(t)
+	t.Setenv("SMF_COUNT", "")
+	const supi = "imsi-208930018809008"
+
+	t.Cleanup(context.SetupSmfCount())
+	earlier := context.NewSMContext(supi, 1)
+	t.Cleanup(func() { context.RemoveSMContext(earlier.Ref) })
+	context.SetupSmfCount() // the SMF restarts
+	later := context.NewSMContext(supi, 2)
+	t.Cleanup(func() { context.RemoveSMContext(later.Ref) })
+
+	if earlier.CreatedSmfCount != 1 || later.CreatedSmfCount != 2 {
+		t.Errorf("sessions record smfCount %d and %d, want the 1 and 2 the two starts read",
+			earlier.CreatedSmfCount, later.CreatedSmfCount)
+	}
+	if got := os.Getenv("SMF_COUNT"); got != "2" {
+		t.Errorf("SMF_COUNT is %q, want the 2 the last start read", got)
+	}
+
+	// The later start's sequence begins below the earlier one's last, and its session outranks the
+	// earlier one's all the same.
+	const restoredSupi = "imsi-208930018809009"
+	stored(t, db, restoredSupi, storedOpts{stamp: &stamp{earlier.CreatedSmfCount, 100}, seid: 9801})
+	newer := stored(t, db, restoredSupi, storedOpts{stamp: &stamp{later.CreatedSmfCount, 1}, seid: 9802})
+	got := context.GetSMContext(newer.Ref)
+	if got == nil {
+		t.Errorf("the session a later start created was not served over an earlier start's")
+	} else {
+		t.Cleanup(func() { context.RemoveSMContext(got.Ref) })
+	}
+}
+
+// A restored session is the subscriber's current session for its PDU session ID, and still not one
+// to re-install on a user plane that restarts: it is found anchored there marked as restored from
+// the datastore, so the restoration releases it instead.
+func TestARestoredSessionIsFoundMarkedForRelease(t *testing.T) {
+	db := withStore(t)
+	const (
+		supi   = "imsi-208930018809011"
+		nodeIP = "10.77.0.11"
+	)
+	a := stored(t, db, supi, storedOpts{seid: 9011, anchorOn: nodeIP})
+	restored := context.GetSMContext(a.Ref)
+	if restored == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+
+	anchored, _, _ := context.SessionsAnchoredOn(*context.NewNodeID(nodeIP), time.Time{})
+	found := false
+	for _, s := range anchored {
+		found = found || s == restored
+	}
+	if !found {
+		t.Errorf("the restored session was not found anchored on its user plane")
+	}
+	if !restored.RestoredFromStore() {
+		t.Errorf("the restored session is not marked as restored from the datastore")
 	}
 }
 
@@ -419,24 +1111,37 @@ func TestReleasingAStoredSessionLeavesTheSessionGaugeAlone(t *testing.T) {
 // sessionGauge reads the session gauge this SMF publishes.
 func sessionGauge(t *testing.T) float64 {
 	t.Helper()
+	value, ok := metricValue(t, "smf_pdu_sessions", map[string]string{"node_id": context.SMF_Self().NfInstanceID})
+	if !ok {
+		t.Fatalf("the session gauge is not published")
+	}
+	return value
+}
+
+// metricValue reads the published gauge or counter with the given name and labels.
+func metricValue(t *testing.T, name string, labels map[string]string) (float64, bool) {
+	t.Helper()
 	families, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		t.Fatalf("gathering metrics: %v", err)
 	}
 	for _, family := range families {
-		if family.GetName() != "smf_pdu_sessions" {
+		if family.GetName() != name {
 			continue
 		}
 		for _, metric := range family.GetMetric() {
+			matched := 0
 			for _, label := range metric.GetLabel() {
-				if label.GetName() == "node_id" && label.GetValue() == context.SMF_Self().NfInstanceID {
-					return metric.GetGauge().GetValue()
+				if want, ok := labels[label.GetName()]; ok && want == label.GetValue() {
+					matched++
 				}
+			}
+			if matched == len(labels) {
+				return metric.GetGauge().GetValue() + metric.GetCounter().GetValue(), true
 			}
 		}
 	}
-	t.Fatalf("the session gauge is not published")
-	return 0
+	return 0, false
 }
 
 // A stored session a lookup has already read into the pool is released as that instance, so the
@@ -490,10 +1195,37 @@ func TestAStoredSessionPooledWhileItIsReadForReleaseIsTheOneReleased(t *testing.
 	}
 }
 
-// A lookup that reads a stored session while a create is reading the same session to release it is
-// handed the instance the release put in the pool, never a second copy of its own: the release
-// removes the pool's entry once it is done, and an instance the lookup put there in between would be
-// removed with it, unreleased, while the lookup went on serving it.
+// A request to release a stored session reads it from the datastore when the pool does not hold it,
+// without the subscriber's key lock. A lookup that puts the same session in the pool meanwhile has put
+// there the instance the request must act on: storing the request's own copy over it would leave the
+// lookup serving an instance nothing releases.
+func TestAReleaseRequestRacingALookupActsOnThePooledInstance(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809053"
+	a := stored(t, db, supi, storedOpts{seid: 9053})
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+	var pooled *context.SMContext
+	db.afterRead = func() {
+		// A lookup that missed the pool as well, finishing first.
+		pooled = context.GetSMContextByRefInDB(a.Ref)
+		context.StoreSmContextPool(pooled)
+	}
+
+	got := context.GetSMContextForRelease(a.Ref)
+
+	if pooled == nil {
+		t.Fatalf("precondition: the release request read nothing from the datastore")
+	}
+	if got != pooled {
+		t.Errorf("the release request was handed a copy of its own rather than the instance in the pool")
+	}
+}
+
+// A lookup that reads a stored session while a create is reading the same session to release it
+// gets no second copy of its own: the release removes the pool's entry once it is done, and an
+// instance the lookup put there in between would be removed with it, unreleased, while the lookup
+// went on serving it. The lookup decides whether to serve the session under the subscriber's key
+// lock, which the release holds, so it waits for the release to finish and is then handed nothing.
 func TestALookupRacingTheReleaseOfAStoredSessionGetsNoSecondCopy(t *testing.T) {
 	db := withStore(t)
 	const supi = "imsi-208930018809052"
@@ -519,19 +1251,18 @@ func TestALookupRacingTheReleaseOfAStoredSessionGetsNoSecondCopy(t *testing.T) {
 
 	looked := make(chan *context.SMContext, 1)
 	go func() { looked <- context.GetSMContext(a.Ref) }()
-	// The lookup takes no lock the release holds, so it returns while the release is under way.
-	var got *context.SMContext
 	select {
-	case got = <-looked:
-	case <-time.After(2 * time.Second):
+	case got := <-looked:
 		close(proceed)
-		t.Fatalf("the lookup did not return while the release was under way")
+		<-released
+		t.Fatalf("the lookup returned %p while the release held the subscriber's key lock", got)
+	case <-time.After(100 * time.Millisecond):
 	}
 	close(proceed)
 	<-released
 
-	if got != inRelease {
-		t.Errorf("the lookup was handed %p rather than the instance being released (%p)", got, inRelease)
+	if got := <-looked; got != nil {
+		t.Errorf("the lookup was handed %p after the release of %p, want nothing", got, inRelease)
 	}
 }
 
@@ -563,6 +1294,212 @@ func TestReleasingAStoredSessionLeavesItsAddressWithTheUEHoldingItNow(t *testing
 	}
 	if !context.AllocatorHolds(pool, address) {
 		t.Errorf("releasing the stored session returned %v to the pool, which holds it for another UE", address)
+	}
+}
+
+// A listing that fails gives no order to apply; the session is served as before, and not made the
+// subscriber's current session, so it supersedes nothing.
+func TestARestoreWhoseListingFailsIsServedUnregistered(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809015"
+	a := stored(t, db, supi, storedOpts{seid: 9015})
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+	db.listingFails = true
+
+	if got := context.GetSMContext(a.Ref); got == nil {
+		t.Fatalf("a stored session was refused because the listing failed")
+	}
+	if ref, err := context.ResolveRef(supi, 1); err == nil {
+		t.Errorf("a session restored without ordering was made current (%s)", ref)
+	}
+}
+
+// A listing that does not find the session being restored must not make every restore fail: the
+// session is served as before, unregistered. One released while it was being read is not.
+func TestARestoreTheListingMissesIsServedUnlessReleased(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809016"
+	a := stored(t, db, supi, storedOpts{seid: 9016})
+	t.Cleanup(func() { context.RemoveSMContext(a.Ref) })
+	db.listingMisses = true
+
+	if got := context.GetSMContext(a.Ref); got == nil {
+		t.Errorf("a stored session the listing missed was refused")
+	}
+	if ref, err := context.ResolveRef(supi, 1); err == nil {
+		t.Errorf("a session restored without ordering was made current (%s)", ref)
+	}
+
+	b := stored(t, db, "imsi-208930018809017", storedOpts{seid: 9017})
+	db.goneAfterRead = b.Ref
+	if got := context.GetSMContext(b.Ref); got != nil {
+		t.Errorf("a stored session released while it was being read was served")
+	}
+}
+
+// Two requests naming two stored copies of one session at once decide one after the other: the
+// older copy is released once and the newer one served.
+func TestConcurrentRestoresOfOneSessionReleaseEachCopyOnce(t *testing.T) {
+	db := withStore(t)
+	released := recordReleases(t)
+	for i := range 20 {
+		supi := fmt.Sprintf("imsi-2089300188093%02d", i)
+		older := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: uint64(9400 + 2*i)})
+		newer := stored(t, db, supi, storedOpts{stamp: &stamp{2, 1}, seid: uint64(9401 + 2*i)})
+		t.Cleanup(func() { context.RemoveSMContext(newer.Ref) })
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for _, ref := range []string{older.Ref, newer.Ref} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				context.GetSMContext(ref)
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		olderReleases, newerReleases := 0, 0
+		for _, s := range released() {
+			switch s.Ref {
+			case older.Ref:
+				olderReleases++
+			case newer.Ref:
+				newerReleases++
+			}
+		}
+		if olderReleases != 1 || newerReleases != 0 {
+			t.Fatalf("round %d: the older copy was released %d times and the newer %d, want once and never",
+				i, olderReleases, newerReleases)
+		}
+	}
+}
+
+// capturePublished records the subscriber events published for the length of a test, with the event
+// stream enabled.
+func capturePublished(t *testing.T) func(imsi string) []mi.SubscriberOp {
+	t.Helper()
+	enabled := true
+	factory.SmfConfig.Configuration.KafkaInfo.EnableKafka = &enabled
+	var mu sync.Mutex
+	var events []mi.CoreSubscriber
+	var ops []mi.SubscriberOp
+	t.Cleanup(context.CapturePublished(func(s mi.CoreSubscriber, op mi.SubscriberOp) error {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, s)
+		ops = append(ops, op)
+		return nil
+	}))
+	return func(imsi string) []mi.SubscriberOp {
+		mu.Lock()
+		defer mu.Unlock()
+		var out []mi.SubscriberOp
+		for i, e := range events {
+			if e.Imsi == imsi {
+				out = append(out, ops[i])
+			}
+		}
+		return out
+	}
+}
+
+func hasDel(ops []mi.SubscriberOp) bool {
+	for _, op := range ops {
+		if op == mi.SubsOpDel {
+			return true
+		}
+	}
+	return false
+}
+
+// Releasing a stored session a later session replaced does not report the end of the subscriber's
+// session: consumers key subscribers by IMSI, and the report would remove the live session's record.
+func TestReleasingASupersededStoredSessionReportsNoEnd(t *testing.T) {
+	t.Run("refused on restore", func(t *testing.T) {
+		db := withStore(t)
+		const supi = "imsi-208930018809018"
+		a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9018})
+		b := context.NewSMContext(supi, 1)
+		t.Cleanup(func() { context.RemoveSMContext(b.Ref) })
+		published := capturePublished(t)
+
+		if context.GetSMContext(a.Ref) != nil || !waitGone(t, db, a.Ref) {
+			t.Fatalf("precondition: the superseded session was not refused and released")
+		}
+		if hasDel(published(supi)) {
+			t.Errorf("releasing the superseded session reported the end of the subscriber's session")
+		}
+	})
+	t.Run("an older copy behind the kept one", func(t *testing.T) {
+		db := withStore(t)
+		const supi = "imsi-208930018809019"
+		older := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9019})
+		newer := stored(t, db, supi, storedOpts{stamp: &stamp{2, 1}, seid: 9020})
+		t.Cleanup(func() { context.RemoveSMContext(newer.Ref) })
+		published := capturePublished(t)
+
+		if context.GetSMContext(newer.Ref) == nil || !waitGone(t, db, older.Ref) {
+			t.Fatalf("precondition: the newer copy was not served and the older released")
+		}
+		if hasDel(published(supi)) {
+			t.Errorf("releasing the older copy reported the end of the subscriber's session")
+		}
+	})
+	t.Run("released on request", func(t *testing.T) {
+		db := withStore(t)
+		const supi = "imsi-208930018809021"
+		a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9021})
+		b := context.NewSMContext(supi, 1)
+		t.Cleanup(func() { context.RemoveSMContext(b.Ref) })
+		published := capturePublished(t)
+
+		release := models.NewReleaseSmContextRequest()
+		release.SetJsonData(models.SmContextReleaseData{})
+		txn := transaction.NewTransaction(*release, nil, svcmsgtypes.ReleaseSmContext)
+		txn.CtxtKey = a.Ref
+		if _, err := fsm.SmfTxnFsmHandle.TxnLoadCtxt(txn); err != nil {
+			t.Fatalf("the release was refused: %v", err)
+		}
+		if err := producer.HandlePDUSessionSMContextRelease(txn); err != nil || !waitGone(t, db, a.Ref) {
+			t.Fatalf("precondition: the stored session was not released: %v", err)
+		}
+		if hasDel(published(supi)) {
+			t.Errorf("releasing the superseded session reported the end of the subscriber's session")
+		}
+	})
+}
+
+// A restored session that is the subscriber's current one does end the subscriber's session when it
+// is released.
+func TestReleasingTheCurrentRestoredSessionReportsItsEnd(t *testing.T) {
+	db := withStore(t)
+	p := newPeers(t)
+	nodeIP := freshNode()
+	supi := freshSupi()
+	upf := context.NewUPF(context.NewNodeID(nodeIP), nil)
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: time.Now()}
+	a := stored(t, db, supi, storedOpts{seid: 9022, anchorOn: nodeIP, amf: p.srv.URL, pcf: p.srv.URL})
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not restored")
+	}
+	published := capturePublished(t)
+
+	producer.RestoreSessionsOnUPF(*context.NewNodeID(nodeIP), time.Now())
+
+	if !waitGone(t, db, a.Ref) {
+		t.Fatalf("precondition: the restored session was not released")
+	}
+	p.waitReleased(t)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !hasDel(published(supi)) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !hasDel(published(supi)) {
+		t.Errorf("releasing the subscriber's current session did not report its end")
 	}
 }
 

@@ -75,16 +75,24 @@ func SetupSmfCollection() {
 		logger.DataRepoLog.Errorf("create index failed on identifier and pduSessionID fields: %v", err)
 	}
 
+	setupSmfCount()
+
+	startSmContextWriteWorkers()
+}
+
+// setupSmfCount reads this start's smfCount: the datastore's "smfCount" counter, which every start
+// of the SMF with the datastore enabled increments. It is published as SMF_COUNT, and the sessions
+// this start creates record it as the start that created them (see nextCreationStamp).
+func setupSmfCount() {
 	smfCount := mongoapi.CommonDBClient.GetUniqueIdentity("smfCount")
 	logger.DataRepoLog.Infof("unique id - init smfCount %d", smfCount)
+	smfCountAtStart.Store(smfCount)
 
 	// set os env
 	setEnvErr := os.Setenv("SMF_COUNT", strconv.Itoa(int(smfCount)))
 	if setEnvErr != nil {
 		logger.DataRepoLog.Errorln("setting SMF_COUNT env variable is failed")
 	}
-
-	startSmContextWriteWorkers()
 }
 
 // print out sm context
