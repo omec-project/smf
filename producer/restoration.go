@@ -7,8 +7,10 @@ import (
 	gocontext "context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
@@ -84,6 +86,22 @@ var sessionsLastSeenOn sync.Map // UPF node IP -> map[string]struct{} of SMConte
 func rememberAnchored(nodeIP string, anchored []*context.SMContext) {
 	refs := make(map[string]struct{}, len(anchored))
 	for _, smContext := range anchored {
+		refs[smContext.Ref] = struct{}{}
+	}
+	sessionsLastSeenOn.Store(nodeIP, refs)
+}
+
+// rememberAlso adds sessions a sweep found anchored on the node to those last seen there, keeping
+// the rest. A sweep that found nothing to re-install has not examined the sessions whose locks it
+// could not take, and what was last seen of those is what attributes them to this node.
+func rememberAlso(nodeIP string, found []*context.SMContext) {
+	refs := make(map[string]struct{}, len(found))
+	if value, ok := sessionsLastSeenOn.Load(nodeIP); ok {
+		if seen, ok := value.(map[string]struct{}); ok {
+			maps.Copy(refs, seen)
+		}
+	}
+	for _, smContext := range found {
 		refs[smContext.Ref] = struct{}{}
 	}
 	sessionsLastSeenOn.Store(nodeIP, refs)
@@ -220,19 +238,22 @@ func enumerateWithRetry(nodeID context.NodeID, nodeIP string, run *restorationRu
 	deadline := time.Now().Add(enumerationWindow)
 	for attempt := 0; ; attempt++ {
 		anchored, unexaminable, establishing := context.SessionsAnchoredOn(nodeID, run.recovery)
-		if len(anchored) > 0 || len(unexaminable) == 0 || !time.Now().Before(deadline) || run.isSuperseded() {
-			if len(unexaminable) > 0 && len(anchored) == 0 {
+		// Sessions restored from the datastore are released rather than re-installed, so finding only
+		// those is no reason to stop looking at the sessions that were busy.
+		reinstall, _ := splitRestoredFromStore(anchored)
+		if len(reinstall) > 0 || len(unexaminable) == 0 || !time.Now().Before(deadline) || run.isSuperseded() {
+			if len(unexaminable) > 0 && len(reinstall) == 0 {
 				// Reported as a fault only when nothing explains it. A run that displaced another
 				// is the expected case: the displaced one abandons at its next checkpoint but can
 				// still hold a session's lock inside reissue until then, and calling that "none
 				// could be restored" reads as a defect in the restoration rather than two runs
 				// handing over.
 				if run.displacedAPriorRun {
-					logger.PfcpLog.Warnf("UPF[%s] found nothing on %d attempt(s) and %d session(s) could "+
+					logger.PfcpLog.Warnf("UPF[%s] found nothing to re-install on %d attempt(s) and %d session(s) could "+
 						"not be examined; the restoration this one displaced has not released them yet, "+
 						"so they are left to the sweep that follows", nodeIP, attempt+1, len(unexaminable))
 				} else {
-					logger.PfcpLog.Errorf("UPF[%s] found nothing on %d attempt(s) and %d session(s) could "+
+					logger.PfcpLog.Errorf("UPF[%s] found nothing to re-install on %d attempt(s) and %d session(s) could "+
 						"not be examined; %d of those were last seen anchored here",
 						nodeIP, attempt+1, len(unexaminable), attributableTo(nodeIP, unexaminable))
 				}
@@ -249,7 +270,15 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 	}
 
 	anchored, unexaminable, establishing := enumerateWithRetry(nodeID, nodeIP, run)
+	// Sessions read back from the datastore are released rather than re-installed, and only once the
+	// others have been dealt with: each release waits on the AMF, which must not hold up the sessions
+	// that can be restored.
+	anchored, fromStore := splitRestoredFromStore(anchored)
 	if len(anchored) == 0 {
+		if len(fromStore) > 0 {
+			rememberAlso(nodeIP, fromStore)
+		}
+		notReleased := releaseRestoredFromStore(fromStore, nodeIP)
 		// Two different outcomes, and only one of them is good news. A node with nothing anchored on
 		// it needs nothing done. A node whose every session was locked for the whole window has a
 		// population that is just as dead as before, and saying "nothing to restore" about it --
@@ -261,7 +290,7 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 			logger.PfcpLog.Errorf("UPF[%s] restarted and %d session(s) last seen anchored on it could not be "+
 				"examined within %s; they are left unrestored, not absent (%d session(s) were unexaminable "+
 				"in total, the rest belong elsewhere)", nodeIP, stranded, enumerationWindow, len(unexaminable))
-			metrics.SetUpfUnrestoredSessions(context.SMF_Self().NfInstanceID, nodeIP, stranded)
+			metrics.SetUpfUnrestoredSessions(context.SMF_Self().NfInstanceID, nodeIP, stranded+notReleased)
 			return
 		}
 		if len(unexaminable) > 0 {
@@ -281,14 +310,17 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 			// success over a leg this node no longer holds.
 			logger.PfcpLog.Infof("UPF[%s] restarted with no established sessions to restore; %d are "+
 				"still being set up and are left to the paths establishing them", nodeIP, establishing)
+		} else if len(fromStore) > 0 {
+			logger.PfcpLog.Infof("UPF[%s] restarted with no sessions to re-install; the %d anchored on it were "+
+				"restored from the datastore and are released instead (%d could not be)", nodeIP, len(fromStore), notReleased)
 		} else {
 			logger.PfcpLog.Infof("UPF[%s] restarted with no sessions anchored on it; nothing to restore", nodeIP)
 		}
-		metrics.SetUpfUnrestoredSessions(context.SMF_Self().NfInstanceID, nodeIP, 0)
+		metrics.SetUpfUnrestoredSessions(context.SMF_Self().NfInstanceID, nodeIP, notReleased)
 		return
 	}
 	logger.PfcpLog.Infof("UPF[%s] restarted; restoring %d session(s)", nodeIP, len(anchored))
-	rememberAnchored(nodeIP, anchored)
+	rememberAnchored(nodeIP, slices.Concat(anchored, fromStore))
 
 	// Every anchored session is currently not carrying traffic; the gauge falls as they come back,
 	// so it reads as the outstanding backlog while a restoration is running and as the sessions
@@ -306,7 +338,9 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 			// on the node, so the run that superseded this one enumerates them again and may well
 			// restore them against the incarnation that is now current. Releasing them here would
 			// tear down sessions that are about to be repaired, on the evidence of a UPF that no
-			// longer exists.
+			// longer exists. The sessions restored from the datastore are left to that run too: this
+			// path releases them in finish, after the waves. A run with nothing to re-install has
+			// released them already, superseded or not.
 			return
 		}
 
@@ -344,7 +378,7 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 				logger.PfcpLog.Errorf("UPF[%s] restoration stopped after %d consecutive wave(s) with no response: "+
 					"%d restored, %d not restored, %d never attempted, %d could not be examined",
 					nodeIP, consecutiveFailedWaves, restored, len(unrestored), skipped, unknown)
-				finish(nodeIP, restored, skipped, unknown, gone, unrestored)
+				finish(nodeIP, restored, skipped, unknown, gone, unrestored, fromStore)
 				return
 			}
 		} else {
@@ -355,10 +389,55 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 	logger.PfcpLog.Infof("UPF[%s] restoration complete: %d restored, %d not restored, %d not attempted "+
 		"(busy, purged, or no longer live), %d could not be examined, %d no longer on this node",
 		nodeIP, restored, len(unrestored), skipped, unknown, gone)
-	finish(nodeIP, restored, skipped, unknown, gone, unrestored)
+	finish(nodeIP, restored, skipped, unknown, gone, unrestored, fromStore)
 }
 
-// finish records the outcome and settles whatever the node would not accept.
+// splitRestoredFromStore separates the sessions read back from the datastore after this SMF started
+// from the ones it can re-install.
+func splitRestoredFromStore(anchored []*context.SMContext) (reinstall, fromStore []*context.SMContext) {
+	reinstall = make([]*context.SMContext, 0, len(anchored))
+	for _, smContext := range anchored {
+		if smContext.RestoredFromStore() {
+			fromStore = append(fromStore, smContext)
+		} else {
+			reinstall = append(reinstall, smContext)
+		}
+	}
+	return reinstall, fromStore
+}
+
+// releaseRestoredFromStore resolves the sessions anchored on the restarted node that were read back
+// from the datastore after this SMF started, as sessions that cannot be restored: released, with the
+// AMF and the PCF told. Re-installing one would program the user plane for a UE address allocated
+// by an earlier start of the SMF, which this one's allocator never reserved and may have given to
+// another UE since; leaving one in place reports a session as active that carries nothing. It
+// returns how many could not be released, which are still without service.
+func releaseRestoredFromStore(restored []*context.SMContext, nodeIP string) (notReleased int) {
+	if len(restored) == 0 {
+		return 0
+	}
+	released, gone := 0, 0
+	for _, smContext := range restored {
+		smContext.SubPfcpLog.Warnf("session was restored from the datastore and is not re-installed on UPF[%s]; releasing it", nodeIP)
+		if err := releaseOneSession(smContext); errors.Is(err, errSessionGone) {
+			smContext.SubPfcpLog.Infof("session was released or replaced meanwhile; not releasing it again")
+			gone++
+			continue
+		} else if err != nil {
+			smContext.SubPfcpLog.Errorf("releasing the restored session failed: %v", err)
+			continue
+		}
+		released++
+	}
+	notReleased = len(restored) - released - gone
+	logger.PfcpLog.Infof("UPF[%s] %d session(s) restored from the datastore were released rather than re-installed, "+
+		"%d were released or replaced meanwhile, %d could not be", nodeIP, released, gone, notReleased)
+	metrics.AddUpfRestorationStats(context.SMF_Self().NfInstanceID, nodeIP, "releasedRestoredFromStore", released)
+	return notReleased
+}
+
+// finish records the outcome, settles whatever the node would not accept, and releases the sessions
+// restored from the datastore, which were never offered to it.
 //
 // The counts are separate on purpose. A restoration that restored some sessions and released the
 // rest must not be readable as one that simply completed -- that conflation is the shape of the
@@ -369,7 +448,7 @@ func restoreSessions(nodeID context.NodeID, nodeIP string, run *restorationRun) 
 // those nothing could be learned about. A session that could not be examined has not been shown to
 // be healthy, and leaving it out of the count is how a restoration comes to report success over a
 // population that is still dead.
-func finish(nodeIP string, restored, skipped, unknown, gone int, unrestored []*context.SMContext) {
+func finish(nodeIP string, restored, skipped, unknown, gone int, unrestored, fromStore []*context.SMContext) {
 	smfID := context.SMF_Self().NfInstanceID
 	metrics.AddUpfRestorationStats(smfID, nodeIP, "restored", restored)
 	metrics.AddUpfRestorationStats(smfID, nodeIP, "skipped", skipped)
@@ -378,7 +457,7 @@ func finish(nodeIP string, restored, skipped, unknown, gone int, unrestored []*c
 	// Counted after the releases, not before. A session that was torn down is no longer a session
 	// without service -- the UE will establish a new one -- whereas one the release could not reach
 	// still is, and so is one nothing could be learned about.
-	stillWithoutService := unknown + resolveUnrestorable(unrestored, nodeIP)
+	stillWithoutService := unknown + resolveUnrestorable(unrestored, nodeIP) + releaseRestoredFromStore(fromStore, nodeIP)
 	metrics.SetUpfUnrestoredSessions(smfID, nodeIP, stillWithoutService)
 }
 
@@ -792,18 +871,23 @@ func resolveUnrestorable(unrestored []*context.SMContext, nodeIP string) (notRel
 	if len(unrestored) == 0 {
 		return 0
 	}
-	released := 0
+	released, gone := 0, 0
 	for _, smContext := range unrestored {
 		smContext.SubPfcpLog.Errorf("session could not be restored on UPF[%s]; releasing it", nodeIP)
-		if err := releaseOneSession(smContext); err != nil {
+		if err := releaseOneSession(smContext); errors.Is(err, errSessionGone) {
+			smContext.SubPfcpLog.Infof("session was released or replaced meanwhile; not releasing it again")
+			gone++
+			continue
+		} else if err != nil {
 			smContext.SubPfcpLog.Errorf("releasing the unrestorable session failed: %v", err)
 			continue
 		}
 		released++
 	}
-	logger.PfcpLog.Errorf("UPF[%s] %d session(s) could not be restored, %d released", nodeIP, len(unrestored), released)
+	logger.PfcpLog.Errorf("UPF[%s] %d session(s) could not be restored, %d released, %d released or replaced meanwhile",
+		nodeIP, len(unrestored), released, gone)
 	metrics.AddUpfRestorationStats(context.SMF_Self().NfInstanceID, nodeIP, "released", released)
-	return len(unrestored) - released
+	return len(unrestored) - released - gone
 }
 
 // releaseUnrestorableSession tears down a session the restarted UPF would not accept, and tells the
@@ -834,6 +918,10 @@ func releaseOneSession(smContext *context.SMContext) (err error) {
 
 var errSessionBusy = errors.New("session is busy")
 
+// errSessionGone is a session that was released, or replaced by its subscriber, after the sweep that
+// listed it for release.
+var errSessionGone = errors.New("session was released or replaced since it was listed")
+
 // markReleasedAndBuild does the in-memory half of the release under SMLock: the state change and
 // assembling the transfer, both of which touch fields other paths mutate under that lock.
 //
@@ -846,6 +934,15 @@ func markReleasedAndBuild(smContext *context.SMContext) (*models.N1N2MessageTran
 		return nil, errSessionBusy
 	}
 	defer smContext.SMLock.Unlock()
+
+	// Both callers release sessions a sweep listed before the restoration waves, after the waves. One
+	// released since, or replaced by its UE re-establishing the PDU session, is left alone: the release
+	// command names the subscriber and the PDU session ID, and the AMF would release the session that
+	// replaced it. LocalPurged is kept, though both purge paths set SmStateRelease with it under this
+	// lock, as reissue keeps it: against a state written back over SmStateRelease.
+	if smContext.SMContextState == context.SmStateRelease || smContext.LocalPurged.Load() || smContext.SupersededByAnother() {
+		return nil, errSessionGone
+	}
 
 	// RemoveSMContextLocked both transitions to SmStateRelease (publishing the terminal Kafka
 	// event) and removes the pool/canonicalRef entries; a bare ChangeState left them resolvable

@@ -143,9 +143,10 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 	return nil
 }
 
-// ReleaseRestoredSession releases a session read back from the datastore whose subscriber is
-// establishing its PDU session ID again. As for an in-memory replacement, the context is removed and
-// its PFCP sessions are deleted without waiting for the answers.
+// ReleaseRestoredSession releases a session read back from the datastore that is not to be served:
+// its subscriber is establishing its PDU session ID again, or a later session for that PDU session
+// superseded it. As for an in-memory replacement, the context is removed and its PFCP sessions are
+// deleted without waiting for the answers.
 func ReleaseRestoredSession(smContext *smf_context.SMContext) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()

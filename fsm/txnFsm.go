@@ -55,10 +55,12 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		txn.CtxtKey = CtxtKey
 	case svcmsgtypes.UpdateSmContext:
 		fallthrough
-	case svcmsgtypes.ReleaseSmContext:
-		fallthrough
 	case svcmsgtypes.SmPolicyUpdateNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
+	case svcmsgtypes.ReleaseSmContext:
+		// A release names the session its sender holds, and is honoured even for a stored session a
+		// later one has superseded; refusing it would leave the sender holding a session nothing serves.
+		txn.Ctxt = smf_context.GetSMContextForRelease(txn.CtxtKey)
 
 	case svcmsgtypes.PfcpSessCreate:
 		fallthrough

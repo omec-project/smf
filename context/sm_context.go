@@ -359,9 +359,17 @@ type SMContext struct {
 	lastUpfName string `json:"-" yaml:"-" bson:"-"`
 	lastUpfIP   string `json:"-" yaml:"-" bson:"-"`
 
+	// CreatedSmfCount and CreatedSeq record when the session was created: the smfCount of the SMF
+	// start that created it and its place in that start's sequence. They order the sessions stored
+	// for one subscriber and PDU session ID, so that after a restart the most recently created is
+	// served and the others are released. Zero in a document written before they existed.
+	CreatedSmfCount int32  `json:"createdSmfCount,omitempty" yaml:"createdSmfCount" bson:"createdSmfCount,omitempty"`
+	CreatedSeq      uint64 `json:"createdSeq,omitempty" yaml:"createdSeq" bson:"createdSeq,omitempty"`
+
 	// restoredFromStore is set on a context read back from the datastore rather than created by this
 	// process. Such a session was never counted in the session gauge, and the rule identifiers it
-	// carries were allocated by an earlier incarnation, so releasing it frees none of them here.
+	// carries were allocated by an earlier incarnation, so releasing it frees none of them here. It is
+	// not re-installed on a user plane that restarts.
 	restoredFromStore bool `json:"-" yaml:"-" bson:"-"`
 }
 
@@ -389,6 +397,7 @@ func NewSMContext(identifier string, pduSessID int32) (smContext *SMContext) {
 	smContext.SMContextState = SmStateInit
 	smContext.Identifier = identifier
 	smContext.PDUSessionID = pduSessID
+	smContext.CreatedSmfCount, smContext.CreatedSeq = nextCreationStamp()
 	smContext.PFCPContext = make(map[string]*PFCPSessionContext)
 
 	// initialize SM Policy Data
@@ -681,10 +690,9 @@ func GetSMContext(ref string) (smContext *SMContext) {
 		// could not delete: without that check, a pool miss right after a failed delete would
 		// read the still-present, released document back from Mongo and resurrect it here.
 		if dbContext := GetSMContextByRefInDB(ref); dbContext != nil {
-			// LoadOrStore: another lookup, or a release of the stored session, may have put an
-			// instance in the pool since the miss, and both have to act on that one.
-			actual, _ := smContextPool.LoadOrStore(ref, dbContext)
-			smContext = actual.(*SMContext)
+			// A stored session superseded by a later one for the same PDU session is released here
+			// rather than served as live.
+			smContext = admitRestored(dbContext)
 		}
 	}
 
@@ -719,11 +727,17 @@ func GetSMContext(ref string) (smContext *SMContext) {
 // They are excluded from restoration deliberately -- reissuing over an establishment in flight
 // overwrites it -- but a caller that sees no anchored sessions must not conclude the node is empty
 // when this is non-zero.
+//
+// Sessions read back from the datastore after this process started are returned with the others,
+// whatever else would exclude them, unless a later session superseded them, and the caller tells
+// them apart by RestoredFromStore: they are not re-installed but released, since their UE addresses
+// were allocated by an earlier start of the SMF, which this one cannot vouch for.
 func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*SMContext, couldNotExamine []string, stillEstablishing int) {
 	nodeIP := nodeID.ResolveNodeIdToIp().String()
 
 	anchored := make([]*SMContext, 0)
 	unexaminable := make([]string, 0)
+	restored := 0
 	scanned, superseded, establishing, recreated := 0, 0, 0, 0
 	otherKeys := make(map[string]int)
 	smContextPool.Range(func(_, value any) bool {
@@ -795,6 +809,7 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 				"failing the create instead of completing it without that node's rules", nodeIP)
 		}
 		identifier, pduSessionID, ref := smContext.Identifier, smContext.PDUSessionID, smContext.Ref
+		wasRestored := smContext.restoredFromStore
 		if !onThisNode {
 			for key := range smContext.PFCPContext {
 				otherKeys[key]++
@@ -803,6 +818,17 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 		smContext.SMLock.Unlock()
 
 		if !onThisNode {
+			return true
+		}
+		if wasRestored {
+			// Unless a later session for the same subscriber and PDU session superseded it. Releasing
+			// it tells the AMF to release the subscriber's PDU session, which is now that later one.
+			if smContext.SupersededByAnother() {
+				superseded++
+				return true
+			}
+			restored++
+			anchored = append(anchored, smContext)
 			return true
 		}
 		if neverAcknowledged || createInFlight {
@@ -826,8 +852,8 @@ func SessionsAnchoredOn(nodeID NodeID, recovery time.Time) (anchoredSessions []*
 	// "no sessions anchored" with no way to tell an empty pool from a mis-keyed lookup.
 	logger.CtxLog.Infof("sessions anchored on %s: %d of %d scanned (%d could not be examined and may be "+
 		"on any node, %d superseded by a later session for the same subscriber, %d still being established, "+
-		"%d already established on the restarted node)",
-		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing, recreated)
+		"%d already established on the restarted node; %d of those found were restored from the datastore and are to be released)",
+		nodeIP, len(anchored), scanned, len(unexaminable), superseded, establishing, recreated, restored)
 	if len(anchored) == 0 && len(otherKeys) > 0 {
 		// Separates an empty pool from a lookup that did not match: if sessions are anchored under
 		// some other key, the node identity resolved differently here than when they were created.
@@ -1558,6 +1584,12 @@ func (smContext *SMContext) PublishSmCtxtInfo() {
 		kafkaSmCtxt.IPAddress = smContext.PDUAddress.Ip.String()
 	}
 	kafkaSmCtxt.SmfSubState, op = mapPduSessStateToMetricStateAndOp(smContext.SMContextState)
+	if op == mi.SubsOpDel && smContext.SupersededByAnother() {
+		// The end of a stored session that a later session for the same PDU session replaced is not
+		// the end of the subscriber's session: consumers key subscribers by IMSI, and reporting it
+		// would remove the record of the live one.
+		return
+	}
 	kafkaSmCtxt.SmfId = smContext.Ref
 	kafkaSmCtxt.Slice = "sd:" + smContext.Snssai.GetSd() + " sst:" + strconv.Itoa(int(smContext.Snssai.GetSst()))
 	kafkaSmCtxt.Dnn = smContext.Dnn
