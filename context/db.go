@@ -8,6 +8,7 @@
 package context
 
 import (
+	gocontext "context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -62,6 +63,16 @@ func SetupSmfCollection() {
 	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, seidFilterKey)
 	if err != nil {
 		logger.DataRepoLog.Errorln("create index failed on TxnId field")
+	}
+
+	// The sessions stored for one subscriber and PDU session ID. Not unique: there are several until
+	// the older ones are released, and one whose delete failed stays stored beside its successor.
+	err = mongoapi.CommonDBClient.EnsureIndex(gocontext.Background(), SmContextDataColl, mongoapi.IndexSpec{
+		Name: smContextKeyIndexName,
+		Keys: mongoapi.AscendingKeys(identifierFilterKey, pduSessionIDFilterKey),
+	})
+	if err != nil {
+		logger.DataRepoLog.Errorf("create index failed on identifier and pduSessionID fields: %v", err)
 	}
 
 	smfCount := mongoapi.CommonDBClient.GetUniqueIdentity("smfCount")
@@ -469,6 +480,9 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 		}
 		smContext.RebuildCommunicationClient()
 		smContext.RebuildSMPolicyClient()
+		// Set here, where every context read back from the datastore is built, so that none is
+		// served or released as one this process created.
+		smContext.restoredFromStore = true
 	} else {
 		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
 		return nil

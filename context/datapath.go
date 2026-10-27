@@ -910,6 +910,10 @@ func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
 
 	// Deactivate Tunnels
 	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		if curDataPathNode.UPF == nil {
+			// A data path read back from the datastore can name a UPF this process does not hold.
+			continue
+		}
 		curDataPathNode.DeactivateUpLinkTunnel(smContext)
 		curDataPathNode.DeactivateDownLinkTunnel(smContext)
 	}

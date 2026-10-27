@@ -143,6 +143,20 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 	return nil
 }
 
+// ReleaseRestoredSession releases a session read back from the datastore whose subscriber is
+// establishing its PDU session ID again. As for an in-memory replacement, the context is removed and
+// its PFCP sessions are deleted without waiting for the answers.
+func ReleaseRestoredSession(smContext *smf_context.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	smContext.LocalPurged.Store(true)
+	smf_context.RemoveSMContextLocked(smContext)
+	if smContext.Tunnel != nil {
+		releaseTunnel(smContext)
+	}
+}
+
 func HandlePDUSessionSMContextCreate(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.PostSmContextsRequest)
@@ -833,6 +847,12 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		dataPath.DeactivateTunnelAndPDR(smContext)
 		for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+			if curDataPathNode.UPF == nil {
+				// A data path read back from the datastore can name a UPF this process holds no
+				// association with; there is nothing there to delete.
+				smContext.SubPduSessLog.Warnln("releaseTunnel, data path names a UPF this SMF does not hold; nothing to delete")
+				continue
+			}
 			// Keyed by the PFCPContext entry the node's session is held under, which is also what the
 			// response handlers recover from the local SEID. Neither the UPF ID nor a fresh
 			// resolution of the NodeID will do: both go through the node's address as it resolves

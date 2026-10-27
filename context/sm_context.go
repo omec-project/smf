@@ -358,6 +358,10 @@ type SMContext struct {
 	// disconnect event, so without this the final Kafka event would report an empty UPF.
 	lastUpfName string `json:"-" yaml:"-" bson:"-"`
 	lastUpfIP   string `json:"-" yaml:"-" bson:"-"`
+
+	// restoredFromStore is set on a context read back from the datastore rather than created by this
+	// process. Such a session was never counted in the session gauge.
+	restoredFromStore bool `json:"-" yaml:"-" bson:"-"`
 }
 
 func canonicalName(identifier string, pduSessID int32) (canonical string) {
@@ -676,8 +680,10 @@ func GetSMContext(ref string) (smContext *SMContext) {
 		// could not delete: without that check, a pool miss right after a failed delete would
 		// read the still-present, released document back from Mongo and resurrect it here.
 		if dbContext := GetSMContextByRefInDB(ref); dbContext != nil {
-			smContextPool.Store(ref, dbContext)
-			smContext = dbContext
+			// LoadOrStore: another lookup, or a release of the stored session, may have put an
+			// instance in the pool since the miss, and both have to act on that one.
+			actual, _ := smContextPool.LoadOrStore(ref, dbContext)
+			smContext = actual.(*SMContext)
 		}
 	}
 
@@ -920,9 +926,13 @@ func RemoveSMContextLocked(smContext *SMContext) {
 	// Use CompareAndDelete so a replacement context (created after this one was superseded via
 	// restoration) is not accidentally unlinked from the canonical map.
 	canonicalRef.CompareAndDelete(canonicalName(smContext.Identifier, smContext.PDUSessionID), smContext.Ref)
-	// Sess Stats
-	smContextActive := decSMContextActive()
-	metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
+	// Sess Stats. A context read back from the datastore was never counted -- only NewSMContext
+	// counts -- and decrementing for it would undercount the live sessions by one, or wrap the
+	// unsigned count when none is counted.
+	if !smContext.restoredFromStore {
+		smContextActive := decSMContextActive()
+		metrics.SetSessStats(SMF_Self().NfInstanceID, smContextActive)
+	}
 }
 
 // *** add unit test ***//
