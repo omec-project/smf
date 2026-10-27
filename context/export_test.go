@@ -44,3 +44,15 @@ func AllocatorHolds(a *IPAllocator, ip net.IP) bool {
 	defer a.g.lock.Unlock()
 	return a.g.isUsed[int64(IPAddrOffset(ip.To4(), a.ipNetwork.IP))]
 }
+
+// HoldsQER reports whether the QER with this identifier is still allocated from the UPF's pool.
+func (upf *UPF) HoldsQER(qerID uint32) bool {
+	_, ok := upf.qerPool.Load(qerID)
+	return ok
+}
+
+// HoldsBAR reports whether the BAR with this identifier is still allocated from the UPF's pool.
+func (upf *UPF) HoldsBAR(barID uint8) bool {
+	_, ok := upf.barPool.Load(barID)
+	return ok
+}

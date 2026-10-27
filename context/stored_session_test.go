@@ -5,6 +5,7 @@ package context_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"reflect"
 	"sync"
@@ -16,9 +17,11 @@ import (
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/fsm"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
+	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/transaction"
 	"github.com/omec-project/util/mongoapi"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/wmnsk/go-pfcp/message"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -163,8 +166,10 @@ func withStore(t *testing.T) *memDB {
 }
 
 type storedOpts struct {
-	ip         string // an address an earlier start of the SMF allocated from ueSubnet
-	unknownUPF string // a node the data path names that this SMF does not hold
+	ip         string          // an address an earlier start of the SMF allocated from ueSubnet
+	unknownUPF string          // a node the data path names that this SMF does not hold
+	upf        *context.UPF    // a node this SMF holds, which the data path names and the session is anchored on
+	rules      [2]*context.PDR // the uplink and downlink rules the session holds on upf
 	seid       uint64
 }
 
@@ -198,14 +203,14 @@ func stored(t *testing.T, db *memDB, supi string, o storedOpts) *context.SMConte
 		smContext.DNNInfo = &context.SnssaiSmfDnnInfo{UeIPAllocator: earlier}
 	}
 	if o.unknownUPF != "" {
-		node := &context.DataPathNode{UPF: &context.UPF{NodeID: *context.NewNodeID(o.unknownUPF)}}
-		node.UpLinkTunnel = &context.GTPTunnel{TEID: 1, PDR: map[string]*context.PDR{"uplink": {PDRID: 1}}}
-		dataPath := context.NewDataPath()
-		dataPath.FirstDPNode = node
-		dataPath.IsDefaultPath = true
-		smContext.Tunnel = &context.UPTunnel{DataPathPool: context.DataPathPool{1: dataPath}}
+		smContext.Tunnel = tunnelOn(&context.UPF{NodeID: *context.NewNodeID(o.unknownUPF)}, &context.PDR{PDRID: 1}, nil)
 	}
-	if o.seid != 0 {
+	if o.upf != nil {
+		smContext.Tunnel = tunnelOn(o.upf, o.rules[0], o.rules[1])
+		smContext.PFCPContext[o.upf.NodeID.ResolveNodeIdToIp().String()] = &context.PFCPSessionContext{
+			NodeID: o.upf.NodeID, LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
+		}
+	} else if o.seid != 0 {
 		smContext.PFCPContext["10.99.0.1"] = &context.PFCPSessionContext{
 			NodeID: *context.NewNodeID("10.99.0.1"), LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
 		}
@@ -258,6 +263,20 @@ func configuredPool(t *testing.T) *context.IPAllocator {
 		self.Unlock()
 	})
 	return pool
+}
+
+// tunnelOn is a default data path through one node, holding an uplink and, if given, a downlink
+// rule there.
+func tunnelOn(upf *context.UPF, uplink, downlink *context.PDR) *context.UPTunnel {
+	node := &context.DataPathNode{UPF: upf}
+	node.UpLinkTunnel = &context.GTPTunnel{TEID: 1, PDR: map[string]*context.PDR{"uplink": uplink}}
+	if downlink != nil {
+		node.DownLinkTunnel = &context.GTPTunnel{PDR: map[string]*context.PDR{"downlink": downlink}}
+	}
+	dataPath := context.NewDataPath()
+	dataPath.FirstDPNode = node
+	dataPath.IsDefaultPath = true
+	return &context.UPTunnel{DataPathPool: context.DataPathPool{1: dataPath}}
 }
 
 func nfProfile(nfType models.NFType) models.NFProfileDiscovery {
@@ -577,4 +596,171 @@ func TestReleasingAStoredSessionLeavesAnotherSessionsSEIDAlone(t *testing.T) {
 	if got := context.SEIDHeldBy(seid); got != live {
 		t.Errorf("releasing a stored session removed the live session's in-memory SEID entry")
 	}
+}
+
+// liveRulesOn stands in for a user plane this SMF holds, with a live session's rules allocated
+// there: a PDR, its FAR and the FAR's BAR, and a QER, for each direction. It returns the user plane,
+// the socket standing in for it, the live rules, and rules carrying the same identifiers, as a
+// stored session an earlier start of the SMF allocated them to would carry them.
+func liveRulesOn(t *testing.T) (upf *context.UPF, upfConn *net.UDPConn, live, carried [2]*context.PDR) {
+	t.Helper()
+	upfConn, upfPort := listenLoopback(t)
+	startSmfPfcpSocket(t)
+	upf = context.NewUPF(context.NewNodeID("127.0.0.1"), nil)
+	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(upf.NodeID) })
+	upf.UPFStatus = context.AssociatedSetUpSuccess
+	upf.Port = upfPort
+
+	for i := range live {
+		pdr, err := upf.AddPDR()
+		if err != nil {
+			t.Fatalf("allocating the live session's rules: %v", err)
+		}
+		bar, err := upf.AddBAR()
+		if err != nil {
+			t.Fatalf("allocating the live session's rules: %v", err)
+		}
+		qer, err := upf.AddQER()
+		if err != nil {
+			t.Fatalf("allocating the live session's rules: %v", err)
+		}
+		pdr.FAR.BAR = bar
+		pdr.QER = []*context.QER{qer}
+		live[i] = pdr
+		carried[i] = &context.PDR{
+			PDRID: pdr.PDRID,
+			FAR:   &context.FAR{FARID: pdr.FAR.FARID, BAR: &context.BAR{BARID: bar.BARID}},
+			QER:   []*context.QER{{QERID: qer.QERID}},
+		}
+	}
+	return upf, upfConn, live, carried
+}
+
+// stillHeld reports, as a test error, each identifier of the live rules the user plane's pools no
+// longer hold.
+func stillHeld(t *testing.T, upf *context.UPF, live [2]*context.PDR) {
+	t.Helper()
+	for i, direction := range []string{"uplink", "downlink"} {
+		pdr := live[i]
+		for rule, held := range map[string]bool{
+			fmt.Sprintf("PDR %d", pdr.PDRID):         upf.HoldsPDR(pdr.PDRID),
+			fmt.Sprintf("FAR %d", pdr.FAR.FARID):     upf.HoldsFAR(pdr.FAR.FARID),
+			fmt.Sprintf("BAR %d", pdr.FAR.BAR.BARID): upf.HoldsBAR(pdr.FAR.BAR.BARID),
+			fmt.Sprintf("QER %d", pdr.QER[0].QERID):  upf.HoldsQER(pdr.QER[0].QERID),
+		} {
+			if !held {
+				t.Errorf("releasing the stored session took %s from the live session's %s rule", rule, direction)
+			}
+		}
+	}
+}
+
+// A stored session whose data path names a user plane this SMF holds has its PFCP session deleted
+// there. The identifiers of its rules were allocated by an earlier incarnation, and this one may
+// have given them to a live session since: releasing the stored session leaves them with that one.
+func TestReleasingAStoredSessionDeletesItsPFCPSessionAndFreesNoRuleIdentifiers(t *testing.T) {
+	db := withStore(t)
+	upf, upfConn, live, carried := liveRulesOn(t)
+	const supi = "imsi-208930018809032"
+	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9032})
+
+	context.ReleaseStoredSessions(supi, 1)
+
+	msg := readPfcp(t, upfConn)
+	if msg.MessageType() != message.MsgTypeSessionDeletionRequest || msg.SEID() != 9032+1000 {
+		t.Errorf("the user plane received message type %d for SEID %d, want a deletion for %d",
+			msg.MessageType(), msg.SEID(), 9032+1000)
+	}
+	if !waitGone(t, db, a.Ref) {
+		t.Errorf("the stored session was not released")
+	}
+	stillHeld(t, upf, live)
+}
+
+// A stored session a lookup reads into the pool is marked as read back, and released as one: the
+// session gauge, which never counted it, is left alone, and the identifiers its rules carry stay
+// with the live session this start gave them to.
+func TestAStoredSessionALookupReadIsReleasedAsReadBack(t *testing.T) {
+	db := withStore(t)
+	upf, upfConn, live, carried := liveRulesOn(t)
+	const supi = "imsi-208930018809033"
+	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9033})
+	if context.GetSMContext(a.Ref) == nil {
+		t.Fatalf("precondition: the stored session was not read into the pool")
+	}
+	before := sessionGauge(t)
+
+	context.ReleaseStoredSessions(supi, 1)
+
+	if msg := readPfcp(t, upfConn); msg.MessageType() != message.MsgTypeSessionDeletionRequest {
+		t.Errorf("the user plane received message type %d, want a deletion", msg.MessageType())
+	}
+	if !waitGone(t, db, a.Ref) {
+		t.Fatalf("precondition: the stored session was not released")
+	}
+	if after := sessionGauge(t); after != before {
+		t.Errorf("the session gauge moved from %v to %v releasing a session it never counted", before, after)
+	}
+	stillHeld(t, upf, live)
+}
+
+func listenLoopback(t *testing.T) (*net.UDPConn, uint16) {
+	t.Helper()
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("standing in for the UPF: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn, uint16(conn.LocalAddr().(*net.UDPAddr).Port)
+}
+
+// startSmfPfcpSocket gives the SMF a real socket to send from, with retransmissions cut short so a
+// request nobody answers does not outlive the test.
+func startSmfPfcpSocket(t *testing.T) {
+	t.Helper()
+	retries, requestTimeout, responseTimeout := udp.GetRetryTimingForTest()
+	udp.SetRetryTimingForTest(1, time.Millisecond, time.Millisecond)
+	self := context.SMF_Self()
+	cpNodeID, pfcpPort := self.CPNodeID, self.PFCPPort
+	free, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("reserving a port for the SMF: %v", err)
+	}
+	port := free.LocalAddr().(*net.UDPAddr).Port
+	free.Close()
+
+	self.CPNodeID = *context.NewNodeID("127.0.0.1")
+	self.PFCPPort = port
+	udp.Run(func(*udp.Message) {})
+	time.Sleep(50 * time.Millisecond) // let the listener bind before anything is sent
+
+	t.Cleanup(func() {
+		udp.WaitForAllTransactions()
+		if server := udp.GetServer(); server != nil {
+			if server.Conn != nil {
+				server.Conn.Close()
+				<-server.Done
+			}
+			udp.SetServer(nil)
+		}
+		self.CPNodeID, self.PFCPPort = cpNodeID, pfcpPort
+		udp.SetRetryTimingForTest(retries, requestTimeout, responseTimeout)
+	})
+}
+
+func readPfcp(t *testing.T, conn *net.UDPConn) message.Message {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatalf("setting a read deadline: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, _, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("the user plane received nothing: %v", err)
+	}
+	msg, err := message.Parse(buf[:n])
+	if err != nil {
+		t.Fatalf("parsing what the user plane received: %v", err)
+	}
+	return msg
 }

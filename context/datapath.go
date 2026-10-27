@@ -256,6 +256,13 @@ func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
 			// Remove PDR from PFCP Session
 			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
 
+			if smContext.restoredFromStore {
+				// Its rules were allocated by an earlier incarnation, and this one may have given
+				// the same identifiers to a live session since: freeing them, or removing what the
+				// UPF's pools hold under them, would take them from that session.
+				continue
+			}
+
 			// Remove of UPF
 			err := node.UPF.RemovePDR(pdr)
 			if err != nil {
@@ -302,6 +309,13 @@ func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
 
 			// Remove PDR from PFCP Session
 			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+
+			if smContext.restoredFromStore {
+				// Its rules were allocated by an earlier incarnation, and this one may have given
+				// the same identifiers to a live session since: freeing them, or removing what the
+				// UPF's pools hold under them, would take them from that session.
+				continue
+			}
 
 			// Remove from UPF
 			err := node.UPF.RemovePDR(pdr)
