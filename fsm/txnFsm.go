@@ -216,6 +216,13 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 	return transaction.TxnEventSave, nil
 }
 
+// hasSMContext reports whether the transaction found its SM context. A lookup that finds none
+// leaves a nil *SMContext in txn.Ctxt, which as an interface value is not nil.
+func hasSMContext(txn *transaction.Transaction) bool {
+	smContext, _ := txn.Ctxt.(*smf_context.SMContext)
+	return smContext != nil
+}
+
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	// Put Failure Rsp
 	switch txn.MsgType {
@@ -236,7 +243,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		}
 
 	case svcmsgtypes.UpdateSmContext:
-		if txn.Ctxt == nil {
+		if !hasSMContext(txn) {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
 			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
@@ -252,7 +259,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		}
 
 	case svcmsgtypes.ReleaseSmContext:
-		if txn.Ctxt == nil {
+		if !hasSMContext(txn) {
 			logger.PduSessLog.Warnf("PDUSessionSMContextRelease [%s] is not found", txn.CtxtKey)
 
 			problemDetails := models.NewProblemDetails()
