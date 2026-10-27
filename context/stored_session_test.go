@@ -1856,3 +1856,35 @@ func readPfcp(t *testing.T, conn *net.UDPConn) message.Message {
 	}
 	return msg
 }
+
+// A request naming a session the SMF does not serve -- here a stored session a later session
+// superseded -- is answered 404, through the transaction an SBI request runs, as the OAM read is.
+func TestARequestForASupersededSessionIsAnsweredNotFound(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809040"
+	a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9040})
+	b := context.NewSMContext(supi, 1) // established after the restart
+	t.Cleanup(func() { context.RemoveSMContext(b.Ref) })
+
+	run := func(msgType svcmsgtypes.SmfMsgType, body any, ref string) *httpwrapper.Response {
+		t.Helper()
+		txn := transaction.NewTransaction(body, nil, msgType)
+		txn.CtxtKey = ref
+		go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+		<-txn.Status
+		rsp, _ := txn.Rsp.(*httpwrapper.Response)
+		return rsp
+	}
+
+	if rsp := run(svcmsgtypes.UpdateSmContext, *models.NewUpdateSmContextRequest(), a.Ref); rsp == nil || rsp.Status != http.StatusNotFound {
+		t.Errorf("an update of a superseded session was answered %+v, want %d", rsp, http.StatusNotFound)
+	}
+	if rsp := run(svcmsgtypes.ReleaseSmContext, *models.NewReleaseSmContextRequest(), "no-such-ref"); rsp == nil || rsp.Status != http.StatusNotFound {
+		t.Errorf("a release of an unknown session was answered %+v, want %d", rsp, http.StatusNotFound)
+	}
+	// Refusing the update released that session, so the OAM read is given one of its own.
+	a2 := stored(t, db, supi, storedOpts{stamp: &stamp{1, 2}, seid: 9041})
+	if rsp := producer.HandleOAMGetUEPDUSessionInfo(a2.Ref); rsp.Status != http.StatusNotFound {
+		t.Errorf("an OAM read of a superseded session was answered %d, want %d", rsp.Status, http.StatusNotFound)
+	}
+}
