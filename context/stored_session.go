@@ -93,3 +93,10 @@ func ReleaseStoredSessions(identifier string, pduSessionID int32) {
 		ReleaseRestoredSession(smContext)
 	}
 }
+
+// RestoredFromStore reports whether the context was read back from the datastore after this process
+// started. It is set before the context is published to the pool and never changes, so it can be
+// read without SMLock.
+func (smContext *SMContext) RestoredFromStore() bool {
+	return smContext.restoredFromStore
+}

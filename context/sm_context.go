@@ -360,7 +360,8 @@ type SMContext struct {
 	lastUpfIP   string `json:"-" yaml:"-" bson:"-"`
 
 	// restoredFromStore is set on a context read back from the datastore rather than created by this
-	// process. Such a session was never counted in the session gauge.
+	// process. Such a session was never counted in the session gauge, and the rule identifiers it
+	// carries were allocated by an earlier incarnation, so releasing it frees none of them here.
 	restoredFromStore bool `json:"-" yaml:"-" bson:"-"`
 }
 

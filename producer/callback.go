@@ -1025,7 +1025,11 @@ func applyModificationLocked(smContext *smfContext.SMContext, update *qos.Policy
 		smContext.Supi, smContext.PDUSessionID)
 
 	smContext.SMLock.Lock()
-	forgetRemovedRules(smContext, pfcpParam)
+	// A session read back from the datastore can be withdrawing a rule an earlier start of the SMF
+	// allocated, whose identifiers this one may have given to a live session since; they are left
+	// allocated, as releasing the session leaves them (DeactivateUpLinkTunnel). One this start added
+	// to it since is left allocated too: a few identifiers lost, against taking a live session's.
+	forgetRemovedRules(smContext, pfcpParam, !smContext.RestoredFromStore())
 	smContext.SMLock.Unlock()
 
 	// Expected from before the transfer rather than after it. The radio's answer travels its own
@@ -1455,7 +1459,8 @@ func restoreUserPlane(smContext *smfContext.SMContext, abandoned *qos.PolicyUpda
 	}
 
 	smContext.SMLock.Lock()
-	forgetRemovedRules(smContext, pfcpParam)
+	// The revert withdraws only what the abandoned modification added, which this start allocated.
+	forgetRemovedRules(smContext, pfcpParam, true)
 	smContext.SMLock.Unlock()
 
 	smContext.SubPduSessLog.Infof("user plane returned to its pre-modification parameters")
@@ -1635,9 +1640,9 @@ func armRanAnswerGuardLocked(smContext *smfContext.SMContext) {
 }
 
 // forgetRemovedRules drops the PDRs the user plane has just accepted removing from the session's
-// tunnels and PFCP context, and returns their PDR and FAR identifiers to the pool. The caller holds
-// SMLock, and calls this only once the removal has been accepted: until then the rules are still
-// installed, and a failed removal has to find them where they were.
+// tunnels and PFCP context, and, if freeIDs, returns their PDR and FAR identifiers to the pool. The
+// caller holds SMLock, and calls this only once the removal has been accepted: until then the rules
+// are still installed, and a failed removal has to find them where they were.
 //
 // Left in the tunnels, a withdrawn rule was still the session's as far as everything reading them
 // was concerned. Restoration re-installs a restarted UPF from exactly those maps, so a rule the
@@ -1648,7 +1653,7 @@ func armRanAnswerGuardLocked(smContext *smfContext.SMContext) {
 // QER identifiers are not returned. They come from a pool of 2^32 per UPF, are scoped to the PFCP
 // session on the wire, and one per rate change is what a superseded flow QER costs; freeing them
 // safely would mean proving no PDR still names one, for a pool that does not run out.
-func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
+func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam, freeIDs bool) {
 	if len(pfcpParam.removePDR) == 0 || smContext.Tunnel == nil {
 		return
 	}
@@ -1681,6 +1686,9 @@ func forgetRemovedRules(smContext *smfContext.SMContext, pfcpParam *pfcpParam) {
 
 					delete(tunnel.PDR, name)
 					smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+					if !freeIDs {
+						continue
+					}
 					if err := node.UPF.RemovePDR(pdr); err != nil {
 						smContext.SubPduSessLog.Warnf("returning PDR %d to the pool: %v", pdr.PDRID, err)
 					}
@@ -1729,5 +1737,6 @@ func discardBuiltRules(smContext *smfContext.SMContext) {
 		}
 	}
 
-	forgetRemovedRules(smContext, discarded)
+	// Built for this modification, so this start allocated them, whatever the session's origin.
+	forgetRemovedRules(smContext, discarded, true)
 }
