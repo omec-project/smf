@@ -1888,3 +1888,27 @@ func TestARequestForASupersededSessionIsAnsweredNotFound(t *testing.T) {
 		t.Errorf("an OAM read of a superseded session was answered %d, want %d", rsp.Status, http.StatusNotFound)
 	}
 }
+
+// The PCF can notify a policy update for a stored session a later session superseded; it is told
+// the session does not exist, with a 404 and a ProblemDetails body, through the transaction the
+// notification runs.
+func TestAPolicyUpdateNotificationForASupersededSessionIsAnsweredNotFound(t *testing.T) {
+	db := withStore(t)
+	const supi = "imsi-208930018809042"
+	a := stored(t, db, supi, storedOpts{stamp: &stamp{1, 1}, seid: 9042})
+	b := context.NewSMContext(supi, 1) // established after the restart
+	t.Cleanup(func() { context.RemoveSMContext(b.Ref) })
+
+	txn := transaction.NewTransaction(models.SmPolicyNotification{}, nil, svcmsgtypes.SmPolicyUpdateNotification)
+	txn.CtxtKey = a.Ref
+	go txn.StartTxnLifeCycle(fsm.SmfTxnFsmHandle)
+	<-txn.Status
+
+	rsp, _ := txn.Rsp.(*httpwrapper.Response)
+	if rsp == nil || rsp.Status != http.StatusNotFound {
+		t.Fatalf("the notification was answered %+v, want %d", rsp, http.StatusNotFound)
+	}
+	if _, ok := rsp.Body.(*models.ProblemDetails); !ok {
+		t.Errorf("the notification was answered with a %T body, want ProblemDetails", rsp.Body)
+	}
+}
