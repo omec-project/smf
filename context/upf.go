@@ -297,6 +297,18 @@ func (upf *UPF) HeldRecovery() time.Time {
 	return upf.RecoveryTimeStamp.RecoveryTimeStamp
 }
 
+// AssociatedIncarnation returns the recovery timestamp of the incarnation of the node this element
+// is associated with, and whether it is associated at all, read together under UpfLock.
+//
+// The held timestamp alone does not identify that incarnation. A heartbeat that reports a restart
+// marks the node NotAssociated but leaves the previous incarnation's timestamp held until the
+// re-association replaces it, so in between it names an incarnation that no longer exists.
+func (upf *UPF) AssociatedIncarnation() (time.Time, bool) {
+	upf.UpfLock.RLock()
+	defer upf.UpfLock.RUnlock()
+	return upf.RecoveryTimeStamp.RecoveryTimeStamp, upf.UPFStatus == AssociatedSetUpSuccess
+}
+
 func (upf *UPF) HasRestarted(received time.Time) bool {
 	held := upf.RecoveryTimeStamp.RecoveryTimeStamp
 	if held.IsZero() {

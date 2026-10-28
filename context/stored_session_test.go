@@ -716,23 +716,35 @@ func TestAStoredSessionALookupReadIsReleasedAsReadBack(t *testing.T) {
 // A user plane that restarted after acknowledging a stored session no longer holds it, and may have
 // given its SEID to another session since: a deletion for that SEID would remove the other session.
 // Nor can a document that does not record which incarnation acknowledged it be told apart from one
-// acknowledged before a restart. Either is released here without a deletion.
+// acknowledged before a restart. Either is released here without a deletion. So is a session whose
+// user plane a heartbeat has reported restarted: the timestamp held for it is still the acknowledging
+// one until the re-association replaces it, but the node is marked not associated in between.
 func TestAStoredSessionIsDeletedOnlyAtTheIncarnationThatAcknowledgedIt(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		acknowledgedAt time.Time
 		held           time.Time // the user plane's recovery timestamp as this SMF holds it
 		seid           uint64
+		status         context.UPFStatus // the association state this SMF holds for the user plane
 	}{
-		{"acknowledged before the user plane restarted", upfIncarnation.Add(-time.Hour), upfIncarnation, 9034},
-		{"incarnation not recorded", time.Time{}, upfIncarnation, 9035},
-		{"incarnation not recorded, nor yet held", time.Time{}, time.Time{}, 9036},
-		{"acknowledged, the user plane not yet associated since the SMF started", upfIncarnation, time.Time{}, 9038},
+		{"acknowledged before the user plane restarted", upfIncarnation.Add(-time.Hour), upfIncarnation, 9034, context.AssociatedSetUpSuccess},
+		{"incarnation not recorded", time.Time{}, upfIncarnation, 9035, context.AssociatedSetUpSuccess},
+		{"incarnation not recorded, nor yet held", time.Time{}, time.Time{}, 9036, context.AssociatedSetUpSuccess},
+		{"acknowledged, the user plane not yet associated since the SMF started", upfIncarnation, time.Time{}, 9038, context.AssociatedSetUpSuccess},
+		{
+			"acknowledged, the user plane reported restarted by a heartbeat and not yet re-associated",
+			upfIncarnation, upfIncarnation, 9039, context.NotAssociated,
+		},
+		{
+			"acknowledged, the association with the user plane still being set up",
+			upfIncarnation, upfIncarnation, 9040, context.AssociatedSettingUp,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := withStore(t)
 			upf, upfConn, live, carried := liveRulesOn(t)
 			upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: tc.held}
+			upf.UPFStatus = tc.status
 			supi := fmt.Sprintf("imsi-20893001880%04d", tc.seid)
 			a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: tc.seid, acknowledgedAt: tc.acknowledgedAt})
 
