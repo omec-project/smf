@@ -138,6 +138,7 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 		pfcpSessionContextInDB.PDRs = pfcpCtx.PDRs
 		pfcpSessionContextInDB.LocalSEID = SeidConv(pfcpCtx.LocalSEID)
 		pfcpSessionContextInDB.RemoteSEID = SeidConv(pfcpCtx.RemoteSEID)
+		pfcpSessionContextInDB.AcknowledgedAtRecovery = pfcpCtx.AcknowledgedAtRecovery
 		PFCPContextVal[key] = pfcpSessionContextInDB
 	}
 
@@ -198,6 +199,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 			logger.DataRepoLog.Errorf("remoteSEID unmarshal error: %v", err)
 		}
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
+		smContext.PFCPContext[key].AcknowledgedAtRecovery = pfcpCtxInDB.AcknowledgedAtRecovery
 		// Rebuild the local-SEID index alongside PFCPContext so the SEID-keyed lookups work on a
 		// restored context without iterating the map (see SMContext.seidToPFCPCtx).
 		smContext.recordPFCPCtxRef(localSeid, key, pfcpCtxInDB.NodeID)
@@ -293,6 +295,7 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 		pfcpEntry.PDRs = pfcpCtx.PDRs
 		pfcpEntry.LocalSEID = SeidConv(pfcpCtx.LocalSEID)
 		pfcpEntry.RemoteSEID = SeidConv(pfcpCtx.RemoteSEID)
+		pfcpEntry.AcknowledgedAtRecovery = pfcpCtx.AcknowledgedAtRecovery
 		pfcpContextVal[key] = pfcpEntry
 	}
 

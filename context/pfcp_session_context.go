@@ -39,7 +39,8 @@ type PFCPSessionContext struct {
 	// node acknowledged the session, which identifies the incarnation that holds it. A node
 	// refuses an establishment until it is associated, and association is where the held
 	// timestamp is replaced, so a session a restarted node accepted carries the new one. Zero when
-	// unknown -- a session restored from the database -- which restoration treats as lost.
+	// unknown -- a session restored from a document stored before it was kept -- which restoration
+	// treats as lost.
 	AcknowledgedAtRecovery time.Time
 }
 

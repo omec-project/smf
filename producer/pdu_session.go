@@ -876,6 +876,17 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 				smContext.SubPduSessLog.Infof("releaseTunnel, UPF[%s] never acknowledged the session; no deletion sent", pfcpKey)
 				continue
 			}
+			// A session read back from the datastore was acknowledged under an earlier start of this
+			// SMF. A node that has restarted since lost it, and may have given its SEID to another
+			// session: a deletion addressed to that SEID would remove the other session. So the
+			// deletion is sent only to the incarnation that acknowledged the session, and not at all
+			// when the document does not record which one that was.
+			if smContext.RestoredFromStore() &&
+				!acknowledgedByHeldIncarnation(smContext.PFCPContext[pfcpKey], curDataPathNode.UPF) {
+				smContext.SubPduSessLog.Warnf("releaseTunnel, UPF[%s] is not known to be the incarnation that acknowledged "+
+					"the stored session; no deletion sent", pfcpKey)
+				continue
+			}
 			pendingUPF[pfcpKey] = true
 			targets = append(targets, deletionTarget{nodeID: curDataPathNode.UPF.NodeID, port: curDataPathNode.UPF.PFCPPort()})
 		}
@@ -900,6 +911,13 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 
 	smContext.Tunnel = nil
 	return true
+}
+
+// acknowledgedByHeldIncarnation reports whether the node's session was acknowledged by the
+// incarnation of the node this SMF holds now. Compared in whole seconds, as restoration compares them.
+func acknowledgedByHeldIncarnation(pfcpContext *smf_context.PFCPSessionContext, upf *smf_context.UPF) bool {
+	acknowledgedAt := pfcpContext.AcknowledgedAtRecovery
+	return !acknowledgedAt.IsZero() && acknowledgedAt.Unix() == upf.HeldRecovery().Unix()
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {

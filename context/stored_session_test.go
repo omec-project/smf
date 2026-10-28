@@ -171,6 +171,9 @@ type storedOpts struct {
 	upf        *context.UPF    // a node this SMF holds, which the data path names and the session is anchored on
 	rules      [2]*context.PDR // the uplink and downlink rules the session holds on upf
 	seid       uint64
+	// acknowledgedAt is the recovery timestamp of the incarnation of upf that acknowledged the
+	// session; zero as in a document stored before it was kept.
+	acknowledgedAt time.Time
 }
 
 // stored writes a session to the datastore as an earlier SMF incarnation left it, and drops it from
@@ -209,6 +212,7 @@ func stored(t *testing.T, db *memDB, supi string, o storedOpts) *context.SMConte
 		smContext.Tunnel = tunnelOn(o.upf, o.rules[0], o.rules[1])
 		smContext.PFCPContext[o.upf.NodeID.ResolveNodeIdToIp().String()] = &context.PFCPSessionContext{
 			NodeID: o.upf.NodeID, LocalSEID: o.seid, RemoteSEID: o.seid + 1000,
+			AcknowledgedAtRecovery: o.acknowledgedAt,
 		}
 	} else if o.seid != 0 {
 		smContext.PFCPContext["10.99.0.1"] = &context.PFCPSessionContext{
@@ -610,6 +614,7 @@ func liveRulesOn(t *testing.T) (upf *context.UPF, upfConn *net.UDPConn, live, ca
 	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(upf.NodeID) })
 	upf.UPFStatus = context.AssociatedSetUpSuccess
 	upf.Port = upfPort
+	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: upfIncarnation}
 
 	for i := range live {
 		pdr, err := upf.AddPDR()
@@ -635,6 +640,10 @@ func liveRulesOn(t *testing.T) (upf *context.UPF, upfConn *net.UDPConn, live, ca
 	}
 	return upf, upfConn, live, carried
 }
+
+// upfIncarnation is the recovery timestamp of the user plane liveRulesOn stands in for, as this SMF
+// holds it.
+var upfIncarnation = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 
 // stillHeld reports, as a test error, each identifier of the live rules the user plane's pools no
 // longer hold.
@@ -662,7 +671,7 @@ func TestReleasingAStoredSessionDeletesItsPFCPSessionAndFreesNoRuleIdentifiers(t
 	db := withStore(t)
 	upf, upfConn, live, carried := liveRulesOn(t)
 	const supi = "imsi-208930018809032"
-	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9032})
+	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9032, acknowledgedAt: upfIncarnation})
 
 	context.ReleaseStoredSessions(supi, 1)
 
@@ -684,7 +693,7 @@ func TestAStoredSessionALookupReadIsReleasedAsReadBack(t *testing.T) {
 	db := withStore(t)
 	upf, upfConn, live, carried := liveRulesOn(t)
 	const supi = "imsi-208930018809033"
-	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9033})
+	a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: 9033, acknowledgedAt: upfIncarnation})
 	if context.GetSMContext(a.Ref) == nil {
 		t.Fatalf("precondition: the stored session was not read into the pool")
 	}
@@ -702,6 +711,67 @@ func TestAStoredSessionALookupReadIsReleasedAsReadBack(t *testing.T) {
 		t.Errorf("the session gauge moved from %v to %v releasing a session it never counted", before, after)
 	}
 	stillHeld(t, upf, live)
+}
+
+// A user plane that restarted after acknowledging a stored session no longer holds it, and may have
+// given its SEID to another session since: a deletion for that SEID would remove the other session.
+// Nor can a document that does not record which incarnation acknowledged it be told apart from one
+// acknowledged before a restart. Either is released here without a deletion.
+func TestAStoredSessionIsDeletedOnlyAtTheIncarnationThatAcknowledgedIt(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		acknowledgedAt time.Time
+		held           time.Time // the user plane's recovery timestamp as this SMF holds it
+		seid           uint64
+	}{
+		{"acknowledged before the user plane restarted", upfIncarnation.Add(-time.Hour), upfIncarnation, 9034},
+		{"incarnation not recorded", time.Time{}, upfIncarnation, 9035},
+		{"incarnation not recorded, nor yet held", time.Time{}, time.Time{}, 9036},
+		{"acknowledged, the user plane not yet associated since the SMF started", upfIncarnation, time.Time{}, 9038},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := withStore(t)
+			upf, upfConn, live, carried := liveRulesOn(t)
+			upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: tc.held}
+			supi := fmt.Sprintf("imsi-20893001880%04d", tc.seid)
+			a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: tc.seid, acknowledgedAt: tc.acknowledgedAt})
+
+			context.ReleaseStoredSessions(supi, 1)
+
+			if !waitGone(t, db, a.Ref) {
+				t.Errorf("the stored session was not released")
+			}
+			if msg, ok := readPfcpWithin(upfConn, 300*time.Millisecond); ok {
+				t.Errorf("the user plane received message type %d for SEID %d, want none", msg.MessageType(), msg.SEID())
+			}
+			stillHeld(t, upf, live)
+		})
+	}
+}
+
+// Both of a session's encoders keep which incarnation of the node acknowledged it: ToBsonM, which
+// the datastore writes, and MarshalJSON. The tests above go through the first.
+func TestTheAcknowledgingIncarnationSurvivesMarshalJSON(t *testing.T) {
+	db := withStore(t)
+	upf, _, _, carried := liveRulesOn(t)
+	a := stored(t, db, "imsi-208930018809037", storedOpts{upf: upf, rules: carried, seid: 9037, acknowledgedAt: upfIncarnation})
+
+	encoded, err := a.MarshalJSON()
+	if err != nil {
+		t.Fatalf("encoding the session: %v", err)
+	}
+	var decoded context.SMContext
+	if err := decoded.UnmarshalJSON(encoded); err != nil {
+		t.Fatalf("decoding the session: %v", err)
+	}
+	for key, pfcpContext := range decoded.PFCPContext {
+		if !pfcpContext.AcknowledgedAtRecovery.Equal(upfIncarnation) {
+			t.Errorf("the session on %s decoded as acknowledged at %v, want %v", key, pfcpContext.AcknowledgedAtRecovery, upfIncarnation)
+		}
+	}
+	if len(decoded.PFCPContext) != 1 {
+		t.Errorf("the session decoded with %d PFCP sessions, want 1", len(decoded.PFCPContext))
+	}
 }
 
 func listenLoopback(t *testing.T) (*net.UDPConn, uint16) {
@@ -746,6 +816,23 @@ func startSmfPfcpSocket(t *testing.T) {
 		self.CPNodeID, self.PFCPPort = cpNodeID, pfcpPort
 		udp.SetRetryTimingForTest(retries, requestTimeout, responseTimeout)
 	})
+}
+
+// readPfcpWithin returns the next message the user plane receives within d, if one arrives.
+func readPfcpWithin(conn *net.UDPConn, d time.Duration) (message.Message, bool) {
+	if err := conn.SetReadDeadline(time.Now().Add(d)); err != nil {
+		return nil, false
+	}
+	buf := make([]byte, 4096)
+	n, _, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		return nil, false
+	}
+	msg, err := message.Parse(buf[:n])
+	if err != nil {
+		return nil, false
+	}
+	return msg, true
 }
 
 func readPfcp(t *testing.T, conn *net.UDPConn) message.Message {

@@ -6,6 +6,7 @@ package context
 
 import (
 	"net"
+	"time"
 
 	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/smf/logger"
@@ -62,6 +63,10 @@ type PFCPSessionContextInDB struct {
 	LocalSEID  string
 	RemoteSEID string
 	NodeID     NodeID
+	// AcknowledgedAtRecovery is kept so that a later start of the SMF can tell whether the node
+	// that acknowledged the session is still the incarnation running. Zero in a document stored
+	// before it was kept.
+	AcknowledgedAtRecovery time.Time
 }
 
 type PFCPContextInDB map[string]PFCPSessionContextInDB
