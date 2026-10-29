@@ -914,13 +914,17 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 }
 
 // acknowledgedByHeldIncarnation reports whether the node's session was acknowledged by the
-// incarnation of the node this SMF is associated with now. Compared in whole seconds, as restoration
-// compares them. A node that is not associated is never that incarnation: after a heartbeat reports
-// a restart, the timestamp held for it is the previous incarnation's until it re-associates.
+// incarnation of the node this SMF is associated with now, and whether the node still holds it.
+// Compared in whole seconds, as restoration compares them. A node that is not associated is never
+// that incarnation: after a heartbeat reports a restart, the timestamp held for it is the previous
+// incarnation's until it re-associates. Nor does an unchanged timestamp mean the node kept the
+// session: the association this start of the SMF set up replaced the one the session was
+// established under, and the node deleted that one's sessions unless it says it retained them
+// (TS 29.244 clause 6.2.6.2.2).
 func acknowledgedByHeldIncarnation(pfcpContext *smf_context.PFCPSessionContext, upf *smf_context.UPF) bool {
 	acknowledgedAt := pfcpContext.AcknowledgedAtRecovery
-	held, associated := upf.AssociatedIncarnation()
-	return associated && !acknowledgedAt.IsZero() && acknowledgedAt.Unix() == held.Unix()
+	held, associated, retained := upf.AssociatedIncarnation()
+	return associated && retained && !acknowledgedAt.IsZero() && acknowledgedAt.Unix() == held.Unix()
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {
