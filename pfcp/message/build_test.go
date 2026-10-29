@@ -586,3 +586,28 @@ func TestBuildPfcpSessionReportResponse(t *testing.T) {
 		t.Errorf("expected PFCPSRRspFlags to be 1, got %v", flags)
 	}
 }
+
+// TS 29.244 clause 6.2.6.2.2: re-associating with a node that holds an association for this node ID
+// deletes that association's sessions unless the request asks to retain them. Naming no CP PFCP
+// Entity IP Address asks for all of them (table 7.4.4.1-2).
+func TestTheAssociationSetupRequestAsksToRetainEverySession(t *testing.T) {
+	msg := message.BuildPfcpAssociationSetupRequest(43, time.Now(), cpNodeID)
+	buf := make([]byte, msg.MarshalLen())
+	if err := msg.MarshalTo(buf); err != nil {
+		t.Fatalf("error marshalling PFCP association setup request: %v", err)
+	}
+	req, err := pfcp_message.ParseAssociationSetupRequest(buf)
+	if err != nil {
+		t.Fatalf("error parsing PFCP association setup request: %v", err)
+	}
+	if req.PFCPSessionRetentionInformation == nil {
+		t.Fatalf("the request carries no PFCP Session Retention Information")
+	}
+	named, err := req.PFCPSessionRetentionInformation.PFCPSessionRetentionInformation()
+	if err != nil {
+		t.Fatalf("reading PFCP Session Retention Information: %v", err)
+	}
+	if len(named) != 0 {
+		t.Errorf("PFCP Session Retention Information names %d IE(s); naming none asks to keep every session", len(named))
+	}
+}

@@ -32,12 +32,16 @@ func BuildPfcpHeartbeatResponse(sequenceNumber uint32, recoveryTimeStamp time.Ti
 	)
 }
 
+// BuildPfcpAssociationSetupRequest asks the UP function to keep the PFCP sessions of any association
+// it already holds for this node ID: TS 29.244 clause 6.2.6.2.2 has it delete them otherwise. A
+// PFCP Session Retention Information IE naming no CP PFCP Entity IP Address asks for all of them.
 func BuildPfcpAssociationSetupRequest(sequenceNumber uint32, recoveryTimeStamp time.Time, nodeID string) *message.AssociationSetupRequest {
 	return message.NewAssociationSetupRequest(
 		sequenceNumber,
 		ie.NewNodeIDHeuristic(nodeID),
 		ie.NewRecoveryTimeStamp(recoveryTimeStamp),
 		ie.NewCPFunctionFeatures(0),
+		ie.NewPFCPSessionRetentionInformation(nil),
 	)
 }
 
