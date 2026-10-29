@@ -41,6 +41,9 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 				txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v]",
 					transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
 			}
+		} else if factory.SmfConfig.Configuration.EnableDbStore {
+			// After a restart the previous session may be in the datastore only.
+			smf_context.ReleaseStoredSessions(createData.GetSupi(), createData.GetPduSessionId())
 		}
 		// Create fresh context
 		txn.Ctxt = smf_context.NewSMContext(createData.GetSupi(), createData.GetPduSessionId())

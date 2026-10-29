@@ -8,6 +8,7 @@
 package context
 
 import (
+	gocontext "context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -62,6 +63,16 @@ func SetupSmfCollection() {
 	_, err = mongoapi.CommonDBClient.CreateIndex(SeidSmContextCol, seidFilterKey)
 	if err != nil {
 		logger.DataRepoLog.Errorln("create index failed on TxnId field")
+	}
+
+	// The sessions stored for one subscriber and PDU session ID. Not unique: there are several until
+	// the older ones are released, and one whose delete failed stays stored beside its successor.
+	err = mongoapi.CommonDBClient.EnsureIndex(gocontext.Background(), SmContextDataColl, mongoapi.IndexSpec{
+		Name: smContextKeyIndexName,
+		Keys: mongoapi.AscendingKeys(identifierFilterKey, pduSessionIDFilterKey),
+	})
+	if err != nil {
+		logger.DataRepoLog.Errorf("create index failed on identifier and pduSessionID fields: %v", err)
 	}
 
 	smfCount := mongoapi.CommonDBClient.GetUniqueIdentity("smfCount")
@@ -127,6 +138,7 @@ func (smContext *SMContext) MarshalJSON() ([]byte, error) {
 		pfcpSessionContextInDB.PDRs = pfcpCtx.PDRs
 		pfcpSessionContextInDB.LocalSEID = SeidConv(pfcpCtx.LocalSEID)
 		pfcpSessionContextInDB.RemoteSEID = SeidConv(pfcpCtx.RemoteSEID)
+		pfcpSessionContextInDB.AcknowledgedAtRecovery = pfcpCtx.AcknowledgedAtRecovery
 		PFCPContextVal[key] = pfcpSessionContextInDB
 	}
 
@@ -187,6 +199,7 @@ func (smContext *SMContext) UnmarshalJSON(data []byte) error {
 			logger.DataRepoLog.Errorf("remoteSEID unmarshal error: %v", err)
 		}
 		smContext.PFCPContext[key].RemoteSEID = remoteSeid
+		smContext.PFCPContext[key].AcknowledgedAtRecovery = pfcpCtxInDB.AcknowledgedAtRecovery
 		// Rebuild the local-SEID index alongside PFCPContext so the SEID-keyed lookups work on a
 		// restored context without iterating the map (see SMContext.seidToPFCPCtx).
 		smContext.recordPFCPCtxRef(localSeid, key, pfcpCtxInDB.NodeID)
@@ -282,6 +295,7 @@ func ToBsonM(data *SMContext) (ret bson.M) {
 		pfcpEntry.PDRs = pfcpCtx.PDRs
 		pfcpEntry.LocalSEID = SeidConv(pfcpCtx.LocalSEID)
 		pfcpEntry.RemoteSEID = SeidConv(pfcpCtx.RemoteSEID)
+		pfcpEntry.AcknowledgedAtRecovery = pfcpCtx.AcknowledgedAtRecovery
 		pfcpContextVal[key] = pfcpEntry
 	}
 
@@ -469,6 +483,9 @@ func GetSMContextByRefInDB(ref string) (smContext *SMContext) {
 		}
 		smContext.RebuildCommunicationClient()
 		smContext.RebuildSMPolicyClient()
+		// Set here, where every context read back from the datastore is built, so that none is
+		// served or released as one this process created.
+		smContext.restoredFromStore = true
 	} else {
 		logger.DataRepoLog.Warnf("SmContext doesn't exist with ref: %v", ref)
 		return nil
@@ -500,7 +517,11 @@ func GetSMContextBySEIDInDB(seidUint uint64) (smContext *SMContext) {
 // DeleteSmContextInDBBySEID Delete SMContext By SEID from DB. Callers (RemoveSMContext) must
 // hold the SMContext's SMLock across this call for the same reason as DeleteSmContextInDBByRef,
 // which this calls.
-func DeleteSmContextInDBBySEID(seidUint uint64) {
+//
+// ref is the session being released. The SEID's document is deleted, and the context it names with
+// it, only while it names that session: the document is keyed by the SEID alone, so it may name
+// another session, and deleting by SEID alone removed that session's records.
+func DeleteSmContextInDBBySEID(seidUint uint64, ref string) {
 	seid := SeidConv(seidUint)
 	logger.DataRepoLog.Infoln("db - delete SMContext In DB by seid")
 	filter := bson.M{seidFilterKey: seid}
@@ -511,7 +532,13 @@ func DeleteSmContextInDBBySEID(seidUint uint64) {
 		logger.DataRepoLog.Warnln(getOneErr)
 	}
 	if result != nil {
-		ref := result[refFilterKey].(string)
+		if mapped, _ := result[refFilterKey].(string); mapped != ref {
+			logger.DataRepoLog.Infof("SEID %v now belongs to SMContext %s, not %s; leaving it", seid, mapped, ref)
+			return
+		}
+		// And the delete is scoped to ref as well, for a session that takes the SEID between the
+		// read above and the delete.
+		filter[refFilterKey] = ref
 
 		delOneErr := mongoapi.CommonDBClient.RestfulAPIDeleteOne(SeidSmContextCol, filter)
 		if delOneErr != nil {
