@@ -41,6 +41,9 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 				txn.TxnFsmLog.Errorf("handle event[%v], next-event[%v], error[%v]",
 					transaction.TxnEventLoadCtxt.String(), transaction.TxnEventFailure.String(), err)
 			}
+		} else if factory.SmfConfig.Configuration.EnableDbStore {
+			// After a restart the previous session may be in the datastore only.
+			smf_context.ReleaseStoredSessions(createData.GetSupi(), createData.GetPduSessionId())
 		}
 		// Create fresh context
 		txn.Ctxt = smf_context.NewSMContext(createData.GetSupi(), createData.GetPduSessionId())
@@ -52,10 +55,12 @@ func (SmfTxnFsm) TxnLoadCtxt(txn *transaction.Transaction) (transaction.TxnEvent
 		txn.CtxtKey = CtxtKey
 	case svcmsgtypes.UpdateSmContext:
 		fallthrough
-	case svcmsgtypes.ReleaseSmContext:
-		fallthrough
 	case svcmsgtypes.SmPolicyUpdateNotification:
 		txn.Ctxt = smf_context.GetSMContext(txn.CtxtKey)
+	case svcmsgtypes.ReleaseSmContext:
+		// A release names the session its sender holds, and is honoured even for a stored session a
+		// later one has superseded; refusing it would leave the sender holding a session nothing serves.
+		txn.Ctxt = smf_context.GetSMContextForRelease(txn.CtxtKey)
 
 	case svcmsgtypes.PfcpSessCreate:
 		fallthrough
@@ -211,6 +216,13 @@ func (SmfTxnFsm) TxnSuccess(txn *transaction.Transaction) (transaction.TxnEvent,
 	return transaction.TxnEventSave, nil
 }
 
+// hasSMContext reports whether the transaction found its SM context. A lookup that finds none
+// leaves a nil *SMContext in txn.Ctxt, which as an interface value is not nil.
+func hasSMContext(txn *transaction.Transaction) bool {
+	smContext, _ := txn.Ctxt.(*smf_context.SMContext)
+	return smContext != nil
+}
+
 func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent, error) {
 	// Put Failure Rsp
 	switch txn.MsgType {
@@ -231,7 +243,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		}
 
 	case svcmsgtypes.UpdateSmContext:
-		if txn.Ctxt == nil {
+		if !hasSMContext(txn) {
 			logger.PduSessLog.Warnf("PDUSessionSMContextUpdate, SMContext[%s] is not found", txn.CtxtKey)
 
 			jsonData := models.NewSmContextUpdateError(smferrors.SMContextNotFound)
@@ -247,7 +259,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 		}
 
 	case svcmsgtypes.ReleaseSmContext:
-		if txn.Ctxt == nil {
+		if !hasSMContext(txn) {
 			logger.PduSessLog.Warnf("PDUSessionSMContextRelease [%s] is not found", txn.CtxtKey)
 
 			problemDetails := models.NewProblemDetails()
@@ -262,6 +274,25 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 				Body:   problemDetails,
 			}
 			txn.Rsp = httpResponse
+		}
+
+	case svcmsgtypes.SmPolicyUpdateNotification:
+		// Without a response the notification is answered 500, which the PCF reads as a fault of the
+		// SMF's rather than of the session: TS 29.500 clause 5.2.7.2, "If the specified target
+		// resource does not exist, the NF shall reject the HTTP method with the HTTP status code
+		// "404 Not Found"."
+		if !hasSMContext(txn) {
+			logger.PduSessLog.Warnf("SMPolicyUpdateNotification, SMContext[%s] is not found", txn.CtxtKey)
+
+			problemDetails := models.NewProblemDetails()
+			problemDetails.SetType("Resource Not Found")
+			problemDetails.SetTitle("SMContext Ref is not found")
+			problemDetails.SetStatus(int32(http.StatusNotFound))
+			txn.Rsp = &httpwrapper.Response{
+				Header: nil,
+				Status: http.StatusNotFound,
+				Body:   problemDetails,
+			}
 		}
 	}
 	txn.Status <- false

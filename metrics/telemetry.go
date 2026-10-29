@@ -213,13 +213,15 @@ func DeleteSessProfileStats(id, ip, state, upf, enterprise string) {
 // are kept apart on purpose: a restoration that restored some sessions and released the rest must
 // not be reportable as simply having completed.
 //
-// The outcome is one of five, and a dashboard should expect all of them:
+// The outcome is one of six, and a dashboard should expect all of them:
 //
-//	restored     - re-installed on the node and carrying traffic again
-//	released     - torn down because the node would not accept it back
-//	skipped      - not attempted: busy, purged, or no longer live
-//	unexaminable - nothing could be learned about it, so it is not known to be healthy
-//	gone         - no longer anchored on this node when the wave reached it
+//	restored                  - re-installed on the node and carrying traffic again
+//	released                  - torn down because the node would not accept it back
+//	skipped                   - not attempted: busy, purged, or no longer live
+//	unexaminable              - nothing could be learned about it, so it is not known to be healthy
+//	gone                      - no longer anchored on this node when the wave reached it
+//	releasedRestoredFromStore - read back from the datastore after this SMF started, and torn down
+//	                            rather than re-installed
 func AddUpfRestorationStats(smfID, upf, outcome string, count int) {
 	if count <= 0 {
 		return

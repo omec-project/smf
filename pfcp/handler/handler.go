@@ -208,6 +208,9 @@ func HandlePfcpAssociationSetupRequest(msg *udp.Message) {
 	upf.RecoveryTimeStamp = smf_context.RecoveryTimeStamp{
 		RecoveryTimeStamp: recoveryTimestamp,
 	}
+	// Retention is asked for in a request this element sends, so an association the node set up
+	// carries no answer to it.
+	upf.SessionsRetained = false
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
 
 	// Response with PFCP Association Setup Response
@@ -267,6 +270,7 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		defer upf.UpfLock.Unlock()
 
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
+		upf.SessionsRetained = rsp.PFCPASRspFlags != nil && rsp.PFCPASRspFlags.HasPSREI()
 		logger.PfcpLog.Infof("upf status updated to %v for NodeID[%s]", upf.UPFStatus, nodeIDStr)
 
 		recoveryTimestamp, err := rsp.RecoveryTimeStamp.RecoveryTimeStamp()

@@ -143,6 +143,21 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 	return nil
 }
 
+// ReleaseRestoredSession releases a session read back from the datastore that is not to be served:
+// its subscriber is establishing its PDU session ID again, or a later session for that PDU session
+// superseded it. As for an in-memory replacement, the context is removed and its PFCP sessions are
+// deleted without waiting for the answers.
+func ReleaseRestoredSession(smContext *smf_context.SMContext) {
+	smContext.SMLock.Lock()
+	defer smContext.SMLock.Unlock()
+
+	smContext.LocalPurged.Store(true)
+	smf_context.RemoveSMContextLocked(smContext)
+	if smContext.Tunnel != nil {
+		releaseTunnel(smContext)
+	}
+}
+
 func HandlePDUSessionSMContextCreate(eventData any) error {
 	txn := eventData.(*transaction.Transaction)
 	request := txn.Req.(models.PostSmContextsRequest)
@@ -833,6 +848,12 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 	for _, dataPath := range smContext.Tunnel.DataPathPool {
 		dataPath.DeactivateTunnelAndPDR(smContext)
 		for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+			if curDataPathNode.UPF == nil {
+				// A data path read back from the datastore can name a UPF this process holds no
+				// association with; there is nothing there to delete.
+				smContext.SubPduSessLog.Warnln("releaseTunnel, data path names a UPF this SMF does not hold; nothing to delete")
+				continue
+			}
 			// Keyed by the PFCPContext entry the node's session is held under, which is also what the
 			// response handlers recover from the local SEID. Neither the UPF ID nor a fresh
 			// resolution of the NodeID will do: both go through the node's address as it resolves
@@ -854,6 +875,17 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 			// establishment goes out without one. It would only refuse, so none is sent.
 			if smContext.PFCPContext[pfcpKey].RemoteSEID == 0 {
 				smContext.SubPduSessLog.Infof("releaseTunnel, UPF[%s] never acknowledged the session; no deletion sent", pfcpKey)
+				continue
+			}
+			// A session read back from the datastore was acknowledged under an earlier start of this
+			// SMF. A node that has restarted since lost it, and may have given its SEID to another
+			// session: a deletion addressed to that SEID would remove the other session. So the
+			// deletion is sent only to the incarnation that acknowledged the session, and not at all
+			// when the document does not record which one that was.
+			if smContext.RestoredFromStore() &&
+				!acknowledgedByHeldIncarnation(smContext.PFCPContext[pfcpKey], curDataPathNode.UPF) {
+				smContext.SubPduSessLog.Warnf("releaseTunnel, UPF[%s] is not known to be the incarnation that acknowledged "+
+					"the stored session; no deletion sent", pfcpKey)
 				continue
 			}
 			pendingUPF[pfcpKey] = true
@@ -880,6 +912,20 @@ func releaseTunnel(smContext *smf_context.SMContext) bool {
 
 	smContext.Tunnel = nil
 	return true
+}
+
+// acknowledgedByHeldIncarnation reports whether the node's session was acknowledged by the
+// incarnation of the node this SMF is associated with now, and whether the node still holds it.
+// Compared in whole seconds, as restoration compares them. A node that is not associated is never
+// that incarnation: after a heartbeat reports a restart, the timestamp held for it is the previous
+// incarnation's until it re-associates. Nor does an unchanged timestamp mean the node kept the
+// session: the association this start of the SMF set up replaced the one the session was
+// established under, and the node deleted that one's sessions unless it says it retained them
+// (TS 29.244 clause 6.2.6.2.2).
+func acknowledgedByHeldIncarnation(pfcpContext *smf_context.PFCPSessionContext, upf *smf_context.UPF) bool {
+	acknowledgedAt := pfcpContext.AcknowledgedAtRecovery
+	held, associated, retained := upf.AssociatedIncarnation()
+	return associated && retained && !acknowledgedAt.IsZero() && acknowledgedAt.Unix() == held.Unix()
 }
 
 func SendPduSessN1N2Transfer(smContext *smf_context.SMContext, success bool) error {
