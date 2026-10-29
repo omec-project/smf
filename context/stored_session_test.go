@@ -4,6 +4,7 @@
 package context_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
@@ -613,6 +615,8 @@ func liveRulesOn(t *testing.T) (upf *context.UPF, upfConn *net.UDPConn, live, ca
 	upf = context.NewUPF(context.NewNodeID("127.0.0.1"), nil)
 	t.Cleanup(func() { context.RemoveUPFNodeByNodeID(upf.NodeID) })
 	upf.UPFStatus = context.AssociatedSetUpSuccess
+	// It answered the association with PSREI: it kept the sessions of the one before it.
+	upf.SessionsRetained = true
 	upf.Port = upfPort
 	upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: upfIncarnation}
 
@@ -718,7 +722,10 @@ func TestAStoredSessionALookupReadIsReleasedAsReadBack(t *testing.T) {
 // Nor can a document that does not record which incarnation acknowledged it be told apart from one
 // acknowledged before a restart. Either is released here without a deletion. So is a session whose
 // user plane a heartbeat has reported restarted: the timestamp held for it is still the acknowledging
-// one until the re-association replaces it, but the node is marked not associated in between.
+// one until the re-association replaces it, but the node is marked not associated in between. And so
+// is one whose user plane did not answer this SMF's association with PSREI: the association replaced
+// the one the session was established under, and without retention the user plane deleted its
+// sessions.
 func TestAStoredSessionIsDeletedOnlyAtTheIncarnationThatAcknowledgedIt(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
@@ -726,18 +733,26 @@ func TestAStoredSessionIsDeletedOnlyAtTheIncarnationThatAcknowledgedIt(t *testin
 		held           time.Time // the user plane's recovery timestamp as this SMF holds it
 		seid           uint64
 		status         context.UPFStatus // the association state this SMF holds for the user plane
+		retained       bool              // whether the user plane answered the association with PSREI
 	}{
-		{"acknowledged before the user plane restarted", upfIncarnation.Add(-time.Hour), upfIncarnation, 9034, context.AssociatedSetUpSuccess},
-		{"incarnation not recorded", time.Time{}, upfIncarnation, 9035, context.AssociatedSetUpSuccess},
-		{"incarnation not recorded, nor yet held", time.Time{}, time.Time{}, 9036, context.AssociatedSetUpSuccess},
-		{"acknowledged, the user plane not yet associated since the SMF started", upfIncarnation, time.Time{}, 9038, context.AssociatedSetUpSuccess},
+		{"acknowledged before the user plane restarted", upfIncarnation.Add(-time.Hour), upfIncarnation, 9034, context.AssociatedSetUpSuccess, true},
+		{"incarnation not recorded", time.Time{}, upfIncarnation, 9035, context.AssociatedSetUpSuccess, true},
+		{"incarnation not recorded, nor yet held", time.Time{}, time.Time{}, 9036, context.AssociatedSetUpSuccess, true},
+		{"acknowledged, the user plane not yet associated since the SMF started", upfIncarnation, time.Time{}, 9038, context.AssociatedSetUpSuccess, true},
 		{
 			"acknowledged, the user plane reported restarted by a heartbeat and not yet re-associated",
-			upfIncarnation, upfIncarnation, 9039, context.NotAssociated,
+			upfIncarnation, upfIncarnation, 9039, context.NotAssociated, true,
 		},
 		{
 			"acknowledged, the association with the user plane still being set up",
-			upfIncarnation, upfIncarnation, 9040, context.AssociatedSettingUp,
+			upfIncarnation, upfIncarnation, 9040, context.AssociatedSettingUp, true,
+		},
+		{
+			// TS 29.244 clause 6.2.6.2.2: re-associating replaced the association the session was
+			// established under, and a user plane that does not say it retained that one's sessions
+			// deleted them, its own recovery timestamp unchanged.
+			"acknowledged by the incarnation held, which did not report retaining the sessions",
+			upfIncarnation, upfIncarnation, 9041, context.AssociatedSetUpSuccess, false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -745,6 +760,7 @@ func TestAStoredSessionIsDeletedOnlyAtTheIncarnationThatAcknowledgedIt(t *testin
 			upf, upfConn, live, carried := liveRulesOn(t)
 			upf.RecoveryTimeStamp = context.RecoveryTimeStamp{RecoveryTimeStamp: tc.held}
 			upf.UPFStatus = tc.status
+			upf.SessionsRetained = tc.retained
 			supi := fmt.Sprintf("imsi-20893001880%04d", tc.seid)
 			a := stored(t, db, supi, storedOpts{upf: upf, rules: carried, seid: tc.seid, acknowledgedAt: tc.acknowledgedAt})
 
@@ -783,6 +799,46 @@ func TestTheAcknowledgingIncarnationSurvivesMarshalJSON(t *testing.T) {
 	}
 	if len(decoded.PFCPContext) != 1 {
 		t.Errorf("the session decoded with %d PFCP sessions, want 1", len(decoded.PFCPContext))
+	}
+}
+
+// The tests above store documents in memory, normalised through encoding/json. The datastore stores
+// them through the BSON codec instead, and reads them back as the mongoapi client is configured to:
+// nested documents as maps. That is the path a restart actually takes, so the acknowledging
+// incarnation is carried along it here: ToBsonM, the codec both ways, and the decoding
+// GetSMContextByRefInDB applies to what it reads.
+func TestTheAcknowledgingIncarnationSurvivesTheDatastoresEncoding(t *testing.T) {
+	db := withStore(t)
+	upf, _, _, carried := liveRulesOn(t)
+	a := stored(t, db, "imsi-208930018809042", storedOpts{upf: upf, rules: carried, seid: 9042, acknowledgedAt: upfIncarnation})
+
+	raw, err := bson.Marshal(context.ToBsonM(a))
+	if err != nil {
+		t.Fatalf("encoding the stored document as BSON: %v", err)
+	}
+	dec := bson.NewDecoder(bson.NewDocumentReader(bytes.NewReader(raw)))
+	dec.DefaultDocumentMap()
+	var read map[string]any
+	if err = dec.Decode(&read); err != nil {
+		t.Fatalf("decoding the stored document: %v", err)
+	}
+	asRead, err := gojson.Marshal(read)
+	if err != nil {
+		t.Fatalf("re-encoding the document as read: %v", err)
+	}
+	var decoded context.SMContext
+	if err = gojson.Unmarshal(asRead, &decoded); err != nil {
+		t.Fatalf("decoding the session as read: %v", err)
+	}
+
+	if len(decoded.PFCPContext) != 1 {
+		t.Fatalf("the session decoded with %d PFCP sessions, want 1", len(decoded.PFCPContext))
+	}
+	for key, pfcpContext := range decoded.PFCPContext {
+		// Compared in whole seconds, as the release compares it.
+		if pfcpContext.AcknowledgedAtRecovery.Unix() != upfIncarnation.Unix() {
+			t.Errorf("the session on %s read back as acknowledged at %v, want %v", key, pfcpContext.AcknowledgedAtRecovery, upfIncarnation)
+		}
 	}
 }
 
