@@ -3,7 +3,11 @@
 
 package context
 
-import "net"
+import (
+	"net"
+
+	mi "github.com/omec-project/util/metricinfo"
+)
 
 // Exported to the external tests in this directory only.
 
@@ -19,9 +23,24 @@ func ForgetInMemory(smContext *SMContext) {
 	}
 }
 
+// SetupSmfCount is the part of SetupSmfCollection that reads this start's smfCount. It returns a
+// function that puts back the smfCount read before.
+func SetupSmfCount() (restore func()) {
+	prev := smfCountAtStart.Load()
+	setupSmfCount()
+	return func() { smfCountAtStart.Store(prev) }
+}
+
 // RegisterCurrent makes ref the subscriber's current session for the PDU session ID.
 func RegisterCurrent(identifier string, pduSessionID int32, ref string) {
 	canonicalRef.Store(canonicalName(identifier, pduSessionID), ref)
+}
+
+// CapturePublished replaces the subscriber event stream, returning a function that restores it.
+func CapturePublished(publish func(mi.CoreSubscriber, mi.SubscriberOp) error) (restore func()) {
+	prev := publishPduSessEvent
+	publishPduSessEvent = publish
+	return func() { publishPduSessEvent = prev }
 }
 
 // SEIDHeldBy is the context the in-memory SEID index holds for a local SEID, without the datastore

@@ -87,7 +87,8 @@ func TestDeleteSmContextInDBByRef_GivesUpAfterMaxAttempts(t *testing.T) {
 }
 
 // fakeGetOneDBClient implements mongoapi.DBInterface, answering RestfulAPIGetOne with a fixed
-// document regardless of the filter. All other methods are unused by the code under test.
+// document regardless of the filter, and RestfulAPIGetMany with that document alone, as the only
+// session stored for its key. All other methods are unused by the code under test.
 type fakeGetOneDBClient struct {
 	mongoapi.DBInterface
 	doc map[string]any
@@ -95,6 +96,10 @@ type fakeGetOneDBClient struct {
 
 func (f *fakeGetOneDBClient) RestfulAPIGetOne(_ string, _ bson.M) (map[string]any, error) {
 	return f.doc, nil
+}
+
+func (f *fakeGetOneDBClient) RestfulAPIGetMany(_ string, _ bson.M) ([]map[string]any, error) {
+	return []map[string]any{f.doc}, nil
 }
 
 // TestGetSMContext_DoesNotResurrectAfterDeleteFailed covers the rollback scenario a failed
@@ -132,6 +137,7 @@ func TestGetSMContext_DoesNotResurrectAfterDeleteFailed(t *testing.T) {
 		t.Errorf("expected GetSMContext(%q) to fall back to Mongo once the tombstone is cleared", ref)
 	}
 	smContextPool.Delete(ref)
+	canonicalRef.Delete(canonicalName("", 0))
 }
 
 // TestSMContextDBRoundTrip_PreservesFieldsAcrossSerializerMigration is a representative
