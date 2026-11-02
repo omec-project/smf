@@ -95,12 +95,14 @@ func NewExtProblemDetailsSystemFailure() models.ExtProblemDetails {
 	return extProblemDetails
 }
 
-// NewExtProblemDetailsNotFound creates a 404 ExtProblemDetails with a Type URI but no cause
+// NewExtProblemDetailsNotFound creates a 404 ExtProblemDetails with a Type URI and the
+// CONTEXT_NOT_FOUND cause
 func NewExtProblemDetailsNotFound(problemType, title string) models.ExtProblemDetails {
 	extProblemDetails := models.ExtProblemDetails{}
 	extProblemDetails.SetType(problemType)
 	extProblemDetails.SetTitle(title)
 	extProblemDetails.SetStatus(int32(http.StatusNotFound))
+	extProblemDetails.SetCause(utils.CauseContextNotFound)
 	return extProblemDetails
 }
 

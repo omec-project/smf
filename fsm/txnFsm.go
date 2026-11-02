@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/utils"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -266,6 +267,7 @@ func (SmfTxnFsm) TxnFailure(txn *transaction.Transaction) (transaction.TxnEvent,
 			problemDetails.SetType("Resource Not Found")
 			problemDetails.SetTitle("SMContext Ref is not found")
 			problemDetails.SetStatus(int32(http.StatusNotFound))
+			problemDetails.SetCause(utils.CauseContextNotFound)
 			// 4xx/5xx Error not defined in spec 29502 for Release SM ctxt error
 			// Send Not Found
 			httpResponse := &httpwrapper.Response{
