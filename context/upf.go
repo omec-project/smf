@@ -80,6 +80,11 @@ type UPF struct {
 	RecoveryTimeStamp RecoveryTimeStamp
 	NodeID            NodeID
 	UPFStatus         UPFStatus
+	// SessionsRetained records whether the node set PSREI in its answer to the association this
+	// element holds: that it kept the PFCP sessions of the association before it (TS 29.244 clause
+	// 6.2.6.2.2). Without it the node deleted them, whatever its recovery timestamp says. Set with
+	// UPFStatus and RecoveryTimeStamp, under UpfLock.
+	SessionsRetained bool
 	// AssociationSetupSentAt records when UPFStatus last became AssociatedSettingUp, so a
 	// lost or delayed response can be detected and the association retried instead of the
 	// UPF being stuck in that state forever.
@@ -295,6 +300,19 @@ func (upf *UPF) HeldRecovery() time.Time {
 	upf.UpfLock.RLock()
 	defer upf.UpfLock.RUnlock()
 	return upf.RecoveryTimeStamp.RecoveryTimeStamp
+}
+
+// AssociatedIncarnation returns the recovery timestamp of the incarnation of the node this element
+// is associated with, whether it is associated at all, and whether that association retained the
+// sessions of the one before it, read together under UpfLock.
+//
+// The held timestamp alone does not identify that incarnation. A heartbeat that reports a restart
+// marks the node NotAssociated but leaves the previous incarnation's timestamp held until the
+// re-association replaces it, so in between it names an incarnation that no longer exists.
+func (upf *UPF) AssociatedIncarnation() (recovery time.Time, associated, retained bool) {
+	upf.UpfLock.RLock()
+	defer upf.UpfLock.RUnlock()
+	return upf.RecoveryTimeStamp.RecoveryTimeStamp, upf.UPFStatus == AssociatedSetUpSuccess, upf.SessionsRetained
 }
 
 func (upf *UPF) HasRestarted(received time.Time) bool {
