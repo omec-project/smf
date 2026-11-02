@@ -194,7 +194,8 @@ func SendPfcpAssociationSetupRequest(upNodeID smf_context.NodeID, upfPort uint16
 		return fmt.Errorf("PFCP Association Setup Request failed, invalid NodeId: %v", string(upNodeID.NodeIdValue))
 	}
 
-	pfcpMsg := BuildPfcpAssociationSetupRequest(getSeqNumber(), udp.GetServerStartTime(), smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String())
+	pfcpMsg := BuildPfcpAssociationSetupRequest(getSeqNumber(), udp.GetServerStartTime(), smf_context.SMF_Self().CPNodeID.ResolveNodeIdToIp().String(),
+		factory.SmfConfig.Configuration.EnableDbStore)
 	addr := &net.UDPAddr{
 		IP:   upNodeID.ResolveNodeIdToIp(),
 		Port: int(upfPort),

@@ -32,17 +32,23 @@ func BuildPfcpHeartbeatResponse(sequenceNumber uint32, recoveryTimeStamp time.Ti
 	)
 }
 
-// BuildPfcpAssociationSetupRequest asks the UP function to keep the PFCP sessions of any association
-// it already holds for this node ID: TS 29.244 clause 6.2.6.2.2 has it delete them otherwise. A
-// PFCP Session Retention Information IE naming no CP PFCP Entity IP Address asks for all of them.
-func BuildPfcpAssociationSetupRequest(sequenceNumber uint32, recoveryTimeStamp time.Time, nodeID string) *message.AssociationSetupRequest {
-	return message.NewAssociationSetupRequest(
-		sequenceNumber,
+// BuildPfcpAssociationSetupRequest builds the request that sets up the association with a UP function.
+//
+// With retainSessions it asks the UP function to keep the PFCP sessions of any association it already
+// holds for this node ID: TS 29.244 clause 6.2.6.2.2 has it delete them otherwise. A PFCP Session
+// Retention Information IE naming no CP PFCP Entity IP Address asks for all of them. It is asked for
+// only when the SMF keeps its sessions in the datastore: one that does not cannot find them again
+// after a restart, and a UP function that kept them would hold them for good.
+func BuildPfcpAssociationSetupRequest(sequenceNumber uint32, recoveryTimeStamp time.Time, nodeID string, retainSessions bool) *message.AssociationSetupRequest {
+	ies := []*ie.IE{
 		ie.NewNodeIDHeuristic(nodeID),
 		ie.NewRecoveryTimeStamp(recoveryTimeStamp),
 		ie.NewCPFunctionFeatures(0),
-		ie.NewPFCPSessionRetentionInformation(nil),
-	)
+	}
+	if retainSessions {
+		ies = append(ies, ie.NewPFCPSessionRetentionInformation(nil))
+	}
+	return message.NewAssociationSetupRequest(sequenceNumber, ies...)
 }
 
 func BuildPfcpAssociationSetupResponse(cause uint8, recoveryTimeStamp time.Time, nodeID string) *message.AssociationSetupResponse {

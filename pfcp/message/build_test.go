@@ -132,7 +132,7 @@ func TestBuildPfcpHeartbeatResponse(t *testing.T) {
 
 func TestBuildPfcpAssociationSetupRequest(t *testing.T) {
 	timestamp := time.Now()
-	msg := message.BuildPfcpAssociationSetupRequest(42, timestamp, cpNodeID)
+	msg := message.BuildPfcpAssociationSetupRequest(42, timestamp, cpNodeID, false)
 
 	if msg.MessageTypeName() != "Association Setup Request" {
 		t.Errorf("expected message type to be 'Association Setup Request', got %v", msg.MessageTypeName())
@@ -591,7 +591,7 @@ func TestBuildPfcpSessionReportResponse(t *testing.T) {
 // deletes that association's sessions unless the request asks to retain them. Naming no CP PFCP
 // Entity IP Address asks for all of them (table 7.4.4.1-2).
 func TestTheAssociationSetupRequestAsksToRetainEverySession(t *testing.T) {
-	msg := message.BuildPfcpAssociationSetupRequest(43, time.Now(), cpNodeID)
+	msg := message.BuildPfcpAssociationSetupRequest(43, time.Now(), cpNodeID, true)
 	buf := make([]byte, msg.MarshalLen())
 	if err := msg.MarshalTo(buf); err != nil {
 		t.Fatalf("error marshalling PFCP association setup request: %v", err)
@@ -609,5 +609,22 @@ func TestTheAssociationSetupRequestAsksToRetainEverySession(t *testing.T) {
 	}
 	if len(named) != 0 {
 		t.Errorf("PFCP Session Retention Information names %d IE(s); naming none asks to keep every session", len(named))
+	}
+}
+
+// Without the datastore the SMF cannot find its sessions again after a restart, so it does not ask
+// the UP function to keep them: TS 29.244 clause 6.2.6.2.2 then has it delete them on re-association.
+func TestTheAssociationSetupRequestAsksToRetainNoSessionWithoutTheDatastore(t *testing.T) {
+	msg := message.BuildPfcpAssociationSetupRequest(44, time.Now(), cpNodeID, false)
+	buf := make([]byte, msg.MarshalLen())
+	if err := msg.MarshalTo(buf); err != nil {
+		t.Fatalf("error marshalling PFCP association setup request: %v", err)
+	}
+	req, err := pfcp_message.ParseAssociationSetupRequest(buf)
+	if err != nil {
+		t.Fatalf("error parsing PFCP association setup request: %v", err)
+	}
+	if req.PFCPSessionRetentionInformation != nil {
+		t.Errorf("the request carries PFCP Session Retention Information, which asks the UP function to keep sessions nothing will find again")
 	}
 }
