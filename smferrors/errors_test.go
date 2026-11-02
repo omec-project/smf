@@ -96,3 +96,12 @@ func TestDnnRejectCausesAreSliceScoped(t *testing.T) {
 		}
 	}
 }
+
+func TestSMContextNotFoundCarriesContextNotFoundCause(t *testing.T) {
+	if SMContextNotFound.GetStatus() != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, SMContextNotFound.GetStatus())
+	}
+	if SMContextNotFound.GetCause() != "CONTEXT_NOT_FOUND" {
+		t.Fatalf("expected cause CONTEXT_NOT_FOUND, got %q", SMContextNotFound.GetCause())
+	}
+}
