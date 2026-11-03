@@ -40,10 +40,13 @@ func GetSessionRulesUpdate(pcfSessRules map[string]*models.SessionRule, ctxtSess
 	// TODO: Iterate through all session rules from PCF and check against ctxt session rules
 	// Get only active session Rule for now
 	for name, sessRule := range pcfSessRules {
-		rule := sessRule
+		rule := models.NewSessionRuleWithDefaults()
+		if sessRule != nil {
+			*rule = *sessRule
+		}
 		// Rules to be deleted
 		if rule.GetSessRuleId() == "" {
-			change.del[name] = rule // nil
+			change.del[name] = rule
 			continue
 		}
 
@@ -83,6 +86,13 @@ func sessionRuleChanged(decided, committed *models.SessionRule) bool {
 	}
 
 	return !reflect.DeepEqual(*decided, *committed)
+}
+
+// isDeleted reports whether the update deletes name, by membership: a deletion's entry carries no
+// content, so what it holds says nothing about whether it is there.
+func isDeleted(del map[string]*models.SessionRule, name string) bool {
+	_, ok := del[name]
+	return ok
 }
 
 func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRulesUpdate) {
@@ -130,7 +140,7 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 	case active == "":
 		// Nothing was active and this update names nothing.
 
-	case update.del[active] != nil:
+	case isDeleted(update.del, active):
 		logger.CtxLog.Infof("the active session rule %q was deleted by this update; the session has none", active)
 
 		smCtxtPolData.SmCtxtSessionRules.ActiveRule = nil
