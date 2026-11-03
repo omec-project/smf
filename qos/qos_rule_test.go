@@ -89,7 +89,7 @@ func TestBuildQosRules_SkipsPccRuleWithoutRefQosData(t *testing.T) {
 	pccRule.SetPccRuleId("missing-qos-ref")
 	pccRule.SetPrecedence(1)
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.SetPccRules(map[string]models.PccRule{"missing-qos-ref": pccRule})
+	smPolicyDecision.SetPccRules(map[string]*models.PccRule{"missing-qos-ref": &pccRule})
 	smPolicyUpdates := qos.BuildSmPolicyUpdate(&qos.SmCtxtPolicyData{}, smPolicyDecision)
 
 	if got := qos.BuildQosRules(smPolicyUpdates); len(got) != 0 {
@@ -97,7 +97,7 @@ func TestBuildQosRules_SkipsPccRuleWithoutRefQosData(t *testing.T) {
 	}
 }
 
-func makeSamplePccRules() map[string]models.PccRule {
+func makeSamplePccRules() map[string]*models.PccRule {
 	var pccRule1 models.PccRule
 	pccRule1.SetPccRuleId("1")
 	pccRule1.SetPrecedence(200)
@@ -116,10 +116,10 @@ func makeSamplePccRules() map[string]models.PccRule {
 
 	pccRule1.SetFlowInfos([]models.FlowInformation{flowInfo1, flowInfo2})
 
-	return map[string]models.PccRule{"PccRule1": pccRule1}
+	return map[string]*models.PccRule{"PccRule1": &pccRule1}
 }
 
-func makeSampleQosData() *map[string]models.QosData {
+func makeSampleQosData() *map[string]*models.QosData {
 	qosData1 := models.NewQosData("5")
 	qosData1.SetVar5qi(5)
 	qosData1.SetMaxbrUl("101 Mbps")
@@ -129,14 +129,14 @@ func makeSampleQosData() *map[string]models.QosData {
 	qosData1.SetPriorityLevel(5)
 	qosData1.SetDefQosFlowIndication(true)
 
-	qosDataMap := map[string]models.QosData{
-		testQosData1: *qosData1,
+	qosDataMap := map[string]*models.QosData{
+		testQosData1: qosData1,
 	}
 
 	return &qosDataMap
 }
 
-func makeSampleSessionRule() *map[string]models.SessionRule {
+func makeSampleSessionRule() *map[string]*models.SessionRule {
 	arp1 := models.NewArpWithDefaults()
 	arp1.SetPriorityLevel(8)
 	arp1.SetPreemptCap(models.PREEMPTIONCAPABILITY_MAY_PREEMPT)
@@ -161,9 +161,9 @@ func makeSampleSessionRule() *map[string]models.SessionRule {
 	sessRule2.SetAuthSessAmbr(*models.NewAmbr("55 Mbps", "33 Mbps"))
 	sessRule2.SetAuthDefQos(*authorizedDefaultQos2)
 
-	sessionRuleMap := map[string]models.SessionRule{
-		"SessRule1": *sessRule1,
-		"SessRule2": *sessRule2,
+	sessionRuleMap := map[string]*models.SessionRule{
+		"SessRule1": sessRule1,
+		"SessRule2": sessRule2,
 	}
 
 	return &sessionRuleMap

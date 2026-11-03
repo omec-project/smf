@@ -52,7 +52,7 @@ func TestCommittingAnUpdateThatDoesNotTouchTheActiveRuleKeepsIt(t *testing.T) {
 
 	// A decision that changes the other rule and leaves the active one alone.
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{testRuleID2: *other},
+		map[string]*models.SessionRule{testRuleID2: other},
 		polData.SmCtxtSessionRules.SessionRules,
 		polData.SmCtxtSessionRules.ActiveRuleName,
 	)
@@ -85,7 +85,7 @@ func TestCommittingAnUpdateThatNamesAnActiveRuleReplacesIt(t *testing.T) {
 	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{testRuleID2: {
+		map[string]*models.SessionRule{testRuleID2: {
 			SessRuleId:   testRuleID2,
 			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}},
@@ -116,7 +116,7 @@ func TestCommittingADeletionOfTheActiveRuleLeavesNoneActive(t *testing.T) {
 
 	// A rule with no identity is how the decision expresses a deletion.
 	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: {}}, committed.SmCtxtSessionRules.SessionRules,
+		map[string]*models.SessionRule{establishedRuleID: {}}, committed.SmCtxtSessionRules.SessionRules,
 		committed.SmCtxtSessionRules.ActiveRuleName))
 
 	if committed.SmCtxtSessionRules.ActiveRule != nil {
@@ -139,7 +139,7 @@ func TestCommittingAChangeToTheActiveRuleReplacesIt(t *testing.T) {
 	committed.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	CommitSessionRulesUpdate(committed, GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: {
+		map[string]*models.SessionRule{establishedRuleID: {
 			SessRuleId:   establishedRuleID,
 			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}}, committed.SmCtxtSessionRules.SessionRules, committed.SmCtxtSessionRules.ActiveRuleName))
@@ -169,7 +169,7 @@ func TestAChangeToTheActiveRuleIsNamedInTheUpdate(t *testing.T) {
 	polData.SmCtxtSessionRules.ActiveRuleName = establishedRuleID
 
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: {
+		map[string]*models.SessionRule{establishedRuleID: {
 			SessRuleId:   establishedRuleID,
 			AuthSessAmbr: models.NewAmbr(ambrAfter, ambrAfter),
 		}},
@@ -209,7 +209,7 @@ func TestRepeatingTheActiveRuleUnchangedNamesNothing(t *testing.T) {
 	repeated.AuthSessAmbr = models.NewAmbr(ambrBefore, ambrBefore)
 
 	update := GetSessionRulesUpdate(
-		map[string]models.SessionRule{establishedRuleID: repeated},
+		map[string]*models.SessionRule{establishedRuleID: &repeated},
 		polData.SmCtxtSessionRules.SessionRules,
 		polData.SmCtxtSessionRules.ActiveRuleName,
 	)

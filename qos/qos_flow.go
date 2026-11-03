@@ -577,7 +577,7 @@ func (qfd *QoSFlowDescription) addQosFlowRateParam(rate string, rateType uint8) 
 	qfd.QFDLen += 5 //(Id-1 + len-1 + Content-3)
 }
 
-func GetQosFlowDescUpdate(pcfQosData map[string]models.QosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
+func GetQosFlowDescUpdate(pcfQosData map[string]*models.QosData, ctxtQosData map[string]*models.QosData) *QosFlowsUpdate {
 	if len(pcfQosData) == 0 {
 		return nil
 	}
@@ -590,7 +590,11 @@ func GetQosFlowDescUpdate(pcfQosData map[string]models.QosData, ctxtQosData map[
 
 	// Iterate through pcf qos data to identify find add/mod/del qos flows
 	for name, pcfQF := range pcfQosData {
-		qosData := pcfQF
+		// A copy, because a deletion's identifier is written into it below and the decision is the caller's.
+		qosData := new(models.QosData)
+		if pcfQF != nil {
+			*qosData = *pcfQF
+		}
 		// if pcfQF is null then rule is deleted
 		if qosData.GetQosId() == "" {
 			// A decision expresses a deletion as an entry with nothing in it, so the flow's own
@@ -602,15 +606,15 @@ func GetQosFlowDescUpdate(pcfQosData map[string]models.QosData, ctxtQosData map[
 				qosData.QosId = committed.GetQosId()
 			}
 
-			update.del[name] = &qosData
+			update.del[name] = qosData
 			continue
 		}
 
 		// Flows to add
 		if ctxtQF := ctxtQosData[name]; ctxtQF == nil {
-			update.add[name] = &qosData
-		} else if GetQosDataChanges(&qosData, ctxtQF) {
-			update.mod[name] = &qosData
+			update.add[name] = qosData
+		} else if GetQosDataChanges(qosData, ctxtQF) {
+			update.mod[name] = qosData
 		}
 	}
 
@@ -715,7 +719,7 @@ func GetQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecision, ref
 		logger.PduSessLog.Errorf("QoS Data [%s] not found in QosDecs", refQosData)
 		return nil
 	}
-	return &qosData
+	return qosData
 }
 
 func (upd *QosFlowsUpdate) GetAddQosFlowUpdate() map[string]*models.QosData {
@@ -726,7 +730,7 @@ func GetDefaultQoSDataFromPolicyDecision(smPolicyDecision *models.SmPolicyDecisi
 	for id, qosData := range smPolicyDecision.GetQosDecs() {
 		logger.QosLog.Infof("QoSData ID=%s, DefQosFlowIndication=%v, 5QI=%d", id, qosData.GetDefQosFlowIndication(), qosData.GetVar5qi())
 		if qosData.GetDefQosFlowIndication() {
-			return &qosData
+			return qosData
 		}
 	}
 

@@ -112,7 +112,8 @@ func BuildSmPolicyUpdate(smCtxtPolData *SmCtxtPolicyData, smPolicyDecision *mode
 // every reader of this decision sees the same canonical string.
 func normalizeSessionAmbrRates(smPolicyDecision *models.SmPolicyDecision) {
 	for _, rule := range smPolicyDecision.GetSessRules() {
-		if rule.AuthSessAmbr == nil {
+		// A null entry is a deletion, which has no rate to normalize.
+		if rule == nil || !rule.HasAuthSessAmbr() {
 			continue
 		}
 		rule.AuthSessAmbr.Uplink = util.NormalizeBitRate(rule.AuthSessAmbr.Uplink)

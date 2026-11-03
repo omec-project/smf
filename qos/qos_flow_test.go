@@ -45,7 +45,7 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsExplicitNullRates(t *testing.T) 
 	qosData.GbrUl.Set(nil)
 	qosData.GbrDl.Set(nil)
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{"null-rates": *qosData})
+	smPolicyDecision.SetQosDecs(map[string]*models.QosData{"null-rates": qosData})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
 	smCtxtPolData.Initialize()
@@ -69,8 +69,8 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsZeroRates(t *testing.T) {
 	qosData.SetMaxbrUl("0 Mbps")
 	qosData.SetMaxbrDl("0 Mbps")
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{
-		"zero-rates": *qosData,
+	smPolicyDecision.SetQosDecs(map[string]*models.QosData{
+		"zero-rates": qosData,
 	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}
@@ -98,8 +98,8 @@ func TestBuildAuthorizedQosFlowDescriptionsSkipsMalformedRates(t *testing.T) {
 	qosData.SetMaxbrDl("-1 Mbps") // negative -> rejected by ParseUint
 
 	smPolicyDecision := models.NewSmPolicyDecision()
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{
-		"malformed-rates": *qosData,
+	smPolicyDecision.SetQosDecs(map[string]*models.QosData{
+		"malformed-rates": qosData,
 	})
 
 	smCtxtPolData := &qos.SmCtxtPolicyData{}

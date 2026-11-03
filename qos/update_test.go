@@ -20,7 +20,7 @@ const (
 )
 
 func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
-	pcfRules := map[string]models.SessionRule{
+	pcfRules := map[string]*models.SessionRule{
 		testKeyAdd:  {SessRuleId: testSessAdd},
 		testKeyAdd2: {SessRuleId: testSessAdd2},
 	}
@@ -50,7 +50,7 @@ func TestGetSessionRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 }
 
 func TestGetSessionRulesUpdateDeletePointersRemainDistinct(t *testing.T) {
-	pcfRules := map[string]models.SessionRule{
+	pcfRules := map[string]*models.SessionRule{
 		testKeyDelA: {},
 		testKeyDelB: {},
 	}
@@ -62,7 +62,7 @@ func TestGetSessionRulesUpdateDeletePointersRemainDistinct(t *testing.T) {
 }
 
 func TestGetPccRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
-	pcfRules := map[string]models.PccRule{
+	pcfRules := map[string]*models.PccRule{
 		testKeyAdd:  {PccRuleId: "pcc-add"},
 		testKeyAdd2: {PccRuleId: "pcc-add-2"},
 		testKeyDelA: {},
@@ -83,7 +83,7 @@ func TestGetPccRulesUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 }
 
 func TestGetQosFlowDescUpdateUsesDistinctPointersPerEntry(t *testing.T) {
-	pcfQos := map[string]models.QosData{
+	pcfQos := map[string]*models.QosData{
 		testKeyAdd:  {QosId: "qos-add"},
 		testKeyAdd2: {QosId: "qos-add-2"},
 		testKeyDelA: {},
@@ -104,7 +104,7 @@ func TestGetQosFlowDescUpdateUsesDistinctPointersPerEntry(t *testing.T) {
 }
 
 func TestGetTrafficControlUpdateUsesDistinctPointersPerEntry(t *testing.T) {
-	pcfTc := map[string]models.TrafficControlData{
+	pcfTc := map[string]*models.TrafficControlData{
 		testKeyAdd:  {TcId: "tc-add"},
 		testKeyAdd2: {TcId: "tc-add-2"},
 		testKeyDelA: {},

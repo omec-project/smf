@@ -281,7 +281,7 @@ func TestBuildPfcpParamWithdrawsTheRulesTheUpdateDeletes(t *testing.T) {
 
 	// Built the way the PCF's decision builds it: a rule carrying no identity is a deletion.
 	decision := &models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{
+		PccRules: map[string]*models.PccRule{
 			defaultPdrKey: {PccRuleId: defaultPdrKey},
 			"going":       {},
 		},
@@ -422,7 +422,7 @@ func TestDeletingTheDefaultRuleRemovesItOnce(t *testing.T) {
 		1: &smf_context.DataPath{IsDefaultPath: true, Activated: true, FirstDPNode: node},
 	}}
 
-	decision := &models.SmPolicyDecision{PccRules: map[string]models.PccRule{defaultPdrKey: {}}}
+	decision := &models.SmPolicyDecision{PccRules: map[string]*models.PccRule{defaultPdrKey: {}}}
 	sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&sm.SmPolicyData, decision)}
 
 	param := BuildPfcpParam(sm)

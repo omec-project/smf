@@ -18,7 +18,7 @@ func DecidedPccRule(decision *models.SmPolicyDecision, committed *SmCtxtPolicyDa
 		if rule.GetPccRuleId() == "" {
 			return nil
 		}
-		return &rule
+		return rule
 	}
 
 	return committed.SmCtxtPccRules.PccRules[name]
@@ -30,7 +30,7 @@ func DecidedQosData(decision *models.SmPolicyDecision, committed *SmCtxtPolicyDa
 		if qosData.GetQosId() == "" {
 			return nil
 		}
-		return &qosData
+		return qosData
 	}
 
 	return committed.SmCtxtQosData.QosData[name]
@@ -42,7 +42,7 @@ func DecidedTcData(decision *models.SmPolicyDecision, committed *SmCtxtPolicyDat
 		if tcData.GetTcId() == "" {
 			return nil
 		}
-		return &tcData
+		return tcData
 	}
 
 	return committed.SmCtxtTCData.TrafficControlData[name]

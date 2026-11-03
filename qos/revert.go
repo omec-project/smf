@@ -41,15 +41,15 @@ func RevertOf(committed *SmCtxtPolicyData, abandoned *PolicyUpdate) *PolicyUpdat
 
 // backTo is the decision entries that turn applied into committed: each committed entry as it is,
 // and an empty one -- which is how a decision says "delete" -- for each entry only applied has.
-func backTo[T any](committed, applied map[string]*T) map[string]T {
-	out := make(map[string]T, len(committed)+len(applied))
+func backTo[T any](committed, applied map[string]*T) map[string]*T {
+	out := make(map[string]*T, len(committed)+len(applied))
 	for name, entry := range committed {
-		out[name] = *entry
+		copied := *entry
+		out[name] = &copied
 	}
 	for name := range applied {
 		if _, kept := committed[name]; !kept {
-			var deleted T
-			out[name] = deleted
+			out[name] = new(T)
 		}
 	}
 	return out

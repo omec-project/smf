@@ -170,7 +170,7 @@ func TestACorrectionIsQueuedBehindTheCompletion(t *testing.T) {
 // withdraw.
 func flowsUpdate() *qos.PolicyUpdate {
 	return &qos.PolicyUpdate{QosFlowUpdate: qos.GetQosFlowDescUpdate(
-		map[string]models.QosData{
+		map[string]*models.QosData{
 			"1": {QosId: "1", Var5qi: openapi.PtrInt32(9)},
 			"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
 		},

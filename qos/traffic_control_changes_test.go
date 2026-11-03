@@ -40,7 +40,7 @@ func TestTrafficControlDataIsComparedAndCommittedByValue(t *testing.T) {
 
 	changed := *decoded
 	changed.FlowStatus = &disabled
-	update := GetTrafficControlUpdate(map[string]models.TrafficControlData{"tc": changed},
+	update := GetTrafficControlUpdate(map[string]*models.TrafficControlData{"tc": &changed},
 		committed.SmCtxtTCData.TrafficControlData)
 	if _, ok := update.GetModified()["tc"]; !ok {
 		t.Fatal("disabling the flow does not read as a modification")

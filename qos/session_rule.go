@@ -26,7 +26,7 @@ type SessRulesUpdate struct {
 // because the pending update is what the NAS command is built from: the Session-AMBR is emitted
 // only when the update carries an active rule, so a changed rate that was left to the mod map
 // alone was committed by the SMF and never told to the UE.
-func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessRules map[string]*models.SessionRule, activeRuleName string) *SessRulesUpdate {
+func GetSessionRulesUpdate(pcfSessRules map[string]*models.SessionRule, ctxtSessRules map[string]*models.SessionRule, activeRuleName string) *SessRulesUpdate {
 	if len(pcfSessRules) == 0 {
 		return nil
 	}
@@ -40,22 +40,25 @@ func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessR
 	// TODO: Iterate through all session rules from PCF and check against ctxt session rules
 	// Get only active session Rule for now
 	for name, sessRule := range pcfSessRules {
-		rule := sessRule
+		rule := models.NewSessionRuleWithDefaults()
+		if sessRule != nil {
+			*rule = *sessRule
+		}
 		// Rules to be deleted
 		if rule.GetSessRuleId() == "" {
-			change.del[name] = &rule // nil
+			change.del[name] = rule
 			continue
 		}
 
 		// Rules to be added
 		if ctxtSessRules[name] == nil {
-			change.add[name] = &rule
+			change.add[name] = rule
 
 			// Activate last rule
 			change.activeRuleName = name
-			change.ActiveSessRule = &rule
+			change.ActiveSessRule = rule
 		} else {
-			change.mod[name] = &rule
+			change.mod[name] = rule
 
 			// A change to the rule in force is a change the UE has to be told about, and the
 			// builder reads it from here -- but only a change. Every rule the decision repeats
@@ -63,9 +66,9 @@ func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessR
 			// naming the active rule for one of those would put a Session-AMBR in the command for
 			// a policy notification that altered nothing, and have the rest of the SMF treat an
 			// unrelated update as an active-rule change.
-			if name == activeRuleName && sessionRuleChanged(&rule, ctxtSessRules[name]) {
+			if name == activeRuleName && sessionRuleChanged(rule, ctxtSessRules[name]) {
 				change.activeRuleName = name
-				change.ActiveSessRule = &rule
+				change.ActiveSessRule = rule
 			}
 		}
 	}
@@ -83,6 +86,13 @@ func sessionRuleChanged(decided, committed *models.SessionRule) bool {
 	}
 
 	return !reflect.DeepEqual(*decided, *committed)
+}
+
+// isDeleted reports whether the update deletes name, by membership: a deletion's entry carries no
+// content, so what it holds says nothing about whether it is there.
+func isDeleted(del map[string]*models.SessionRule, name string) bool {
+	_, ok := del[name]
+	return ok
 }
 
 func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRulesUpdate) {
@@ -130,7 +140,7 @@ func CommitSessionRulesUpdate(smCtxtPolData *SmCtxtPolicyData, update *SessRules
 	case active == "":
 		// Nothing was active and this update names nothing.
 
-	case update.del[active] != nil:
+	case isDeleted(update.del, active):
 		logger.CtxLog.Infof("the active session rule %q was deleted by this update; the session has none", active)
 
 		smCtxtPolData.SmCtxtSessionRules.ActiveRule = nil

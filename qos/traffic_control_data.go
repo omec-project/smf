@@ -10,7 +10,7 @@ type TrafficControlUpdate struct {
 	add, mod, del map[string]*models.TrafficControlData
 }
 
-func GetTrafficControlUpdate(tcData map[string]models.TrafficControlData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
+func GetTrafficControlUpdate(tcData map[string]*models.TrafficControlData, ctxtTcData map[string]*models.TrafficControlData) *TrafficControlUpdate {
 	if len(tcData) == 0 {
 		return nil
 	}
@@ -23,18 +23,21 @@ func GetTrafficControlUpdate(tcData map[string]models.TrafficControlData, ctxtTc
 
 	// Compare against Ctxt rules to get added or modified rules
 	for name, pcfTc := range tcData {
-		tc := pcfTc
-		// if pcfRule is nil then it need to be deleted
+		tc := models.NewTrafficControlDataWithDefaults()
+		if pcfTc != nil {
+			*tc = *pcfTc
+		}
+		// an entry with no identifier is a deletion
 		if tc.GetTcId() == "" {
-			change.del[name] = &tc // nil
+			change.del[name] = tc
 			continue
 		}
 
 		// match against SM ctxt Rules for add/mod
 		if ctxtTc := ctxtTcData[name]; ctxtTc == nil {
-			change.add[name] = &tc
-		} else if GetTCDataChanges(&tc, ctxtTc) {
-			change.mod[name] = &tc
+			change.add[name] = tc
+		} else if GetTCDataChanges(tc, ctxtTc) {
+			change.mod[name] = tc
 		}
 	}
 

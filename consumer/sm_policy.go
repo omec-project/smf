@@ -275,6 +275,11 @@ func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
 	// Validate just presence of important IEs as of now
 	// Sess Rules
 	for name, rule := range smPolicy.GetSessRules() {
+		if rule == nil {
+			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, rule is null", name)
+			return fmt.Errorf("session rule is null")
+		}
+
 		if rule.AuthSessAmbr == nil {
 			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
 			return fmt.Errorf("authorised session ambr missing")

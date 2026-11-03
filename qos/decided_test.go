@@ -23,12 +23,12 @@ func TestADecidedEntryIsTheDecisionsTheCommittedOneOrNone(t *testing.T) {
 	}
 
 	decision := &models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{
+		PccRules: map[string]*models.PccRule{
 			changed: {PccRuleId: changed, RefQosData: []string{"decided"}},
 			deleted: {},
 		},
-		QosDecs:       &map[string]models.QosData{changed: {QosId: changed + "-decided"}, deleted: {}},
-		TraffContDecs: &map[string]models.TrafficControlData{changed: {TcId: changed + "-decided"}, deleted: {}},
+		QosDecs:       &map[string]*models.QosData{changed: {QosId: changed + "-decided"}, deleted: {}},
+		TraffContDecs: &map[string]*models.TrafficControlData{changed: {TcId: changed + "-decided"}, deleted: {}},
 	}
 
 	for name, want := range map[string]string{kept: "committed", changed: "decided", deleted: ""} {

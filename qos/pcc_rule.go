@@ -13,7 +13,7 @@ type PccRulesUpdate struct {
 	add, mod, del map[string]*models.PccRule
 }
 
-func GetPccRulesUpdate(pcfPccRules map[string]models.PccRule, ctxtPccRules map[string]*models.PccRule) *PccRulesUpdate {
+func GetPccRulesUpdate(pcfPccRules map[string]*models.PccRule, ctxtPccRules map[string]*models.PccRule) *PccRulesUpdate {
 	if len(pcfPccRules) == 0 {
 		return nil
 	}
@@ -26,18 +26,21 @@ func GetPccRulesUpdate(pcfPccRules map[string]models.PccRule, ctxtPccRules map[s
 
 	// Compare against Ctxt rules to get added or modified rules
 	for name, pcfRule := range pcfPccRules {
-		rule := pcfRule
-		// if pcfRule is nil then it need to be deleted
+		rule := models.NewPccRuleWithDefaults()
+		if pcfRule != nil {
+			*rule = *pcfRule
+		}
+		// an entry with no identifier is a deletion
 		if rule.GetPccRuleId() == "" {
-			change.del[name] = &rule // nil
+			change.del[name] = rule
 			continue
 		}
 
 		// match against SM ctxt Rules for add/mod
 		if ctxtrule := ctxtPccRules[name]; ctxtrule == nil {
-			change.add[name] = &rule
-		} else if GetPccRuleChanges(&rule, ctxtrule) {
-			change.mod[name] = &rule
+			change.add[name] = rule
+		} else if GetPccRuleChanges(rule, ctxtrule) {
+			change.mod[name] = rule
 		}
 	}
 

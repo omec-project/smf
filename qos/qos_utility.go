@@ -125,25 +125,25 @@ func SmPolicyDecisionString(smPolicy *models.SmPolicyDecision) string {
 	// PCC Rules
 	str := "\nPCC Rules: "
 	for name, rule := range smPolicy.GetPccRules() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(&rule))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(rule))
 	}
 
 	// Session Rules
 	str = str + "\nSession Rules: "
 	for name, rule := range smPolicy.GetSessRules() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(&rule))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(rule))
 	}
 
 	// Qos Data
 	str = str + "\nQosData: "
 	for name, qosData := range smPolicy.GetQosDecs() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(&qosData))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(qosData))
 	}
 
 	// TC Data
 	str = str + "\nTCData: "
 	for name, tcData := range smPolicy.GetTraffContDecs() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(&tcData))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(tcData))
 	}
 	return str
 }
@@ -160,6 +160,10 @@ func SessRuleString(s *models.SessionRule) string {
 	if s == nil {
 		return ""
 	}
+	// A deletion carries neither, and a decision that fails validation is still logged.
+	if !s.HasAuthSessAmbr() || !s.HasAuthDefQos() {
+		return fmt.Sprintf("SessRule:[RuleId:[%v]]", s.GetSessRuleId())
+	}
 	return fmt.Sprintf("SessRule:[RuleId:[%v], Ambr:[Dl:[%v], Ul:[%v]], AuthDefQos:[Var5QI:[%v], PriorityLevel:[%v], ARP:[%v]]]",
 		s.SessRuleId, s.AuthSessAmbr.Downlink, s.AuthSessAmbr.Uplink, s.AuthDefQos.Var5qi, s.AuthDefQos.PriorityLevel, s.AuthDefQos.Arp)
 }
@@ -169,11 +173,20 @@ func PccRuleString(pcc *models.PccRule) string {
 		return ""
 	}
 
+	// A deletion carries no QoS reference.
+	refQosData := ""
+	if len(pcc.GetRefQosData()) > 0 {
+		refQosData = pcc.RefQosData[0]
+	}
+
 	return fmt.Sprintf("PccRule:[RuleId:[%v], Precdence:[%v], RefQosData:[%v], flow:[%v]]",
-		pcc.PccRuleId, pcc.Precedence, pcc.RefQosData[0], PccFlowInfosString(pcc.FlowInfos))
+		pcc.PccRuleId, pcc.Precedence, refQosData, PccFlowInfosString(pcc.FlowInfos))
 }
 
 func TCDataString(tcData *models.TrafficControlData) string {
+	if tcData == nil {
+		return ""
+	}
 	return fmt.Sprintf("TC Data:[Id:[%v], FlowStatus:[%v]]", tcData.TcId, tcData.FlowStatus)
 }
 

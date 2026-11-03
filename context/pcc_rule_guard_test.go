@@ -28,7 +28,7 @@ func TestTheDownlinkTunnelSkipsAPccRuleThatCarriesNoFlows(t *testing.T) {
 	appID := "app-1"
 	smContext := &SMContext{Supi: testSupi, SubCtxLog: zap.NewNop().Sugar()}
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
-		PccRuleUpdate: qos.GetPccRulesUpdate(map[string]models.PccRule{
+		PccRuleUpdate: qos.GetPccRulesUpdate(map[string]*models.PccRule{
 			"app-rule": {PccRuleId: "app-rule", AppId: &appID},
 		}, nil),
 	}}

@@ -33,7 +33,7 @@ func MakeSamplePolicyDecision() *models.SmPolicyDecision {
 }
 
 // MakePccRules builds sample PCC rules for QoS tests.
-func MakePccRules() map[string]models.PccRule {
+func MakePccRules() map[string]*models.PccRule {
 	var pccRuleDef models.PccRule
 	pccRuleDef.SetPccRuleId("255")
 	pccRuleDef.SetPrecedence(255)
@@ -83,15 +83,15 @@ func MakePccRules() map[string]models.PccRule {
 	flowInfo4.SetFlowDirection(models.FLOWDIRECTIONRM_BIDIRECTIONAL)
 	pccRule2.SetFlowInfos([]models.FlowInformation{flowInfo3, flowInfo4})
 
-	return map[string]models.PccRule{
-		"PccRule1":   pccRule1,
-		"PccRule2":   pccRule2,
-		"PccRuleDef": pccRuleDef,
+	return map[string]*models.PccRule{
+		"PccRule1":   &pccRule1,
+		"PccRule2":   &pccRule2,
+		"PccRuleDef": &pccRuleDef,
 	}
 }
 
 // MakeQosData builds sample QoS data for QoS tests.
-func MakeQosData() map[string]models.QosData {
+func MakeQosData() map[string]*models.QosData {
 	arp1 := models.NewArpWithDefaults()
 	arp1.SetPriorityLevel(3)
 	arp1.SetPreemptCap(models.PREEMPTIONCAPABILITY_MAY_PREEMPT)
@@ -120,14 +120,14 @@ func MakeQosData() map[string]models.QosData {
 	qosData2.SetDefQosFlowIndication(false)
 	qosData2.SetArp(*arp2)
 
-	return map[string]models.QosData{
-		testQosData1: *qosData1,
-		"QosData2":   *qosData2,
+	return map[string]*models.QosData{
+		testQosData1: qosData1,
+		"QosData2":   qosData2,
 	}
 }
 
 // MakeSessionRule builds sample session rules for QoS tests.
-func MakeSessionRule() map[string]models.SessionRule {
+func MakeSessionRule() map[string]*models.SessionRule {
 	arp1 := models.NewArpWithDefaults()
 	arp1.SetPriorityLevel(8)
 	arp1.SetPreemptCap(models.PREEMPTIONCAPABILITY_MAY_PREEMPT)
@@ -153,14 +153,14 @@ func MakeSessionRule() map[string]models.SessionRule {
 	sessRule2.SetAuthSessAmbr(*models.NewAmbr("55 Mbps", "33 Mbps"))
 	sessRule2.SetAuthDefQos(*authorizedDefaultQos2)
 
-	return map[string]models.SessionRule{
-		"SessRule1": *sessRule1,
-		"SessRule2": *sessRule2,
+	return map[string]*models.SessionRule{
+		"SessRule1": sessRule1,
+		"SessRule2": sessRule2,
 	}
 }
 
 // MakeTrafficControlData builds sample traffic control data for QoS tests.
-func MakeTrafficControlData() map[string]models.TrafficControlData {
+func MakeTrafficControlData() map[string]*models.TrafficControlData {
 	var tc1 models.TrafficControlData
 	tc1.SetTcId(testTcData1)
 	tc1.SetFlowStatus(models.FLOWSTATUS_ENABLED)
@@ -169,8 +169,8 @@ func MakeTrafficControlData() map[string]models.TrafficControlData {
 	tc2.SetTcId(testTcData2)
 	tc2.SetFlowStatus(models.FLOWSTATUS_ENABLED)
 
-	return map[string]models.TrafficControlData{
-		testTcData1: tc1,
-		testTcData2: tc2,
+	return map[string]*models.TrafficControlData{
+		testTcData1: &tc1,
+		testTcData2: &tc2,
 	}
 }

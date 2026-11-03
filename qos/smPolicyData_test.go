@@ -17,7 +17,7 @@ const ruleName = "rule-1"
 // comes from, so canonicalizing there is what keeps them agreeing.
 func TestBuildSmPolicyUpdateCanonicalizesTheSessionAmbr(t *testing.T) {
 	decision := models.NewSmPolicyDecision()
-	decision.SetSessRules(map[string]models.SessionRule{
+	decision.SetSessRules(map[string]*models.SessionRule{
 		ruleName: {
 			SessRuleId:   ruleName,
 			AuthSessAmbr: models.NewAmbr("100  Mbps", "100 mbps"),
@@ -39,7 +39,7 @@ func TestBuildSmPolicyUpdateCanonicalizesTheSessionAmbr(t *testing.T) {
 // must not be dereferenced here before that refusal happens.
 func TestBuildSmPolicyUpdateToleratesANilSessionAmbr(t *testing.T) {
 	decision := models.NewSmPolicyDecision()
-	decision.SetSessRules(map[string]models.SessionRule{
+	decision.SetSessRules(map[string]*models.SessionRule{
 		ruleName: {SessRuleId: ruleName},
 	})
 
