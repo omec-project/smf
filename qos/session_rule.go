@@ -26,7 +26,7 @@ type SessRulesUpdate struct {
 // because the pending update is what the NAS command is built from: the Session-AMBR is emitted
 // only when the update carries an active rule, so a changed rate that was left to the mod map
 // alone was committed by the SMF and never told to the UE.
-func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessRules map[string]*models.SessionRule, activeRuleName string) *SessRulesUpdate {
+func GetSessionRulesUpdate(pcfSessRules map[string]*models.SessionRule, ctxtSessRules map[string]*models.SessionRule, activeRuleName string) *SessRulesUpdate {
 	if len(pcfSessRules) == 0 {
 		return nil
 	}
@@ -43,19 +43,19 @@ func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessR
 		rule := sessRule
 		// Rules to be deleted
 		if rule.GetSessRuleId() == "" {
-			change.del[name] = &rule // nil
+			change.del[name] = rule // nil
 			continue
 		}
 
 		// Rules to be added
 		if ctxtSessRules[name] == nil {
-			change.add[name] = &rule
+			change.add[name] = rule
 
 			// Activate last rule
 			change.activeRuleName = name
-			change.ActiveSessRule = &rule
+			change.ActiveSessRule = rule
 		} else {
-			change.mod[name] = &rule
+			change.mod[name] = rule
 
 			// A change to the rule in force is a change the UE has to be told about, and the
 			// builder reads it from here -- but only a change. Every rule the decision repeats
@@ -63,9 +63,9 @@ func GetSessionRulesUpdate(pcfSessRules map[string]models.SessionRule, ctxtSessR
 			// naming the active rule for one of those would put a Session-AMBR in the command for
 			// a policy notification that altered nothing, and have the rest of the SMF treat an
 			// unrelated update as an active-rule change.
-			if name == activeRuleName && sessionRuleChanged(&rule, ctxtSessRules[name]) {
+			if name == activeRuleName && sessionRuleChanged(rule, ctxtSessRules[name]) {
 				change.activeRuleName = name
-				change.ActiveSessRule = &rule
+				change.ActiveSessRule = rule
 			}
 		}
 	}

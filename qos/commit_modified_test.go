@@ -24,8 +24,8 @@ func TestCommittingAModificationRecordsTheModifiedEntries(t *testing.T) {
 	committed.SmCtxtPccRules.PccRules[ruleID] = &models.PccRule{PccRuleId: ruleID, RefQosData: []string{qosID}}
 
 	decision := &models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{ruleID: {PccRuleId: ruleID, RefQosData: []string{newQosID}}},
-		QosDecs: &map[string]models.QosData{
+		PccRules: map[string]*models.PccRule{ruleID: {PccRuleId: ruleID, RefQosData: []string{newQosID}}},
+		QosDecs: &map[string]*models.QosData{
 			qosID:    {QosId: qosID, MaxbrUl: *openapi.NewNullableString(openapi.PtrString("5 Mbps"))},
 			newQosID: {QosId: newQosID},
 		},

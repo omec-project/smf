@@ -18,7 +18,7 @@ func TestAWithdrawnFlowNamedByAReferenceIsAlsoWithdrawnFromTheUe(t *testing.T) {
 	committed := map[string]*models.QosData{"QosData7": {QosId: "7"}}
 
 	// A decision withdraws it: an entry with nothing in it, under the same key.
-	update := GetQosFlowDescUpdate(map[string]models.QosData{"QosData7": {}}, committed)
+	update := GetQosFlowDescUpdate(map[string]*models.QosData{"QosData7": {}}, committed)
 	if update == nil {
 		t.Fatal("no update produced for a decision that withdraws a flow")
 	}
@@ -37,7 +37,7 @@ func TestAWithdrawnFlowNamedByAReferenceIsAlsoWithdrawnFromTheUe(t *testing.T) {
 // check made 257 into flow 1, so the UE was told to create a flow belonging to nothing.
 func TestAnIdentifierThatCannotBeAFlowReachesTheUeAsNothing(t *testing.T) {
 	update := GetQosFlowDescUpdate(
-		map[string]models.QosData{"QosData257": {QosId: "257"}},
+		map[string]*models.QosData{"QosData257": {QosId: "257"}},
 		map[string]*models.QosData{},
 	)
 	if update == nil {

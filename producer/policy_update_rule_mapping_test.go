@@ -142,8 +142,8 @@ func (s *twoRuleSession) rateChange() *models.SmPolicyDecision {
 	changed.GbrDl = *openapi.NewNullableString(openapi.PtrString("2500 Kbps"))
 
 	decision := &models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: s.cirRule},
-		QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: changed},
+		PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: &s.cirRule},
+		QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: &changed},
 	}
 
 	return roundTrip(decision)
@@ -258,14 +258,14 @@ func TestAnAddedRuleIsProgrammedAndTheEstablishedOnesAreNotTouched(t *testing.T)
 
 		decision := s.rateChange()
 		// This decision changes nothing but the added rule.
-		(*decision.QosDecs)[cirQosID] = s.cirQosSent
+		(*decision.QosDecs)[cirQosID] = &s.cirQosSent
 		decision = roundTrip(decision)
-		(*decision.QosDecs)[appQosID] = models.QosData{
+		(*decision.QosDecs)[appQosID] = &models.QosData{
 			QosId: appQosID, Var5qi: openapi.PtrInt32(2),
 			MaxbrUl: *openapi.NewNullableString(openapi.PtrString("2 Mbps")),
 			MaxbrDl: *openapi.NewNullableString(openapi.PtrString("4 Mbps")),
 		}
-		decision.PccRules[appRuleID] = models.PccRule{
+		decision.PccRules[appRuleID] = &models.PccRule{
 			PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
 			FlowInfos: []models.FlowInformation{{
 				FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
@@ -357,11 +357,11 @@ func TestARateChangeToTheCatchAllReachesItsOwnPDRs(t *testing.T) {
 	s := newTwoRuleSession(t, false)
 
 	decision := s.rateChange()
-	(*decision.QosDecs)[cirQosID] = s.cirQosSent
+	(*decision.QosDecs)[cirQosID] = &s.cirQosSent
 	catchAll := s.allowQos
 	catchAll.MaxbrUl = *openapi.NewNullableString(openapi.PtrString("20 Mbps"))
 	catchAll.MaxbrDl = *openapi.NewNullableString(openapi.PtrString("40 Mbps"))
-	(*decision.QosDecs)[allowQosID] = catchAll
+	(*decision.QosDecs)[allowQosID] = &catchAll
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
 
 	param := BuildPfcpParam(s.sm)
@@ -401,15 +401,15 @@ func TestARuleRepointedAtNewQosDataIsRequalified(t *testing.T) {
 	s := newTwoRuleSession(t, false)
 
 	decision := s.rateChange()
-	(*decision.QosDecs)[cirQosID] = s.cirQosSent
-	(*decision.QosDecs)[newQosID] = models.QosData{
+	(*decision.QosDecs)[cirQosID] = &s.cirQosSent
+	(*decision.QosDecs)[newQosID] = &models.QosData{
 		QosId: newQosID, Var5qi: openapi.PtrInt32(3),
 		MaxbrUl: *openapi.NewNullableString(openapi.PtrString("7 Mbps")),
 		MaxbrDl: *openapi.NewNullableString(openapi.PtrString("9 Mbps")),
 	}
 	repointed := s.cirRule
 	repointed.RefQosData = []string{newQosID}
-	decision.PccRules[cirRuleID] = repointed
+	decision.PccRules[cirRuleID] = &repointed
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
 
 	param := BuildPfcpParam(s.sm)
@@ -553,15 +553,15 @@ func TestRevertingARepointingPutsTheRuleBackOnItsOwnQosData(t *testing.T) {
 
 	s := newTwoRuleSession(t, false)
 	decision := s.rateChange()
-	(*decision.QosDecs)[cirQosID] = s.cirQosSent
-	(*decision.QosDecs)[newQosID] = models.QosData{
+	(*decision.QosDecs)[cirQosID] = &s.cirQosSent
+	(*decision.QosDecs)[newQosID] = &models.QosData{
 		QosId: newQosID, Var5qi: openapi.PtrInt32(3),
 		MaxbrUl: *openapi.NewNullableString(openapi.PtrString("7 Mbps")),
 		MaxbrDl: *openapi.NewNullableString(openapi.PtrString("9 Mbps")),
 	}
 	repointed := s.cirRule
 	repointed.RefQosData = []string{newQosID}
-	decision.PccRules[cirRuleID] = repointed
+	decision.PccRules[cirRuleID] = &repointed
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
 	BuildPfcpParam(s.sm)
 	s.sm.NwModificationPending = true
@@ -587,8 +587,8 @@ func TestRevertingARepointingPutsTheRuleBackOnItsOwnQosData(t *testing.T) {
 // deleteDedicatedRule is the decision withdrawing the dedicated rule and its QoS data.
 func (s *twoRuleSession) deleteDedicatedRule() *models.SmPolicyDecision {
 	return roundTrip(&models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: {}},
-		QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: {}},
+		PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: {}},
+		QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: {}},
 	})
 }
 
@@ -768,8 +768,8 @@ func TestRevertingAnAdditionRemovesTheRuleFromTheSession(t *testing.T) {
 	s.withPfcpContext()
 
 	decision := roundTrip(&models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{
-			allowRuleID: s.allowRule, cirRuleID: s.cirRule,
+		PccRules: map[string]*models.PccRule{
+			allowRuleID: &s.allowRule, cirRuleID: &s.cirRule,
 			appRuleID: {
 				PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
 				FlowInfos: []models.FlowInformation{{
@@ -778,8 +778,8 @@ func TestRevertingAnAdditionRemovesTheRuleFromTheSession(t *testing.T) {
 				}},
 			},
 		},
-		QosDecs: &map[string]models.QosData{
-			allowQosID: s.allowQos, cirQosID: s.cirQosSent,
+		QosDecs: &map[string]*models.QosData{
+			allowQosID: &s.allowQos, cirQosID: &s.cirQosSent,
 			appQosID: {
 				QosId:   appQosID,
 				MaxbrUl: *openapi.NewNullableString(openapi.PtrString("2 Mbps")),
@@ -982,9 +982,9 @@ func TestDisablingAFlowClosesItsGateOnTheUserPlane(t *testing.T) {
 	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &enabled}
 
 	decision := s.rateChange()
-	(*decision.QosDecs)[cirQosID] = s.cirQosSent
-	decision.PccRules[cirRuleID] = s.cirRule
-	decision.TraffContDecs = &map[string]models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}}
+	(*decision.QosDecs)[cirQosID] = &s.cirQosSent
+	decision.PccRules[cirRuleID] = &s.cirRule
+	decision.TraffContDecs = &map[string]*models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}}
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(decision))}
 
 	param := BuildPfcpParam(s.sm)
@@ -1102,14 +1102,14 @@ func TestACorrectionProgramsNothingForTheFlowItWithdraws(t *testing.T) {
 		}
 
 		decision := s.rateChange()
-		(*decision.QosDecs)[cirQosID] = s.cirQosSent
+		(*decision.QosDecs)[cirQosID] = &s.cirQosSent
 		decision = roundTrip(decision)
-		(*decision.QosDecs)[appQosID] = models.QosData{
+		(*decision.QosDecs)[appQosID] = &models.QosData{
 			QosId: appQosID, Var5qi: openapi.PtrInt32(2),
 			MaxbrUl: *openapi.NewNullableString(openapi.PtrString("2 Mbps")),
 			MaxbrDl: *openapi.NewNullableString(openapi.PtrString("4 Mbps")),
 		}
-		decision.PccRules[appRuleID] = models.PccRule{
+		decision.PccRules[appRuleID] = &models.PccRule{
 			PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
 			FlowInfos: []models.FlowInformation{{
 				FlowDescription: openapi.PtrString("permit out ip from 192.168.250.2/32 to assigned"),
@@ -1180,8 +1180,8 @@ func (s *twoRuleSession) addAppRule() *models.SmPolicyDecision {
 	const appRuleID, appQosID = "app", "2"
 
 	return roundTrip(&models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{
-			allowRuleID: s.allowRule, cirRuleID: s.cirRule,
+		PccRules: map[string]*models.PccRule{
+			allowRuleID: &s.allowRule, cirRuleID: &s.cirRule,
 			appRuleID: {
 				PccRuleId: appRuleID, RefQosData: []string{appQosID}, Precedence: openapi.PtrInt32(100),
 				FlowInfos: []models.FlowInformation{{
@@ -1190,8 +1190,8 @@ func (s *twoRuleSession) addAppRule() *models.SmPolicyDecision {
 				}},
 			},
 		},
-		QosDecs: &map[string]models.QosData{
-			allowQosID: s.allowQos, cirQosID: s.cirQosSent,
+		QosDecs: &map[string]*models.QosData{
+			allowQosID: &s.allowQos, cirQosID: &s.cirQosSent,
 			appQosID: {QosId: appQosID, Var5qi: openapi.PtrInt32(2)},
 		},
 	})
@@ -1295,7 +1295,7 @@ func TestARateChangeThatDoesNotRepeatItsRuleReachesTheRule(t *testing.T) {
 	s := newTwoRuleSession(t, false)
 	s.withPfcpContext()
 	changed := (*s.rateChange().QosDecs)[cirQosID]
-	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]*models.QosData{cirQosID: changed}})
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
 
 	param := BuildPfcpParam(s.sm)
@@ -1331,8 +1331,8 @@ func TestAGateChangeThatLeavesOutTheQosDataClosesTheGate(t *testing.T) {
 	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &enabled}
 
 	decision := roundTrip(&models.SmPolicyDecision{
-		PccRules:      map[string]models.PccRule{cirRuleID: s.cirRule},
-		TraffContDecs: &map[string]models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}},
+		PccRules:      map[string]*models.PccRule{cirRuleID: &s.cirRule},
+		TraffContDecs: &map[string]*models.TrafficControlData{tcID: {TcId: tcID, FlowStatus: &disabled}},
 	})
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
 
@@ -1365,7 +1365,7 @@ func TestARateChangeKeepsADisabledFlowClosed(t *testing.T) {
 	s.sm.SmPolicyData.SmCtxtTCData.TrafficControlData[tcID] = &models.TrafficControlData{TcId: tcID, FlowStatus: &disabled}
 
 	changed := (*s.rateChange().QosDecs)[cirQosID]
-	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+	decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]*models.QosData{cirQosID: changed}})
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
 
 	param := BuildPfcpParam(s.sm)
@@ -1408,8 +1408,8 @@ func TestRevertingAWithdrawalOfEveryRuleRestoresTheSessionAmbr(t *testing.T) {
 	}
 
 	withdrawAll := roundTrip(&models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{allowRuleID: {}, cirRuleID: {}},
-		QosDecs:  &map[string]models.QosData{allowQosID: {}, cirQosID: {}},
+		PccRules: map[string]*models.PccRule{allowRuleID: {}, cirRuleID: {}},
+		QosDecs:  &map[string]*models.QosData{allowQosID: {}, cirQosID: {}},
 	})
 	if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, withdrawAll)); err == nil {
 		t.Fatal("the undeliverable modification was reported as delivered")
@@ -1484,7 +1484,7 @@ func TestASessionQERIsBuiltOnlyForRulesAddedToAnEmptiedNode(t *testing.T) {
 		s.withPfcpContext()
 		s.emptyNode()
 		changed := (*s.rateChange().QosDecs)[cirQosID]
-		decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]models.QosData{cirQosID: changed}})
+		decision := roundTrip(&models.SmPolicyDecision{QosDecs: &map[string]*models.QosData{cirQosID: changed}})
 		s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
 
 		if param := BuildPfcpParam(s.sm); len(param.qerList) != 0 {
@@ -1516,7 +1516,7 @@ func TestADecisionWithNoPccRuleAllocatesNoPdr(t *testing.T) {
 	defaultRuleDL := s.allowDL
 	node.DownLinkTunnel.PDR = map[string]*smf_context.PDR{defaultPdrKey: defaultRuleDL, cirRuleID: s.cirDL}
 
-	decision := roundTrip(&models.SmPolicyDecision{SessRules: &map[string]models.SessionRule{
+	decision := roundTrip(&models.SmPolicyDecision{SessRules: &map[string]*models.SessionRule{
 		"session": {SessRuleId: "session", AuthSessAmbr: &models.Ambr{Uplink: "120 Mbps", Downlink: "300 Mbps"}},
 	}})
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)}
@@ -1719,8 +1719,8 @@ func TestARevertThatBuildsNothingIsNotRefused(t *testing.T) {
 
 	s := newTwoRuleSession(t, false)
 	unchanged := roundTrip(&models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: s.cirRule},
-		QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+		PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: &s.cirRule},
+		QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: &s.cirQosSent},
 	})
 	s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, unchanged)}
 	s.sm.Tunnel.DataPathPool[1].FirstDPNode.UPF.UPFStatus = smf_context.NotAssociated
@@ -1855,14 +1855,14 @@ func TestADeletionOrARevertLeavesTheDefaultPathAlone(t *testing.T) {
 			s.sm.SmPolicyData.SmCtxtPccRules.PccRules[appRuleID] = &appRule
 			s.sm.SmPolicyData.SmCtxtQosData.QosData[appQosID] = &appQos
 			return qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{appRuleID: {}},
-				QosDecs:  &map[string]models.QosData{appQosID: {}},
+				PccRules: map[string]*models.PccRule{appRuleID: {}},
+				QosDecs:  &map[string]*models.QosData{appQosID: {}},
 			}))
 		}},
 		{"the revert of the modification that added it", true, func(s *defaultPathSession) *qos.PolicyUpdate {
 			added := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{appRuleID: s.appRule},
-				QosDecs:  &map[string]models.QosData{appQosID: s.appQos},
+				PccRules: map[string]*models.PccRule{appRuleID: &s.appRule},
+				QosDecs:  &map[string]*models.QosData{appQosID: &s.appQos},
 			}))
 			return qos.RevertOf(&s.sm.SmPolicyData, added)
 		}},
@@ -1874,7 +1874,7 @@ func TestADeletionOrARevertLeavesTheDefaultPathAlone(t *testing.T) {
 			changed.MaxbrUl = *openapi.NewNullableString(openapi.PtrString("2 Mbps"))
 			changed.MaxbrDl = *openapi.NewNullableString(openapi.PtrString("4 Mbps"))
 			rateChange := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				QosDecs: &map[string]models.QosData{appQosID: changed},
+				QosDecs: &map[string]*models.QosData{appQosID: &changed},
 			}))
 			return qos.RevertOf(&s.sm.SmPolicyData, rateChange)
 		}},
@@ -1932,8 +1932,8 @@ func TestARuleThatLosesItsQosDataLosesItsFlowQER(t *testing.T) {
 			allow := s.allowRule
 			allow.RefQosData = nil
 			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{allowRuleID: allow, cirRuleID: s.cirRule},
-				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+				PccRules: map[string]*models.PccRule{allowRuleID: &allow, cirRuleID: &s.cirRule},
+				QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: &s.cirQosSent},
 			}))}
 			return outcome{BuildPfcpParam(s.sm), []*smf_context.QER{s.allowULQER, s.allowDLQER}, s.allowUL, s.allowDL}
 		}},
@@ -1946,8 +1946,8 @@ func TestARuleThatLosesItsQosDataLosesItsFlowQER(t *testing.T) {
 			s.allowDL.QER = []*smf_context.QER{s.sessQER}
 
 			given := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: s.cirRule},
-				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+				PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: &s.cirRule},
+				QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: &s.cirQosSent},
 			}))
 			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{given}
 			BuildPfcpParam(s.sm)
@@ -2030,8 +2030,8 @@ func TestAPrecedenceChangeReachesTheRulesPDRs(t *testing.T) {
 			cir := s.cirRule
 			cir.Precedence = tc.precedence
 			update := qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: cir},
-				QosDecs:  &map[string]models.QosData{allowQosID: s.allowQos, cirQosID: s.cirQosSent},
+				PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: &cir},
+				QosDecs:  &map[string]*models.QosData{allowQosID: &s.allowQos, cirQosID: &s.cirQosSent},
 			}))
 			s.sm.SmPolicyUpdates = []*qos.PolicyUpdate{update}
 
@@ -2128,8 +2128,8 @@ func TestARefusedModificationLeavesItsRulesAsTheUPFHasThem(t *testing.T) {
 			allowQos.MaxbrUl = *openapi.NewNullableString(openapi.PtrString("5 Mbps"))
 			allowQos.MaxbrDl = *openapi.NewNullableString(openapi.PtrString("8 Mbps"))
 			decision := roundTrip(&models.SmPolicyDecision{
-				PccRules: map[string]models.PccRule{allowRuleID: s.allowRule, cirRuleID: {}},
-				QosDecs:  &map[string]models.QosData{allowQosID: allowQos, cirQosID: {}},
+				PccRules: map[string]*models.PccRule{allowRuleID: &s.allowRule, cirRuleID: {}},
+				QosDecs:  &map[string]*models.QosData{allowQosID: &allowQos, cirQosID: {}},
 			})
 			if err := ApplyModification(s.sm, qos.BuildSmPolicyUpdate(&s.sm.SmPolicyData, decision)); err == nil {
 				t.Fatal("the undeliverable modification was reported as delivered")

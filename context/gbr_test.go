@@ -108,7 +108,7 @@ func TestCreatePccRuleQerProgramsTheGuaranteedRate(t *testing.T) {
 	qosData.SetMaxbrDl("200 Mbps")
 	qosData.SetGbrUl("10 Mbps")
 	qosData.SetGbrDl("20 Mbps")
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{qosID: *qosData})
+	smPolicyDecision.SetQosDecs(map[string]*models.QosData{qosID: qosData})
 	smContext := &SMContext{
 		Supi: "imsi-208930000000001",
 		SmPolicyUpdates: []*qos.PolicyUpdate{{
@@ -153,7 +153,7 @@ func TestCreatePccRuleQerLeavesAnUnconfiguredGuaranteeUnset(t *testing.T) {
 	qosData := models.NewQosData(qosID)
 	qosData.SetMaxbrUl("100 Mbps")
 	qosData.SetMaxbrDl("200 Mbps")
-	smPolicyDecision.SetQosDecs(map[string]models.QosData{qosID: *qosData})
+	smPolicyDecision.SetQosDecs(map[string]*models.QosData{qosID: qosData})
 	smContext := &SMContext{
 		Supi: "imsi-208930000000001",
 		SmPolicyUpdates: []*qos.PolicyUpdate{{

@@ -276,8 +276,8 @@ func TestARetransmissionAfterThePartialRadioAnswerIsTheUEsCommandAlone(t *testin
 	smContext.RanAnswerPending = true
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
 		QosFlowUpdate: qos.GetQosFlowDescUpdate(
-			map[string]models.QosData{
-				"1": *smContext.SmPolicyData.SmCtxtQosData.QosData["1"],
+			map[string]*models.QosData{
+				"1": smContext.SmPolicyData.SmCtxtQosData.QosData["1"],
 				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
 				"3": {QosId: "3", Var5qi: openapi.PtrInt32(1)},
 			},

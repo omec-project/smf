@@ -125,25 +125,25 @@ func SmPolicyDecisionString(smPolicy *models.SmPolicyDecision) string {
 	// PCC Rules
 	str := "\nPCC Rules: "
 	for name, rule := range smPolicy.GetPccRules() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(&rule))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, PccRuleString(rule))
 	}
 
 	// Session Rules
 	str = str + "\nSession Rules: "
 	for name, rule := range smPolicy.GetSessRules() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(&rule))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, SessRuleString(rule))
 	}
 
 	// Qos Data
 	str = str + "\nQosData: "
 	for name, qosData := range smPolicy.GetQosDecs() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(&qosData))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, QosDataString(qosData))
 	}
 
 	// TC Data
 	str = str + "\nTCData: "
 	for name, tcData := range smPolicy.GetTraffContDecs() {
-		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(&tcData))
+		str = str + fmt.Sprintf("\n[name:[%v], %v]", name, TCDataString(tcData))
 	}
 	return str
 }

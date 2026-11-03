@@ -46,10 +46,10 @@ func modifyingContext(t *testing.T, added map[string]*models.QosData) *SMContext
 
 	// Built through the real delta function rather than a test-only constructor, so the test
 	// exercises the same shape production produces.
-	pcfQosData := make(map[string]models.QosData, len(added)+1)
-	pcfQosData["1"] = *defQos
+	pcfQosData := make(map[string]*models.QosData, len(added)+1)
+	pcfQosData["1"] = defQos
 	for id, qd := range added {
-		pcfQosData[id] = *qd
+		pcfQosData[id] = qd
 	}
 	ctx.SmPolicyUpdates = []*qos.PolicyUpdate{{
 		QosFlowUpdate: qos.GetQosFlowDescUpdate(pcfQosData, ctx.SmPolicyData.SmCtxtQosData.QosData),
@@ -303,9 +303,9 @@ func TestModifyRequestNamesTheFlowsAnOrdinaryDeletionWithdraws(t *testing.T) {
 	// what GetQosFlowDescUpdate reads as a deletion -- the identifier is the key.
 	qosData4 := models.NewQosData("2")
 	qosData4.SetVar5qi(1)
-	remaining := map[string]models.QosData{
-		"1": *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
-		"2": *qosData4,
+	remaining := map[string]*models.QosData{
+		"1": ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+		"2": qosData4,
 		"3": {},
 	}
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(remaining, ctx.SmPolicyData.SmCtxtQosData.QosData)
@@ -365,7 +365,7 @@ func TestCorrectiveModificationAsksForNoRelease(t *testing.T) {
 func TestModifyRequestDoesNotReleaseAFlowAnIdentifierOnlyNarrowsInto(t *testing.T) {
 	ctx := modifyingContext(t, nil)
 
-	qosDecs := map[string]models.QosData{
+	qosDecs := map[string]*models.QosData{
 		"257": {},
 		"3":   {},
 	}
@@ -417,8 +417,8 @@ func TestModifyRequestReleasesAFlowNamedByAReferenceRatherThanItsIdentifier(t *t
 	// And the decision that withdraws it. A deletion is an entry the policy sends empty under the
 	// name the flow is filed under -- not an entry it leaves out -- so the name is all the
 	// decision carries and the identifier has to come from what the session has committed.
-	decision := map[string]models.QosData{
-		"1":       *ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
+	decision := map[string]*models.QosData{
+		"1":       ctx.SmPolicyData.SmCtxtQosData.QosData["1"],
 		reference: {},
 	}
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(decision, ctx.SmPolicyData.SmCtxtQosData.QosData)
@@ -444,13 +444,13 @@ func TestReleaseOnlyAlsoReleasesTheFlowsTheDecisionWithdraws(t *testing.T) {
 	// A flow this session holds, withdrawn by the decision under the name it was committed under.
 	ctx.SmPolicyData.SmCtxtQosData.QosData["QosData7"] = models.NewQosData("7")
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = qos.GetQosFlowDescUpdate(
-		map[string]models.QosData{"QosData7": {}},
+		map[string]*models.QosData{"QosData7": {}},
 		ctx.SmPolicyData.SmCtxtQosData.QosData,
 	)
 
 	// And a PCC rule with no identity, which is what puts this decision on the release-only path.
 	decision := models.NewSmPolicyDecision()
-	decision.SetPccRules(map[string]models.PccRule{"": {}})
+	decision.SetPccRules(map[string]*models.PccRule{"": {}})
 	ctx.SmPolicyUpdates[0].SmPolicyDecision = decision
 
 	encoded, err := BuildPDUSessionResourceModifyRequestTransfer(ctx)
@@ -487,7 +487,7 @@ func TestAPccOnlyDeletionIsAlsoReleasedAtTheRadio(t *testing.T) {
 	// No QoS-flow update at all, and one PCC rule withdrawn under the id of the flow it carried.
 	ctx.SmPolicyUpdates[0].QosFlowUpdate = nil
 	ctx.SmPolicyUpdates[0].PccRuleUpdate = qos.GetPccRulesUpdate(
-		map[string]models.PccRule{"5": {}},
+		map[string]*models.PccRule{"5": {}},
 		map[string]*models.PccRule{"5": {PccRuleId: "5"}},
 	)
 

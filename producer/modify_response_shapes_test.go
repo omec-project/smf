@@ -91,7 +91,7 @@ func modifyingSmContext(t *testing.T) *smf_context.SMContext {
 	// delta function so the update has the same internals as a live one.
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
 		QosFlowUpdate: qos.GetQosFlowDescUpdate(
-			map[string]models.QosData{
+			map[string]*models.QosData{
 				"1": {QosId: "1", Var5qi: openapi.PtrInt32(9)},
 				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
 			},
@@ -285,7 +285,7 @@ func TestARefusalOfEveryListedFlowKeepsTheReleases(t *testing.T) {
 	smContext := modifyingSmContext(t)
 	smContext.SmPolicyUpdates = []*qos.PolicyUpdate{{
 		QosFlowUpdate: qos.GetQosFlowDescUpdate(
-			map[string]models.QosData{
+			map[string]*models.QosData{
 				"1": {QosId: "1", Var5qi: openapi.PtrInt32(9)},
 				"2": {QosId: "2", Var5qi: openapi.PtrInt32(1)},
 				// A decision withdraws a flow with an empty entry under its key.

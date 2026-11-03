@@ -24,12 +24,12 @@ func TestRevertOfUndoesAnAbandonedModification(t *testing.T) {
 	committed.SmCtxtQosData.QosData["2"] = &models.QosData{QosId: "2"}
 
 	abandoned := BuildSmPolicyUpdate(&committed, &models.SmPolicyDecision{
-		PccRules: map[string]models.PccRule{
+		PccRules: map[string]*models.PccRule{
 			kept:    {PccRuleId: kept, RefQosData: []string{"1"}},
 			dropped: {},
 			added:   {PccRuleId: added, RefQosData: []string{"3"}},
 		},
-		QosDecs: &map[string]models.QosData{
+		QosDecs: &map[string]*models.QosData{
 			"1": {QosId: "1", MaxbrUl: *openapi.NewNullableString(openapi.PtrString("5 Mbps"))},
 			"2": {},
 			"3": {QosId: "3"},

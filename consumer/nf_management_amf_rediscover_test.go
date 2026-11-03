@@ -35,7 +35,8 @@ func TestShouldRediscoverAMF(t *testing.T) {
 		}
 	})
 	t.Run("wrapped pointer HTTP error from AMF -> no retry", func(t *testing.T) {
-		wrapped := fmt.Errorf("n1n2 transfer: %w", &openapi.GenericOpenAPIError{})
+		var apiErr error = &openapi.GenericOpenAPIError{}
+		wrapped := fmt.Errorf("n1n2 transfer: %w", apiErr)
 		if shouldRediscoverAMF(context.Background(), wrapped) {
 			t.Error("expected no re-discovery for a wrapped *GenericOpenAPIError")
 		}
