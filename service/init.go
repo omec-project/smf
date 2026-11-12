@@ -10,7 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof" // Using package only for invoking initialization.
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -108,12 +108,22 @@ func (smf *SMF) Initialize(c *cli.Command) error {
 		return err
 	}
 
-	// Initiating a server for profiling
+	// Profiling is opt-in and bound to loopback only; the pprof handlers are
+	// registered on a dedicated mux so they never leak onto other servers.
 	if factory.SmfConfig.Configuration.DebugProfilePort != 0 {
-		addr := fmt.Sprintf(":%d", factory.SmfConfig.Configuration.DebugProfilePort)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		profSrv := &http.Server{
+			Addr:              fmt.Sprintf("127.0.0.1:%d", factory.SmfConfig.Configuration.DebugProfilePort),
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second,
+		}
 		go func() {
-			err := http.ListenAndServe(addr, nil)
-			if err != nil {
+			if err := profSrv.ListenAndServe(); err != nil {
 				logger.InitLog.Warnf("start profiling server failed: %+v", err)
 			}
 		}()
