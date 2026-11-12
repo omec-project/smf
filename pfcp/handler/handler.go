@@ -27,6 +27,9 @@ import (
 	"github.com/wmnsk/go-pfcp/message"
 )
 
+// missingMandatoryIE is the metric reason for a message that lacks an IE its type requires.
+const missingMandatoryIE = "missing_mandatory_ie"
+
 func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {
 	for _, createdPDRIE := range createdPDRIEs {
 		ueIPAddress, err := createdPDRIE.UEIPAddress()
@@ -89,6 +92,13 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
 
+	// The decoder does not enforce mandatory IEs, so an absent one is a nil pointer, and the IE
+	// accessors read the pointer's Type before anything else.
+	if rsp.RecoveryTimeStamp == nil {
+		logger.PfcpLog.Errorln("PFCP Heartbeat Response missing RecoveryTimeStamp")
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	rspRecoveryTimeStamp, err := rsp.RecoveryTimeStamp.RecoveryTimeStamp()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
@@ -176,6 +186,11 @@ func HandlePfcpAssociationSetupRequest(msg *udp.Message) {
 
 	nodeID := smf_context.NewNodeID(nodeIDStr)
 
+	if req.RecoveryTimeStamp == nil {
+		logger.PfcpLog.Errorf("PFCP Association Setup Request from NodeID[%s] missing RecoveryTimeStamp", nodeIDStr)
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, req.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	recoveryTimestamp, err := req.RecoveryTimeStamp.RecoveryTimeStamp()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
@@ -242,6 +257,11 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		return
 	}
 
+	if rsp.Cause == nil {
+		logger.PfcpLog.Errorln("PFCP Association Setup Response missing Cause")
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	causeValue, err := rsp.Cause.Cause()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
@@ -268,6 +288,14 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 
 		upf.UpfLock.Lock()
 		defer upf.UpfLock.Unlock()
+
+		// Checked before the node is marked associated: an acceptance without the node's recovery
+		// timestamp is not one this SMF can act on.
+		if rsp.RecoveryTimeStamp == nil {
+			logger.PfcpLog.Errorln("PFCP Association Setup Response missing RecoveryTimeStamp")
+			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+			return
+		}
 
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 		upf.SessionsRetained = rsp.PFCPASRspFlags != nil && rsp.PFCPASRspFlags.HasPSREI()
@@ -867,10 +895,21 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 	cause = ie.CauseRequestRejected
 	pfcpSRflag.Drobu = true
 
-	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType.HasDLDR() {
-		downlinkServiceInfo, err := req.DownlinkDataReport.DownlinkDataServiceInformation()
-		if err != nil {
+	// Report Type is mandatory and the decoder does not enforce it; an absent one is nil and the
+	// report is answered as any other that cannot be acted on. Likewise a Downlink Data Report
+	// the Report Type announces but the message omits.
+	if req.ReportType == nil {
+		smContext.SubPfcpLog.Warnln("PFCP Session Report Request missing Report Type")
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, req.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+	}
+	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType != nil && req.ReportType.HasDLDR() {
+		var downlinkServiceInfo []byte
+		if req.DownlinkDataReport == nil {
+			logger.PfcpLog.Warnln("Downlink Data Report announced by the Report Type is missing")
+		} else if info, err := req.DownlinkDataReport.DownlinkDataServiceInformation(); err != nil {
 			logger.PfcpLog.Warnln("DownlinkDataServiceInformation not found in DownlinkDataReport")
+		} else {
+			downlinkServiceInfo = info
 		}
 
 		if downlinkServiceInfo != nil {

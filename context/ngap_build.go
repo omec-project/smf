@@ -84,7 +84,17 @@ func sessionAmbrToBps(ambr string) int64 {
 }
 
 func BuildPDUSessionResourceSetupRequestTransfer(ctx *SMContext) ([]byte, error) {
-	ANUPF := ctx.Tunnel.DataPathPool.GetDefaultPath().FirstDPNode
+	// A session whose tunnel was released, or that never had an access leg, has nothing to describe.
+	// A report from the user plane can reach this for one, so it is an error, not a dereference.
+	if ctx.Tunnel == nil {
+		return nil, fmt.Errorf("session has no user plane tunnel")
+	}
+	defaultPath := ctx.Tunnel.DataPathPool.GetDefaultPath()
+	if defaultPath == nil || defaultPath.FirstDPNode == nil ||
+		defaultPath.FirstDPNode.UPF == nil || defaultPath.FirstDPNode.UpLinkTunnel == nil {
+		return nil, fmt.Errorf("session has no access leg to describe")
+	}
+	ANUPF := defaultPath.FirstDPNode
 	UpNode := ANUPF.UPF
 	teidOct := make([]byte, 4)
 	binary.BigEndian.PutUint32(teidOct, ANUPF.UpLinkTunnel.TEID)

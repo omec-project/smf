@@ -162,3 +162,67 @@ func TestServerNotSetSendPfcp(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// A panic while handling one message must not end the process, nor the next message's handling:
+// each message is dispatched on its own goroutine, where an unrecovered panic is fatal to every
+// session the SMF holds.
+func TestAPanicHandlingOneMessageDoesNotStopTheNext(t *testing.T) {
+	context.SMF_Self().CPNodeID = context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP("127.0.0.1").To4(),
+	}
+	context.SMF_Self().PFCPPort = 8812
+
+	handled := make(chan uint32, 2)
+	dispatch := func(msg *udp.Message) {
+		seq := msg.PfcpMessage.Sequence()
+		handled <- seq
+		if seq == 1 {
+			var absent *ie.IE
+			// What a handler does with an IE the sender left out: it panics before returning.
+			if ts, err := absent.RecoveryTimeStamp(); err != nil {
+				t.Errorf("reading an absent IE returned an error, not a panic: %v", err)
+			} else if ts.IsZero() {
+				t.Errorf("reading an absent IE returned a zero time, not a panic")
+			}
+		}
+	}
+
+	udp.Run(dispatch)
+	if err := udp.WaitForServer(); err != nil {
+		t.Fatalf("failed to start PFCP server: %v", err)
+	}
+	defer func() {
+		if server := udp.GetServer(); server != nil {
+			if server.Conn != nil {
+				_ = server.Conn.Close()
+			}
+			if server.Done != nil {
+				<-server.Done
+			}
+		}
+		udp.SetServer(nil)
+	}()
+
+	sender := &Server{addr: &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1235}}
+	if err := sender.Start(); err != nil {
+		t.Fatalf("start sender: %v", err)
+	}
+	defer sender.Conn.Close()
+
+	server := udp.GetServer()
+	for seq := uint32(1); seq <= 2; seq++ {
+		if err := sender.SendPFCPMessage(message.NewHeartbeatRequest(seq, ie.NewRecoveryTimeStamp(time.Now()), nil), server.Addr); err != nil {
+			t.Fatalf("send PFCP: %v", err)
+		}
+		select {
+		case got := <-handled:
+			if got != seq {
+				t.Fatalf("handled message %d, want %d", got, seq)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("message %d was not handled", seq)
+		}
+		time.Sleep(20 * time.Millisecond) // the first one's panic is recovered on its own goroutine
+	}
+}
