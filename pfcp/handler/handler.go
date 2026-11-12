@@ -243,6 +243,12 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	}
 	logger.PfcpLog.Infoln("handle PFCP Association Setup Response")
 
+	// The pending entry is consumed on arrival, not only on the accepted path below: the UDP layer
+	// has already completed the request's transaction on this response, so nothing else would ever
+	// remove it, and a rejection or a malformed answer would leave one entry behind per attempt.
+	seq := rsp.Sequence()
+	nodeID := pfcp_message.FetchPfcpTxn(seq)
+
 	nodeIDIE := rsp.NodeID
 	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with NodeID[%+v]", nodeIDIE)
 
@@ -269,10 +275,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	}
 	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with Cause[%v]", causeValue)
 	if causeValue == ie.CauseRequestAccepted {
-		// Get NodeId from Seq:NodeId Map
-		seq := rsp.Sequence()
-		nodeID := pfcp_message.FetchPfcpTxn(seq)
-
 		if nodeID == nil {
 			logger.PfcpLog.Errorf("no pending pfcp Assoc req for sequence no: %v", seq)
 			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", "invalid_seqno")
@@ -895,21 +897,25 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 	cause = ie.CauseRequestRejected
 	pfcpSRflag.Drobu = true
 
-	// Report Type is mandatory and the decoder does not enforce it; an absent one is nil and the
-	// report is answered as any other that cannot be acted on. Likewise a Downlink Data Report
-	// the Report Type announces but the message omits.
+	// Report Type is mandatory, and the Downlink Data Report is present if the Report Type indicates
+	// one (TS 29.244 clause 7.5.8.1, Table 7.5.8.1-1). The decoder enforces neither, so an absent
+	// IE is nil. A report lacking either is malformed: it is answered with the rejection above, and
+	// the AMF is not asked to page the UE on its account.
+	malformedReport := false
 	if req.ReportType == nil {
 		smContext.SubPfcpLog.Warnln("PFCP Session Report Request missing Report Type")
+		malformedReport = true
+	} else if req.ReportType.HasDLDR() && req.DownlinkDataReport == nil {
+		smContext.SubPfcpLog.Warnln("PFCP Session Report Request announces a Downlink Data Report but carries none")
+		malformedReport = true
+	}
+	if malformedReport {
 		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, req.MessageTypeName(), "In", "Failure", missingMandatoryIE)
 	}
-	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType != nil && req.ReportType.HasDLDR() {
-		var downlinkServiceInfo []byte
-		if req.DownlinkDataReport == nil {
-			logger.PfcpLog.Warnln("Downlink Data Report announced by the Report Type is missing")
-		} else if info, err := req.DownlinkDataReport.DownlinkDataServiceInformation(); err != nil {
+	if !malformedReport && smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType.HasDLDR() {
+		downlinkServiceInfo, err := req.DownlinkDataReport.DownlinkDataServiceInformation()
+		if err != nil {
 			logger.PfcpLog.Warnln("DownlinkDataServiceInformation not found in DownlinkDataReport")
-		} else {
-			downlinkServiceInfo = info
 		}
 
 		if downlinkServiceInfo != nil {
