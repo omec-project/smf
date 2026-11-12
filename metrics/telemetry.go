@@ -11,6 +11,7 @@ package metrics
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/omec-project/smf/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -159,9 +160,18 @@ func init() {
 
 // InitMetrics initialises SMF stats
 func InitMetrics() {
-	http.Handle("/metrics", promhttp.Handler())
-	err := http.ListenAndServe(":9089", nil)
-	if err != nil {
+	// Dedicated mux: never serve http.DefaultServeMux, which other imports may populate.
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	srv := &http.Server{
+		Addr:              ":9089",
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		logger.KafkaLog.Fatalf("failed to start metrics server: %v", err)
 	}
 }
