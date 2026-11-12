@@ -27,6 +27,9 @@ import (
 	"github.com/wmnsk/go-pfcp/message"
 )
 
+// missingMandatoryIE is the metric reason for a message that lacks an IE its type requires.
+const missingMandatoryIE = "missing_mandatory_ie"
+
 func FindUEIPAddress(createdPDRIEs []*ie.IE) net.IP {
 	for _, createdPDRIE := range createdPDRIEs {
 		ueIPAddress, err := createdPDRIE.UEIPAddress()
@@ -89,6 +92,13 @@ func HandlePfcpHeartbeatResponse(msg *udp.Message) {
 	upf.UpfLock.Lock()
 	defer upf.UpfLock.Unlock()
 
+	// The decoder does not enforce mandatory IEs, so an absent one is a nil pointer, and the IE
+	// accessors read the pointer's Type before anything else.
+	if rsp.RecoveryTimeStamp == nil {
+		logger.PfcpLog.Errorln("PFCP Heartbeat Response missing RecoveryTimeStamp")
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	rspRecoveryTimeStamp, err := rsp.RecoveryTimeStamp.RecoveryTimeStamp()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
@@ -176,6 +186,11 @@ func HandlePfcpAssociationSetupRequest(msg *udp.Message) {
 
 	nodeID := smf_context.NewNodeID(nodeIDStr)
 
+	if req.RecoveryTimeStamp == nil {
+		logger.PfcpLog.Errorf("PFCP Association Setup Request from NodeID[%s] missing RecoveryTimeStamp", nodeIDStr)
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, req.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	recoveryTimestamp, err := req.RecoveryTimeStamp.RecoveryTimeStamp()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse RecoveryTimeStamp: %+v", err)
@@ -228,6 +243,12 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	}
 	logger.PfcpLog.Infoln("handle PFCP Association Setup Response")
 
+	// The pending entry is consumed on arrival, not only on the accepted path below: the UDP layer
+	// has already completed the request's transaction on this response, so nothing else would ever
+	// remove it, and a rejection or a malformed answer would leave one entry behind per attempt.
+	seq := rsp.Sequence()
+	nodeID := pfcp_message.FetchPfcpTxn(seq)
+
 	nodeIDIE := rsp.NodeID
 	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with NodeID[%+v]", nodeIDIE)
 
@@ -242,6 +263,11 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 		return
 	}
 
+	if rsp.Cause == nil {
+		logger.PfcpLog.Errorln("PFCP Association Setup Response missing Cause")
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+		return
+	}
 	causeValue, err := rsp.Cause.Cause()
 	if err != nil {
 		logger.PfcpLog.Errorf("failed to parse Cause IE: %+v", err)
@@ -249,10 +275,6 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 	}
 	logger.PfcpLog.Debugf("handle PFCP Association Setup Response with Cause[%v]", causeValue)
 	if causeValue == ie.CauseRequestAccepted {
-		// Get NodeId from Seq:NodeId Map
-		seq := rsp.Sequence()
-		nodeID := pfcp_message.FetchPfcpTxn(seq)
-
 		if nodeID == nil {
 			logger.PfcpLog.Errorf("no pending pfcp Assoc req for sequence no: %v", seq)
 			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", "invalid_seqno")
@@ -268,6 +290,14 @@ func HandlePfcpAssociationSetupResponse(msg *udp.Message) {
 
 		upf.UpfLock.Lock()
 		defer upf.UpfLock.Unlock()
+
+		// Checked before the node is marked associated: an acceptance without the node's recovery
+		// timestamp is not one this SMF can act on.
+		if rsp.RecoveryTimeStamp == nil {
+			logger.PfcpLog.Errorln("PFCP Association Setup Response missing RecoveryTimeStamp")
+			metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, rsp.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+			return
+		}
 
 		upf.UPFStatus = smf_context.AssociatedSetUpSuccess
 		upf.SessionsRetained = rsp.PFCPASRspFlags != nil && rsp.PFCPASRspFlags.HasPSREI()
@@ -867,7 +897,22 @@ func HandlePfcpSessionReportRequest(msg *udp.Message) {
 	cause = ie.CauseRequestRejected
 	pfcpSRflag.Drobu = true
 
-	if smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType.HasDLDR() {
+	// Report Type is mandatory, and the Downlink Data Report is present if the Report Type indicates
+	// one (TS 29.244 clause 7.5.8.1, Table 7.5.8.1-1). The decoder enforces neither, so an absent
+	// IE is nil. A report lacking either is malformed: it is answered with the rejection above, and
+	// the AMF is not asked to page the UE on its account.
+	malformedReport := false
+	if req.ReportType == nil {
+		smContext.SubPfcpLog.Warnln("PFCP Session Report Request missing Report Type")
+		malformedReport = true
+	} else if req.ReportType.HasDLDR() && req.DownlinkDataReport == nil {
+		smContext.SubPfcpLog.Warnln("PFCP Session Report Request announces a Downlink Data Report but carries none")
+		malformedReport = true
+	}
+	if malformedReport {
+		metrics.IncrementN4MsgStats(smf_context.SMF_Self().NfInstanceID, req.MessageTypeName(), "In", "Failure", missingMandatoryIE)
+	}
+	if !malformedReport && smContext.UpCnxState == models.UPCNXSTATE_DEACTIVATED && req.ReportType.HasDLDR() {
 		downlinkServiceInfo, err := req.DownlinkDataReport.DownlinkDataServiceInformation()
 		if err != nil {
 			logger.PfcpLog.Warnln("DownlinkDataServiceInformation not found in DownlinkDataReport")

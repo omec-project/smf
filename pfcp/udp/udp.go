@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -113,7 +114,7 @@ func Run(Dispatch func(*Message)) {
 		// the same packets. A closed conn also ends the loop instead of spinning forever on it.
 		defer close(server.Done)
 		for {
-			remoteAddr, pfcpMessage, eventData, err := readPfcpMessage(server)
+			remoteAddr, pfcpMessage, eventData, err := readPfcpMessageRecovering(server)
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					logger.PfcpLog.Infof("PFCP connection closed, stopping read loop")
@@ -127,7 +128,7 @@ func Run(Dispatch func(*Message)) {
 				continue
 			}
 			msg := NewMessage(remoteAddr, pfcpMessage, eventData)
-			go Dispatch(&msg)
+			go dispatchRecovering(Dispatch, &msg)
 		}
 	}()
 
@@ -199,6 +200,37 @@ func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData any) error {
 // code has no reason to call this.
 func WaitForAllTransactions() {
 	txWG.Wait()
+}
+
+// readPfcpMessageRecovering is readPfcpMessage, with a panic in decoding a datagram turned into an
+// error for that datagram. The datagram comes from the network, and a panic in this goroutine
+// takes down the whole process -- every session with it -- so one malformed packet must not be
+// able to cause one.
+func readPfcpMessageRecovering(server *PfcpServer) (addr *net.UDPAddr, msg message.Message, eventData any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.PfcpLog.Errorf("panic reading a PFCP datagram, discarded: %v\n%s", r, debug.Stack())
+			addr, msg, eventData, err = nil, nil, nil, fmt.Errorf("panic reading PFCP datagram: %v", r)
+		}
+	}()
+	return readPfcpMessage(server)
+}
+
+// dispatchRecovering runs dispatch for one received message, and contains a panic in it to that
+// message. Handlers read IEs the sender chose to include or leave out, and each message is handled
+// on its own goroutine, where an unrecovered panic would end the process.
+func dispatchRecovering(dispatch func(*Message), msg *Message) {
+	defer func() {
+		if r := recover(); r != nil {
+			msgType := "unknown"
+			if msg != nil && msg.PfcpMessage != nil {
+				msgType = msg.PfcpMessage.MessageTypeName()
+			}
+			logger.PfcpLog.Errorf("panic handling PFCP %s, message discarded: %v\n%s", msgType, r, debug.Stack())
+			metrics.IncrementN4MsgStats(context.SMF_Self().NfInstanceID, msgType, "In", "Failure", "handler_panic")
+		}
+	}()
+	dispatch(msg)
 }
 
 func readPfcpMessage(server *PfcpServer) (*net.UDPAddr, message.Message, any, error) {
