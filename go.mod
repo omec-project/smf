@@ -17,7 +17,7 @@ require (
 	github.com/wmnsk/go-pfcp v0.0.24
 	go.mongodb.org/mongo-driver/v2 v2.9.2
 	go.uber.org/zap v1.28.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.9
+	go.yaml.in/yaml/v4 v4.0.0
 )
 
 require (
