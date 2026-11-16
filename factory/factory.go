@@ -1,3 +1,4 @@
+// Copyright (C) 2024-Present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
 //
@@ -11,12 +12,10 @@ package factory
 
 import (
 	"fmt"
-	"net/url"
-	"os"
 	"sync"
 
 	"github.com/omec-project/smf/logger"
-	"go.yaml.in/yaml/v4"
+	"github.com/omec-project/util/nfconfig"
 )
 
 var (
@@ -31,13 +30,9 @@ var (
 // If GRPC client does not exist, creates it. If client exists but GRPC connectivity is not ready,
 // then it closes the existing client start a new client.
 func InitConfigFactory(f string) error {
-	content, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
 	SmfConfig = Config{}
 
-	if err = yaml.Unmarshal(content, &SmfConfig); err != nil {
+	if err := nfconfig.LoadYAML(f, &SmfConfig); err != nil {
 		return err
 	}
 
@@ -48,41 +43,18 @@ func InitConfigFactory(f string) error {
 
 	setT3591Defaults()
 
-	if SmfConfig.Configuration.WebuiUri == "" {
-		SmfConfig.Configuration.WebuiUri = "http://webui:5001"
-		logger.CfgLog.Infof("webuiUri not set in configuration file. Using %v", SmfConfig.Configuration.WebuiUri)
-		return nil
-	}
-	err = validateWebuiUri(SmfConfig.Configuration.WebuiUri)
-	return err
-}
-
-func validateWebuiUri(uri string) error {
-	parsedUrl, err := url.ParseRequestURI(uri)
+	webuiUri, err := nfconfig.ResolveWebuiUri(SmfConfig.Configuration.WebuiUri, logger.CfgLog)
 	if err != nil {
 		return err
 	}
-	if parsedUrl.Scheme != "http" && parsedUrl.Scheme != "https" {
-		return fmt.Errorf("unsupported scheme for webuiUri: %s", parsedUrl.Scheme)
-	}
-	if parsedUrl.Hostname() == "" {
-		return fmt.Errorf("missing host in webuiUri")
-	}
+	SmfConfig.Configuration.WebuiUri = webuiUri
 	return nil
 }
 
 func InitRoutingConfigFactory(f string) error {
-	if content, err := os.ReadFile(f); err != nil {
-		return err
-	} else {
-		UERoutingConfig = RoutingConfig{}
+	UERoutingConfig = RoutingConfig{}
 
-		if yamlErr := yaml.Unmarshal(content, &UERoutingConfig); yamlErr != nil {
-			return yamlErr
-		}
-	}
-
-	return nil
+	return nfconfig.LoadYAML(f, &UERoutingConfig)
 }
 
 func CheckConfigVersion() error {

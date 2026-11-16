@@ -1,7 +1,7 @@
+// Copyright (C) 2022-Present Intel Corporation
 // SPDX-FileCopyrightText: 2022-present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
-//
 // SPDX-License-Identifier: Apache-2.0
 
 package service
@@ -306,31 +306,9 @@ func (smf *SMF) Start() {
 	time.Sleep(1000 * time.Millisecond)
 
 	HTTPAddr := fmt.Sprintf("%s:%d", smfSelf.BindingIPv4, smfSelf.SBIPort)
-	// TLS key logging is a debugging aid: off unless the operator sets SSLKEYLOGFILE.
-	sslLog := os.Getenv("SSLKEYLOGFILE")
-	server, err := http2_util.NewServer(HTTPAddr, sslLog, router)
-	if server == nil || err != nil {
-		logger.InitLog.Errorf("initialize HTTP server failed: %v", err)
-		return
-	}
-
-	serverScheme := factory.SmfConfig.Configuration.Sbi.Scheme
-	switch serverScheme {
-	case "http":
-		err = server.ListenAndServe()
-	case "https":
-		if server.TLSConfig != nil && server.TLSConfig.KeyLogWriter != nil {
-			logger.InitLog.Warnf("TLS key logging is enabled (SSLKEYLOGFILE=%s): SBI traffic is "+
-				"decryptable by anyone who can read this file", sslLog)
-		}
-		err = server.ListenAndServeTLS(smfSelf.PEM, smfSelf.Key)
-	default:
-		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
-		return
-	}
-
-	if err != nil {
-		logger.InitLog.Fatalln("HTTP server setup failed:", err)
+	// TLS key logging is a debugging aid: off unless the operator sets SSLKEYLOGFILE (see http2_util.NewSBIServer).
+	if err := http2_util.ListenAndServeSBI(HTTPAddr, router, factory.SmfConfig.Configuration.Sbi.Scheme, smfSelf.PEM, smfSelf.Key, logger.InitLog); err != nil {
+		logger.InitLog.Fatalf("HTTP server setup failed: %+v", err)
 	}
 }
 

@@ -1,7 +1,6 @@
-// SPDX-FileCopyrightText: 2022-present Intel Corporation
+// Copyright (C) 2021-Present Intel Corporation
 // SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
 // Copyright 2019 free5GC.org
-//
 // SPDX-License-Identifier: Apache-2.0
 
 package consumer
@@ -18,11 +17,11 @@ import (
 	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2"
 	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
-	"github.com/omec-project/openapi/v2/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/v2/Nudm_SDM"
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
 	nrfCache "github.com/omec-project/openapi/v2/nrfcache"
+	"github.com/omec-project/openapi/v2/nrfclient"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
 	"github.com/omec-project/smf/logger"
@@ -71,27 +70,12 @@ func normalizeAdvertisedSmfHost(nfProfile *models.NFProfile) {
 	util.SetNFProfileServices(nfProfile, services)
 }
 
-func newNrfNFManagementClient(nrfURI string) *Nnrf_NFManagement.APIClient {
-	cfg := Nnrf_NFManagement.NewConfiguration()
-	serverConfig := &cfg.Servers[0]
-	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-		apiRootVar.DefaultValue = nrfURI
-		serverConfig.Variables["apiRoot"] = apiRootVar
-	}
+func newNrfClient(nrfURI string, opts ...nrfclient.Option) *nrfclient.Client {
+	options := []nrfclient.Option{nrfclient.WithLogger(logger.ConsumerLog)}
 	if httpClient := newNrfNFManagementHTTPClient(); httpClient != nil {
-		cfg.HTTPClient = httpClient
+		options = append(options, nrfclient.WithHTTPClient(httpClient))
 	}
-	return Nnrf_NFManagement.NewAPIClient(cfg)
-}
-
-func newNrfNFDiscoveryClient(nrfURI string) *Nnrf_NFDiscovery.APIClient {
-	cfg := Nnrf_NFDiscovery.NewConfiguration()
-	serverConfig := &cfg.Servers[0]
-	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-		apiRootVar.DefaultValue = nrfURI
-		serverConfig.Variables["apiRoot"] = apiRootVar
-	}
-	return Nnrf_NFDiscovery.NewAPIClient(cfg)
+	return nrfclient.New(nrfURI, append(options, opts...)...)
 }
 
 func getNfProfile(smfCtx *smfContext.SMFContext, sessionCfgs []nfConfigApi.SessionManagement) (profile models.NFProfile, err error) {
@@ -203,7 +187,10 @@ func buildSNssais(sessionCfgs []nfConfigApi.SessionManagement) []models.Snssai {
 	return snssais
 }
 
-var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionManagement) (prof *models.NFProfile, resourceNrfUri string, err error) {
+// SendRegisterNFInstance and SendDeregisterNFInstance take the context of the registration service, which holds
+// its registration mutex while they run and cancels the context to end them when a new configuration arrives or
+// the NF terminates.
+var SendRegisterNFInstance = func(ctx context.Context, sessionManagementConfig []nfConfigApi.SessionManagement) (prof *models.NFProfile, resourceNrfUri string, err error) {
 	self := smfContext.SMF_Self()
 	nfProfile, err := getNfProfile(self, sessionManagementConfig)
 	if err != nil {
@@ -211,110 +198,77 @@ var SendRegisterNFInstance = func(sessionManagementConfig []nfConfigApi.SessionM
 	}
 	normalizeAdvertisedSmfHost(&nfProfile)
 	logger.ConsumerLog.Debugf("sending registration request with NFProfile %+v", nfProfile)
-	client := newNrfNFManagementClient(self.NrfUri)
-	metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "Out", "", "")
+	msgType := string(svcmsgtypes.NnrfNFRegister)
+	client := newNrfClient(self.NrfUri, nrfclient.WithObserver(func(_ nrfclient.Operation, res *http.Response, err error) {
+		switch {
+		case err != nil:
+			metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, msgType, "In", "Failure", err.Error())
+		case res == nil:
+			metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, msgType, "In", "Failure", "NoResponse")
+		default:
+			metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, msgType, "In", http.StatusText(res.StatusCode), "")
+		}
+	}))
+	metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, msgType, "Out", "", "")
 
-	apiRegisterNFInstanceRequest := client.NFInstanceIDDocumentAPI.RegisterNFInstance(context.TODO(), nfProfile.GetNfInstanceId())
-	apiRegisterNFInstanceRequest = apiRegisterNFInstanceRequest.NFProfile(nfProfile)
-	receivedNfProfile, res, err := client.NFInstanceIDDocumentAPI.RegisterNFInstanceExecute(apiRegisterNFInstanceRequest)
+	result, err := client.Register(ctx, nfProfile)
 	if err != nil {
-		metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", "Failure", err.Error())
 		return models.NewNFProfileWithDefaults(), "", err
 	}
-	if res == nil {
-		metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", "Failure", "NoResponse")
-		return models.NewNFProfileWithDefaults(), "", openapi.ReportError("no response from server")
-	}
-
-	metrics.IncrementSvcNrfMsgStats(self.NfInstanceID, string(svcmsgtypes.NnrfNFRegister), "In", http.StatusText(res.StatusCode), "")
-
-	switch res.StatusCode {
-	case http.StatusOK:
-		logger.ConsumerLog.Debugln("SMF NF profile updated with complete replacement")
-		return receivedNfProfile, "", nil
-	case http.StatusCreated:
-		resourceUri := res.Header.Get("Location")
-		resourceNrfUri = resourceUri[:strings.Index(resourceUri, "/nnrf-nfm/")]
-		retrieveNfInstanceId := resourceUri[strings.LastIndex(resourceUri, "/")+1:]
-		self.NfInstanceID = retrieveNfInstanceId
+	if result.Created {
 		logger.ConsumerLog.Debugln("SMF NF profile registered to the NRF")
-		return receivedNfProfile, resourceNrfUri, nil
-	default:
-		if receivedNfProfile == nil {
-			receivedNfProfile = models.NewNFProfileWithDefaults()
+		if result.NfInstanceID != "" {
+			self.NfInstanceID = result.NfInstanceID
 		}
-		return receivedNfProfile, "", openapi.ReportError("NRF returned unexpected status code %d", res.StatusCode)
+	} else {
+		logger.ConsumerLog.Debugln("SMF NF profile updated with complete replacement")
 	}
+	return result.Profile, result.NrfURI, nil
 }
 
-var SendDeregisterNFInstance = func() error {
+var SendDeregisterNFInstance = func(ctx context.Context) error {
 	logger.ConsumerLog.Infoln("send Deregister NFInstance")
 
 	self := smfContext.SMF_Self()
 	nfId := self.NfInstanceID
-	client := newNrfNFManagementClient(self.NrfUri)
-	metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "Out", "", "")
-	apiDeregisterNFInstanceRequest := client.NFInstanceIDDocumentAPI.DeregisterNFInstance(context.Background(), nfId)
-	res, err := client.NFInstanceIDDocumentAPI.DeregisterNFInstanceExecute(apiDeregisterNFInstanceRequest)
-	if err != nil {
-		if res != nil {
-			defer func() {
-				if resCloseErr := res.Body.Close(); resCloseErr != nil {
-					logger.ConsumerLog.Errorf("DeregisterNFInstance response body cannot close: %+v", resCloseErr)
-				}
-			}()
-			metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", http.StatusText(res.StatusCode), err.Error())
-		} else {
-			metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", "Failure", "NoResponse")
+	msgType := string(svcmsgtypes.NnrfNFInstanceDeRegister)
+	client := newNrfClient(self.NrfUri, nrfclient.WithObserver(func(_ nrfclient.Operation, res *http.Response, err error) {
+		switch {
+		case res == nil:
+			metrics.IncrementSvcNrfMsgStats(nfId, msgType, "In", "Failure", "NoResponse")
+		case err != nil:
+			metrics.IncrementSvcNrfMsgStats(nfId, msgType, "In", http.StatusText(res.StatusCode), err.Error())
+		case res.StatusCode == http.StatusNoContent:
+			metrics.IncrementSvcNrfMsgStats(nfId, msgType, "In", http.StatusText(res.StatusCode), "")
+		default:
+			metrics.IncrementSvcNrfMsgStats(nfId, msgType, "In", http.StatusText(res.StatusCode), "UnexpectedCode")
 		}
+	}))
+	metrics.IncrementSvcNrfMsgStats(nfId, msgType, "Out", "", "")
+	if err := client.Deregister(ctx, nfId); err != nil {
 		logger.ConsumerLog.Warnf("deregister failed: %v", err)
 		return err
 	}
-	defer func() {
-		if resCloseErr := res.Body.Close(); resCloseErr != nil {
-			logger.ConsumerLog.Errorf("DeregisterNFInstance response body cannot close: %+v", resCloseErr)
-		}
-	}()
-
-	if res.StatusCode == http.StatusNoContent {
-		metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", http.StatusText(res.StatusCode), "")
-		logger.ConsumerLog.Infof("Deregister successful: %d", res.StatusCode)
-		return nil
-	}
-
-	metrics.IncrementSvcNrfMsgStats(nfId, string(svcmsgtypes.NnrfNFInstanceDeRegister), "In", http.StatusText(res.StatusCode), "UnexpectedCode")
-	logger.ConsumerLog.Warnf("unexpected response code during deregister: %d", res.StatusCode)
-	return openapi.ReportError("unexpected response code: %d", res.StatusCode)
+	logger.ConsumerLog.Infoln("Deregister successful")
+	return nil
 }
 
-var SendUpdateNFInstance = func(patchItem []models.PatchItem) (receivedNfProfile *models.NFProfile, problemDetails *models.ProblemDetails, err error) {
+var SendUpdateNFInstance = func(ctx context.Context, patchItem []models.PatchItem) (receivedNfProfile *models.NFProfile, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send update NFInstance")
 
 	self := smfContext.SMF_Self()
-	client := newNrfNFManagementClient(self.NrfUri)
-
-	var res *http.Response
-	apiUpdateNFInstanceRequest := client.NFInstanceIDDocumentAPI.UpdateNFInstance(context.Background(), self.NfInstanceID)
-	apiUpdateNFInstanceRequest = apiUpdateNFInstanceRequest.PatchItem(patchItem)
-	receivedNfProfile, res, err = client.NFInstanceIDDocumentAPI.UpdateNFInstanceExecute(apiUpdateNFInstanceRequest)
+	receivedNfProfile, problemDetails, err = newNrfClient(self.NrfUri).Update(ctx, self.NfInstanceID, patchItem)
+	if problemDetails != nil {
+		// a decoded ProblemDetails is reported as a problem, not as an error
+		return models.NewNFProfileWithDefaults(), problemDetails, nil
+	}
 	if err != nil {
-		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
-			return models.NewNFProfileWithDefaults(), problem, nil
-		} else if handledErr != nil {
-			return models.NewNFProfileWithDefaults(), nil, handledErr
-		}
+		return models.NewNFProfileWithDefaults(), nil, err
 	}
-
-	if res == nil {
-		return models.NewNFProfileWithDefaults(), nil, openapi.ReportError("no response from server")
+	if receivedNfProfile == nil {
+		receivedNfProfile = models.NewNFProfileWithDefaults()
 	}
-	if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNoContent {
-		if receivedNfProfile == nil {
-			receivedNfProfile = models.NewNFProfileWithDefaults()
-		}
-		return receivedNfProfile, nil, nil
-	}
-	return models.NewNFProfileWithDefaults(), nil, openapi.ReportError("unexpected response code")
+	return receivedNfProfile, nil, nil
 }
 
 func getSvcMsgType(nfType models.NFType) svcmsgtypes.SmfMsgType {
@@ -334,7 +288,7 @@ func getSvcMsgType(nfType models.NFType) svcmsgtypes.SmfMsgType {
 func SendNrfForNfInstance(ctx context.Context, nrfUri string, targetNfType, requestNfType models.NFType,
 	apiSearchNFInstancesRequest Nnrf_NFDiscovery.ApiSearchNFInstancesRequest,
 ) (*models.SearchResult, error) {
-	client := newNrfNFDiscoveryClient(nrfUri)
+	client := nrfclient.NewNFDiscoveryClient(nrfUri)
 	if apiSearchNFInstancesRequest.ApiService == nil {
 		apiSearchNFInstancesRequest = client.NFInstancesStoreAPI.SearchNFInstances(ctx)
 	}
@@ -674,7 +628,7 @@ func orderAmfCandidates(candidates []models.NFProfileDiscovery, failedNfId strin
 // AMF in the deployment (including dead ones), which is an unwanted side effect. If
 // targetNfInstanceId is non-empty the query is targeted at that single AMF.
 func searchAmfInstancesNoSubscribe(ctx context.Context, targetNfInstanceId string) (*models.SearchResult, error) {
-	client := newNrfNFDiscoveryClient(smfContext.SMF_Self().NrfUri)
+	client := nrfclient.NewNFDiscoveryClient(smfContext.SMF_Self().NrfUri)
 	req := client.NFInstancesStoreAPI.SearchNFInstances(ctx).
 		TargetNfType(models.NFTYPE_AMF).
 		RequesterNfType(models.NFTYPE_SMF)
@@ -759,62 +713,22 @@ func selectAmfFromNrf(ctx context.Context, smContext *smfContext.SMContext) erro
 func SendCreateSubscription(nrfUri string, nrfSubscriptionData models.SubscriptionData) (nrfSubData *models.SubscriptionData, problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Debugln("send Create Subscription")
 
-	client := newNrfNFManagementClient(nrfUri)
-
-	var res *http.Response
-	apiCreateSubscriptionRequest := client.SubscriptionsCollectionAPI.CreateSubscription(context.TODO())
-	apiCreateSubscriptionRequest = apiCreateSubscriptionRequest.SubscriptionData(nrfSubscriptionData)
-	nrfSubData, res, err = client.SubscriptionsCollectionAPI.CreateSubscriptionExecute(apiCreateSubscriptionRequest)
-	if res != nil {
-		defer func() {
-			if resCloseErr := res.Body.Close(); resCloseErr != nil {
-				logger.ConsumerLog.Errorf("CreateSubscription response body cannot close: %+v", resCloseErr)
-			}
-		}()
+	nrfSubData, problemDetails, err = newNrfClient(nrfUri).CreateSubscription(context.TODO(), nrfSubscriptionData)
+	if problemDetails != nil {
+		// a decoded ProblemDetails is reported as a problem, not as an error
+		return nrfSubData, problemDetails, nil
 	}
-	if err == nil {
-		return nrfSubData, nil, nil
-	} else if res != nil {
-		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
-			return nrfSubData, problem, nil
-		} else if handledErr != nil {
-			return nrfSubData, nil, handledErr
-		}
-	} else {
-		err = openapi.ReportError("server no response")
-	}
-	return nrfSubData, problemDetails, err
+	return nrfSubData, nil, err
 }
 
 func SendRemoveSubscription(subscriptionId string) (problemDetails *models.ProblemDetails, err error) {
 	logger.ConsumerLog.Infoln("send Remove Subscription")
 
 	smfSelf := smfContext.SMF_Self()
-	client := newNrfNFManagementClient(smfSelf.NrfUri)
-	var res *http.Response
-
-	apiRemoveSubscriptionRequest := client.SubscriptionIDDocumentAPI.RemoveSubscription(context.Background(), subscriptionId)
-	res, err = client.SubscriptionIDDocumentAPI.RemoveSubscriptionExecute(apiRemoveSubscriptionRequest)
-	if res != nil {
-		defer func() {
-			if resCloseErr := res.Body.Close(); resCloseErr != nil {
-				logger.ConsumerLog.Errorf("RemoveSubscription response body cannot close: %+v", resCloseErr)
-			}
-		}()
+	problemDetails, err = newNrfClient(smfSelf.NrfUri).RemoveSubscription(context.Background(), subscriptionId)
+	if problemDetails != nil {
+		// a decoded ProblemDetails is reported as a problem, not as an error
+		return problemDetails, nil
 	}
-	if err == nil {
-		return nil, nil
-	} else if res != nil {
-		// The status the removed guard reported is still carried: for a response whose body
-		// decoded, it is in the ProblemDetails returned below, and for one named by no arm the
-		// client leaves RawError set to the status, which HandleOpenAPIError passes back as is.
-		if problem, handledErr := util.HandleOpenAPIError(err); problem != nil {
-			return problem, nil
-		} else if handledErr != nil {
-			return nil, handledErr
-		}
-	} else {
-		err = openapi.ReportError("server no response")
-	}
-	return problemDetails, err
+	return nil, err
 }
