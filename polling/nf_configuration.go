@@ -6,8 +6,8 @@ package polling
 
 import (
 	"context"
-	"errors"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/omec-project/openapi/v2/nfConfigApi"
@@ -31,74 +31,116 @@ func StartPollingService(ctx context.Context, webuiUri string, registrationChan,
 	poller.Run(ctx)
 }
 
-func newPoller(webuiUri string, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement, interval time.Duration) (*nfconfigpoll.Poller[[]nfConfigApi.SessionManagement], error) {
-	delivery := &configDelivery{registrationChan: registrationChan, contextUpdateChan: contextUpdateChan}
-	return nfconfigpoll.New(nfconfigpoll.Config[[]nfConfigApi.SessionManagement]{
+// pollingService runs the poller together with the retry of the deliveries it could not complete.
+type pollingService struct {
+	poller   *nfconfigpoll.Poller[[]nfConfigApi.SessionManagement]
+	delivery *configDelivery
+	interval time.Duration
+}
+
+// Run polls until ctx is done. Beside it, a consumer whose channel was full is offered the config again every
+// interval, until it has it, whether or not the endpoint changes meanwhile.
+func (s *pollingService) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		ticker := time.NewTicker(s.interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.delivery.flush()
+			}
+		}
+	})
+	s.poller.Run(ctx)
+	cancel()
+	wg.Wait()
+}
+
+func newPoller(webuiUri string, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement, interval time.Duration) (*pollingService, error) {
+	initial := []nfConfigApi.SessionManagement{}
+	delivery := newConfigDelivery(registrationChan, contextUpdateChan, initial)
+	poller, err := nfconfigpoll.New(nfconfigpoll.Config[[]nfConfigApi.SessionManagement]{
 		Name:     "Session Management",
 		Endpoint: webuiUri + pollingPath,
 		Log:      logger.PollConfigLog,
 		Interval: interval,
-		Initial:  []nfConfigApi.SessionManagement{},
+		Initial:  initial,
 		// Round-trip through JSON so the comparison and stored state always reflect the custom
 		// (Un)MarshalJSON behaviour of nfConfigApi types (e.g. AdditionalProperties defaulting to an
 		// empty map instead of nil), regardless of how the config was built.
 		Normalize: nfconfigpoll.JSONRoundTrip[[]nfConfigApi.SessionManagement],
+		// The poller's current value is always the latest config polled, so that a later return to an earlier
+		// one is a change like any other. Delivery to the two consumers is the delivery's own business.
 		OnChange: func(_ context.Context, cfg []nfConfigApi.SessionManagement) error {
-			return delivery.deliver(cfg)
+			delivery.accept(cfg)
+			return nil
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &pollingService{poller: poller, delivery: delivery, interval: interval}, nil
 }
 
-// configDelivery sends a config to the registration and the context update channels without ever
-// blocking. If a channel is full the config is not lost: deliver returns an error so that the poller
-// offers the same config again on the next poll. A channel that already accepted the config is
-// remembered, so a retry only goes to the channel(s) that are still missing it.
-// deliver is only called from the polling goroutine, so no locking is needed.
+// configDelivery gets the latest config to the registration and the context update channels without ever
+// blocking. It remembers, for each channel, the last config that channel accepted, and wants each to end at the
+// latest config. A channel that is full is offered the config again by flush. Tracking each consumer, rather than
+// "the config being delivered", is what makes a return to an earlier config come out right: A reaches both, B only
+// the registration, and A again needs sending to the registration only, the context being at A already.
 type configDelivery struct {
-	registrationChan  chan<- []nfConfigApi.SessionManagement
-	contextUpdateChan chan<- []nfConfigApi.SessionManagement
-
-	pending                  []nfConfigApi.SessionManagement
-	registrationDelivered    bool
-	contextUpdateDelivered   bool
-	hasPartiallyDeliveredCfg bool
+	mu        sync.Mutex
+	desired   []nfConfigApi.SessionManagement
+	consumers [2]*deliveryTarget
 }
 
-func (d *configDelivery) deliver(cfg []nfConfigApi.SessionManagement) error {
-	// A different config than the one partially delivered supersedes it: both channels get the new one.
-	if d.hasPartiallyDeliveredCfg && !reflect.DeepEqual(d.pending, cfg) {
-		d.reset()
-	}
-
-	if !d.registrationDelivered {
-		select {
-		case d.registrationChan <- cfg:
-			d.registrationDelivered = true
-		default:
-			logger.PollConfigLog.Warn("registrationChan full, config will be retried on the next poll")
-		}
-	}
-	if !d.contextUpdateDelivered {
-		select {
-		case d.contextUpdateChan <- cfg:
-			d.contextUpdateDelivered = true
-		default:
-			logger.PollConfigLog.Warn("contextUpdateChan full, config will be retried on the next poll")
-		}
-	}
-
-	if d.registrationDelivered && d.contextUpdateDelivered {
-		d.reset()
-		return nil
-	}
-	d.pending = cfg
-	d.hasPartiallyDeliveredCfg = true
-	return errors.New("channel full, config not delivered to all consumers")
+type deliveryTarget struct {
+	name      string
+	ch        chan<- []nfConfigApi.SessionManagement
+	delivered []nfConfigApi.SessionManagement // the last config this channel accepted
 }
 
-func (d *configDelivery) reset() {
-	d.pending = nil
-	d.registrationDelivered = false
-	d.contextUpdateDelivered = false
-	d.hasPartiallyDeliveredCfg = false
+// newConfigDelivery starts with both consumers at initial, which is what they have before any config is polled.
+func newConfigDelivery(registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement, initial []nfConfigApi.SessionManagement) *configDelivery {
+	return &configDelivery{
+		desired: initial,
+		consumers: [2]*deliveryTarget{
+			{name: "registrationChan", ch: registrationChan, delivered: initial},
+			{name: "contextUpdateChan", ch: contextUpdateChan, delivered: initial},
+		},
+	}
+}
+
+// accept makes cfg the config the consumers are to end at, and offers it to those that do not have it.
+func (d *configDelivery) accept(cfg []nfConfigApi.SessionManagement) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.desired = cfg
+	d.flushLocked()
+}
+
+// flush offers the config to the consumers that are still missing it, and reports whether any is.
+func (d *configDelivery) flush() (pending bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.flushLocked()
+}
+
+func (d *configDelivery) flushLocked() (pending bool) {
+	for _, c := range d.consumers {
+		if reflect.DeepEqual(c.delivered, d.desired) {
+			continue
+		}
+		select {
+		case c.ch <- d.desired:
+			c.delivered = d.desired
+		default:
+			logger.PollConfigLog.Warnf("%s full, config will be retried", c.name)
+			pending = true
+		}
+	}
+	return pending
 }

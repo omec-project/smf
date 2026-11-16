@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,13 @@ import (
 
 // The polling logic is tested in openapi/nfconfigpoll. These tests check the SMF wiring: endpoint,
 // config type, normalisation and the delivery to the two channels.
+
+// the slices of the tests that move between two configs
+const (
+	sliceA   = "slice-a"
+	sliceB   = "slice-b"
+	sliceOne = "slice1"
+)
 
 func makeSessionConfig(sliceName, dnnName string) nfConfigApi.SessionManagement {
 	sd := "010203"
@@ -80,7 +88,7 @@ func receive(t *testing.T, ch <-chan []nfConfigApi.SessionManagement, what strin
 
 func TestPolling_DeliversPolledConfigToBothChannelsOnce(t *testing.T) {
 	var polls atomic.Int32
-	want := []nfConfigApi.SessionManagement{makeSessionConfig("slice1", "internet")}
+	want := []nfConfigApi.SessionManagement{makeSessionConfig(sliceOne, "internet")}
 	srv := serveConfig(t, &polls, func() []nfConfigApi.SessionManagement { return want })
 	registrationChan := make(chan []nfConfigApi.SessionManagement, 4)
 	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 4)
@@ -88,7 +96,7 @@ func TestPolling_DeliversPolledConfigToBothChannelsOnce(t *testing.T) {
 
 	for name, ch := range map[string]chan []nfConfigApi.SessionManagement{"registrationChan": registrationChan, "contextUpdateChan": contextUpdateChan} {
 		got := receive(t, ch, name)
-		if len(got) != 1 || got[0].SliceName != "slice1" || got[0].IpDomain[0].DnnName != "internet" {
+		if len(got) != 1 || got[0].SliceName != sliceOne || got[0].IpDomain[0].DnnName != "internet" {
 			t.Errorf("%s: got %+v", name, got)
 		}
 	}
@@ -130,7 +138,7 @@ func TestPolling_EmptyInitialConfigIsNotDelivered(t *testing.T) {
 func TestPolling_DeliversChangedConfig(t *testing.T) {
 	var polls atomic.Int32
 	var current atomic.Value
-	current.Store([]nfConfigApi.SessionManagement{makeSessionConfig("slice1", "internet")})
+	current.Store([]nfConfigApi.SessionManagement{makeSessionConfig(sliceOne, "internet")})
 	srv := serveConfig(t, &polls, func() []nfConfigApi.SessionManagement { return current.Load().([]nfConfigApi.SessionManagement) })
 	registrationChan := make(chan []nfConfigApi.SessionManagement, 4)
 	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 4)
@@ -153,7 +161,7 @@ func TestPolling_DeliversChangedConfig(t *testing.T) {
 func TestPolling_FullChannelIsRetriedWithoutResendingToTheOtherChannel(t *testing.T) {
 	var polls atomic.Int32
 	srv := serveConfig(t, &polls, func() []nfConfigApi.SessionManagement {
-		return []nfConfigApi.SessionManagement{makeSessionConfig("slice1", "internet")}
+		return []nfConfigApi.SessionManagement{makeSessionConfig(sliceOne, "internet")}
 	})
 	registrationChan := make(chan []nfConfigApi.SessionManagement, 4)
 	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
@@ -167,7 +175,7 @@ func TestPolling_FullChannelIsRetriedWithoutResendingToTheOtherChannel(t *testin
 		t.Fatalf("unexpected item %+v", got)
 	}
 	got := receive(t, contextUpdateChan, "contextUpdateChan after it was drained")
-	if len(got) != 1 || got[0].SliceName != "slice1" {
+	if len(got) != 1 || got[0].SliceName != sliceOne {
 		t.Errorf("contextUpdateChan: got %+v", got)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -180,21 +188,24 @@ func TestPolling_FullChannelIsRetriedWithoutResendingToTheOtherChannel(t *testin
 	}
 }
 
-// A newer config supersedes a partially delivered one: both channels get the newer config.
+// A newer config supersedes a partially delivered one: both channels end at the newer config, and the channel
+// that never got the first one is not given it late.
 func TestConfigDelivery_NewerConfigSupersedesPartiallyDeliveredOne(t *testing.T) {
 	registrationChan := make(chan []nfConfigApi.SessionManagement, 4)
 	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
 	contextUpdateChan <- nil
-	d := &configDelivery{registrationChan: registrationChan, contextUpdateChan: contextUpdateChan}
-	first := []nfConfigApi.SessionManagement{makeSessionConfig("slice1", "internet")}
+	d := newConfigDelivery(registrationChan, contextUpdateChan, []nfConfigApi.SessionManagement{})
+	first := []nfConfigApi.SessionManagement{makeSessionConfig(sliceOne, "internet")}
 	second := []nfConfigApi.SessionManagement{makeSessionConfig("slice2", "fast")}
 
-	if err := d.deliver(first); err == nil {
-		t.Fatal("expected an error while contextUpdateChan is full")
+	d.accept(first)
+	if !d.flush() {
+		t.Fatal("expected contextUpdateChan to be missing the config while it is full")
 	}
 	<-contextUpdateChan
-	if err := d.deliver(second); err != nil {
-		t.Fatalf("deliver(second) = %v", err)
+	d.accept(second)
+	if d.flush() {
+		t.Fatal("both channels should have the second config")
 	}
 	if got := <-registrationChan; !reflect.DeepEqual(got, first) {
 		t.Errorf("registrationChan first item = %+v, want the first config", got)
@@ -205,13 +216,92 @@ func TestConfigDelivery_NewerConfigSupersedesPartiallyDeliveredOne(t *testing.T)
 	if got := <-contextUpdateChan; !reflect.DeepEqual(got, second) {
 		t.Errorf("contextUpdateChan item = %+v, want the second config", got)
 	}
+	select {
+	case extra := <-contextUpdateChan:
+		t.Errorf("contextUpdateChan was also given the superseded config: %+v", extra)
+	default:
+	}
+}
+
+// A reaches both consumers, B reaches only the registration because the context channel is full, and the
+// endpoint goes back to A. The poller then sees a change from B to A, and the registration is brought back to A;
+// the context never left A and is not sent it again. Both consumers end at A, which a poller that kept A as its
+// current value all along would never have arranged.
+func TestPolling_ReturnToTheFirstConfigAfterAPartialDeliveryReconcilesTheConsumers(t *testing.T) {
+	configA := []nfConfigApi.SessionManagement{makeSessionConfig(sliceA, "internet")}
+	configB := []nfConfigApi.SessionManagement{makeSessionConfig(sliceB, "ims")}
+	var mu sync.Mutex
+	served := configA
+	var polls atomic.Int32
+	srv := serveConfig(t, &polls, func() []nfConfigApi.SessionManagement {
+		mu.Lock()
+		defer mu.Unlock()
+		return served
+	})
+	serve := func(c []nfConfigApi.SessionManagement) {
+		mu.Lock()
+		served = c
+		mu.Unlock()
+	}
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 8)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	runPoller(t, srv.URL, registrationChan, contextUpdateChan)
+
+	// A reaches both consumers; the context channel is then left full
+	if got := receive(t, registrationChan, "registrationChan"); got[0].SliceName != sliceA {
+		t.Fatalf("registration got %+v, want A", got)
+	}
+	waitUntil(t, func() bool { return len(contextUpdateChan) == 1 }, "A did not reach the context channel")
+
+	// B reaches only the registration: the context channel still holds A, which nobody has taken
+	serve(configB)
+	if got := receive(t, registrationChan, "registrationChan"); got[0].SliceName != sliceB {
+		t.Fatalf("registration got %+v, want B", got)
+	}
+	// the endpoint goes back to A while the context channel is still full
+	serve(configA)
+	if got := receive(t, registrationChan, "registrationChan after the revert"); got[0].SliceName != sliceA {
+		t.Fatalf("after the revert the registration got %+v, want A", got)
+	}
+
+	// the context consumer drains its channel: A. Nothing else may follow, for it never left A.
+	if got := <-contextUpdateChan; got[0].SliceName != sliceA {
+		t.Fatalf("context consumer got %+v, want A", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+	select {
+	case extra := <-contextUpdateChan:
+		t.Errorf("the context consumer, at A all along, was sent %+v", extra)
+	case extra := <-registrationChan:
+		t.Errorf("the registration was sent %+v after it was back at A", extra)
+	default:
+	}
+}
+
+// A consumer that is behind is brought up to date when its channel drains, with no change at the endpoint.
+func TestPolling_ConsumerBehindIsBroughtUpToDateWhenItsChannelDrains(t *testing.T) {
+	config := []nfConfigApi.SessionManagement{makeSessionConfig(sliceOne, "internet")}
+	var polls atomic.Int32
+	srv := serveConfig(t, &polls, func() []nfConfigApi.SessionManagement { return config })
+	registrationChan := make(chan []nfConfigApi.SessionManagement, 4)
+	contextUpdateChan := make(chan []nfConfigApi.SessionManagement, 1)
+	contextUpdateChan <- nil
+	runPoller(t, srv.URL, registrationChan, contextUpdateChan)
+
+	receive(t, registrationChan, "registrationChan")
+	waitUntil(t, func() bool { return polls.Load() >= 4 }, "the poller did not keep polling")
+	<-contextUpdateChan // drain; the endpoint has not changed since
+	got := receive(t, contextUpdateChan, "contextUpdateChan after it drained")
+	if len(got) != 1 || got[0].SliceName != sliceOne {
+		t.Errorf("got %+v", got)
+	}
 }
 
 // The normalisation by nfconfigpoll.JSONRoundTrip must be equivalent to the goccy round trip it
 // replaced, including the AdditionalProperties defaulting and optional fields.
 func TestNormalize_JSONRoundTripMatchesPreviousGoccyRoundTrip(t *testing.T) {
 	pcscf := "10.0.0.9"
-	cfg := makeSessionConfig("slice1", "internet")
+	cfg := makeSessionConfig(sliceOne, "internet")
 	cfg.IpDomain[0].PcscfIpv4 = &pcscf
 	cfg.AdditionalProperties = map[string]interface{}{"extra": "value"}
 	noUpf := makeSessionConfig("slice2", "ims")
