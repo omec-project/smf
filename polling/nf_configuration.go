@@ -1,146 +1,104 @@
+// Copyright (C) 2026 Intel Corporation
 // SPDX-FileCopyrightText: 2025 Canonical Ltd
-
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package polling
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
+	"errors"
 	"reflect"
-	"strings"
 	"time"
 
-	gojson "github.com/goccy/go-json"
 	"github.com/omec-project/openapi/v2/nfConfigApi"
+	"github.com/omec-project/openapi/v2/nfconfigpoll"
 	"github.com/omec-project/smf/logger"
 )
 
 const (
 	initialPollingInterval = 5 * time.Second
-	pollingMaxBackoff      = 40 * time.Second
-	pollingBackoffFactor   = 2
 	pollingPath            = "/nfconfig/session-management"
-	contentTypeJSON        = "application/json"
 )
-
-type nfConfigPoller struct {
-	currentSessionManagementConfig []nfConfigApi.SessionManagement
-	client                         *http.Client
-}
 
 // StartPollingService initializes the polling service and starts it.
 // The polling service continuously makes HTTP GET request to the webconsole and updates the network configuration
 func StartPollingService(ctx context.Context, webuiUri string, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement) {
-	poller := nfConfigPoller{
-		currentSessionManagementConfig: []nfConfigApi.SessionManagement{},
-		client:                         &http.Client{Timeout: initialPollingInterval},
+	poller, err := newPoller(webuiUri, registrationChan, contextUpdateChan, initialPollingInterval)
+	if err != nil {
+		logger.PollConfigLog.Errorf("failed to start polling service: %v", err)
+		return
 	}
-
-	interval := initialPollingInterval
-	pollingEndpoint := webuiUri + pollingPath
-	logger.PollConfigLog.Infof("started polling service on %s every %s", pollingEndpoint, initialPollingInterval.String())
-
-	handleUpdate := func(cfg []nfConfigApi.SessionManagement) {
-		select {
-		case registrationChan <- cfg:
-		default:
-			logger.PollConfigLog.Warn("registrationChan full, dropping config")
-		}
-		select {
-		case contextUpdateChan <- cfg:
-		default:
-			logger.PollConfigLog.Warn("contextUpdateChan full, dropping config")
-		}
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.PollConfigLog.Infoln("polling service shutting down")
-			return
-		case <-pollingIntervalAfter(interval):
-			newSessionManagementConfig, err := fetchSessionManagementConfig(&poller, pollingEndpoint)
-			if err != nil {
-				interval = min(interval*time.Duration(pollingBackoffFactor), pollingMaxBackoff)
-				logger.PollConfigLog.Errorf("Polling error. Retrying in %v: %+v", interval, err)
-				continue
-			}
-			interval = initialPollingInterval
-
-			// Round-trip through JSON so the comparison and stored state always reflect the
-			// custom (Un)MarshalJSON behaviour of nfConfigApi types (e.g. AdditionalProperties
-			// defaulting to an empty map instead of nil), regardless of how the config was built.
-			data, err := gojson.Marshal(newSessionManagementConfig)
-			if err != nil {
-				logger.PollConfigLog.Errorf("failed to marshal SessionManagement config: %v", err)
-				continue
-			}
-			var normalizedConfig []nfConfigApi.SessionManagement
-			if err := gojson.Unmarshal(data, &normalizedConfig); err != nil {
-				logger.PollConfigLog.Errorf("failed to unmarshal SessionManagement config: %v", err)
-				continue
-			}
-
-			// only trigger callback if config changed
-			if !reflect.DeepEqual(normalizedConfig, poller.currentSessionManagementConfig) {
-				logger.PollConfigLog.Infof("Session Management config changed. New Session Management Data: %+v", newSessionManagementConfig)
-				poller.currentSessionManagementConfig = normalizedConfig
-				handleUpdate(newSessionManagementConfig)
-			} else {
-				logger.PollConfigLog.Debugf("Session management config did not change %+v", newSessionManagementConfig)
-			}
-		}
-	}
+	poller.Run(ctx)
 }
 
-var fetchSessionManagementConfig = func(p *nfConfigPoller, endpoint string) ([]nfConfigApi.SessionManagement, error) {
-	return p.fetchSessionManagementConfig(endpoint)
+func newPoller(webuiUri string, registrationChan, contextUpdateChan chan<- []nfConfigApi.SessionManagement, interval time.Duration) (*nfconfigpoll.Poller[[]nfConfigApi.SessionManagement], error) {
+	delivery := &configDelivery{registrationChan: registrationChan, contextUpdateChan: contextUpdateChan}
+	return nfconfigpoll.New(nfconfigpoll.Config[[]nfConfigApi.SessionManagement]{
+		Name:     "Session Management",
+		Endpoint: webuiUri + pollingPath,
+		Log:      logger.PollConfigLog,
+		Interval: interval,
+		Initial:  []nfConfigApi.SessionManagement{},
+		// Round-trip through JSON so the comparison and stored state always reflect the custom
+		// (Un)MarshalJSON behaviour of nfConfigApi types (e.g. AdditionalProperties defaulting to an
+		// empty map instead of nil), regardless of how the config was built.
+		Normalize: nfconfigpoll.JSONRoundTrip[[]nfConfigApi.SessionManagement],
+		OnChange: func(_ context.Context, cfg []nfConfigApi.SessionManagement) error {
+			return delivery.deliver(cfg)
+		},
+	})
 }
 
-var pollingIntervalAfter = time.After
+// configDelivery sends a config to the registration and the context update channels without ever
+// blocking. If a channel is full the config is not lost: deliver returns an error so that the poller
+// offers the same config again on the next poll. A channel that already accepted the config is
+// remembered, so a retry only goes to the channel(s) that are still missing it.
+// deliver is only called from the polling goroutine, so no locking is needed.
+type configDelivery struct {
+	registrationChan  chan<- []nfConfigApi.SessionManagement
+	contextUpdateChan chan<- []nfConfigApi.SessionManagement
 
-func (p *nfConfigPoller) fetchSessionManagementConfig(pollingEndpoint string) ([]nfConfigApi.SessionManagement, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), initialPollingInterval)
-	defer cancel()
+	pending                  []nfConfigApi.SessionManagement
+	registrationDelivered    bool
+	contextUpdateDelivered   bool
+	hasPartiallyDeliveredCfg bool
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pollingEndpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-	req.Header.Set("Accept", contentTypeJSON)
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP GET %v failed: %w", pollingEndpoint, err)
-	}
-	defer resp.Body.Close()
-
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.Contains(contentType, contentTypeJSON) {
-		return nil, fmt.Errorf("unexpected Content-Type: got %s, want application/json", contentType)
+func (d *configDelivery) deliver(cfg []nfConfigApi.SessionManagement) error {
+	// A different config than the one partially delivered supersedes it: both channels get the new one.
+	if d.hasPartiallyDeliveredCfg && !reflect.DeepEqual(d.pending, cfg) {
+		d.reset()
 	}
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
+	if !d.registrationDelivered {
+		select {
+		case d.registrationChan <- cfg:
+			d.registrationDelivered = true
+		default:
+			logger.PollConfigLog.Warn("registrationChan full, config will be retried on the next poll")
 		}
-
-		var config []nfConfigApi.SessionManagement
-		if err := gojson.Unmarshal(body, &config); err != nil {
-			logger.PollConfigLog.Debugf("Session-management raw response: %s", body)
-			return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-		}
-		return config, nil
-
-	case http.StatusBadRequest, http.StatusInternalServerError:
-		return nil, fmt.Errorf("server returned %d error code", resp.StatusCode)
-	default:
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
+	if !d.contextUpdateDelivered {
+		select {
+		case d.contextUpdateChan <- cfg:
+			d.contextUpdateDelivered = true
+		default:
+			logger.PollConfigLog.Warn("contextUpdateChan full, config will be retried on the next poll")
+		}
+	}
+
+	if d.registrationDelivered && d.contextUpdateDelivered {
+		d.reset()
+		return nil
+	}
+	d.pending = cfg
+	d.hasPartiallyDeliveredCfg = true
+	return errors.New("channel full, config not delivered to all consumers")
+}
+
+func (d *configDelivery) reset() {
+	d.pending = nil
+	d.registrationDelivered = false
+	d.contextUpdateDelivered = false
+	d.hasPartiallyDeliveredCfg = false
 }

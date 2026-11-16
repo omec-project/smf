@@ -1,10 +1,12 @@
+// Copyright (C) 2022-Present Intel Corporation
 // SPDX-FileCopyrightText: 2025 Canonical Ltd
-// SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Open Networking Foundation <info@opennetworking.org>
+// SPDX-License-Identifier: Apache-2.0
 
 package consumer
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -193,7 +195,7 @@ func TestNfIDUpdated_NrfURLNotOverwritten(t *testing.T) {
 	self.NrfUri = svr.URL
 	self.RegisterIPv4 = "127.0.0.2"
 
-	_, _, err := SendRegisterNFInstance([]nfConfigApi.SessionManagement{makeSessionCfg()})
+	_, _, err := SendRegisterNFInstance(context.Background(), []nfConfigApi.SessionManagement{makeSessionCfg()})
 	if err != nil {
 		t.Errorf("Got an error: %+v", err)
 	}
