@@ -13,6 +13,7 @@ import (
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/ies"
+	"github.com/omec-project/smf/pfcp/lisequence"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	"github.com/wmnsk/go-pfcp/message"
@@ -20,6 +21,81 @@ import (
 
 func init() {
 	PfcpTxns = make(map[uint32]*context.NodeID)
+}
+
+// POIRestarted is the Lawful Interception hook this package calls when a UPF stops answering.
+// Nil unless LI is wired, and nil-checked at every call site. A detected restart does not call
+// it: it calls context.OnRestart, which the LI wiring wraps so the same discard is settled
+// before any session is restored (lawfulintercept.GateRestoration).
+//
+// **A package variable rather than a direct call, because this package may not import
+// lawfulintercept.** pfcp/message imports this one, and lawfulintercept's own tests import
+// pfcp/message, so the direct call is an import cycle. The same shape the producer's
+// teardown hooks take, for the same reason, and it is assigned once by the service wiring
+// that already builds the LI subsystem.
+var POIRestarted func(node context.NodeID)
+
+// LIModificationAnswered is the Lawful Interception hook this package calls with the
+// outcome of a modification the interception subsystem sent. Nil unless LI is wired, and
+// assigned by the same service wiring that assigns POIRestarted, for the same reason: this
+// package may not import lawfulintercept.
+var LIModificationAnswered func(req lisequence.Request, cause uint8, answered bool)
+
+// notifyLIModificationAnswered calls the hook if one is wired.
+func notifyLIModificationAnswered(req lisequence.Request, cause uint8, answered bool) {
+	if LIModificationAnswered != nil {
+		LIModificationAnswered(req, cause, answered)
+	}
+}
+
+// ReportEstablishment, ApplyCCAfterEstablishment and TriggerCC are the Lawful Interception hooks
+// this package raises when a PFCP session establishment response completes. They are assigned by
+// the same service wiring that assigns POIRestarted, for the same reason: this package may not
+// import lawfulintercept.
+//
+// **They exist because only one of the native and adapter handlers runs in a deployment.** The
+// native handler in pfcp/handler raises the same three. Without them here, with enableUPFAdapter
+// set — the chart's default — the SMF would send the UPF a DUPL FAR and never send the
+// ActivateTask that authorises it: the CC-POI would hold no task for the session and drop every
+// copy as unattributable, the establishment record would never be produced, and nothing would
+// raise a fault, because from the SMF's side nothing failed.
+var (
+	ReportEstablishment       func(sc *context.SMContext)
+	ApplyCCAfterEstablishment func(sc *context.SMContext)
+	TriggerCC                 func(sc *context.SMContext)
+)
+
+// notifyReportEstablishment calls the hook if one is wired.
+func notifyReportEstablishment(sc *context.SMContext) {
+	if ReportEstablishment != nil {
+		ReportEstablishment(sc)
+	}
+}
+
+// notifyApplyCCAfterEstablishment calls the hook if one is wired.
+func notifyApplyCCAfterEstablishment(sc *context.SMContext) {
+	if ApplyCCAfterEstablishment != nil {
+		ApplyCCAfterEstablishment(sc)
+	}
+}
+
+// notifyTriggerCC calls the hook if one is wired.
+//
+// One helper per hook, named for it, rather than one that raises both: the call site is what a
+// reader and a parity check both look at, and a helper that groups two hooks hides their names
+// from it, and the parity guard in this package fails until each hook is named here.
+func notifyTriggerCC(sc *context.SMContext) {
+	if TriggerCC != nil {
+		TriggerCC(sc)
+	}
+}
+
+// notifyPOIRestarted calls the hook if one is wired. Written once so a new call site cannot
+// forget the nil check — a nil function value panics, and these are PFCP message handlers.
+func notifyPOIRestarted(node context.NodeID) {
+	if POIRestarted != nil {
+		POIRestarted(node)
+	}
 }
 
 var (
@@ -244,7 +320,10 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse SEID %v", SEID)
-	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse smContext %+v", smContext)
+	// The session's reference, not the context: the context's text carries the subscriber's
+	// identities and every FAR's apply action, including the duplication that marks an
+	// intercepted session.
+	logger.PfcpLog.Infof("in HandlePfcpSessionEstablishmentResponse smContext Ref %s", smContext.Ref)
 
 	// Get NodeId from Seq:NodeId Map
 	seq := rsp.Sequence()
@@ -367,6 +446,18 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			SetUpfInactive(*rspNodeID)
 		}
 	} else {
+		// Lawful Interception IRI-POI: the session now exists on the UPF, so its F-SEID
+		// (the X2 correlation identifier) and F-TEID are known — both were set above from
+		// this response. At most once per session; silent no-op unless LI is configured.
+		// SMLock is held for the whole handler.
+		//
+		// Only on the anchor's response, as in the native handler: the record's correlation
+		// identifier is the *default path's* F-SEID, so emitting it on some other UPF's
+		// response would produce the one record describing the session with nothing to
+		// join it to.
+		if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
+			notifyReportEstablishment(smContext)
+		}
 		smContext.SubPfcpLog.Infof("PFCP Session Establishment accepted")
 	}
 
@@ -382,6 +473,24 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) error {
 			}
 		}
 	}
+
+	// Lawful Interception CC-TF: task the CC-POI of the UPF that has just created this session.
+	// The trigger's packet detection criterion is the F-SEID that response assigns, so this is
+	// the earliest point it can be sent — the duplication instruction itself rode out with the
+	// request.
+	//
+	// Not gated on the anchor, as in the native handler, because a session can be served by
+	// more than one UPF. Gated on the anchor, an additional PSA got its DUPL FAR but never its
+	// trigger, so it duplicated the target's traffic into content the CC-POI could not
+	// attribute and correctly dropped. Triggering is idempotent per (warrant, session, UPF).
+	if accepted {
+		// Re-derive duplication before tasking: a warrant that activated while this session was
+		// being established has not been applied to its FARs by anyone, and this is the first
+		// point ordered after the session exists. Under the same lock, so it cannot race the
+		// rules it reads.
+		notifyApplyCCAfterEstablishment(smContext)
+		notifyTriggerCC(smContext)
+	}
 	return nil
 }
 
@@ -391,6 +500,51 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) error {
 		return errors.New("invalid PFCP Session Modification Response")
 	}
 	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
+
+	// A modification this element sent for Lawful Interception, not one the session's
+	// own procedures sent — the same guard the native handler applies, on the path
+	// taken when enableUPFAdapter is set. sendSessionModification routes the response
+	// through HandleAdapterPfcpRsp in that mode. Without it, an LI modification's
+	// response landing during SmStatePfcpModify would clear the pending-UPF entry the
+	// subscriber's own concurrent modification is waiting on and complete that procedure
+	// on an answer never sent to it. The correlation below — SEID, serving UPF, procedure
+	// state — cannot tell the two apart, which is why the sequence number is what answers
+	// it.
+	//
+	// Take closes the record; it stays as a tombstone for a bounded time, so a repeated
+	// answer is still recognised as LI.
+	//
+	// **And the answer is read.** Keeping it out of the subscriber's procedure is one
+	// obligation and reading it is a second: the Cause says whether the datapath applied
+	// the duplication this element had already recorded as applied, and with it discarded
+	// a refused activation would never be retried — the element holding a task it reports
+	// as intercepting and a datapath that declined it, with nothing left to re-send and
+	// nothing reported. A refused withdrawal would leave duplication running while the
+	// element believed it was off.
+	//
+	// Ahead of the Cause checks below, as the native handler's is: an answer with no Cause
+	// this element can read is treated as not applied, and so retried, rather than
+	// discarded.
+	//
+	// Only the first answer to a sequence number is read, as in the native handler; a repeat
+	// is still LI, and dropped.
+	if req, ok, first := lisequence.Take(pfcpRsp.Sequence()); ok {
+		if !first {
+			return nil
+		}
+		var (
+			liCause  uint8
+			answered bool
+		)
+		if pfcpRsp.Cause != nil {
+			if value, causeErr := pfcpRsp.Cause.Cause(); causeErr == nil {
+				liCause, answered = value, true
+			}
+		}
+		notifyLIModificationAnswered(req, liCause, answered)
+
+		return nil
+	}
 
 	cause := pfcpRsp.Cause
 	if cause == nil {
@@ -415,10 +569,15 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) error {
 	}
 
 	smContext := context.GetSMContextBySEID(SEID)
-	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse smContext found by SEID %v", smContext)
+
+	// After the interception block, as in the native handler: that block answers a
+	// modification this element sent itself, keyed on the sequence number alone, and it must
+	// still run when the session has since been released.
 	if smContext == nil {
 		return fmt.Errorf("PFCP Session Modification Response found SM context nil for SEID %d, response discarded", SEID)
 	}
+	// The session's reference, not the context: see HandlePfcpSessionEstablishmentResponse.
+	logger.PfcpLog.Infof("in HandlePfcpSessionModificationResponse smContext Ref %s found by SEID %d", smContext.Ref, SEID)
 
 	if causeValue == ie.CauseRequestAccepted {
 		smContext.SubPduSessLog.Infoln("PFCP Modification Response Accept")
@@ -530,4 +689,11 @@ func SetUpfInactive(nodeID context.NodeID) {
 
 	upf.UPFStatus = context.NotAssociated
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
+
+	// Lawful Interception: this UPF has stopped answering, so what it holds is no longer
+	// knowable and the claims this element keeps for it are worse than useless — they make
+	// the planning path skip every triple as already claimed, and they keep this element
+	// telling a POI it may not be reaching that its triggering function is present, which is
+	// what disables that POI's own fail-safe.
+	notifyPOIRestarted(upf.NodeID)
 }

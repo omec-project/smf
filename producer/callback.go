@@ -19,6 +19,7 @@ import (
 	"github.com/omec-project/smf/consumer"
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/qos"
@@ -531,6 +532,12 @@ func programAddedRule(smContext *smfContext.SMContext, pfcpParam *pfcpParam, nod
 		smContext.AddPendingUPF(node.GetNodeIP())
 		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ulPDR)
 	}
+
+	// Setting the FARs above replaced their whole ApplyAction, so a tasked session's content
+	// duplication was cleared; restore it from the current task state before the rules are sent.
+	// Only the FARs this modification carries: see ApplyCCTriggerTo. Silent no-op when LI is
+	// inactive.
+	lawfulintercept.ApplyCCTriggerTo(smContext, pfcpParam.farList)
 }
 
 // sessionUEAddress is the UE's address as a rule added to an established session names it, in
