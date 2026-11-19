@@ -17,6 +17,7 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/pfcp/lisequence"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
@@ -711,6 +712,49 @@ func TestAModificationThatNeverWentOutLeavesItsRulesAsTheyWere(t *testing.T) {
 	if pdr.State != context.RULE_REMOVE || far.State != context.RULE_REMOVE || qer.State != context.RULE_UPDATE {
 		t.Errorf("rule states after a request that never went out: PDR %v, FAR %v, QER %v; want them as they were",
 			pdr.State, far.State, qer.State)
+	}
+}
+
+// An LI modification is recorded by sequence number before it is sent, because with the UPF
+// adapter its answer is handled before the send returns. One that never went out has no answer
+// coming, so its record goes with the failed send: otherwise the sweep would find it unanswered
+// and re-send a modification whose failure the caller has already reported.
+func TestAnLIModificationThatNeverWentOutLeavesNoRecord(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID, LocalSEID: 21, RemoteSEID: 22},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses after the request has been built.
+	setTestServer(t, nil)
+
+	before := lisequence.Outstanding()
+	far := &context.FAR{FARID: 1, State: context.RULE_UPDATE, ApplyAction: context.ApplyAction{Forw: true, Dupl: true}}
+
+	if err := message.SendPfcpSessionModificationRequestForLI(upNodeID, smContext, []*context.FAR{far}, 8806); err == nil {
+		t.Fatal("a modification the socket refused was reported as sent")
+	}
+
+	if after := lisequence.Outstanding(); after != before {
+		t.Errorf("LI modifications awaiting an answer went from %d to %d after a send that never "+
+			"went out; the sweep would re-send it", before, after)
 	}
 }
 

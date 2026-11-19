@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/util/flowdesc"
@@ -296,6 +297,8 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 
 	defaultANUPFDLFAR := defaultANUPF.DownLinkTunnel.PDR["default"].FAR       // TODO: Iterate over all PDRs
 	activatingANUPFDLFAR := activatingANUPF.DownLinkTunnel.PDR["default"].FAR // TODO: Iterate over all PDRs
+	// Replaces the whole ApplyAction, clearing content duplication on a tasked
+	// session; re-evaluated once the forwarding parameters are set.
 	activatingANUPFDLFAR.ApplyAction = context.ApplyAction{
 		Buff: false,
 		Drop: false,
@@ -309,6 +312,10 @@ func EstablishRANTunnelInfo(smContext *context.SMContext) {
 		},
 		NetworkInstance: []byte(smContext.Dnn),
 	}
+
+	// Restore duplication from the current task state on the newly activated path's downlink
+	// FAR, the one this step changes and EstablishULCL sends. Silent no-op when LI is inactive.
+	lawfulintercept.ApplyCCTriggerTo(smContext, []*context.FAR{activatingANUPFDLFAR})
 
 	activatingANUPFDLFAR.State = context.RULE_INITIAL
 	activatingANUPFDLFAR.ForwardingParameters.OuterHeaderCreation = new(context.OuterHeaderCreation)
