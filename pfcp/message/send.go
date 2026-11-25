@@ -36,6 +36,9 @@ import (
 
 var seq uint32
 
+// maxSeqNumber is the largest sequence number the 3-octet PFCP header holds.
+const maxSeqNumber = 0xFFFFFF
+
 const UPFAdapterURL = "http://upf-adapter:8090"
 
 func getSeqNumber() uint32 {
@@ -48,7 +51,9 @@ func getSeqNumber() uint32 {
 		}
 	}
 
-	seqNum := atomic.AddUint32(&seq, 1) + uint32((smfCount-1)*5000)
+	// The header carries 24 bits, and a response is matched by the number it carries, so
+	// the number is kept to what the wire holds.
+	seqNum := (atomic.AddUint32(&seq, 1) + uint32((smfCount-1)*5000)) & maxSeqNumber
 	logger.PfcpLog.Debugf("unique seq num: smfCount from os: %v; seqNum %v", smfCount, seqNum)
 	return seqNum
 }
