@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/pfcp/message"
 )
@@ -72,6 +73,19 @@ func heartbeatUpf(upf *context.UPF) {
 		// not a send, so it is logged rather than booked against the send-failure metric.
 		logger.PfcpLog.Errorf("pfcp heartbeat failure for UPF: [%v]", upf.NodeID)
 		upf.UPFStatus = context.NotAssociated
+
+		// Lawful Interception: this UPF has stopped answering, so what it holds is
+		// no longer knowable — and the claims this element keeps for it are worse
+		// than useless. They make `plan` skip every triple as already claimed, so
+		// nothing re-installs when the UPF comes back, and they keep
+		// `keepaliveDue` true, so this element goes on telling a POI it may not be
+		// reaching that its triggering function is present — which is precisely
+		// what disables that POI's own fail-safe.
+		//
+		// Discarding them is the same conclusion the heartbeat mismatch and the
+		// re-association paths reach, by the route that reaches it first: a claim
+		// that cannot be true must not be treated as one.
+		lawfulintercept.POIRestarted(upf.NodeID)
 	}
 }
 

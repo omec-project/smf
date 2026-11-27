@@ -29,19 +29,23 @@ import (
 	smfContext "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/eventexposure"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/nfregistration"
 	"github.com/omec-project/smf/oam"
 	"github.com/omec-project/smf/pdusession"
 	"github.com/omec-project/smf/pfcp"
+	"github.com/omec-project/smf/pfcp/adapter"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/pfcp/upf"
 	"github.com/omec-project/smf/polling"
+	"github.com/omec-project/smf/producer"
 	"github.com/omec-project/util/http2_util"
 	utilLogger "github.com/omec-project/util/logger"
 	"github.com/urfave/cli/v3"
+	"go.uber.org/zap"
 )
 
 type SMF struct{}
@@ -145,6 +149,14 @@ func (smf *SMF) setLogLevel() {
 	utilLogger.ApplyLogSetting("Util", cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
 }
 
+// declineOptionalSubsystem logs that an optional subsystem did not start, and nothing that says
+// which. The message names none, and the line carries no caller: util's logger records each
+// line's call site, and the file and line of a call inside the Lawful Interception block would
+// name the branch to anyone with the source.
+func declineOptionalSubsystem() {
+	logger.InitLog.WithOptions(zap.WithCaller(false)).Errorln("an optional subsystem failed to initialise")
+}
+
 func (smf *SMF) Start() {
 	logger.InitLog.Infoln("SMF app initialising")
 
@@ -158,6 +170,51 @@ func (smf *SMF) Start() {
 
 	// Init UE Specific Config
 	smfContext.InitSMFUERouting(&factory.UERoutingConfig)
+
+	// Lawful Interception IRI-POI: start only when the opt-in Li config is
+	// present; silent otherwise.
+	if li := factory.SmfConfig.Configuration.Li; li != nil {
+		// The keepalive timers and the strict `li`-block decode's verdict are passed on as the
+		// operator wrote them and acted on inside Init. A refusal made here would be a return
+		// from this function, which stops every other subsystem too — PFCP, the service-based
+		// interface, registration with the network. Inside Init the refusal is scoped to
+		// interception, and the fault reporter exists by then, so the ADMF is told that this
+		// element is not intercepting.
+		//
+		// Inject the PFCP session-modification hook the mid-session CC trigger needs. Done
+		// before Init mounts the X1 listener so the hook is in place before any tasking can
+		// arrive.
+		liBlockErr := factory.LiBlockError()
+		lawfulintercept.SetSessionModifier(producer.ModifySessionForLI)
+		// And the restart notification the adapter's PFCP handlers raise. It is a package
+		// variable there rather than a direct call because pfcp/adapter may not import
+		// lawfulintercept — pfcp/message imports the adapter, and lawfulintercept's tests
+		// import pfcp/message — so this is where the two are joined. Only one of the native
+		// and adapter handlers is active in a deployment, and a remedy present in one of them
+		// is a remedy whose presence depends on enableUPFAdapter.
+		adapter.POIRestarted = lawfulintercept.POIRestarted
+		// And the restart hook the SMF's session restoration hangs off. See gateRestorationOnLI.
+		gateRestorationOnLI()
+		// And the three establishment hooks, for the same reason. Only one of the native and
+		// adapter handlers is active in a deployment, so a hook present in one of them is a
+		// hook whose presence depends on enableUPFAdapter: without them on the adapter path the
+		// DUPL FAR would go to the UPF and the ActivateTask that authorises it would not.
+		adapter.ReportEstablishment = lawfulintercept.ReportEstablishment
+		adapter.ApplyCCAfterEstablishment = lawfulintercept.ApplyCCAfterEstablishment
+		adapter.TriggerCC = lawfulintercept.TriggerCC
+		// And the answer to this element's own PFCP modifications, for the same reason.
+		adapter.LIModificationAnswered = lawfulintercept.ModificationAnswered
+		if err := lawfulintercept.Init(liConfig(li, liBlockErr)); err != nil {
+			// Do not name the subsystem or echo err (which carries LI-identifying
+			// text) on the general operator log: that would reveal to an unauthorized
+			// operator that this NE is LI-provisioned, which network-element-level
+			// undetectability forbids. A listener-bind failure is already reported to
+			// the ADMF over X1 from within Init; an earlier failure (e.g. bad LI
+			// credentials) has no X1 channel yet and, pending a restricted LI log sink,
+			// is surfaced only non-attributably here.
+			declineOptionalSubsystem()
+		}
+	}
 
 	// Init Kafka stream before spawning goroutines that may publish metric events.
 	if err := metrics.InitialiseKafkaStream(factory.SmfConfig.Configuration); err != nil {
@@ -318,4 +375,61 @@ func (smf *SMF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup)
 	nfregistration.DeregisterNF()
 	wg.Wait()
 	logger.InitLog.Infoln("SMF terminated")
+}
+
+// ungatedRestart is the restart hook as the producer installed it, kept so that applying the gate
+// again wraps that hook rather than the gate: a gate wrapping a gate takes the same node's lock
+// twice and deadlocks under UpfLock.
+var ungatedRestart func(smfContext.NodeID, time.Time)
+
+// gateRestorationOnLI wraps the restart hook the SMF's session restoration hangs off, rather
+// than calling the interception discard beside it: the record of what a restarted UPF held is
+// settled before any of its sessions is re-installed, on every path that detects a restart,
+// because restoration can be reached only through this hook.
+func gateRestorationOnLI() {
+	if ungatedRestart == nil {
+		ungatedRestart = smfContext.OnRestart
+	}
+	if ungatedRestart == nil {
+		return
+	}
+	smfContext.OnRestart = lawfulintercept.GateRestoration(lawfulintercept.RestartHooks{
+		Restore: ungatedRestart,
+		Abandon: producer.AbandonRestorationOnUPF,
+		Release: producer.ReleaseSessionsOnUPF,
+	})
+}
+
+// liConfig maps the factory's li block onto the interception subsystem's configuration.
+func liConfig(li *factory.Li, blockErr error) lawfulintercept.Config {
+	triggers := make([]lawfulintercept.UPFTrigger, 0, len(li.UPFTriggers))
+	for _, t := range li.UPFTriggers {
+		triggers = append(triggers, lawfulintercept.UPFTrigger{
+			NodeID: t.NodeID, X1URL: t.X1URL, NEID: t.NEID,
+		})
+	}
+	dests := make([]lawfulintercept.Destination, 0, len(li.Destinations))
+	for _, d := range li.Destinations {
+		dests = append(dests, lawfulintercept.Destination{
+			DID: d.DID, DeliveryType: d.DeliveryType, Address: d.Address,
+		})
+	}
+
+	return lawfulintercept.Config{
+		BlockError: blockErr,
+		X1Listen:   li.X1Listen, MDF2: li.MDF2, NEID: li.NEID,
+		Cert: li.Cert, Key: li.Key, CACert: li.CACert,
+		MDF3: li.MDF3, UPFTriggers: triggers,
+		Destinations: dests,
+		AdmfURL:      li.AdmfURL, AdmfID: li.AdmfID, KeepaliveTimeout: li.KeepaliveTimeout,
+		KeepaliveTimeP1:        li.KeepaliveTimeP1,
+		KeepaliveTimeP3:        li.KeepaliveTimeP3,
+		KeepaliveRetainTasking: li.KeepaliveRetainTasking,
+		KeepaliveDisabled:      li.KeepaliveDisabled,
+		X2X3KeepaliveEnabled:   li.X2X3KeepaliveEnabled,
+		X2X3KeepaliveTimeP1:    li.X2X3KeepaliveTimeP1,
+		X2X3KeepaliveTimeP2:    li.X2X3KeepaliveTimeP2,
+		DeactivateAllTasks:     li.DeactivateAllTasks,
+		RemoveAllDestinations:  li.RemoveAllDestinations,
+	}
 }

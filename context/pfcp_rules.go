@@ -96,6 +96,9 @@ type PDI struct {
 // Forwarding Action Rule. 7.5.2.3-1
 type FAR struct {
 	ForwardingParameters *ForwardingParameters
+	// DuplicatingParameters is not stored with the session, for the reason ApplyAction.Dupl is
+	// not.
+	DuplicatingParameters *DuplicatingParameters `json:"-" yaml:"-" bson:"-"`
 
 	BAR   *BAR
 	State RuleState
@@ -116,6 +119,16 @@ type ForwardingParameters struct {
 	PFCPSMReqFlags       *PFCPSMReqFlags
 	ForwardingPolicyID   string
 	NetworkInstance      nasType.Dnn
+	DestinationInterface DestinationInterface
+}
+
+// DuplicatingParameters accompanies a FAR whose ApplyAction has DUPL set: it
+// tells the UPF where to send the duplicated user-plane packets. For Lawful
+// Interception the destination interface is the LI Function; OuterHeaderCreation
+// is optional and, in the SD-Core hybrid model, left nil because the UPF's
+// CC-POI frames and ships the copy over X3 natively rather than tunnelling it.
+type DuplicatingParameters struct {
+	OuterHeaderCreation  *OuterHeaderCreation
 	DestinationInterface DestinationInterface
 }
 

@@ -15,9 +15,11 @@ import (
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/pfcp/ies"
+	"github.com/omec-project/smf/pfcp/lisequence"
 	pfcp_message "github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/producer"
@@ -48,6 +50,42 @@ func FindFTEID(createdPDRIEs []*ie.IE) (*ie.FTEIDFields, error) {
 		}
 	}
 	return nil, fmt.Errorf("FTEID not found in CreatedPDR")
+}
+
+// POIRestarted is the Lawful Interception notification this package raises when a UPF reports
+// no established association: what that point of interception holds is no longer knowable, so
+// the tasking this element believes it holds there is discarded.
+//
+// A detected restart does not raise it. Those paths call smf_context.OnRestart, which the LI
+// wiring wraps so the same discard is settled before any session is restored; see
+// lawfulintercept.GateRestoration.
+//
+// Reached through a package variable so a test can substitute it; in production it is
+// lawfulintercept.POIRestarted itself.
+var POIRestarted = lawfulintercept.POIRestarted
+
+// LIModificationAnswered is the Lawful Interception hook carrying the outcome of a
+// modification the interception subsystem sent. Reached through a package variable for the
+// reason POIRestarted is: so a test can observe that this path raises it.
+var LIModificationAnswered = lawfulintercept.ModificationAnswered
+
+// liResponseCause reads the Cause of a session modification response, reporting whether one
+// could be read at all.
+//
+// An answer with no readable Cause is not an acceptance. It says the element does not know
+// what the datapath did, which is the same state as silence — and the element must treat
+// "do not know" as "not applied", because over-applying duplication is visible to the CC-POI
+// as content it can attribute while under-applying it is silent.
+func liResponseCause(rsp *message.SessionModificationResponse) (uint8, bool) {
+	if rsp.Cause == nil {
+		return 0, false
+	}
+	cause, err := rsp.Cause.Cause()
+	if err != nil {
+		return 0, false
+	}
+
+	return cause, true
 }
 
 func HandlePfcpHeartbeatRequest(msg *udp.Message) {
@@ -152,6 +190,18 @@ func SetUpfInactive(nodeID smf_context.NodeID, msgTypeName string) {
 	defer upf.UpfLock.Unlock()
 	upf.UPFStatus = smf_context.NotAssociated
 	upf.NHeartBeat = 0 // reset Heartbeat attempt to 0
+
+	// Lawful Interception: this UPF has stopped answering, so what it holds is no longer
+	// knowable and the claims this element keeps for it are worse than useless — they make the
+	// planning path skip every triple as already claimed, and they keep this element telling a
+	// POI it may not be reaching that its triggering function is present, which is what
+	// disables that POI's own fail-safe.
+	//
+	// The adapter's twin of this function raises it too. Without it here, on the native path a
+	// UPF reporting no established association would be discovered only by the next probe
+	// cycle. Only one of the two runs in a deployment, so a remedy present in one of them alone
+	// would depend on enableUPFAdapter.
+	POIRestarted(upf.NodeID)
 }
 
 func HandlePfcpPfdManagementRequest(msg *udp.Message) {
@@ -659,6 +709,22 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 			SetUpfInactive(*rspNodeID, msg.PfcpMessage.MessageTypeName())
 		}
 	} else {
+		// Lawful Interception IRI-POI: the session now exists on the UPF, so its
+		// F-SEID (the X2 correlation identifier) and F-TEID are known — both were
+		// set above from this response. Emitting here rather than when the SBI
+		// create returns is what makes the record joinable to the session's
+		// content. At most once per session; silent no-op unless LI
+		// is configured. SMLock is held for the whole handler.
+		//
+		// Only on the anchor's response, unlike the CC trigger below: every UPF of
+		// the session answers through this handler, and the record's correlation
+		// identifier is the *default path's* F-SEID, so emitting it on some other
+		// UPF's response would produce the one record describing the session with
+		// nothing to join it to. Before the verdict is signalled, so the record
+		// precedes anything the SBI side does once the session is up.
+		if ANUPF.UPF.NodeID.ResolveNodeIdToIp().Equal(nodeID.ResolveNodeIdToIp()) {
+			lawfulintercept.ReportEstablishment(smContext)
+		}
 		smContext.SubPfcpLog.Infoln("PFCP Session Establishment accepted")
 	}
 
@@ -678,6 +744,29 @@ func HandlePfcpSessionEstablishmentResponse(msg *udp.Message) {
 				smContext.SubPfcpLog.Warnf("an establishment verdict is already waiting; not queueing %v", verdict)
 			}
 		}
+	}
+
+	// Lawful Interception CC-TF: task the CC-POI of the UPF that has just created
+	// this session. The trigger's packet detection criterion is the F-SEID that
+	// response assigns, so this is the earliest point it can be sent — the
+	// duplication instruction itself rode out with the request.
+	//
+	// It is not gated on the anchor, as the record above is, because a session can
+	// be served by more than one UPF. Gated on the anchor, an additional PSA — a ULCL branch, or a second node of a preconfigured
+	// path whose response lands after the anchor's — got its DUPL FAR but never its
+	// trigger, so it duplicated the target's traffic into content the CC-POI could
+	// not attribute and correctly dropped. Triggering is idempotent per (warrant,
+	// session, UPF), so the repeated calls cost a lookup. The X1 exchange runs off
+	// this goroutine.
+	if accepted {
+		// Re-derive duplication before tasking. The X1 scan leaves a session whose
+		// PFCP session does not exist yet to this path, so a warrant that activated
+		// while this session was being established has not been applied to its FARs
+		// by anyone — and this is the first point ordered after the session exists.
+		// Ordinarily nothing has changed since the request went out and this sends
+		// nothing. Under the same lock, so it cannot race the rules it reads.
+		lawfulintercept.ApplyCCAfterEstablishment(smContext)
+		lawfulintercept.TriggerCC(smContext)
 	}
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
@@ -709,12 +798,43 @@ func HandlePfcpSessionModificationResponse(msg *udp.Message) {
 		}
 	}
 	smContext := smf_context.GetSMContextBySEID(SEID)
+
+	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
+
+	// A modification this element sent for Lawful Interception, not one the
+	// session's own procedures sent. The correlation below — SEID, serving UPF,
+	// procedure state — cannot tell the two apart, so without this the LI answer
+	// clears the pending entry a concurrent subscriber modification is waiting on
+	// and completes that procedure on an answer never sent to it.
+	//
+	// **Keeping it out of that procedure is one obligation; reading it is a second.** A
+	// guard that returned without reading the Cause would throw away the answer to this
+	// element's own modification — and with it, a refused activation would never be
+	// retried: the element would hold a task it reported as intercepting and a datapath
+	// that had declined it, with nothing left to re-send (the send itself cleared the
+	// RULE_UPDATE marker) and nothing reported. A refused withdrawal would leave
+	// duplication running while the element believed it was off.
+	//
+	// **Only the first answer is read.** A UPF answering both the request and its
+	// retransmission sends two; the second is still LI, so it is kept out of the session's
+	// procedure as well, and dropped.
+	if req, ok, first := lisequence.Take(rsp.Sequence()); ok {
+		if first {
+			cause, answered := liResponseCause(rsp)
+			LIModificationAnswered(req, cause, answered)
+		}
+
+		return
+	}
+
+	// The nil-context guard (omec-project/smf#643) comes after the interception block above, not
+	// at the lookup: that block answers a modification this element sent itself, keyed on the
+	// sequence number alone, and it must still run when the session has since been released.
+	// Guarding at the lookup would discard those answers.
 	if smContext == nil {
 		logger.PfcpLog.Warnf("PFCP Session Modification Response found SM context nil for SEID[%d], response discarded", SEID)
 		return
 	}
-
-	logger.PfcpLog.Infoln("in HandlePfcpSessionModificationResponse")
 
 	if smf_context.SMF_Self().ULCLSupport && smContext.BPManager != nil {
 		if smContext.BPManager.BPStatus == smf_context.AddingPSA {

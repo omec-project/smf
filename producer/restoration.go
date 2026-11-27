@@ -944,6 +944,12 @@ func markReleasedAndBuild(smContext *context.SMContext) (*models.N1N2MessageTran
 		return nil, errSessionGone
 	}
 
+	// Lawful Interception IRI-POI: the session ends here, whether the restarted UPF would not take
+	// it back or it was read back from the datastore, and owes the agency its release record and
+	// the withdrawal of its triggers like any other teardown. Before RemoveSMContextLocked, while
+	// the session can still be read. Silent no-op unless LI is configured.
+	reportAndUntask(smContext)
+
 	// RemoveSMContextLocked both transitions to SmStateRelease (publishing the terminal Kafka
 	// event) and removes the pool/canonicalRef entries; a bare ChangeState left them resolvable
 	// after Kafka consumers were told the session was gone. The Locked variant is used, not

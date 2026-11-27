@@ -28,6 +28,7 @@ import (
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/pfcp/adapter"
+	"github.com/omec-project/smf/pfcp/lisequence"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/omec-project/smf/util"
 	mi "github.com/omec-project/util/metricinfo"
@@ -462,7 +463,7 @@ func SendPfcpSessionModificationRequest(
 	upfPort uint16,
 ) error {
 	return sendPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList,
-		removePDR, removeFAR, removeQER, upfPort, false)
+		removePDR, removeFAR, removeQER, upfPort, false, false)
 }
 
 // SendAwaitedPfcpSessionModificationRequest sends a modification whose caller then waits on the
@@ -486,7 +487,46 @@ func SendAwaitedPfcpSessionModificationRequest(
 	upfPort uint16,
 ) error {
 	return sendPfcpSessionModificationRequest(upNodeID, ctx, pdrList, farList, qerList,
-		removePDR, removeFAR, removeQER, upfPort, true)
+		removePDR, removeFAR, removeQER, upfPort, true, false)
+}
+
+// SendPfcpSessionModificationRequestForLI sends a modification on behalf of Lawful
+// Interception, and records the sequence number it used so the response can be told
+// apart from the answer to a modification the session's own procedures sent.
+//
+// Interception changes duplication on a live session on the provisioning plane's
+// schedule, which has nothing to do with the session's. The two therefore overlap,
+// and the response path correlates on SEID, serving UPF and procedure state — none
+// of which distinguishes the sender. Without this marker an interception's answer
+// can clear the pending entry a subscriber's own modification is waiting on and
+// complete that procedure early, on an answer that was never sent to it. That is
+// interception altering what happens to the target, which is the one thing it may
+// never do.
+func SendPfcpSessionModificationRequestForLI(
+	upNodeID smf_context.NodeID,
+	ctx *smf_context.SMContext,
+	farList []*smf_context.FAR,
+	upfPort uint16,
+) error {
+	return sendPfcpSessionModificationRequest(upNodeID, ctx, nil, farList, nil,
+		nil, nil, nil, upfPort, false, true)
+}
+
+// anyDuplicating reports whether this modification asks the datapath to duplicate.
+//
+// Any rather than all: an LI modification carries the session's forwarding FARs, and the
+// tasking either applies to the session or does not — the FARs move together. What the
+// answer's consumer needs from it is which of the two failures a refusal is, since a
+// refused activation is an interception that is not running and a refused withdrawal is
+// one that has not stopped.
+func anyDuplicating(farList []*smf_context.FAR) bool {
+	for _, far := range farList {
+		if far != nil && far.ApplyAction.Dupl {
+			return true
+		}
+	}
+
+	return false
 }
 
 // The request carries no BARs, so the barList the exported senders accept goes no further.
@@ -501,12 +541,35 @@ func sendPfcpSessionModificationRequest(
 	removeQER []*smf_context.QER,
 	upfPort uint16,
 	awaited bool,
-) error {
+	forLI bool,
+) (err error) {
 	seqNum := getSeqNumber()
 	upNodeIDStr := upNodeID.ResolveNodeIdToIp().String()
 	pfcpContext, ok := ctx.PFCPContext[upNodeIDStr]
 	if !ok {
 		return fmt.Errorf("PFCP Context not found for NodeID[%s]", upNodeIDStr)
+	}
+	if forLI {
+		// **What was asked travels with the sequence number.** The builder below sets
+		// far.State = RULE_CREATE for every FAR it encodes, so the RULE_UPDATE marker
+		// that selected these FARs is cleared by this send — and the SMF-side Dupl bit
+		// already equals what the tasking implies, so nothing re-derives it. A response
+		// handler that went back to the session to work out what had been requested
+		// would find nothing to do, and a refused activation would never be retried.
+		//
+		// Recorded before the send, because with the UPF adapter the answer is handled before
+		// the send returns, and taken back if the send fails: a modification that is not sent
+		// leaves no record awaiting an answer that cannot come. Its caller reports the failure.
+		lisequence.Mark(seqNum, lisequence.Request{
+			SEID:        pfcpContext.LocalSEID,
+			NodeID:      upNodeIDStr,
+			Duplicating: anyDuplicating(farList),
+		})
+		defer func() {
+			if err != nil {
+				lisequence.Take(seqNum)
+			}
+		}()
 	}
 
 	// The builder marks every rule it is handed as applied while it builds, so a request that then
@@ -556,7 +619,11 @@ func sendPfcpSessionModificationRequest(
 		}
 	} else {
 		InsertPfcpTxn(pfcpMsg.Sequence(), &upNodeID)
-		eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: sessionSendErrorHandler(localSEID, awaited)}
+		errHandler := sessionSendErrorHandler(localSEID, awaited)
+		if forLI {
+			errHandler = liSendErrorHandler
+		}
+		eventData := udp.PfcpEventData{LSEID: localSEID, ErrHandler: errHandler}
 		if err := udp.SendPfcp(pfcpMsg, upaddr, eventData); err != nil {
 			// Reported here, not just logged: a synchronous send failure never reaches
 			// startTxLifeCycle, so nothing else counts it as a failure or refreshes the DNS cache.
@@ -573,7 +640,12 @@ func sendPfcpSessionModificationRequest(
 			return err
 		}
 	}
-	ctx.SubPfcpLog.Infof("sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	// Not for LI. The session's logger tags each line with the SUPI, and the subscriber's own
+	// modifications log a procedure before this line and the answer after it; an LI modification
+	// has neither, so this line alone would mark the subscriber, and the moment, as intercepted.
+	if !forLI {
+		ctx.SubPfcpLog.Infof("sent PFCP Session Modify Request to NodeID[%s]", upNodeID.ResolveNodeIdToIp().String())
+	}
 	return nil
 }
 
@@ -755,6 +827,15 @@ func SendHeartbeatResponse(addr *net.UDPAddr, sequenceNumber uint32) error {
 	}
 	logger.PfcpLog.Infof("sent PFCP Heartbeat Response Seq[%d] to NodeID[%s]", sequenceNumber, addr.IP.String())
 	return nil
+}
+
+// liSendErrorHandler is what a failed LI modification gets in place of sessionSendErrorHandler:
+// the failure is counted, which logs it without naming the session, and nothing else. Nothing
+// waits on the session's channel for it, and the LI sweep reports it unanswered over X1. The
+// session's own handler would log the failure, and that no exchange was waiting, on the session's
+// logger, tagged with the SUPI, which marks the subscriber as intercepted.
+func liSendErrorHandler(msg message.Message, err error) {
+	reportSendFailure(msg, err)
 }
 
 // sessionSendErrorHandler returns the error handler for a modification or deletion request, bound
@@ -1198,7 +1279,9 @@ func SendPfcpMsgToAdapter(upNodeID smf_context.NodeID, msg message.Message, addr
 		return nil, err
 	}
 
-	logger.PfcpLog.Debugf("json encoded udpPodMsg [%s]", udpPodMsgJson)
+	// The body is not logged: it is the whole PFCP message, a modification that sets
+	// duplication included.
+	logger.PfcpLog.Debugf("sending %s seq[%d] to the adapter (%d bytes)", msg.MessageTypeName(), msg.Sequence(), len(buf))
 	// change the IP here
 	logger.PfcpLog.Debugf("send to: %s", url)
 

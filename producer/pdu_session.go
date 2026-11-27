@@ -20,6 +20,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
 	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/logger"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/msgtypes/svcmsgtypes"
@@ -114,6 +115,23 @@ func formContextCreateErrRsp(httpStatus int, problemBody models.ExtProblemDetail
 	}
 }
 
+// rejectEstablishment refuses a PDU session establishment and reports the refusal
+// to the LI subsystem, which emits an SMFUnsuccessfulProcedure xIRI if the
+// subscriber is under an active warrant.
+//
+// It exists so the two cannot come apart: every non-test GeneratePDUSessionEstablishmentReject
+// call in this package goes through it, and TestEveryEstablishmentRejectIsReported fails on
+// one inside a function body of a non-test file. The LI call is a no-op for an untasked subscriber and cannot fail
+// the rejection — see lawfulintercept.reportUnsuccessful.
+//
+// The cause passed to LI is read from the same errors table the reject is built
+// from, so the record and the wire cannot disagree about why the session failed.
+func rejectEstablishment(smContext *smf_context.SMContext, cause string) *httpwrapper.Response {
+	rsp := smContext.GeneratePDUSessionEstablishmentReject(cause)
+	lawfulintercept.ReportEstablishmentReject(smContext, smferrors.ErrorCause[cause])
+	return rsp
+}
+
 func HandlePduSessionContextReplacement(smCtxtRef string) error {
 	smCtxt := smf_context.GetSMContext(smCtxtRef)
 
@@ -122,6 +140,17 @@ func HandlePduSessionContextReplacement(smCtxtRef string) error {
 		smCtxt.SMLock.Lock()
 
 		smCtxt.LocalPurged.Store(true)
+
+		// Lawful Interception IRI-POI: this ends the session as surely as a release
+		// does, so it owes the same two things. The record, because an agency that
+		// sees signalling stop cannot otherwise tell a session that ended from a
+		// subject who went quiet. And the withdrawal, because a trigger left
+		// installed keeps this CC-TF sending keepalives to that POI — which is
+		// exactly what stops the POI's fail-safe from ever reclaiming it, so
+		// interception would outlive the session with every party behaving as
+		// designed and nothing reporting a fault. Before RemoveSMContext, while the
+		// session can still be read. Silent no-op unless LI is configured.
+		reportAndUntask(smCtxt)
 
 		// Disassociate ctxt from any look-ups(Report-Req from UPF shouldn't get this context)
 		// RemoveSMContextLocked already transitions to SmStateRelease, which publishes the Kafka
@@ -152,6 +181,14 @@ func ReleaseRestoredSession(smContext *smf_context.SMContext) {
 	defer smContext.SMLock.Unlock()
 
 	smContext.LocalPurged.Store(true)
+
+	// Lawful Interception IRI-POI: the session ends here as it does on an in-memory replacement,
+	// and owes the same record and withdrawal. A stored session is reportable however its
+	// establishment was reported: the flag that would say so is not stored. Before
+	// RemoveSMContextLocked and releaseTunnel, while the session's tunnel and PFCP contexts can
+	// still be read. Silent no-op unless LI is configured.
+	reportAndUntask(smContext)
+
 	smf_context.RemoveSMContextLocked(smContext)
 	if smContext.Tunnel != nil {
 		releaseTunnel(smContext)
@@ -202,29 +239,31 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 	smContext.SubPduSessLog.Debugln("PDUSessionSMContextCreate, SM context created")
 	// smContext.ChangeState(smf_context.SmStateActivePending)
 	smContext.SubCtxLog.Debugln("PDUSessionSMContextCreate, SMContextState change state:", smContext.SMContextState.String())
-	smContext.SetCreateData(createData)
-	smContext.SmStatusNotifyUri = createData.GetSmContextStatusUri()
-
+	// Under SMLock: the context is already in the pool, and a Lawful Interception scan of
+	// established sessions reads the subscriber identities SetCreateData writes.
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
+
+	smContext.SetCreateData(createData)
+	smContext.SmStatusNotifyUri = createData.GetSmContextStatusUri()
 
 	// DNN Information from config
 	smContext.DNNInfo = smf_context.RetrieveDnnInformation(createData.GetSNssai(), createData.GetDnn())
 	if smContext.DNNInfo == nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, S-NSSAI[sst: %d, sd: %s] DNN[%s] not matched DNN Config",
 			createData.SNssai.Sst, createData.SNssai.Sd, createData.Dnn)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("DnnNotSupported")
+		txn.Rsp = rejectEstablishment(smContext, "DnnNotSupported")
 		return fmt.Errorf("SnssaiError")
 	}
 
 	// Query UDM
 	if problemDetails, err := consumer.SendNFDiscoveryUDM(); err != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Error[%+v]", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UDMDiscoveryFailure")
+		txn.Rsp = rejectEstablishment(smContext, "UDMDiscoveryFailure")
 		return fmt.Errorf("UdmError")
 	} else if problemDetails != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Problem[%+v]", problemDetails)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UDMDiscoveryFailure")
+		txn.Rsp = rejectEstablishment(smContext, "UDMDiscoveryFailure")
 		return fmt.Errorf("UdmError")
 	} else {
 		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, send NF Discovery Serving UDM Successful")
@@ -233,7 +272,7 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 	// IP Allocation
 	if ip, err := smContext.DNNInfo.UeIPAllocator.Allocate(smContext.Supi); err != nil {
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, failed allocate IP address: ", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("IpAllocError")
+		txn.Rsp = rejectEstablishment(smContext, "IpAllocError")
 		return fmt.Errorf("IpAllocError")
 	} else {
 		smContext.PDUAddress = &smf_context.UeIpAddr{
@@ -295,7 +334,7 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 		} else {
 			metrics.IncrementSvcUdmMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), err.Error())
 			smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, get SessionManagementSubscriptionData error: ", err)
-			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("SubscriptionDataFetchError")
+			txn.Rsp = rejectEstablishment(smContext, "SubscriptionDataFetchError")
 			return fmt.Errorf("SubscriptionError")
 		}
 	} else {
@@ -313,7 +352,7 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 		} else {
 			metrics.IncrementSvcUdmMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmSubscriptionDataRetrieval), "In", http.StatusText(rsp.StatusCode), "NilSubscriptionData")
 			smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SessionManagementSubscriptionData from UDM is nil")
-			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("SubscriptionDataLenError")
+			txn.Rsp = rejectEstablishment(smContext, "SubscriptionDataLenError")
 			return fmt.Errorf("NoSubscriptionError")
 		}
 	}
@@ -322,19 +361,19 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 	establishmentRequest := m.PDUSessionEstablishmentRequest
 	if err := smContext.HandlePDUSessionEstablishmentRequest(establishmentRequest); err != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, invalid PDU session establishment request: %v", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PDUSessionTypeIPv4OnlyAllowed")
+		txn.Rsp = rejectEstablishment(smContext, "PDUSessionTypeIPv4OnlyAllowed")
 		return fmt.Errorf("invalid PDU session establishment request: %w", err)
 	}
 
 	if smContext.SelectedPDUSessionType == nasMessage.PDUSessionTypeUnstructured {
 		smContext.SubPduSessLog.Errorf("Unstructured PDU Session Not Supported")
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PDUSessionTypeIPv4OnlyAllowed")
+		txn.Rsp = rejectEstablishment(smContext, "PDUSessionTypeIPv4OnlyAllowed")
 		return fmt.Errorf("unstructured PDU Session not supported")
 	}
 
 	if err := smContext.PCFSelection(); err != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving PCF Error[%v]", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFDiscoveryFailure")
+		txn.Rsp = rejectEstablishment(smContext, "PCFDiscoveryFailure")
 		return fmt.Errorf("PcfError")
 	}
 	smContext.SubPduSessLog.Debugln("PDUSessionSMContextCreate, send NF Discovery Serving PCF success")
@@ -345,12 +384,12 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 	if smPolicyDecisionRsp, httpStatus, err := consumer.SendSMPolicyAssociationCreate(smContext); err != nil {
 		metrics.IncrementSvcPcfMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), err.Error())
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate error: ", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFPolicyCreateFailure")
+		txn.Rsp = rejectEstablishment(smContext, "PCFPolicyCreateFailure")
 		return fmt.Errorf("PcfAssoError")
 	} else if httpStatus != http.StatusCreated {
 		metrics.IncrementSvcPcfMsgStats(smfSelf.NfInstanceID, string(svcmsgtypes.SmPolicyAssociationCreate), "In", http.StatusText(httpStatus), "error")
 		smContext.SubPduSessLog.Errorln("PDUSessionSMContextCreate, SMPolicyAssociationCreate http status: ", http.StatusText(httpStatus))
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("PCFPolicyCreateFailure")
+		txn.Rsp = rejectEstablishment(smContext, "PCFPolicyCreateFailure")
 		return fmt.Errorf("PcfAssoError")
 	} else {
 		smContext.SubPduSessLog.Debugf("PDUSessionSMContextCreate, Policy association create success")
@@ -390,7 +429,7 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 			// never associated has nothing to accept with, and carrying on builds an accept for a
 			// path that does not exist. The branch beside this one has always refused here.
 			smContext.SubPduSessLog.Errorf("ensureDataPathUpfAssociated error for SUPI[%s]: %v", createData.Supi, err)
-			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+			txn.Rsp = rejectEstablishment(smContext, "UPFDataPathError")
 
 			return fmt.Errorf("DataPathError")
 		} else if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
@@ -400,7 +439,7 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 			// session rule for the Session-AMBR, and the same absence that stopped the build stops
 			// that too -- one step later, as a panic, in a builder that cannot say what went wrong.
 			smContext.SubPduSessLog.Errorf("ActivateTunnelAndPDR error for SUPI[%s]: %v", createData.Supi, err)
-			txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+			txn.Rsp = rejectEstablishment(smContext, "UPFDataPathError")
 
 			return fmt.Errorf("DataPathError")
 		}
@@ -416,12 +455,12 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 			smContext.Tunnel.AddDataPath(defaultPath)
 			if err := ensureDataPathUpfAssociated(defaultPath); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, UPF association recovery failed: %v", err)
-				txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+				txn.Rsp = rejectEstablishment(smContext, "UPFDataPathError")
 				return fmt.Errorf("DataPathError")
 			}
 			if err := defaultPath.ActivateTunnelAndPDR(smContext, 255); err != nil {
 				smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, data path error: %v", err.Error())
-				txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("UPFDataPathError")
+				txn.Rsp = rejectEstablishment(smContext, "UPFDataPathError")
 				return fmt.Errorf("DataPathError")
 			}
 		}
@@ -432,18 +471,18 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextCreate, SMContextState Change State:", smContext.SMContextState.String())
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, data path not found for selection param %v", upfSelectionParams.String())
 
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("InsufficientResourceSliceDnn")
+		txn.Rsp = rejectEstablishment(smContext, "InsufficientResourceSliceDnn")
 		return fmt.Errorf("InsufficientResourceSliceDnn")
 	}
 
 	// AMF Selection for SMF -> AMF communication
 	if problemDetails, err := consumer.SendNFDiscoveryServingAMF(smContext); err != nil {
 		smContext.SubPduSessLog.Errorf("PDUSessionSMContextCreate, send NF Discovery Serving AMF Error[%v]", err)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("AMFDiscoveryFailure")
+		txn.Rsp = rejectEstablishment(smContext, "AMFDiscoveryFailure")
 		return fmt.Errorf("AmfError")
 	} else if problemDetails != nil {
 		smContext.SubPduSessLog.Warnf("PDUSessionSMContextCreate, send NF Discovery Serving AMF Problem[%+v]", problemDetails)
-		txn.Rsp = smContext.GeneratePDUSessionEstablishmentReject("AMFDiscoveryFailure")
+		txn.Rsp = rejectEstablishment(smContext, "AMFDiscoveryFailure")
 		return fmt.Errorf("AmfError")
 	} else {
 		smContext.SubPduSessLog.Debugln("PDUSessionSMContextCreate, Send NF Discovery Serving AMF success")
@@ -461,6 +500,12 @@ func HandlePDUSessionSMContextCreate(eventData any) error {
 	}
 
 	smContext.SubPduSessLog.Infof("PDUSessionSMContextCreate, PDU session context create success ")
+
+	// The Lawful Interception establishment xIRI is deliberately NOT emitted here.
+	// This point does not wait for the UPF's PFCP Session Establishment Response,
+	// so the session's F-SEID and F-TEID do not exist yet, and a record emitted
+	// here would carry zeroes for both — leaving it unjoinable to the session's own
+	// content. It is emitted from the response handler instead.
 
 	return nil
 	// TODO: UECM registration
@@ -521,6 +566,11 @@ func HandlePDUSessionSMContextUpdate(eventData any) error {
 		// Initiate PFCP Delete
 		if pfcpAction.sendPfcpDelete {
 			smContext.SubPduSessLog.Infoln("PDUSessionSMContextUpdate, send PFCP Deletion")
+
+			// Lawful Interception IRI-POI: an update-initiated release of the PDU
+			// session — emit an SMFPDUSessionRelease xIRI for a tasked target, and
+			// withdraw the CC-TF's triggers from the UPFs that served it.
+			reportAndUntask(smContext)
 			smContext.ChangeState(smf_context.SmStatePfcpRelease)
 			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 
@@ -543,10 +593,21 @@ func HandlePDUSessionSMContextUpdate(eventData any) error {
 			smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
 			smContext.SubPduSessLog.Infof("PDUSessionSMContextUpdate, send PFCP Modification")
 
+			// Lawful Interception IRI-POI: the PDU session is being modified — emit
+			// an SMFPDUSessionModification xIRI for a tasked target.
+			lawfulintercept.ReportModification(smContext)
+
 			// Initiate PFCP Modify
 			if err = SendPfcpSessionModifyReq(smContext, pfcpParam); err != nil {
 				// Modify failure
 				smContext.SubCtxLog.Errorf("pfcp session modify error: %v ", err.Error())
+
+				// Lawful Interception IRI-POI: the counterpart to the modification record emitted
+				// above, before the send. Reported here, where that record was emitted, so the two
+				// pair by construction: a refusal and a timeout both return an error, and no other
+				// send -- this element's own interception updates, restoration, a modification
+				// nothing recorded -- can draw a failure record for a modification never reported.
+				liReportModificationReject(smContext, nasMessage.Cause5GSMRequestRejectedUnspecified)
 
 				// Back to active: the error answer below carries a PDU Session Release Command,
 				// and the UE's Release Complete arrives as an update, which only SmStateActive
@@ -694,6 +755,12 @@ func HandlePDUSessionSMContextRelease(eventData any) error {
 
 	smContext.SubPduSessLog.Infof("PDUSessionSMContextRelease, PDU Session SMContext Release received")
 
+	// Lawful Interception IRI-POI: emit an SMFPDUSessionRelease xIRI for a tasked
+	// target before the session state is torn down, and withdraw the CC-TF's
+	// triggers from the UPFs that served it (TS 33.128 clause 6.2.3.3.1). Silent
+	// no-op unless LI is configured.
+	reportAndUntask(smContext)
+
 	// Send Policy delete
 	metrics.IncrementSvcPcfMsgStats(smf_context.SMF_Self().NfInstanceID, string(svcmsgtypes.SmPolicyAssociationDelete), "Out", "", "")
 	if httpStatus, err := consumer.SendSMPolicyAssociationDelete(smContext, &body); err != nil {
@@ -746,6 +813,25 @@ func HandlePDUSessionSMContextRelease(eventData any) error {
 	case smf_context.SessionReleaseTimeout:
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, PFCP SessionReleaseTimeout")
 		smContext.ChangeState(smf_context.SmStateActive)
+		// Lawful Interception: the release was reported and the session's triggers
+		// withdrawn before the deletion was attempted, and the deletion did not happen.
+		// What goes back is the *release report* state, so the release that eventually
+		// occurs is reported rather than suppressed as a duplicate of the one reported
+		// for this attempt — otherwise the agency's record of this session ends at a
+		// failed attempt, permanently.
+		//
+		// The triggers do NOT go back, and cannot from here: releaseTunnel has already
+		// nilled smContext.Tunnel, so this session has no serving UPFs to task, and a
+		// trigger keyed to a PFCP session that has been deleted would match no packet
+		// while this element believed interception was running. Restoring the session's
+		// user-plane state is a larger problem than interception, and no path here does
+		// it. See lawfulintercept.RestoreInterception — the absence is deliberate.
+		restoreInterception(smContext)
+		// And the unsuccessful-procedure record the other two failure branches already
+		// emit. A timeout and a stated refusal are both the procedure not completing,
+		// and which of them occurred is exactly the distinction a mediation function
+		// cannot make: without this it sees a release record and then silence.
+		liReportReleaseReject(smContext, smContext.PDUSessionID, nasMessage.Cause5GSMRequestRejectedUnspecified)
 		httpResponse = &httpwrapper.Response{
 			Status: int(http.StatusInternalServerError),
 		}
@@ -760,9 +846,15 @@ func HandlePDUSessionSMContextRelease(eventData any) error {
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, SMContextState Change State:", smContext.SMContextState.String())
+		// The session is back in service, so its release becomes reportable again —
+		// see the timeout branch above, including why the triggers do not come back.
+		restoreInterception(smContext)
 		jsonData := models.NewSmContextUpdateError(problemDetail)
 		errResponse := models.NewUpdateSmContext400Response()
 		errResponse.SetJsonData(*jsonData)
+		// The reject carries a hardcoded 5GSM cause; report the same value so the
+		// record cannot disagree with the wire.
+		liReportReleaseReject(smContext, smContext.PDUSessionID, nasMessage.Cause5GSMRequestRejectedUnspecified)
 		if buf, err := smf_context.BuildGSMPDUSessionReleaseReject(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
 		} else {
@@ -790,9 +882,15 @@ func HandlePDUSessionSMContextRelease(eventData any) error {
 		}
 		smContext.ChangeState(smf_context.SmStateActive)
 		smContext.SubCtxLog.Debugln("PDUSessionSMContextRelease, SMContextState Change State:", smContext.SMContextState.String())
+		// The session is back in service, so its release becomes reportable again —
+		// see the timeout branch above, including why the triggers do not come back.
+		restoreInterception(smContext)
 		jsonData := models.NewSmContextUpdateError(problemDetail)
 		errResponse := models.NewUpdateSmContext400Response()
 		errResponse.SetJsonData(*jsonData)
+		// The reject carries a hardcoded 5GSM cause; report the same value so the
+		// record cannot disagree with the wire.
+		liReportReleaseReject(smContext, smContext.PDUSessionID, nasMessage.Cause5GSMRequestRejectedUnspecified)
 		if buf, err := smf_context.BuildGSMPDUSessionReleaseReject(smContext); err != nil {
 			smContext.SubPduSessLog.Errorf("PDUSessionSMContextRelease, build GSM PDUSessionReleaseReject failed: %+v", err)
 		} else {
@@ -1208,6 +1306,24 @@ func HandlePFCPResponse(smContext *smf_context.SMContext,
 			Status: http.StatusGatewayTimeout,
 			Body:   responseBody, // Depends on the reason why N4 fail
 		}
+
+		// Lawful Interception IRI-POI: this releases the session's tunnel, so it
+		// ends the session as far as the subject's traffic is concerned, and owes
+		// the release record and the withdrawal of the triggers it held. The other
+		// caller of SendPfcpSessionReleaseReq reports before calling it, and so does
+		// this one: a trigger left installed, which this element still believes in,
+		// keeps its keepalives flowing, which is exactly what stops the POI's
+		// fail-safe from reclaiming it.
+		//
+		// The lock is taken around these two calls alone and not around the release
+		// request: that request blocks on SBIPFCPCommunicationChan until the PFCP
+		// deletion response arrives, and the handler that delivers it takes SMLock
+		// itself. Both hooks are idempotent — ReportRelease is guarded by
+		// LiReleaseReported and UntriggerCC finds nothing the second time — so an
+		// SBI release arriving later reports once, not twice.
+		smContext.SMLock.Lock()
+		reportAndUntask(smContext)
+		smContext.SMLock.Unlock()
 
 		err = SendPfcpSessionReleaseReq(smContext)
 		if err != nil {

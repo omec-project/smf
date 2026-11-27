@@ -198,7 +198,29 @@ func farToCreateFAR(far *context.FAR) *ie.IE {
 		}
 		createFARies = append(createFARies, ie.NewForwardingParameters(forwardingParametersIEs...))
 	}
+	if far.ApplyAction.Dupl && far.DuplicatingParameters != nil {
+		createFARies = append(createFARies, ie.NewDuplicatingParameters(duplicatingParametersIEs(far.DuplicatingParameters)...))
+	}
 	return ie.NewCreateFAR(createFARies...)
+}
+
+// duplicatingParametersIEs builds the inner IEs shared by the Create and Update
+// Duplicating Parameters grouped IEs: the LI destination interface plus an
+// optional outer header.
+func duplicatingParametersIEs(dp *context.DuplicatingParameters) []*ie.IE {
+	ies := []*ie.IE{ie.NewDestinationInterface(dp.DestinationInterface.InterfaceValue)}
+	if dp.OuterHeaderCreation != nil {
+		ies = append(ies, ie.NewOuterHeaderCreation(
+			dp.OuterHeaderCreation.OuterHeaderCreationDescription,
+			dp.OuterHeaderCreation.Teid,
+			dp.OuterHeaderCreation.Ipv4Address.String(),
+			dp.OuterHeaderCreation.Ipv6Address.String(),
+			dp.OuterHeaderCreation.PortNumber,
+			0,
+			0,
+		))
+	}
+	return ies
 }
 
 func qerToCreateQER(qer *context.QER) *ie.IE {
@@ -281,6 +303,9 @@ func farToUpdateFAR(far *context.FAR) *ie.IE {
 			forwardingParametersIEs = append(forwardingParametersIEs, ie.NewForwardingPolicy(far.ForwardingParameters.ForwardingPolicyID))
 		}
 		updateFARies = append(updateFARies, ie.NewUpdateForwardingParameters(forwardingParametersIEs...))
+	}
+	if far.ApplyAction.Dupl && far.DuplicatingParameters != nil {
+		updateFARies = append(updateFARies, ie.NewUpdateDuplicatingParameters(duplicatingParametersIEs(far.DuplicatingParameters)...))
 	}
 	return ie.NewUpdateFAR(updateFARies...)
 }

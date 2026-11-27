@@ -257,6 +257,129 @@ func TestBuildPfcpAssociationReleaseResponse(t *testing.T) {
 	}
 }
 
+// TestBuildEstablishmentWithDuplicatingParameters verifies that a DUPL FAR
+// carrying Duplicating Parameters (the LI CC-triggering function) is encoded
+// into the Create FAR with a Duplicating Parameters IE naming the LI Function.
+func TestBuildEstablishmentWithDuplicatingParameters(t *testing.T) {
+	farList := []*context.FAR{
+		{
+			FARID:       1,
+			State:       context.RULE_INITIAL,
+			ApplyAction: context.ApplyAction{Forw: true, Dupl: true},
+			DuplicatingParameters: &context.DuplicatingParameters{
+				DestinationInterface: context.DestinationInterface{InterfaceValue: context.DestinationInterfaceLIFunction},
+			},
+		},
+	}
+	msg, err := message.BuildPfcpSessionEstablishmentRequest(1, cpNodeID, net.ParseIP(cpNodeID), 1, nil, farList, nil)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	buf := make([]byte, msg.MarshalLen())
+	if err = msg.MarshalTo(buf); err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req, err := pfcp_message.ParseSessionEstablishmentRequest(buf)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(req.CreateFAR) != 1 {
+		t.Fatalf("got %d CreateFAR IEs, want 1", len(req.CreateFAR))
+	}
+	dup, err := req.CreateFAR[0].FindByType(ie.DuplicatingParameters)
+	if err != nil {
+		t.Fatalf("CreateFAR has no Duplicating Parameters IE: %v", err)
+	}
+	di, err := dup.FindByType(ie.DestinationInterface)
+	if err != nil {
+		t.Fatalf("Duplicating Parameters has no Destination Interface: %v", err)
+	}
+	if v, err := di.DestinationInterface(); err != nil || v != ie.DstInterfaceLIFunction {
+		t.Errorf("destination interface = %d (err %v), want LI Function (%d)", v, err, ie.DstInterfaceLIFunction)
+	}
+}
+
+// TestBuildModificationUpdatesDuplication verifies the Update FAR that switches duplication on a
+// running session: activating CC sets DUPL and carries Update Duplicating Parameters naming the
+// LI Function, and withdrawing it clears DUPL and carries no duplicating parameters.
+func TestBuildModificationUpdatesDuplication(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		far  *context.FAR
+		dupl bool
+	}{
+		{
+			name: "activation",
+			far: &context.FAR{
+				FARID:       1,
+				State:       context.RULE_UPDATE,
+				ApplyAction: context.ApplyAction{Forw: true, Dupl: true},
+				DuplicatingParameters: &context.DuplicatingParameters{
+					DestinationInterface: context.DestinationInterface{InterfaceValue: context.DestinationInterfaceLIFunction},
+				},
+			},
+			dupl: true,
+		},
+		{
+			// Stale parameters left on the FAR: DUPL being off is what keeps them off the wire.
+			name: "withdrawal",
+			far: &context.FAR{
+				FARID:       1,
+				State:       context.RULE_UPDATE,
+				ApplyAction: context.ApplyAction{Forw: true},
+				DuplicatingParameters: &context.DuplicatingParameters{
+					DestinationInterface: context.DestinationInterface{InterfaceValue: context.DestinationInterfaceLIFunction},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, err := message.BuildPfcpSessionModificationRequest(1, 1, 2, net.ParseIP(cpNodeID),
+				nil, []*context.FAR{tc.far}, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("build: %v", err)
+			}
+			buf := make([]byte, msg.MarshalLen())
+			if err = msg.MarshalTo(buf); err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req, err := pfcp_message.ParseSessionModificationRequest(buf)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(req.UpdateFAR) != 1 {
+				t.Fatalf("got %d UpdateFAR IEs, want 1", len(req.UpdateFAR))
+			}
+			action, err := req.UpdateFAR[0].FindByType(ie.ApplyAction)
+			if err != nil {
+				t.Fatalf("UpdateFAR has no Apply Action: %v", err)
+			}
+			if action.HasDUPL() != tc.dupl || !action.HasFORW() {
+				t.Errorf("apply action DUPL %t FORW %t, want DUPL %t FORW true", action.HasDUPL(), action.HasFORW(), tc.dupl)
+			}
+			dup, err := req.UpdateFAR[0].UpdateDuplicatingParameters()
+			if !tc.dupl {
+				if err == nil {
+					t.Errorf("a withdrawal carries Update Duplicating Parameters %v", dup)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("UpdateFAR has no Update Duplicating Parameters: %v", err)
+			}
+			for _, i := range dup {
+				if i.Type == ie.DestinationInterface {
+					if v, err := i.DestinationInterface(); err != nil || v != ie.DstInterfaceLIFunction {
+						t.Errorf("destination interface = %d (err %v), want LI Function (%d)", v, err, ie.DstInterfaceLIFunction)
+					}
+					return
+				}
+			}
+			t.Error("Update Duplicating Parameters has no Destination Interface")
+		})
+	}
+}
+
 func TestBuildPfcpSessionEstablishmentRequest(t *testing.T) {
 	pdrList := []*context.PDR{
 		{

@@ -94,20 +94,30 @@ type SMContext struct {
 	Ref string `json:"ref" yaml:"ref" bson:"ref"`
 
 	// SUPI or PEI
-	Supi              string `json:"supi,omitempty" yaml:"supi" bson:"supi,omitempty"`
-	Pei               string `json:"pei,omitempty" yaml:"pei" bson:"pei,omitempty"`
-	Identifier        string `json:"identifier" yaml:"identifier" bson:"identifier"`
-	Gpsi              string `json:"gpsi,omitempty" yaml:"gpsi" bson:"gpsi,omitempty"`
-	Dnn               string `json:"dnn" yaml:"dnn" bson:"dnn"`
-	UeTimeZone        string `json:"ueTimeZone,omitempty" yaml:"ueTimeZone" bson:"ueTimeZone,omitempty"` // ignore
-	ServingNfId       string `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
-	SmStatusNotifyUri string `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
+	Supi        string `json:"supi,omitempty" yaml:"supi" bson:"supi,omitempty"`
+	Pei         string `json:"pei,omitempty" yaml:"pei" bson:"pei,omitempty"`
+	Identifier  string `json:"identifier" yaml:"identifier" bson:"identifier"`
+	Gpsi        string `json:"gpsi,omitempty" yaml:"gpsi" bson:"gpsi,omitempty"`
+	Dnn         string `json:"dnn" yaml:"dnn" bson:"dnn"`
+	UeTimeZone  string `json:"ueTimeZone,omitempty" yaml:"ueTimeZone" bson:"ueTimeZone,omitempty"` // ignore
+	ServingNfId string `json:"servingNfId,omitempty" yaml:"servingNfId" bson:"servingNfId,omitempty"`
+	// Guami is the AMF serving this session, as the AMF itself reported it on N11.
+	// ServingNfId above is that AMF's instance UUID and cannot yield an AMF
+	// identifier; TS 33.128's aMFID needs the region/set/pointer this carries.
+	Guami             models.Guami `json:"guami,omitempty" yaml:"guami" bson:"guami,omitempty"`
+	SmStatusNotifyUri string       `json:"smStatusNotifyUri,omitempty" yaml:"smStatusNotifyUri" bson:"smStatusNotifyUri,omitempty"`
 
 	UpCnxState         models.UpCnxState         `json:"upCnxState,omitempty" yaml:"upCnxState" bson:"upCnxState,omitempty"`
 	AMFProfile         models.NFProfileDiscovery `json:"amfProfile,omitempty" yaml:"amfProfile" bson:"amfProfile,omitempty"`
 	SelectedPCFProfile models.NFProfileDiscovery `json:"selectedPCFProfile,omitempty" yaml:"selectedPCFProfile" bson:"selectedPCFProfile,omitempty"`
 	AnType             models.AccessType         `json:"anType" yaml:"anType" bson:"anType"`
-	RatType            models.RatType            `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
+	// RequestType is the 5GSM request type the AMF supplied when creating this
+	// context — whether the UE asked for a new PDU session or for an existing one,
+	// and whether it was an emergency request. It is a mandatory field of the
+	// Lawful Interception establishment record, which without it would report every
+	// session as an initial request.
+	RequestType models.RequestType `json:"requestType,omitempty" yaml:"requestType" bson:"requestType,omitempty"`
+	RatType     models.RatType     `json:"ratType,omitempty" yaml:"ratType" bson:"ratType,omitempty"`
 
 	// ExtendedNasSmTimer is the AMF's indication that the extended NAS timer values for access
 	// via a satellite NG-RAN cell apply to this session (TS 24.501 subclause 4.23.4).
@@ -246,6 +256,32 @@ type SMContext struct {
 	// encountered a cycle via *context.GTPTunnel
 	Tunnel *UPTunnel `json:"-" yaml:"tunnel" bson:"-"`
 
+	// LiReleaseReported guards the Lawful Interception release xIRI against a
+	// double emit when a teardown traverses both the update-initiated delete and
+	// the dedicated release handler. Transient; not serialized.
+	LiReleaseReported bool `json:"-" yaml:"-" bson:"-"`
+
+	// LiEstablishmentReported guards the Lawful Interception establishment xIRI,
+	// which is emitted when the UPF answers the PFCP Session Establishment Request
+	// — the point at which the session's F-SEID and F-TEID first exist. A session
+	// spanning several UPFs draws a response from each, so without this the record
+	// would be emitted once per UPF. Transient; not serialized.
+	LiEstablishmentReported bool `json:"-" yaml:"-" bson:"-"`
+
+	// LiCorrelation is the Lawful Interception correlation identifier of this session: the
+	// anchor UPF's F-SEID when the anchor first accepted the session. It is kept for the
+	// session's life, so the session's records and content carry one value (TS 103 221-2
+	// clause 5.2.8) across a restart of a UPF, which assigns a new F-SEID, and across a
+	// restart of the SMF, which reads it back. Set on every session while LI is configured,
+	// so it says nothing about interception. Zero until set. Encoded as a string because the
+	// datastore document is built through a generic map, whose numbers are float64.
+	LiCorrelation uint64 `json:"liCorrelation,omitempty,string" yaml:"liCorrelation" bson:"liCorrelation,omitempty"`
+
+	// LiContentLostReported holds, by warrant XID, the Lawful Interception warrants told that this
+	// session's content is no longer intercepted after a failed release withdrew its triggers,
+	// so each is told once. Transient; not serialized.
+	LiContentLostReported map[string]bool `json:"-" yaml:"-" bson:"-"`
+
 	BPManager *BPManager `json:"bpManager,omitempty" yaml:"bpManager" bson:"bpManager,omitempty"` // ignore
 
 	DNNInfo *SnssaiSmfDnnInfo `json:"dnnInfo,omitempty" yaml:"dnnInfo" bson:"dnnInfo,omitempty"`
@@ -332,7 +368,7 @@ type SMContext struct {
 	PDUSessionID                        int32          `json:"pduSessionID" yaml:"pduSessionID" bson:"pduSessionID"`
 	OldPduSessionId                     int32          `json:"oldPduSessionId,omitempty" yaml:"oldPduSessionId" bson:"oldPduSessionId,omitempty"`
 	SelectedPDUSessionType              uint8          `json:"selectedPDUSessionType,omitempty" yaml:"selectedPDUSessionType" bson:"selectedPDUSessionType,omitempty"`
-	UnauthenticatedSupi                 bool           `json:"unauthenticatedSupi,omitempty" yaml:"unauthenticatedSupi" bson:"unauthenticatedSupi,omitempty"`                                                 // ignore
+	UnauthenticatedSupi                 bool           `json:"unauthenticatedSupi,omitempty" yaml:"unauthenticatedSupi" bson:"unauthenticatedSupi,omitempty"`                                                 // sUPIUnauthenticated, TS 33.128 table 6.2.3-1
 	PDUSessionRelease_DUE_TO_DUP_PDU_ID bool           `json:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty" yaml:"pduSessionRelease_DUE_TO_DUP_PDU_ID" bson:"pduSessionRelease_DUE_TO_DUP_PDU_ID,omitempty"` // ignore
 	// atomic because the PFCP modification/deletion response handlers read it without SMLock:
 	// the producer side holds SMLock across its blocking wait on SBIPFCPCommunicationChan, so a
@@ -681,6 +717,19 @@ func (smContext *SMContext) ChangeState(nextState SMContextState) {
 	smContext.PublishSmCtxtInfo()
 }
 
+// RangeSMContexts calls fn for each live SM context (fn returns false to stop).
+// The Lawful Interception POI uses it to scan already-established sessions when a
+// warrant is activated over X1.
+func RangeSMContexts(fn func(*SMContext) bool) {
+	smContextPool.Range(func(_, v any) bool {
+		sc, ok := v.(*SMContext)
+		if !ok {
+			return true
+		}
+		return fn(sc)
+	})
+}
+
 // *** add unit test ***//
 func GetSMContext(ref string) (smContext *SMContext) {
 	if value, ok := smContextPool.Load(ref); ok {
@@ -1020,6 +1069,7 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.HplmnSnssai = createData.HplmnSnssai
 	smContext.ServingNetwork = createData.GetServingNetwork()
 	smContext.AnType = createData.GetAnType()
+	smContext.RequestType = createData.GetRequestType()
 	smContext.RatType = createData.GetRatType()
 	smContext.ExtendedNasSmTimer = createData.GetExtendedNasSmTimerInd()
 	smContext.T3591Value, smContext.T3591Source = ResolveT3591(
@@ -1033,6 +1083,18 @@ func (smContext *SMContext) SetCreateData(createData *models.SmContextCreateData
 	smContext.AddUeLocation = createData.AddUeLocation
 	smContext.OldPduSessionId = createData.GetOldPduSessionId()
 	smContext.ServingNfId = createData.GetServingNfId()
+	// Guami and UnauthenticatedSupi are both mandatory conditional fields of the
+	// Lawful Intercept session records, and the AMF sends both, so they are kept here
+	// for the same reason as RequestType above.
+	//
+	// ServingNfId is not a substitute for Guami: it is an NF instance UUID, while
+	// TS 33.128's aMFID is the AMF region/set/pointer of TS 23.003 clause 2.10.1.
+	if guami := createData.Guami; guami != nil {
+		smContext.Guami = *guami
+	}
+	smContext.UnauthenticatedSupi = createData.GetUnauthenticatedSupi()
+	// The PEI is a Lawful Interception target identity and a field of its records.
+	smContext.Pei = createData.GetPei()
 }
 
 // RebuildCommunicationClient reconstructs the Namf_Communication API client
