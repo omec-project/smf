@@ -17,6 +17,7 @@ import (
 	"github.com/omec-project/openapi/v2/models"
 	"github.com/omec-project/smf/consumer"
 	"github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/lawfulintercept"
 	"github.com/omec-project/smf/metrics"
 	"github.com/omec-project/smf/qos"
 	"github.com/omec-project/smf/smferrors"
@@ -215,6 +216,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 						// its timer expires. State stays SmStateInit: there is nothing to clean up.
 						smContext.SubPduSessLog.Warnf("PDUSessionSMContextUpdate, rejecting PDU Session Release Request for a never-established session: SM context state[%v]",
 							smContext.SMContextState.String())
+						// Lawful Interception IRI-POI: a refused release, as on the mismatched
+						// identity below, reported with the cause the reject carries.
+						liReportReleaseReject(smContext, pduSessIDRelReq, smferrors.ErrorCause["InvalidPDUSessionIdentity"])
 						buildPDUSessionReleaseReject(smContext, response, pduSessIDRelReq, "InvalidPDUSessionIdentity")
 						break
 					}
@@ -242,6 +246,9 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 				}
 			} else {
 				smContext.SubPduSessLog.Errorf("Invalid PDU Session ID")
+				// Same cause key the reject is built from, so the record and the
+				// wire cannot disagree.
+				liReportReleaseReject(smContext, pduSessIDRelReq, smferrors.ErrorCause["InvalidPDUSessionIdentity"])
 				buildPDUSessionReleaseReject(smContext, response, pduSessIDRelReq, "InvalidPDUSessionIdentity")
 				smContext.ChangeState(context.SmStateModify)
 				smContext.SubCtxLog.Debugln("PDUSessionSMContextUpdate, SMContextState Change State:", smContext.SMContextState.String())
@@ -429,6 +436,14 @@ func HandleUpdateN1Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			// ChangeState(SmStateRelease). RemoveSMContextLocked, not RemoveSMContext, since
 			// HandlePDUSessionSMContextUpdate already holds smContext.SMLock and it is not
 			// reentrant.
+			//
+			// Lawful Interception IRI-POI: the session ends here, and owes the release record
+			// and the withdrawal of its triggers. An ordinary release has reported both already
+			// and this does nothing more. A Release Command that answered a modification the
+			// SMF could not carry out (makePduCtxtModifyErrRsp) reaches here with neither done. Before
+			// RemoveSMContextLocked, while the session can still be read. Silent no-op unless LI
+			// is configured.
+			reportAndUntask(smContext)
 			context.RemoveSMContextLocked(smContext)
 			smContext.SubPduSessLog.Debugln("PDUSessionSMContextUpdate, sent SMContext Status Notification successfully")
 
@@ -865,6 +880,17 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			}
 		}
 
+		// The downlink FAR only becomes a forwarding FAR here, and the assignment
+		// above replaces its whole ApplyAction — including clearing Dupl. Both
+		// matter for Lawful Interception: content duplication is only ever applied
+		// to forwarding FARs, so at establishment the downlink one is skipped and
+		// the interception would carry uplink only; and on an already-tasked session
+		// this would silently switch downlink duplication back off. Re-evaluating
+		// here puts the FAR's duplication state right before it is sent, in the same
+		// modification. Only the FARs this modification carries: see ApplyCCTriggerTo.
+		// Silent and a no-op when LI is inactive.
+		lawfulintercept.ApplyCCTriggerTo(smContext, farList)
+
 		pfcpParam.pdrList = append(pfcpParam.pdrList, pdrList...)
 		pfcpParam.farList = append(pfcpParam.farList, farList...)
 
@@ -909,6 +935,14 @@ func HandleUpdateN2Msg(txn *transaction.Transaction, response *models.UpdateSmCo
 			response.SetJsonData(jd)
 
 			smContext.PDUSessionRelease_DUE_TO_DUP_PDU_ID = false
+
+			// Lawful Interception IRI-POI: a duplicate PDU session identifier ends
+			// this session, so it owes the release record and the withdrawal of the
+			// triggers it held — a trigger left installed here keeps the CC-TF
+			// keeping its POI alive, which is what disables that POI's fail-safe.
+			// Before RemoveSMContextLocked, while the session can still be read. Silent
+			// no-op unless LI is configured.
+			reportAndUntask(smContext)
 			// RemoveSMContextLocked, not RemoveSMContext, since HandlePDUSessionSMContextUpdate
 			// already holds smContext.SMLock and it is not reentrant.
 			context.RemoveSMContextLocked(smContext)

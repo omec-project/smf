@@ -17,11 +17,14 @@ import (
 
 	"github.com/omec-project/smf/context"
 	"github.com/omec-project/smf/factory"
+	"github.com/omec-project/smf/pfcp/lisequence"
 	"github.com/omec-project/smf/pfcp/message"
 	"github.com/omec-project/smf/pfcp/udp"
 	"github.com/wmnsk/go-pfcp/ie"
 	pfcp_message "github.com/wmnsk/go-pfcp/message"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 var initTestSmfConfigOnce sync.Once
@@ -714,6 +717,53 @@ func TestAModificationThatNeverWentOutLeavesItsRulesAsTheyWere(t *testing.T) {
 	}
 }
 
+// An LI modification is recorded by sequence number before it is sent, because with the UPF
+// adapter its answer is handled before the send returns. One that never went out has no answer
+// coming, so its record goes with the failed send: otherwise the sweep would find it unanswered
+// and re-send a modification whose failure the caller has already reported.
+func TestAnLIModificationThatNeverWentOutLeavesNoRecord(t *testing.T) {
+	const upNodeIDStr = "127.0.0.1"
+
+	initTestSmfConfig()
+
+	upNodeID := context.NodeID{
+		NodeIdType:  context.NodeIdTypeIpv4Address,
+		NodeIdValue: net.ParseIP(upNodeIDStr).To4(),
+	}
+
+	log, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		t.Fatalf("building a logger: %v", err)
+	}
+
+	smContext := &context.SMContext{
+		PFCPContext: map[string]*context.PFCPSessionContext{
+			upNodeIDStr: {NodeID: upNodeID, LocalSEID: 21, RemoteSEID: 22},
+		},
+		SubPduSessLog: log.Sugar(),
+		SubPfcpLog:    log.Sugar(),
+	}
+
+	// No server, so udp.SendPfcp refuses after the request has been built.
+	setTestServer(t, nil)
+
+	// The count is global, and the send's Mark prunes records left by earlier tests once they
+	// are old enough, which under -count would mask the record this test looks for. A sweep
+	// prunes now, and Mark does not prune again within a second of it.
+	lisequence.Expired()
+	before := lisequence.Outstanding()
+	far := &context.FAR{FARID: 1, State: context.RULE_UPDATE, ApplyAction: context.ApplyAction{Forw: true, Dupl: true}}
+
+	if err := message.SendPfcpSessionModificationRequestForLI(upNodeID, smContext, []*context.FAR{far}, 8806); err == nil {
+		t.Fatal("a modification the socket refused was reported as sent")
+	}
+
+	if after := lisequence.Outstanding(); after != before {
+		t.Errorf("LI modifications awaiting an answer went from %d to %d after a send that never "+
+			"went out; the sweep would re-send it", before, after)
+	}
+}
+
 // pendingRequestsFor counts the bookkeeping entries naming this user plane.
 func pendingRequestsFor(nodeID context.NodeID) int {
 	message.PfcpTxnLock.Lock()
@@ -892,5 +942,51 @@ func TestMissingPFCPContextFoldsIntoCreateBatch(t *testing.T) {
 	}
 	if !smContext.HasPendingUPF("127.0.0.2") {
 		t.Error("the still-outstanding UPF was dropped from the batch")
+	}
+}
+
+// An LI modification writes nothing to the session's log, which tags every line with the SUPI,
+// whether it is sent or goes unanswered. A subscriber's own modification logs its procedure before
+// the send and its answer after it; an LI modification has neither, so a "sent" line, or a send
+// failure, on its own would mark the subscriber, and the moment, as intercepted. The same
+// unanswered modification sent for the subscriber logs both lines, so the empty log can only be
+// because the LI one was kept out.
+func TestAnLIModificationWritesNothingToTheSessionsLog(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		forLI bool
+	}{{"for the subscriber", false}, {"for LI", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			upNodeID, smContext, port := unansweredUserPlane(t, context.SmStateActive)
+			core, logs := observer.New(zapcore.DebugLevel)
+			smContext.SubPfcpLog = zap.New(core).Sugar()
+			smContext.SubPduSessLog = smContext.SubPfcpLog
+
+			far := &context.FAR{FARID: 1, State: context.RULE_UPDATE, ApplyAction: context.ApplyAction{Forw: true, Dupl: tc.forLI}}
+			var err error
+			if tc.forLI {
+				err = message.SendPfcpSessionModificationRequestForLI(upNodeID, smContext, []*context.FAR{far}, port)
+			} else {
+				err = message.SendPfcpSessionModificationRequest(upNodeID, smContext,
+					nil, []*context.FAR{far}, nil, nil, nil, nil, nil, port)
+			}
+			if err != nil {
+				t.Fatalf("the request was not sent: %v", err)
+			}
+			udp.WaitForAllTransactions()
+
+			if tc.forLI {
+				if n := logs.Len(); n != 0 {
+					t.Errorf("the LI modification wrote %d lines to the session's log, want 0: %v", n, logs.All())
+				}
+
+				return
+			}
+			for _, line := range []string{"sent PFCP Session Modify Request", "PFCP Session Modification send failure"} {
+				if logs.FilterMessageSnippet(line).Len() == 0 {
+					t.Errorf("the subscriber's modification did not log %q, so an empty log for LI shows nothing", line)
+				}
+			}
+		})
 	}
 }

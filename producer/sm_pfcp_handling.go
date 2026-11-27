@@ -132,6 +132,12 @@ func RollbackFailedCreate(smContext *smf_context.SMContext) {
 	smContext.SMLock.Lock()
 	defer smContext.SMLock.Unlock()
 
+	// Lawful Interception: the create-failure handler withdrew the session's triggers before the
+	// AMF was told of the failure, and released SMLock for that. A UPF whose acceptance arrives in
+	// between is triggered by its answer, and this is the last point before the context goes.
+	// Silent no-op unless LI is configured.
+	liUntriggerCC(smContext)
+
 	if smContext.Tunnel == nil {
 		return
 	}

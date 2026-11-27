@@ -40,6 +40,11 @@ type eventHandler func(event SmEvent, eventData *SmEventData) (smf_context.SMCon
 
 var SmfFsmHandler [smf_context.SmStateMax][SmEventMax]eventHandler
 
+// liEstablishmentFailed is the Lawful Interception hook for a failed PFCP establishment, held in a
+// variable so a test can see that the create-failure handler raises it: the hook is a silent no-op
+// unless LI is configured, so a handler that stopped calling it would look like one that does.
+var liEstablishmentFailed = producer.ReportEstablishmentFailure
+
 func init() {
 	// Initilise with default invalid handler
 	for state := smf_context.SmStateInit; state < smf_context.SmStateMax; state++ {
@@ -173,6 +178,11 @@ func HandleStatePfcpCreatePendingEventPfcpSessCreateFailure(event SmEvent, event
 	// context drops the only record of both, so they are released first. Deferred after the removal,
 	// so that it runs before it.
 	defer producer.RollbackFailedCreate(smCtxt)
+
+	// Lawful Interception IRI-POI: every PFCP establishment failure ends here, so this is where a
+	// tasked subject's failed establishment is reported and its triggers withdrawn -- before the
+	// context, and the session state the record and the withdrawal read, are removed.
+	liEstablishmentFailed(smCtxt)
 
 	// sending n1n2 transfer failure to amf
 	if err := producer.SendPduSessN1N2Transfer(smCtxt, false); err != nil {

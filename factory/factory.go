@@ -12,6 +12,7 @@ package factory
 
 import (
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/omec-project/smf/logger"
@@ -31,10 +32,35 @@ var (
 // then it closes the existing client start a new client.
 func InitConfigFactory(f string) error {
 	SmfConfig = Config{}
+	liBlockErr = nil
 
 	if err := nfconfig.LoadYAML(f, &SmfConfig); err != nil {
 		return err
 	}
+
+	// The lenient decode above stays lenient — the SMF must keep starting on a configuration
+	// carrying a key this version does not model. The LI block is held to a stricter standard,
+	// on its own, because a key dropped there lands on a default that fails unsafely and says
+	// nothing: see strictLiBlock.
+	//
+	// **Recorded, not returned.** Returning it would fail the whole configuration load, which
+	// stops the SMF: PFCP, the service-based interface, registration with the network, every
+	// subscriber's sessions — over a typo in an optional subsystem. That is the outage the
+	// `service/init.go` LI comment describes and refuses to cause for an unreadable keepalive
+	// window, arrived at one frame earlier and in another package. It is also the
+	// louder half of undetectability: a network function that will not start is visible to every
+	// operator and peer, where a log line is visible only to whoever reads logs.
+	//
+	// The refusal is carried to the LI subsystem instead, which is the only party that can act
+	// on it — it declines to intercept and reports the invalid configuration to the ADMF, at a
+	// point where the reporting channel exists. See LiBlockError.
+	//
+	// nfconfig.LoadYAML does not hand back the bytes it decoded, so the block is read again.
+	content, err := os.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	SmfConfig.Configuration.Li, liBlockErr = strictLiBlock(content)
 
 	if SmfConfig.Configuration.KafkaInfo.EnableKafka == nil {
 		enableKafka := true
